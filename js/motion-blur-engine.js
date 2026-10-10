@@ -244,7 +244,7 @@
 
       const normIn = (typeof window !== 'undefined' && window.FishTextEngine && typeof window.FishTextEngine.normalizeAnimIn === 'function')
         ? window.FishTextEngine.normalizeAnimIn(tp.animIn || tp.animation)
-        : (tp.animIn || tp.animation || 'none');
+        : (tp.animIn || tp.animation || 'bounce_1');
       const normOut = (typeof window !== 'undefined' && window.FishTextEngine && typeof window.FishTextEngine.normalizeAnimOut === 'function')
         ? window.FishTextEngine.normalizeAnimOut(tp.animOut)
         : (tp.animOut || 'none');
@@ -267,11 +267,6 @@
 
       // Continuous kinetic motions are active throughout clip
       if (normIn === 'wave' || normIn === 'glitch' || normOut === 'wave' || normOut === 'glitch') {
-        return true;
-      }
-
-      // Manual Text Animators (keyframed range selector / properties) can move at any time in the clip
-      if (typeof window !== 'undefined' && window.FishTextAnimator && window.FishTextAnimator.hasActive(tp)) {
         return true;
       }
 
