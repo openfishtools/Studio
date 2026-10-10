@@ -140,6 +140,14 @@ Autonomous coding agents (Cursor, GitHub Copilot, Cline, Windsurf, OpenCode) sho
 ### License
 This project is licensed under the [MIT License](LICENSE).
 
+#### Summary
+- **Do**:
+  - Use, copy, modify, merge, and distribute freely for personal and commercial projects.
+  - Keep the original copyright notice and permission notice.
+- **Don't**:
+  - Hold authors liable for any damages or warranty claims.
+  - Remove original author attribution.
+
 ---
 
 <a name="bahasa-indonesia"></a>
@@ -272,3 +280,11 @@ AI coding agent mandiri (Cursor, GitHub Copilot, Cline, Windsurf, OpenCode) waji
 
 ### Lisensi
 Proyek ini didistribusikan di bawah [Lisensi MIT](LICENSE).
+
+#### Ringkasan
+- **Boleh (Do)**:
+  - Menggunakan, menyalin, memodifikasi, dan mendistribusikan secara bebas untuk proyek pribadi maupun komersial.
+  - Menyertakan pemberitahuan hak cipta dan lisensi asli saat mendistribusikan ulang.
+- **Tidak Boleh (Don't)**:
+  - Menuntut ganti rugi atau jaminan apa pun kepada pembuat perangkat lunak.
+  - Menghapus atribusi pembuat asli.
