@@ -200,7 +200,7 @@
    * Evaluate one glyph's transform at absolute clip time `sec`.
    * Single source for main draw + motion blur ghosts (guaranteed identical motion).
    */
-  function evalGlyphAnim(cfg, sec, animIndex, charIndex) {
+  function evalPresetAnim(cfg, sec, animIndex, charIndex) {
     const st = { offX: 0, offY: 0, scaleX: 1, scaleY: 1, alpha: 1, rot: 0 };
     const { normIn, normOut, fontSize } = cfg;
     let animatorAmt = 0; // 1 = full "Animate From" state, 0 = rest
@@ -337,6 +337,16 @@
       st.alpha *= clamp01(1 - (1 - cfg.aOp) * clamp01(a));
     }
 
+    return st;
+  }
+
+  /**
+   * Final per-glyph state = IN/OUT presets + manual Text Animators (AE Range Selector model).
+   * Single entry point so main draw and motion-blur probes stay identical.
+   */
+  function evalGlyphAnim(cfg, sec, animIndex, charIndex) {
+    const st = evalPresetAnim(cfg, sec, animIndex, charIndex);
+    if (cfg.animRT) window.FishTextAnimator.applyGlyph(cfg.animRT, sec, charIndex, st);
     return st;
   }
 
@@ -479,7 +489,8 @@
       const outStartSec = Math.max(inDur, clipDur - outDur);
 
       // Fast-path: if text is static or resting in steady state and properties did not change, bypass re-rendering
-      const isContinuous = (normIn === 'wave' || normIn === 'glitch' || normOut === 'wave' || normOut === 'glitch');
+      const hasAnimators = !!(window.FishTextAnimator && window.FishTextAnimator.hasActive(p));
+      const isContinuous = (normIn === 'wave' || normIn === 'glitch' || normOut === 'wave' || normOut === 'glitch' || hasAnimators);
       const projFps = (typeof window.getProjectFps === 'function') ? window.getProjectFps() : 60;
       const quant = Math.max(30, Math.round(projFps * 2));
       const timeKey = isSubSample
@@ -603,8 +614,33 @@
 
       const animCfg = buildAnimConfig(p, normIn, normOut, inDur, outDur, outStartSec, totalUnits, fontSize, resScale);
 
+      // ── Text Animators (AE style): per-glyph character / word / line indices ──
+      if (hasAnimators && window.FishTextAnimator) {
+        const info = [];
+        let wIdx = -1, ci = 0, prevSpace = true;
+        lines.forEach((line, li) => {
+          prevSpace = true; // a new line always starts a new word
+          for (let i = 0; i < line.length; i++) {
+            const space = /\s/.test(line[i]);
+            if (!space && prevSpace) wIdx++;
+            prevSpace = space;
+            info.push({ characters: ci++, words: Math.max(0, wIdx), lines: li });
+          }
+        });
+        animCfg.animRT = window.FishTextAnimator.compile(
+          p.animators,
+          { characters: Math.max(1, fullText.length), words: Math.max(1, wIdx + 1), lines: Math.max(1, lines.length) },
+          info,
+          { fill: p.fillColor || '#ffffff', stroke: p.strokeColor || '#000000', strokeWidth: p.strokeWidth || 0 },
+          resScale
+        );
+      }
+
       // Full styled glyph (long shadow, glow, drop shadow, stroke, fill) at origin = glyph center.
-      const paintGlyph = (g, ch, chW) => {
+      const paintGlyph = (g, ch, chW, ov) => {
+        const fillC = (ov && ov.fill !== undefined) ? ov.fill : (p.fillColor || '#ffffff');
+        const strokeC = (ov && ov.stroke !== undefined) ? ov.stroke : (p.strokeColor || '#000000');
+        const strokeW = (ov && ov.strokeW !== undefined) ? ov.strokeW : (p.strokeWidth || 0) * resScale;
         g.font = font;
         g.textBaseline = 'middle';
         g.lineJoin = p.strokeJoin || 'round';
@@ -624,7 +660,7 @@
           g.shadowBlur = (p.neonGlowBlur || 16) * resScale;
           g.shadowOffsetX = 0;
           g.shadowOffsetY = 0;
-          g.fillStyle = p.fillColor || '#ffffff';
+          g.fillStyle = fillC;
           g.fillText(ch, -(chW / 2), 0);
           g.fillText(ch, -(chW / 2), 0); // Double pass for intense neon
           g.restore();
@@ -635,18 +671,18 @@
           g.shadowBlur = (p.shadowBlur || 8) * resScale;
           g.shadowOffsetX = (p.shadowOffsetX || 4) * resScale;
           g.shadowOffsetY = (p.shadowOffsetY || 4) * resScale;
-          g.fillStyle = p.fillColor || '#ffffff';
+          g.fillStyle = fillC;
           g.fillText(ch, -(chW / 2), 0);
           g.restore();
         }
-        if (p.strokeWidth > 0) {
+        if (strokeW > 0) {
           g.save();
-          g.strokeStyle = p.strokeColor || '#000000';
-          g.lineWidth = p.strokeWidth * resScale;
+          g.strokeStyle = strokeC;
+          g.lineWidth = strokeW;
           g.strokeText(ch, -(chW / 2), 0);
           g.restore();
         }
-        g.fillStyle = p.fillColor || '#ffffff';
+        g.fillStyle = fillC;
         g.fillText(ch, -(chW / 2), 0);
       };
 
@@ -749,7 +785,20 @@
           adv = lineAdvanceCache[lineIdx] = { ws, tw };
         }
         const charWidths = adv.ws;
-        const lineWidth = adv.tw;
+
+        // Evaluate every glyph of the line first: Text Animator "Tracking" changes advances,
+        // so the final line width (needed for center/right alignment) depends on it.
+        const lineBase = globalCharIndex;
+        const lineAnims = [];
+        let trackSum = 0;
+        for (let i = 0; i < line.length; i++) {
+          const ci = lineBase + i;
+          const ai = unitIndexByChar[ci] !== undefined ? unitIndexByChar[ci] : ci;
+          const an = evalGlyphAnim(animCfg, localSec, ai, ci);
+          lineAnims.push(an);
+          trackSum += an.tracking || 0;
+        }
+        const lineWidth = adv.tw + trackSum;
 
         let curX = cx - (lineWidth / 2);
         if (p.textAlign === 'left') curX = cx - (measure.width / 2);
@@ -759,6 +808,8 @@
           const ch = line[i];
           const chW = charWidths[i];
           const charIndex = globalCharIndex++;
+          const anim = lineAnims[i];
+          const tr = anim.tracking || 0;
 
           // Skip invisible characters in typewriter IN
           if (isTypewriter && charIndex > visibleChars) {
@@ -766,13 +817,11 @@
           }
           // Typewriter OUT: hide chars from end
           if (isTypewriterOut && charIndex >= visibleCharsOut) {
-            curX += chW;
+            curX += chW + tr;
             continue;
           }
 
-          // ── Unified glyph animation (IN + OUT) — AE-style overlapping range ──
-          const animIndex = unitIndexByChar[charIndex] !== undefined ? unitIndexByChar[charIndex] : charIndex;
-          const anim = evalGlyphAnim(animCfg, localSec, animIndex, charIndex);
+          // ── Unified glyph animation (IN + OUT presets + Text Animators) ──
           const offX = anim.offX;
           const offY = anim.offY;
           const scaleX = anim.scaleX;
@@ -781,32 +830,36 @@
           const charRotation = anim.rot;
 
           if (charAlpha <= 0.001) {
-            curX += chW;
+            curX += chW + tr;
             continue;
           }
 
           ctx.save();
           ctx.globalAlpha = charAlpha;
+          if (anim.blur > 0.05 && 'filter' in ctx) ctx.filter = 'blur(' + anim.blur.toFixed(2) + 'px)';
 
           const renderX = curX + (chW / 2) + offX;
           const renderY = curY + offY;
 
           ctx.translate(renderX, renderY);
           if (charRotation !== 0) ctx.rotate(charRotation * Math.PI / 180);
+          if (anim.skew) ctx.transform(1, 0, Math.tan(anim.skew * Math.PI / 180), 1, 0, 0);
           if (scaleX !== 1.0 || scaleY !== 1.0) {
             ctx.scale(scaleX, scaleY);
           }
 
-          if (useSprites) {
+          // Per-glyph color/stroke overrides can't use the shared style sprite → paint directly.
+          const hasOverride = anim.fill !== undefined || anim.stroke !== undefined || anim.strokeW !== undefined;
+          if (useSprites && !hasOverride) {
             const sp = getGlyphSprite(ch, chW);
             ctx.drawImage(sp.c, -sp.ox, -sp.oy);
           } else {
-            paintGlyph(ctx, ch, chW);
+            paintGlyph(ctx, ch, chW, hasOverride ? anim : null);
           }
 
           ctx.restore();
 
-          curX += chW;
+          curX += chW + tr;
         }
 
         // Draw Typewriter cursor if still typing

@@ -42,3 +42,82 @@
 .text-editor-work-area .text-content-textarea::placeholder {
   color: var(--text-muted);
 }
+
+/* ==========================================================================
+   TEXT ANIMATOR PANEL (js/text-animator-ui.js) - AE style, flat, theme tokens
+   ========================================================================== */
+.ta-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-family: var(--font-brand);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.ta-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.ta-title { flex: 1; color: var(--text-primary); font-weight: 600; font-size: 12.5px; }
+.ta-time { color: var(--text-dim); font-size: 11px; }
+.ta-empty { padding: 8px 4px; color: var(--text-dim); line-height: 1.4; }
+
+.ta-animator { background-color: var(--bg-panel-inner); border: 1px solid var(--border-panel); border-radius: 6px; margin-bottom: 8px; }
+.ta-animator.is-disabled { opacity: 0.55; }
+.ta-ahead, .ta-shead { display: flex; align-items: center; gap: 4px; padding: 5px 6px; }
+.ta-shead { padding-left: 2px; margin-top: 4px; }
+.ta-stitle { color: var(--text-primary); font-weight: 600; }
+.ta-abody { padding: 0 8px 8px; }
+.ta-addrow { margin-bottom: 4px; }
+.ta-section { border-top: 1px solid var(--border-panel); padding-top: 4px; }
+
+.ta-row { display: flex; align-items: center; gap: 3px; min-height: 26px; }
+.ta-label { flex: 0 0 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
+.ta-unit { color: var(--text-dim); font-size: 11px; min-width: 14px; }
+
+.ta-btn {
+  flex: 0 0 auto;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 4px;
+  background-color: var(--bg-panel);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 22px;
+  cursor: pointer;
+  outline: none;
+}
+.ta-btn:hover { background-color: var(--bg-panel-hover); }
+.ta-add-anim { color: var(--color-primary); }
+.ta-stopwatch.is-on, .ta-toggle.is-on { background-color: var(--color-primary); color: var(--badge-count-text); }
+.ta-diamond { color: var(--text-dim); }
+.ta-diamond.is-off { opacity: 0.35; }
+.ta-diamond.is-on { color: var(--color-primary); }
+.ta-del:hover { background-color: var(--color-danger); color: var(--color-danger-text); }
+
+.ta-input, .ta-select {
+  height: 22px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background-color: var(--bg-dashboard);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 0 4px;
+  box-sizing: border-box;
+  outline: none;
+}
+.ta-input:focus, .ta-select:focus { border-color: var(--color-primary); }
+.ta-num { width: 62px; }
+.ta-name { flex: 1; min-width: 0; }
+.ta-select { flex: 1; min-width: 0; }
+.ta-color { width: 40px; padding: 0 1px; cursor: pointer; }
+
+.ta-keys { margin: 2px 0 4px 22px; padding-left: 6px; border-left: 2px solid var(--border-panel); }
+.ta-key { display: flex; align-items: center; gap: 3px; min-height: 24px; }
+.ta-key-dot { color: var(--color-primary); font-size: 9px; }
+.ta-key-time, .ta-key-val { width: 56px; }
+.ta-key-ease { flex: 1; }

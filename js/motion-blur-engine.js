@@ -270,6 +270,11 @@
         return true;
       }
 
+      // Manual Text Animators (keyframed range selector / properties) can move at any time in the clip
+      if (typeof window !== 'undefined' && window.FishTextAnimator && window.FishTextAnimator.hasActive(tp)) {
+        return true;
+      }
+
       const inDur = Math.max(0.1, Number(tp.animInDuration || tp.animDuration) || 0.8);
       const outDur = Math.max(0.1, Number(tp.animOutDuration) || 0.6);
       const outStartSec = Math.max(inDur, clipDur - outDur);
