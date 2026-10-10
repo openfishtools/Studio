@@ -1,9 +1,18 @@
-# OpenFishTools Studio
+<div align="center">
 
-[![Version: 0.5.132](https://img.shields.io/badge/version-0.5.132-9DFF00.svg)](version.json)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-blue.svg)](https://nodejs.org/)
-[![CI](https://github.com/cutefishaep/FishTools-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/cutefishaep/FishTools-Studio/actions)
+  <img src="https://raw.githubusercontent.com/openfishtools/.github/main/profile/assets/projects/studio.svg" width="96" height="96" alt="FishTools Studio" />
+
+  # FishTools
+  <sub>Studio</sub>
+
+  **Browser-based motion graphics and video editing application.**
+
+  [![Version: 0.5.132](https://img.shields.io/badge/version-0.5.132-9DFF00.svg)](version.json)
+  [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+  [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-blue.svg)](https://nodejs.org/)
+  [![CI](https://github.com/cutefishaep/FishTools-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/cutefishaep/FishTools-Studio/actions)
+
+</div>
 
 [English](#english) • [Bahasa Indonesia](#bahasa-indonesia)
 
