@@ -173,6 +173,8 @@ Teks yang mengikat hanya file [`LICENSE`](LICENSE); tabel ini hanya penjelasan. 
 ## English
 
 > **License update:** starting from **v0.5.133**, FishTools Studio is licensed under **[CC BY-NC-SA 4.0](LICENSE)** instead of MIT. Selling it and removing the credit are **not allowed**. Versions before v0.5.133 stay under MIT. See [License](#license).
+>
+> **Fork & Web Deployment Policy:** If you fork this repository and deploy it on the web, all built-in effects (`effects.wasm`) are tied to the official domain and will display an anti-tamper watermark if accessed outside authorized domains. You will need to manually remake your own effects if you wish to use custom effects on standalone deployments. To access and use these effects officially without any watermark, please access the platform through the official domain: **[studio.cutefish.my.id](https://studio.cutefish.my.id)**.
 
 ### Overview
 OpenFishTools Studio is a browser-based motion graphics and video editing application built with vanilla web technologies. It provides a non-linear editor (NLE) with layer compositing, multi-track timeline keyframing, an extensible visual effect registry, and client-side hardware-accelerated video rendering.
