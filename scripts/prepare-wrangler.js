@@ -56,6 +56,15 @@ function syncWranglerConfig() {
     ]
   };
 
+  const vars = {};
+  const catboxHash = env.CATBOX_USERHASH || process.env.CATBOX_USERHASH;
+  if (catboxHash) vars.CATBOX_USERHASH = catboxHash;
+  const shareToken = env.SHARE_SECRET_TOKEN || process.env.SHARE_SECRET_TOKEN;
+  if (shareToken) vars.SHARE_SECRET_TOKEN = shareToken;
+  if (Object.keys(vars).length > 0) {
+    config.vars = vars;
+  }
+
   fs.writeFileSync(targetPath, JSON.stringify(config, null, "\t") + "\n", 'utf8');
   console.log(`[Wrangler] Synchronized wrangler.jsonc with PROJECTS_KV id: ${kvId}`);
   return true;

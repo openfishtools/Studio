@@ -35,7 +35,7 @@
     "keyframing"
   ],
   "author": "FishTool Studio Team",
-  "license": "CC-BY-NC-SA-4.0",
+  "license": "AGPL-3.0-or-later",
   "dependencies": {
     "mp4-muxer": "^5.2.2"
   },

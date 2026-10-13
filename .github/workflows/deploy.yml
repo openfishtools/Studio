@@ -21,6 +21,8 @@ jobs:
         run: node scripts/prepare-wrangler.js
         env:
           CF_KV_NAMESPACE_ID: ${{ vars.CF_KV_NAMESPACE_ID }}
+          CATBOX_USERHASH: ${{ secrets.CATBOX_USERHASH }}
+          SHARE_SECRET_TOKEN: ${{ secrets.SHARE_SECRET_TOKEN }}
 
       - name: Deploy Worker + Assets
         run: wrangler deploy

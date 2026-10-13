@@ -9,7 +9,7 @@
 
   [![Version: 0.5.133](https://img.shields.io/badge/version-0.5.133-9DFF00.svg)](version.json)
   [![Category: Web App](https://img.shields.io/badge/category-Web_App-blue.svg)](#)
-  [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-orange.svg)](LICENSE)
+  [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
   [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-blue.svg)](https://nodejs.org/)
   [![CI](https://github.com/cutefishaep/FishTools-Studio/actions/workflows/ci.yml/badge.svg)](https://github.com/cutefishaep/FishTools-Studio/actions)
 
@@ -22,7 +22,7 @@
 <a name="bahasa-indonesia"></a>
 ## Bahasa Indonesia
 
-> **Pembaruan lisensi:** mulai dari **v0.5.133**, FishTools Studio dilisensikan di bawah **[CC BY-NC-SA 4.0](LICENSE)**, bukan lagi MIT. **Dilarang memperjualbelikan** dan **menghapus kredit**. Versi sebelum v0.5.133 tetap MIT. Lihat [Lisensi](#lisensi).
+> **Pembaruan lisensi:** mulai dari **v0.5.133**, FishTools Studio dilisensikan di bawah **[GNU AGPLv3](LICENSE)**, bukan lagi MIT. Perangkat lunak bebas & open source dengan perlindungan *network copyleft* (siapapun yang memodifikasi dan men-deploy di web wajib membuka seluruh kode sumbernya). Versi sebelum v0.5.133 tetap MIT. Lihat [Lisensi](#lisensi).
 >
 > **Kebijakan Fork & Deployment Web:** Jika Anda melakukan *fork* repositori ini dan men-deploy-nya sendiri di web, seluruh efek bawaan (`effects.wasm`) terikat pada domain resmi dan akan menampilkan watermark anti-tamper jika diakses di luar domain resmi. Anda harus membuat ulang (*remake*) efek secara manual jika ingin menggunakan efek kustom sendiri pada deployment mandiri. Jika ingin mengakses dan menggunakan efek-efek ini secara penuh dan resmi tanpa watermark, akseslah melalui domain resmi: **[studio.cutefish.my.id](https://studio.cutefish.my.id)**.
 
@@ -98,49 +98,29 @@ OpenFishTools Studio adalah aplikasi grafis gerak (motion graphics) dan penyunti
 
 ### Konfigurasi Lingkungan (`.env` & `wrangler.jsonc`)
 
-1. **Lingkungan Lokal (`.env`)**:
-   Buat berkas `.env` di direktori utama untuk mengaktifkan fitur backend lokal (opsional):
-   ```env
-   # Konfigurasi opsional .env lokal
-   CATBOX_USERHASH=your_catbox_userhash
-   SHARE_SECRET_TOKEN=your_secret_upload_token
-   CF_KV_NAMESPACE_ID=your_kv_namespace_id
-   ```
+Karena berkas `.env` dan `wrangler.jsonc` diabaikan oleh Git (demi keamanan token dan ID KV), ikuti langkah berikut untuk menyiapkannya sebelum deployment:
 
-2. **Konfigurasi Cloudflare Worker (`wrangler.jsonc`)**:
-   Buat berkas `wrangler.jsonc` sebelum melakukan deployment ke Cloudflare:
-   - **Otomatis**: Jalankan `npm run prepare:wrangler` (menghasilkan `wrangler.jsonc` dari `.env` atau environment variable sistem).
-   - **Manual**: Buat berkas `wrangler.jsonc` di direktori utama:
-   ```json
-   {
-   	"$schema": "node_modules/wrangler/config-schema.json",
-   	"name": "fishtools-studio",
-   	"main": "_worker.js",
-   	"compatibility_date": "2026-09-15",
-   	"keep_vars": true,
-   	"assets": {
-   		"directory": ".",
-   		"binding": "ASSETS",
-   		"html_handling": "none",
-   		"run_worker_first": true
-   	},
-   	"observability": {
-   		"enabled": true
-   	},
-   	"kv_namespaces": [
-   		{
-   			"binding": "PROJECTS_KV",
-   			"id": "YOUR_KV_NAMESPACE_ID",
-   			"remote": true
-   		}
-   	]
-   }
+1. **Siapkan Berkas `.env`**:
+   Salin template contoh yang telah disediakan:
+   ```bash
+   cp .env.example .env
    ```
+   Lalu sesuaikan nilai variabelnya:
+   - `SHARE_SECRET_TOKEN`: Token rahasia otentikasi endpoint `/api/share`.
+   - `CATBOX_USERHASH`: (Opsional) Akun Catbox untuk penyimpanan aset cloud.
+   - `CF_KV_NAMESPACE_ID`: ID namespace Cloudflare KV untuk proyek cloud.
 
-Daftar variabel lingkungan:
-- `SHARE_SECRET_TOKEN`: Melindungi endpoint `/api/share` agar hanya pengguna terotorisasi yang dapat mengunggah proyek ke database cloud.
-- `CATBOX_USERHASH`: Kunci akun Catbox opsional untuk hosting berkas cloud.
-- `CF_KV_NAMESPACE_ID`: ID namespace Cloudflare KV untuk proyek cloud.
+2. **Buat Berkas `wrangler.jsonc`**:
+   - **Cara Otomatis (Direkomendasikan)**:
+     ```bash
+     npm run prepare:wrangler
+     ```
+     Perintah ini otomatis membaca `CF_KV_NAMESPACE_ID` dari `.env` dan menghasilkan berkas `wrangler.jsonc`.
+   - **Cara Manual**:
+     Salin berkas template dan ubah nilainya langsung:
+     ```bash
+     cp wrangler.example.jsonc wrangler.jsonc
+     ```
 
 ### Pengujian Otomatis
 Jalankan rangkaian pengujian menyeluruh (validasi sintaksis, verifikasi cakupan AST, integritas dokumen HTML):
@@ -152,27 +132,29 @@ npm test
 AI coding agent mandiri (Cursor, GitHub Copilot, Cline, Windsurf, OpenCode) wajib membaca dan mematuhi panduan dalam [`AGENTS.md`](AGENTS.md) mengenai peta arsitektur kode, kepatuhan token CSS, dan protokol investigasi bug runtime.
 
 ### Lisensi
-Proyek ini dilisensikan di bawah [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)](LICENSE). Halaman resmi: <https://creativecommons.org/licenses/by-nc-sa/4.0/deed.id>.
+Proyek ini dilisensikan di bawah [GNU Affero General Public License v3 (AGPL-3.0)](LICENSE). Halaman resmi: <https://www.gnu.org/licenses/agpl-3.0.html>.
 
 #### Ringkasan
 | B/T | Keterangan |
 |---|---|
-| Boleh | Memakai, memodifikasi, dan membagikan secara gratis untuk keperluan **non-komersial**. |
-| Boleh | Membuat versi modifikasi (fork) dan membagikannya. |
-| Boleh | Dengan syarat: mencantumkan kredit ke FishTools Studio (FishTool Studio Team), menyertakan tautan lisensi, dan menyebutkan kalau ada perubahan. Lakukan dengan cara yang wajar sesuai medianya, misalnya di layar About aplikasi atau README. |
-| Boleh | Dengan syarat: membagikan versi modifikasi dengan lisensi yang sama (CC BY-NC-SA 4.0 atau yang kompatibel). |
-| Tidak | Menjual perangkat lunak ini atau versi modifikasinya. |
-| Tidak | Menjadikannya produk, langganan, atau layanan berbayar, atau memakainya untuk keperluan komersial. Untuk itu, minta lisensi terpisah ke pembuat. |
+| Boleh | Memakai, memodifikasi, dan membagikan secara bebas (termasuk untuk keperluan pribadi maupun komersial). |
+| Boleh | Membuat versi modifikasi (fork) dan mengintegrasikannya. |
+| Boleh | Menjalankan server atau layanan web sendiri. |
+| Wajib | **Membuka Source Code (Network Copyleft):** Jika Anda memodifikasi atau men-deploy software ini ke jaringan/web publik, Anda **wajib** merilis seluruh kode sumber modifikasinya ke publik di bawah lisensi AGPLv3 juga. |
+| Wajib | Mencantumkan kredit dan pemberitahuan hak cipta asli ke FishTools Studio (OpenFishTools). |
+| Wajib | Membagikan versi modifikasi dengan lisensi yang sama persis (AGPL-3.0). |
+| Tidak | Menutup source code (*closed source*) saat mendistribusikan atau menjalankannya sebagai layanan jaringan. |
+| Tidak | Menghapus atribusi/kredit asli atau membatasi hak kebebasan pengguna lain. |
 | Tidak | Menuntut pembuat bertanggung jawab. Diberikan apa adanya, tanpa jaminan. |
 
-Teks yang mengikat hanya file [`LICENSE`](LICENSE); tabel ini hanya penjelasan. Creative Commons tidak merekomendasikan lisensinya untuk software.
+Teks yang mengikat secara hukum adalah file [`LICENSE`](LICENSE); ringkasan ini hanya sebagai bantuan penjelasan.
 
 ---
 
 <a name="english"></a>
 ## English
 
-> **License update:** starting from **v0.5.133**, FishTools Studio is licensed under **[CC BY-NC-SA 4.0](LICENSE)** instead of MIT. Selling it and removing the credit are **not allowed**. Versions before v0.5.133 stay under MIT. See [License](#license).
+> **License update:** starting from **v0.5.133**, FishTools Studio is licensed under **[GNU AGPLv3](LICENSE)** instead of MIT. Free and open-source software protected by *network copyleft* (anyone who modifies and hosts it on the web must release the complete source code). Versions before v0.5.133 stay under MIT. See [License](#license).
 >
 > **Fork & Web Deployment Policy:** If you fork this repository and deploy it on the web, all built-in effects (`effects.wasm`) are tied to the official domain and will display an anti-tamper watermark if accessed outside authorized domains. You will need to manually remake your own effects if you wish to use custom effects on standalone deployments. To access and use these effects officially without any watermark, please access the platform through the official domain: **[studio.cutefish.my.id](https://studio.cutefish.my.id)**.
 
@@ -248,49 +230,29 @@ OpenFishTools Studio is a browser-based motion graphics and video editing applic
 
 ### Configuration (`.env` & `wrangler.jsonc`)
 
-1. **Local Environment (`.env`)**:
-   Create a `.env` file in the root directory for optional local backend features:
-   ```env
-   # Optional local .env configuration
-   CATBOX_USERHASH=your_catbox_userhash
-   SHARE_SECRET_TOKEN=your_secret_upload_token
-   CF_KV_NAMESPACE_ID=your_kv_namespace_id
-   ```
+Because `.env` and `wrangler.jsonc` are gitignored (to protect credentials and KV tokens), follow these steps to set them up before deployment:
 
-2. **Cloudflare Worker Configuration (`wrangler.jsonc`)**:
-   Generate or create `wrangler.jsonc` before deploying to Cloudflare:
-   - **Automated**: Run `npm run prepare:wrangler` (creates `wrangler.jsonc` from `.env` or system environment variables).
-   - **Manual**: Create `wrangler.jsonc` in the root directory:
-   ```json
-   {
-   	"$schema": "node_modules/wrangler/config-schema.json",
-   	"name": "fishtools-studio",
-   	"main": "_worker.js",
-   	"compatibility_date": "2026-09-15",
-   	"keep_vars": true,
-   	"assets": {
-   		"directory": ".",
-   		"binding": "ASSETS",
-   		"html_handling": "none",
-   		"run_worker_first": true
-   	},
-   	"observability": {
-   		"enabled": true
-   	},
-   	"kv_namespaces": [
-   		{
-   			"binding": "PROJECTS_KV",
-   			"id": "YOUR_KV_NAMESPACE_ID",
-   			"remote": true
-   		}
-   	]
-   }
+1. **Setup `.env`**:
+   Copy the provided example template:
+   ```bash
+   cp .env.example .env
    ```
+   Configure your environment variables as needed:
+   - `SHARE_SECRET_TOKEN`: Secret upload authorization token protecting `/api/share`.
+   - `CATBOX_USERHASH`: (Optional) Userhash key for cloud asset hosting.
+   - `CF_KV_NAMESPACE_ID`: Cloudflare KV namespace ID for project sharing.
 
-Environment variables:
-- `SHARE_SECRET_TOKEN`: Protects `/api/share` uploads from unauthorized access.
-- `CATBOX_USERHASH`: Optional Catbox user account hash for cloud hosting.
-- `CF_KV_NAMESPACE_ID`: Cloudflare KV namespace ID for shared projects.
+2. **Generate `wrangler.jsonc`**:
+   - **Automated (Recommended)**:
+     ```bash
+     npm run prepare:wrangler
+     ```
+     This reads `CF_KV_NAMESPACE_ID` from `.env` and generates a production-ready `wrangler.jsonc`.
+   - **Manual**:
+     Copy the template and edit directly:
+     ```bash
+     cp wrangler.example.jsonc wrangler.jsonc
+     ```
 
 ### Automated Testing
 Run the comprehensive test suite (syntax validation, AST scope verification, HTML integrity):
@@ -302,7 +264,7 @@ npm test
 Autonomous coding agents (Cursor, GitHub Copilot, Cline, Windsurf, OpenCode) should consult [`AGENTS.md`](AGENTS.md) for architectural maps, strict design token enforcement rules, and error investigation protocols.
 
 ### License & Fork Policy
-This project is licensed under the [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License (CC BY-NC-SA 4.0)](LICENSE). Official page: <https://creativecommons.org/licenses/by-nc-sa/4.0/>.
+This project is licensed under the [GNU Affero General Public License v3 (AGPL-3.0)](LICENSE). Official page: <https://www.gnu.org/licenses/agpl-3.0.html>.
 
 > **Important Fork & Web Deployment Policy:**  
 > If you fork this repository and deploy it to the web, the built-in effects engine (`effects.wasm`) is bound to the official domain and will display an anti-tamper watermark if accessed outside of it. You must manually remake the effects if you wish to run custom effects on your own deployment. To access and use these effects officially and fully without watermarks, visit the official domain: **[studio.cutefish.my.id](https://studio.cutefish.my.id)**.
@@ -310,12 +272,14 @@ This project is licensed under the [Creative Commons Attribution-NonCommercial-S
 #### Summary
 | Y/N | Description |
 |---|---|
-| Yes | Use, modify and share for free for **noncommercial** purposes. |
-| Yes | Make modified versions (forks) and share them. |
-| Yes | On condition: give credit to FishTools Studio (FishTool Studio Team), link to the license, and say if you made changes. Do it in a reasonable way for your medium, for example in your app's About screen or README. |
-| Yes | On condition: share your modified version under the same license (CC BY-NC-SA 4.0 or a compatible one). |
-| No | Sell the software or a modified version. |
-| No | Build a paid product, subscription or service on it, or use it for commercial purposes. For that, ask the authors for a separate license. |
+| Yes | Use, modify and share freely (including for personal and commercial purposes). |
+| Yes | Make modified versions (forks) and integrate them. |
+| Yes | Run your own server or web-based service. |
+| Required | **Disclose Source Code (Network Copyleft):** If you modify or run this software across a public network/web, you **must** make the complete source code of your version available under the AGPLv3. |
+| Required | Keep the original copyright notices and credit to FishTools Studio (OpenFishTools). |
+| Required | Share any modified versions under the same AGPL-3.0 license. |
+| No | Make the software closed-source when distributing or running it as a network service. |
+| No | Remove original credits or restrict other users' freedoms. |
 | No | Hold the authors liable. It is provided as is, without warranty. |
 
-The binding text is the [`LICENSE`](LICENSE) file; this table is only an explanation. Creative Commons does not recommend its licenses for software.
+The legally binding text is the [`LICENSE`](LICENSE) file; this summary is for informational purposes only.
