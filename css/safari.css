@@ -41,7 +41,8 @@
      ========================================================================= */
 
   /* Modal card: center scale-in */
-  .modal-card {
+  .modal-card,
+  .folder-modal-card {
     -webkit-transform: translateZ(0);
     transform: translateZ(0);
     -webkit-backface-visibility: hidden;

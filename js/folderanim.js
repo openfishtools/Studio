@@ -113,10 +113,12 @@
         front.style.transformBox = 'fill-box';
         front.style.transformOrigin = '50% 100%';
         front.style.setProperty('transition', 'none', 'important');
+        front.style.willChange = 'transform';
       }
       if (graphic) {
         graphic.style.setProperty('transition', 'none', 'important');
         graphic.style.setProperty('transform-origin', isAction ? 'center center' : '50% 100%', 'important');
+        graphic.style.willChange = 'transform';
       }
 
       const duration = 440;
@@ -174,25 +176,14 @@
         }
 
         folderEl._currentRot = flapDeg;
-        if (front) {
-          front.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(2)}deg)`;
+        if (front && front.style.opacity !== '0') {
+          front.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
         }
         if (graphic) {
-          const rotStr = isAction ? `rotate(${curRot.toFixed(2)}deg) ` : '';
+          const rotStr = isAction ? `rotate(${curRot.toFixed(1)}deg) ` : '';
           const graphicTransform = `${rotStr}scale(${scaleX.toFixed(3)}, ${scaleY.toFixed(3)}) translateY(${translateY.toFixed(1)}px)`;
           graphic.style.transform = graphicTransform;
           folderEl._currentGraphicTransform = graphicTransform;
-
-          // Synchronize overlay front flap with whole folder graphic so entire folder bounces together!
-          const overlay = document.querySelector('.folder-flap-overlay');
-          if (overlay && overlay.style.display !== 'none') {
-            const overlayFlap = overlay.querySelector('.overlay-flap-group');
-            overlay.style.transformOrigin = isAction ? 'center center' : '50% 100%';
-            overlay.style.transform = graphicTransform;
-            if (overlayFlap) {
-              overlayFlap.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(2)}deg)`;
-            }
-          }
         }
 
         if (u >= 1) {
@@ -201,9 +192,11 @@
           folderEl._currentRot = -48;
           if (front) {
             front.style.transform = 'perspective(240px) rotateX(-48deg)';
+            front.style.removeProperty('will-change');
           }
           if (graphic) {
             graphic.style.transform = isAction ? 'rotate(0deg)' : '';
+            graphic.style.removeProperty('will-change');
             if (isAction) {
               graphic.style.setProperty('transform-origin', 'center center', 'important');
             }
@@ -218,6 +211,8 @@
       folderEl._folderTickerCancel = () => {
         if (animId) cancelAnimationFrame(animId);
         folderEl._folderTickerCancel = null;
+        if (front) front.style.removeProperty('will-change');
+        if (graphic) graphic.style.removeProperty('will-change');
       };
     }
 
@@ -253,10 +248,12 @@
         front.style.transformBox = 'fill-box';
         front.style.transformOrigin = '50% 100%';
         front.style.setProperty('transition', 'none', 'important');
+        front.style.willChange = 'transform';
       }
       if (graphic) {
         graphic.style.setProperty('transition', 'none', 'important');
         graphic.style.setProperty('transform-origin', isAction ? 'center center' : '50% 100%', 'important');
+        graphic.style.willChange = 'transform';
       }
 
       const duration = 380;
@@ -318,25 +315,14 @@
         }
 
         folderEl._currentRot = flapDeg;
-        if (front) {
-          front.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(2)}deg)`;
+        if (front && front.style.opacity !== '0') {
+          front.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
         }
         if (graphic) {
-          const rotStr = isAction ? `rotate(${curRot.toFixed(2)}deg) ` : '';
+          const rotStr = isAction ? `rotate(${curRot.toFixed(1)}deg) ` : '';
           const graphicTransform = `${rotStr}scale(${scaleX.toFixed(3)}, ${scaleY.toFixed(3)}) translateY(${translateY.toFixed(1)}px)`;
           graphic.style.transform = graphicTransform;
           folderEl._currentGraphicTransform = graphicTransform;
-
-          // Synchronize overlay front flap with whole folder graphic so entire folder bounces together!
-          const overlay = document.querySelector('.folder-flap-overlay');
-          if (overlay && overlay.style.display !== 'none') {
-            const overlayFlap = overlay.querySelector('.overlay-flap-group');
-            overlay.style.transformOrigin = isAction ? 'center center' : '50% 100%';
-            overlay.style.transform = graphicTransform;
-            if (overlayFlap) {
-              overlayFlap.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(2)}deg)`;
-            }
-          }
         }
 
         if (u >= 1) {
@@ -348,10 +334,12 @@
             front.style.opacity = '1';
             front.style.transform = '';
             front.style.removeProperty('transition');
+            front.style.removeProperty('will-change');
           }
           if (graphic) {
             graphic.style.transform = isAction ? 'rotate(-8deg)' : '';
             graphic.style.removeProperty('transition');
+            graphic.style.removeProperty('will-change');
             if (isAction) {
               graphic.style.setProperty('transform-origin', 'center center', 'important');
             } else {
@@ -369,6 +357,8 @@
         if (animId) cancelAnimationFrame(animId);
         folderEl._folderTickerCancel = null;
         folderEl._arrivalBounceRunning = false;
+        if (front) front.style.removeProperty('will-change');
+        if (graphic) graphic.style.removeProperty('will-change');
       };
     }
 
@@ -429,7 +419,7 @@
       }
     }
 
-    _setupFlapOverlay(folderEl, modal) {
+    _setupFlapOverlay(folderEl, modal, geom) {
       if (!folderEl || !modal) return null;
       let overlay = modal.querySelector('.folder-flap-overlay');
       if (!overlay) {
@@ -438,9 +428,15 @@
         overlay.style.position = 'fixed';
         overlay.style.pointerEvents = 'none';
         overlay.style.zIndex = '10005';
-        overlay.style.transformOrigin = 'center center';
         overlay.style.display = 'none';
         modal.appendChild(overlay);
+      }
+      if (geom && typeof geom.cx === 'number' && typeof geom.cy === 'number') {
+        overlay.style.left = `${(geom.cx - geom.gw / 2).toFixed(1)}px`;
+        overlay.style.top = `${(geom.cy - geom.gh / 2).toFixed(1)}px`;
+        overlay.style.width = `${geom.gw.toFixed(1)}px`;
+        overlay.style.height = `${geom.gh.toFixed(1)}px`;
+        overlay.style.transformOrigin = geom.isActionFolder ? 'center center' : '50% 100%';
       }
       const frontGroup = folderEl.querySelector('.folder-svg-front-group');
       const front = folderEl.querySelector('.folder-svg-front');
@@ -494,87 +490,51 @@
 
     /**
      * Measures pure untransformed neutral layout geometry between folder sheet and modal card.
-     * Strips any mid-transition :hover, :active, or bounce transforms to guarantee
-     * 100% pixel-perfect resting destination geometry.
+     * Fast neutral measurement: batches layout reads without triggering layout thrashing.
      */
     _measureMorphGeometry(folderEl, win, modal) {
       if (!folderEl || !win) return null;
       const sheet = folderEl.querySelector('.folder-insert-sheet') || folderEl.querySelector('.folder-svg-insert') || folderEl;
-      const insert = folderEl.querySelector('.folder-svg-insert') || sheet;
       const graphic = folderEl.querySelector('.desktop-folder-graphic') || folderEl.querySelector('.btn-bg-icon');
-      const front = folderEl.querySelector('.folder-svg-front-group') || folderEl.querySelector('.folder-svg-front');
       const svgEl = folderEl.querySelector('.desktop-folder-svg');
 
       const isActionFolder = folderEl.classList.contains('btn-new-project') || 
                              folderEl.classList.contains('btn-import-project') || 
                              folderEl.classList.contains('action-btn');
 
-      const elementsToNeutralize = [folderEl, graphic, svgEl, insert, sheet, front, win].filter(Boolean);
-      const savedStyles = elementsToNeutralize.map(el => ({
-        el,
-        transition: el.style.getPropertyValue('transition'),
-        transitionPriority: el.style.getPropertyPriority('transition'),
-        transform: el.style.getPropertyValue('transform'),
-        transformPriority: el.style.getPropertyPriority('transform'),
-        origin: el.style.getPropertyValue('transform-origin'),
-        originPriority: el.style.getPropertyPriority('transform-origin'),
-      }));
+      // Fast neutral measurement:
+      // Strip active transform from win and graphic so getBoundingClientRect reflects neutral resting layout
+      const prevWinTransform = win.style.transform;
+      const prevGraphicTransform = graphic ? graphic.style.transform : '';
 
-      // 1. Force NO transition and NO transform on all involved elements with !important
-      // This immediately strips any mid-transition :hover, :active, or in-flight bounce transforms
-      elementsToNeutralize.forEach(el => {
-        el.style.setProperty('transition', 'none', 'important');
-        el.style.setProperty('transform', 'none', 'important');
-      });
-      if (graphic && isActionFolder) {
-        graphic.style.setProperty('transform-origin', 'center center', 'important');
+      if (prevWinTransform && prevWinTransform !== 'none') {
+        win.style.setProperty('transform', 'none', 'important');
+      }
+      if (prevGraphicTransform && prevGraphicTransform !== 'none') {
+        graphic.style.setProperty('transform', 'none', 'important');
       }
 
-      // Force synchronous reflow so getBoundingClientRect uses the pure neutral layout
-      void sheet.getBoundingClientRect();
+      // Batch rect reads together
+      const sRect = sheet.getBoundingClientRect();
+      const tRect = win.getBoundingClientRect();
+      const svgRect = svgEl ? svgEl.getBoundingClientRect() : (graphic ? graphic.getBoundingClientRect() : sRect);
 
-      // Measure unrotated, unpressed, unhovered sheet and graphic
-      const svgRect = svgEl ? svgEl.getBoundingClientRect() : (graphic ? graphic.getBoundingClientRect() : sheet.getBoundingClientRect());
+      // Restore transforms
+      if (prevWinTransform && prevWinTransform !== 'none') {
+        win.style.transform = prevWinTransform;
+      } else {
+        win.style.removeProperty('transform');
+      }
+      if (prevGraphicTransform && prevGraphicTransform !== 'none') {
+        graphic.style.transform = prevGraphicTransform;
+      } else if (graphic) {
+        graphic.style.removeProperty('transform');
+      }
+
       const gw = svgRect.width || 60;
       const gh = svgRect.height || 48;
       const cx = svgRect.left + svgRect.width / 2;
       const cy = svgRect.top + svgRect.height / 2;
-
-      // Ensure modal has real layout dimensions
-      const targetModal = modal || win.closest('.modal-backdrop');
-      let wasHidden = false;
-      if (targetModal && typeof window !== 'undefined' && window.getComputedStyle && window.getComputedStyle(targetModal).display === 'none') {
-        wasHidden = true;
-        targetModal.style.setProperty('display', 'flex', 'important');
-        targetModal.style.setProperty('visibility', 'hidden', 'important');
-      }
-
-      const sRect = sheet.getBoundingClientRect();
-      const tRect = win.getBoundingClientRect();
-
-      if (wasHidden && targetModal) {
-        targetModal.style.removeProperty('display');
-        targetModal.style.removeProperty('visibility');
-      }
-
-      // Restore previous inline styles
-      savedStyles.forEach(s => {
-        if (s.transition) {
-          s.el.style.setProperty('transition', s.transition, s.transitionPriority);
-        } else {
-          s.el.style.removeProperty('transition');
-        }
-        if (s.transform) {
-          s.el.style.setProperty('transform', s.transform, s.transformPriority);
-        } else {
-          s.el.style.removeProperty('transform');
-        }
-        if (s.origin) {
-          s.el.style.setProperty('transform-origin', s.origin, s.originPriority);
-        } else {
-          s.el.style.removeProperty('transform-origin');
-        }
-      });
 
       const sCenterX = sRect.left + sRect.width / 2;
       const sCenterY = sRect.top + sRect.height / 2;
@@ -583,8 +543,8 @@
 
       const dx = sCenterX - tCenterX;
       const dy = sCenterY - tCenterY;
-      const realWidth = Math.max(200, tRect.width);
-      const realHeight = Math.max(150, tRect.height);
+      const realWidth = Math.max(200, tRect.width || 320);
+      const realHeight = Math.max(150, tRect.height || 200);
       const sx = Math.min(0.5, Math.max(0.01, sRect.width / realWidth));
       const sy = Math.min(0.5, Math.max(0.01, sRect.height / realHeight));
 
@@ -610,10 +570,15 @@
         }
       }
 
-      // Check if folder element has static tilt (e.g. action buttons -8deg)
       const startRot = isActionFolder ? -8 : 0;
 
-      return { dx, dy, sx, sy, sRect, tRect, targetRadiusTop, targetRadiusBottom, targetBg, startRot, cx, cy, gw, gh };
+      return {
+        dx, dy, sx, sy, sRect, tRect,
+        targetRadiusTop, targetRadiusBottom, targetBg,
+        startRot, cx, cy, gw, gh,
+        isActionFolder,
+        graphicEl: graphic
+      };
     }
 
     /**
@@ -630,6 +595,9 @@
         modal.id === 'modal-import-project' ? document.querySelector('.btn-import-project') : null
       );
       if (win) {
+        win._bgSet = false;
+        win._cachedMorph = null;
+        win.style.removeProperty('will-change');
         if (win._kickLaunchTimer) {
           clearTimeout(win._kickLaunchTimer);
           win._kickLaunchTimer = null;
@@ -662,6 +630,7 @@
         if (front) {
           front.style.opacity = '1';
           front.style.removeProperty('transition');
+          front.style.removeProperty('will-change');
           front.style.transform = '';
         }
         const graphic = srcFolder.querySelector('.desktop-folder-graphic') || srcFolder.querySelector('.btn-bg-icon');
@@ -670,6 +639,7 @@
                            srcFolder.classList.contains('btn-new-project') || 
                            srcFolder.classList.contains('btn-import-project');
           graphic.style.removeProperty('transition');
+          graphic.style.removeProperty('will-change');
           if (isAction) {
             graphic.style.setProperty('transform-origin', 'center center', 'important');
           } else {
@@ -725,156 +695,136 @@
       win._morphProgress = p;
       const isMobile = window.innerWidth <= 600;
       const isFullScreen = isMobile && (modal.id === 'modal-extensions' || (win && win.classList.contains('extension-modal-card')));
-      const maxR = isFullScreen ? 0 : (geom.targetRadius || (isMobile ? 24 : 20));
       const { dx, dy, sx, sy } = geom;
 
-      if (!win._cachedMorph || !win._cachedMorph.overlay || !win._cachedMorph.overlay.isConnected) {
-        const flapData = this._setupFlapOverlay(folderEl, modal);
-        win._cachedMorph = {
+      let cached = win._cachedMorph;
+      if (!cached || !cached.overlay || !cached.overlay.isConnected) {
+        const flapData = this._setupFlapOverlay(folderEl, modal, geom);
+        cached = {
           header: win.querySelector('.folder-modal-header, .modal-header'),
           body: win.querySelector('.folder-modal-body, .modal-body'),
           footer: win.querySelector('.folder-modal-footer, .modal-footer'),
           skeleton: win.querySelector('.folder-morph-skeleton'),
           front: folderEl.querySelector('.folder-svg-front-group') || folderEl.querySelector('.folder-svg-front'),
+          graphic: geom.graphicEl || folderEl.querySelector('.desktop-folder-graphic') || folderEl.querySelector('.btn-bg-icon'),
           overlay: flapData ? flapData.overlay : null,
-          overlayFlap: flapData ? flapData.overlayFlap : null
+          overlayFlap: flapData ? flapData.overlayFlap : null,
+          overlayVisible: null,
+          lastBorderColor: null,
+          opacitySettled: null
         };
+        win._cachedMorph = cached;
       }
-      const { header, body, footer, skeleton, front, overlay, overlayFlap } = win._cachedMorph;
 
       const clampedP = Math.max(0, Math.min(1, p));
-
-      // Flap rotation reads directly from the folder physics ticker or falls back deterministically
       const flapDeg = typeof folderEl._currentRot === 'number' ? folderEl._currentRot : this._calcFlapDeg(clampedP, isOpening);
       folderEl._currentRot = flapDeg;
 
-      // Real-time backdrop overlay synchronization:
-      // Drive overlay background-color frame-by-frame with zero CSS transition latency.
-      modal.style.setProperty('transition', 'none', 'important');
-      modal.style.setProperty('opacity', '1', 'important');
-      const isFolderModal = modal.id === 'modal-extensions' || 
-                            modal.id === 'modal-community' || 
-                            modal.id === 'modal-new-project' || 
-                            modal.id === 'modal-import-project';
-      if (isFullScreen || isFolderModal) {
-        modal.style.backgroundColor = 'transparent';
-      } else {
-        const maxAlpha = 0.78;
-        const progAlpha = isOpening ? Math.min(1, Math.max(0, p * 1.85)) : Math.max(0, Math.min(1, p * 1.2));
-        const easedAlpha = Math.sin(progAlpha * Math.PI * 0.5);
-        modal.style.backgroundColor = `rgba(10, 18, 10, ${(maxAlpha * easedAlpha).toFixed(3)})`;
+      if (!win._bgSet) {
+        const solidCardBg = geom.targetBg || (isFullScreen ? 'var(--bg-dashboard)' : 'var(--bg-dashboard)');
+        win.style.backgroundColor = solidCardBg;
+        win.style.opacity = '1';
+        win._bgSet = true;
       }
 
-      // Preserve native target background if known, otherwise fallback
-      const solidCardBg = geom.targetBg || (isFullScreen ? 'var(--bg-dashboard)' : 'var(--bg-panel)');
-      win.style.backgroundColor = solidCardBg;
-      win.style.opacity = '1';
-
-      // SILKY CONTINUOUS FLIGHT PATH (No window overshoot, butter-smooth departure & arrival):
       const u = clampedP;
       const eased = u * u * (3 - 2 * u);
 
-      // Horizontal: stays aligned over the folder opening during the vertical jump/dive (u <= 0.18)
-      // so it emerges and plunges cleanly through the top slot
       const uX = u < 0.18 ? 0 : (u - 0.18) / 0.82;
       const easedX = uX * uX * (3 - 2 * uX);
       const curDx = dx * (1 - easedX);
 
-      // Vertical: continuous travel arc + distinctive upward jump above the folder rim
-      // When leaving: leaps vertically upward out of the pocket before gliding to center
-      // When entering: hops upward over the folder mouth and dives vertically down inside!
+      // On mobile: subtle jump prevents jarring offscreen leaps
       const jumpProg = Math.min(1, u / 0.45);
-      const slotJump = -32 * Math.sin(jumpProg * Math.PI);
-      const flightLift = -16 * Math.sin(u * Math.PI);
+      const slotJump = (isMobile ? -10 : -32) * Math.sin(jumpProg * Math.PI);
+      const flightLift = (isMobile ? -6 : -16) * Math.sin(u * Math.PI);
       const curDy = dy * (1 - eased) + flightLift + slotJump;
 
-      // Scale: smooth monotonic expansion/shrink between folder sheet (sx, sy) and 1.0 (rock solid)
       const curSx = sx + (1 - sx) * eased;
       const curSy = sy + (1 - sy) * eased;
 
-      // Rotation: smoothly un-tilts to 0deg (or re-tilts back on close)
       const baseRot = typeof geom.startRot === 'number' ? geom.startRot : 0;
       const curRot = baseRot * (1 - Math.min(1, u / 0.35));
 
       // Visual border radius morph:
-      // In physical screen pixels: smoothly morphs from sheet corner curvature (3.0px)
-      // to the target modal card curvature (e.g. 20px on desktop, or 24px top / 0px bottom on mobile).
-      // Compensated for transform scale so visual curvature on screen matches perfectly throughout the flight.
-      const sheetVisualR = 3.0;
-      let targetRTop = 20;
-      let targetRBottom = 20;
-
-      if (isFullScreen) {
-        targetRTop = 0;
-        targetRBottom = 0;
-      } else if (isMobile) {
-        targetRTop = (typeof geom.targetRadiusTop === 'number') ? geom.targetRadiusTop : 24;
-        targetRBottom = (typeof geom.targetRadiusBottom === 'number') ? geom.targetRadiusBottom : 0;
-      } else {
-        targetRTop = (typeof geom.targetRadiusTop === 'number') ? geom.targetRadiusTop : 20;
-        targetRBottom = (typeof geom.targetRadiusBottom === 'number') ? geom.targetRadiusBottom : 20;
+      // Desktop: smoothly interpolate visual curvature.
+      // Mobile: NEVER mutate border-radius during animation!
+      // In CSS, mobile already has border-radius: 24px 24px 0 0 (drawer) or 0 (fullscreen).
+      // Mutating border-radius on every frame forces full CPU re-rasterization on mobile WebKit/Blink!
+      if (!isMobile) {
+        const sheetVisualR = 3.0;
+        const targetRTop = (typeof geom.targetRadiusTop === 'number') ? geom.targetRadiusTop : 20;
+        const targetRBottom = (typeof geom.targetRadiusBottom === 'number') ? geom.targetRadiusBottom : 20;
+        const curVisRTop = sheetVisualR + (targetRTop - sheetVisualR) * eased;
+        const curVisRBottom = sheetVisualR + (targetRBottom - sheetVisualR) * eased;
+        const minScale = Math.max(0.01, Math.min(curSx, curSy));
+        const cssRTop = curVisRTop / minScale;
+        const cssRBottom = curVisRBottom / minScale;
+        win.style.setProperty('border-radius', `${cssRTop.toFixed(1)}px ${cssRTop.toFixed(1)}px ${cssRBottom.toFixed(1)}px ${cssRBottom.toFixed(1)}px`, 'important');
       }
 
-      const curVisRTop = sheetVisualR + (targetRTop - sheetVisualR) * eased;
-      const curVisRBottom = sheetVisualR + (targetRBottom - sheetVisualR) * eased;
-
-      // Compensate for CSS transform scale to get exact visual curvature on screen
-      const minScale = Math.max(0.01, Math.min(curSx, curSy));
-      const cssRTop = curVisRTop / minScale;
-      const cssRBottom = curVisRBottom / minScale;
-
-      win.style.setProperty('border-radius', `${cssRTop.toFixed(1)}px ${cssRTop.toFixed(1)}px ${cssRBottom.toFixed(1)}px ${cssRBottom.toFixed(1)}px`, 'important');
-
-      // Content & Skeleton Morph Cross-Fade:
-      const progMorph = Math.max(0, Math.min(1, (u - 0.08) / 0.28));
-      const easedMorph = progMorph * progMorph * (3 - 2 * progMorph);
-
-      if (skeleton) skeleton.style.opacity = (1 - easedMorph).toFixed(3);
-      if (header) header.style.opacity = easedMorph.toFixed(3);
-      if (body) body.style.opacity = easedMorph.toFixed(3);
-      if (footer) footer.style.opacity = easedMorph.toFixed(3);
-
-      if (u >= 0.15) {
-        win.style.borderColor = '';
-      } else {
-        win.style.borderColor = 'transparent';
+      // Border color toggle (only when crossing threshold u = 0.15)
+      const shouldShowBorder = u >= 0.15;
+      if (cached.lastBorderColor !== shouldShowBorder) {
+        cached.lastBorderColor = shouldShowBorder;
+        win.style.borderColor = shouldShowBorder ? '' : 'transparent';
       }
 
-      // Note: Folder graphic (.desktop-folder-graphic) is driven exclusively by _runFolderTicker
-      // with authentic physical launch kick, dock cushion squash, and rebound bounce.
-      const rotStr = Math.abs(curRot) > 0.01 ? ` rotate(${curRot.toFixed(2)}deg)` : '';
-      win.style.setProperty('transform', `translate3d(${curDx.toFixed(2)}px, ${curDy.toFixed(2)}px, 0)${rotStr} scale(${curSx.toFixed(4)}, ${curSy.toFixed(4)})`, 'important');
+      // Content cross-fade: only update DOM opacity during active fade window (0.08 <= u <= 0.36)
+      if (u <= 0.08) {
+        if (cached.opacitySettled !== 'zero') {
+          cached.opacitySettled = 'zero';
+          if (cached.skeleton) cached.skeleton.style.opacity = '1';
+          if (cached.header) cached.header.style.opacity = '0';
+          if (cached.body) cached.body.style.opacity = '0';
+          if (cached.footer) cached.footer.style.opacity = '0';
+        }
+      } else if (u >= 0.36) {
+        if (cached.opacitySettled !== 'full') {
+          cached.opacitySettled = 'full';
+          if (cached.skeleton) cached.skeleton.style.opacity = '0';
+          if (cached.header) cached.header.style.opacity = '1';
+          if (cached.body) cached.body.style.opacity = '1';
+          if (cached.footer) cached.footer.style.opacity = '1';
+        }
+      } else {
+        cached.opacitySettled = 'fading';
+        const progMorph = (u - 0.08) / 0.28;
+        const easedMorph = progMorph * progMorph * (3 - 2 * progMorph);
+        if (cached.skeleton) cached.skeleton.style.opacity = (1 - easedMorph).toFixed(2);
+        if (cached.header) cached.header.style.opacity = easedMorph.toFixed(2);
+        if (cached.body) cached.body.style.opacity = easedMorph.toFixed(2);
+        if (cached.footer) cached.footer.style.opacity = easedMorph.toFixed(2);
+      }
 
-      // FLAP OVERLAY CHOREOGRAPHY:
-      // Ensures the card emerges from INSIDE the folder slot behind the front flap (p <= 0.45),
-      // and plunges back INSIDE behind the front flap when closing.
-      // Simultaneously hides the native front flap to guarantee ZERO double flap and ZERO ghosting.
-      if (overlay && overlayFlap && geom.cx && geom.cy) {
+      // Hardware accelerated GPU Transform
+      const rotStr = Math.abs(curRot) > 0.01 ? ` rotate(${curRot.toFixed(1)}deg)` : '';
+      win.style.setProperty('transform', `translate3d(${curDx.toFixed(1)}px, ${curDy.toFixed(1)}px, 0)${rotStr} scale(${curSx.toFixed(3)}, ${curSy.toFixed(3)})`, 'important');
+
+      // Flap Overlay Choreography (zero per-frame layout property writes)
+      if (cached.overlay && cached.overlayFlap && geom.cx && geom.cy) {
         if (clampedP <= 0.45) {
-          overlay.style.display = 'block';
-          overlay.style.left = `${(geom.cx - geom.gw / 2).toFixed(1)}px`;
-          overlay.style.top = `${(geom.cy - geom.gh / 2).toFixed(1)}px`;
-          overlay.style.width = `${geom.gw.toFixed(1)}px`;
-          overlay.style.height = `${geom.gh.toFixed(1)}px`;
-          const graphicEl = folderEl.querySelector('.desktop-folder-graphic') || folderEl.querySelector('.btn-bg-icon');
-          const syncGraphicTransform = (graphicEl && graphicEl.style.transform) ? graphicEl.style.transform : (Math.abs(curRot) > 0.01 ? `rotate(${curRot.toFixed(2)}deg)` : 'none');
-          const isAction = folderEl.classList.contains('action-btn') || 
-                           folderEl.classList.contains('btn-new-project') || 
-                           folderEl.classList.contains('btn-import-project');
-          overlay.style.transformOrigin = isAction ? 'center center' : '50% 100%';
-          overlay.style.transform = syncGraphicTransform;
-          overlayFlap.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(2)}deg)`;
-          if (front) front.style.opacity = '0';
+          if (cached.overlayVisible !== true) {
+            cached.overlayVisible = true;
+            cached.overlay.style.display = 'block';
+            if (cached.front) cached.front.style.opacity = '0';
+          }
+          const syncGraphicTransform = (cached.graphic && cached.graphic.style.transform) ? cached.graphic.style.transform : (Math.abs(curRot) > 0.01 ? `rotate(${curRot.toFixed(1)}deg)` : 'none');
+          cached.overlay.style.transform = syncGraphicTransform;
+          cached.overlayFlap.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
         } else {
-          overlay.style.display = 'none';
-          if (front) {
-            front.style.opacity = '1';
-            front.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(2)}deg)`;
+          if (cached.overlayVisible !== false) {
+            cached.overlayVisible = false;
+            cached.overlay.style.display = 'none';
+            if (cached.front) {
+              cached.front.style.opacity = '1';
+              cached.front.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
+            }
           }
         }
-      } else if (front) {
-        front.style.opacity = '1';
-        front.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(2)}deg)`;
+      } else if (cached.front) {
+        cached.front.style.opacity = '1';
+        cached.front.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
       }
     }
 
@@ -962,19 +912,22 @@
 
       // Siapkan container modal
       win._cachedMorph = null;
+      win._bgSet = false;
       win.style.setProperty('transition', 'none', 'important');
       win.style.setProperty('transform-origin', 'center center', 'important');
-      win.style.removeProperty('will-change');
+      win.style.willChange = 'transform';
       win.style.setProperty('pointer-events', 'none', 'important');
       win.querySelectorAll('button, a, input, [role="button"]').forEach(el => el.style.setProperty('pointer-events', 'none', 'important'));
+
       // Ukur geometri murni saat modal sudah aktif (dimensi nyata 100% akurat)
       const geom = this._measureMorphGeometry(folderEl, win, modal);
       win._morphGeom = geom;
       const insert = folderEl.querySelector('.folder-svg-insert') || sheet;
 
-      const solidCardBg = geom.targetBg || (isFullScreen ? 'var(--bg-dashboard)' : 'var(--bg-dashboard)');
+      const solidCardBg = geom.targetBg || (isFullScreen ? 'var(--bg-dashboard)' : 'var(--bg-panel)');
       win.style.backgroundColor = solidCardBg;
       win.style.borderColor = 'transparent';
+      win._bgSet = true;
 
       // Flap folder mulai membuka secara sinkron dengan morph kartu (dimulai dari startP saat reversal)
       // Flap folder & folder graphic tactile bounce kick ticker
@@ -1004,15 +957,21 @@
         insert.style.opacity = '0';
         win.style.opacity = '1';
 
-        this._mountMorphSvg(skeleton, insert);
+        if (!isMobile) {
+          this._mountMorphSvg(skeleton, insert);
+        } else if (skeleton) {
+          skeleton.style.opacity = '0';
+          skeleton.innerHTML = '';
+        }
+
         this._applyMorphFrame(folderEl, modal, win, startP, geom, true);
 
         // Critically damped spring untuk kartu pop-up (gerakan mulus, tanpa goyang/overshoot di window)
         win._morphCancel = this.spring({
           from: startP,
           to: 1.0,
-          stiffness: isMobile ? 240 : 260,
-          damping: isMobile ? 29 : 32,
+          stiffness: isMobile ? 310 : 260,
+          damping: isMobile ? 31 : 32,
           mass: 1.0,
           onUpdate: (p) => {
             this._applyMorphFrame(folderEl, modal, win, p, geom, true);
@@ -1020,11 +979,13 @@
           onComplete: () => {
             win._morphProgress = 1.0;
             win.style.removeProperty('transform');
+            win.style.removeProperty('will-change');
             win.style.opacity = '1';
             win.style.backgroundColor = '';
             win.style.removeProperty('border-radius');
             win.style.borderColor = '';
             win.style.removeProperty('pointer-events');
+            win._bgSet = false;
             modal.style.removeProperty('pointer-events');
             win.querySelectorAll('button, a, input, [role="button"]').forEach(el => el.style.removeProperty('pointer-events'));
             if (header) header.style.opacity = '';
@@ -1079,9 +1040,8 @@
       modal.style.setProperty('pointer-events', 'none', 'important');
       win.querySelectorAll('button, a, input, [role="button"]').forEach(el => el.style.setProperty('pointer-events', 'none', 'important'));
 
-      // DYNAMIC NEUTRAL DESTINATION MEASUREMENT:
-      // Always measure the true resting destination on close to guarantee zero size mismatch
-      const geom = this._measureMorphGeometry(folderEl, win, modal);
+      // Reuse cached geometry if available to bypass synchronous reflow on close!
+      const geom = win._morphGeom || this._measureMorphGeometry(folderEl, win, modal);
       win._morphGeom = geom;
 
       const isMobile = window.innerWidth <= 600;
@@ -1091,11 +1051,12 @@
 
       win.style.setProperty('transition', 'none', 'important');
       win.style.setProperty('transform-origin', 'center center', 'important');
-      win.style.removeProperty('will-change');
+      win.style.willChange = 'transform';
       win.style.opacity = '1';
-      const solidCardBg = geom.targetBg || (isFullScreen ? 'var(--bg-dashboard)' : 'var(--bg-dashboard)');
+      const solidCardBg = geom.targetBg || (isFullScreen ? 'var(--bg-dashboard)' : 'var(--bg-panel)');
       win.style.backgroundColor = solidCardBg;
       win.style.borderColor = 'transparent';
+      win._bgSet = true;
 
       if (win._morphCancel) win._morphCancel();
       win._cachedMorph = null;
@@ -1105,7 +1066,12 @@
       const footer = win.querySelector('.folder-modal-footer, .modal-footer');
       const skeleton = win.querySelector('.folder-morph-skeleton');
 
-      this._mountMorphSvg(skeleton, insert);
+      if (!isMobile) {
+        this._mountMorphSvg(skeleton, insert);
+      } else if (skeleton) {
+        skeleton.style.opacity = '0';
+        skeleton.innerHTML = '';
+      }
 
       let arrivalBounceTriggered = false;
       const triggerArrivalBounce = () => {
@@ -1125,6 +1091,7 @@
         win._morphGeom = null;
         win._cachedMorph = null;
         win._morphCancel = null;
+        win._bgSet = false;
         modal._isClosingWithMorph = false;
         modal._activeSourceFolder = null;
         folderEl._activeTargetModal = null;
@@ -1150,6 +1117,7 @@
         }
 
         win.style.removeProperty('transform');
+        win.style.removeProperty('will-change');
         win.style.opacity = '';
         win.style.backgroundColor = '';
         win.style.removeProperty('border-radius');
@@ -1186,8 +1154,8 @@
       win._morphCancel = this.spring({
         from: startP,
         to: 0.0,
-        stiffness: isMobile ? 250 : 270,
-        damping: isMobile ? 30 : 33,
+        stiffness: isMobile ? 320 : 270,
+        damping: isMobile ? 32 : 33,
         mass: 1.0,
         onUpdate: (p) => {
           if (p <= 0.42) {
@@ -1248,6 +1216,31 @@
           });
         }
       });
+
+      // Add mobile header / handle bar tap to dismiss drawer
+      document.querySelectorAll('.folder-modal-header').forEach((h) => {
+        if (!h._tapDismissInit) {
+          h._tapDismissInit = true;
+          h.addEventListener('click', (e) => {
+            if (window.innerWidth <= 600 && !e.target.closest('button, a, input, select, textarea')) {
+              if (window.Modal) window.Modal.close();
+            }
+          });
+        }
+      });
+
+      // Passive resize listener to invalidate cached geometry if orientation / size changes
+      if (!window._folderAnimResizeInit) {
+        window._folderAnimResizeInit = true;
+        window.addEventListener('resize', () => {
+          document.querySelectorAll('.folder-modal-card, .modal-card, .finder-window').forEach(w => {
+            w._morphGeom = null;
+            w._morphTargetRadiusTop = null;
+            w._morphTargetRadiusBottom = null;
+            w._morphTargetBg = null;
+          });
+        }, { passive: true });
+      }
     }
 
     /**

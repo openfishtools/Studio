@@ -602,10 +602,12 @@
       warpStyle: 'fisheye',
       bend: -80,
       distortH: 0,
-      distortV: 0
+      distortV: 0,
+      tile: 1
     };
     warpFx.warpStyle = 'fisheye';
     warpFx.bend = -80;
+    warpFx.tile = 1;
     adj.effects = [warpFx];
 
     const easyEase = [0.33, 0.0, 0.67, 1.0];

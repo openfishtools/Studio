@@ -40106,6 +40106,7 @@
             warpFx.pinning = 'all';
             warpFx.phase = 1;
             warpFx.waveHeight = 228;
+            warpFx.tile = 1;
             adjLayer.effects.push(warpFx);
             addEffectParamKeyframe(adjLayer, warpFx, 'waveHeight', curTime, 228, [0.0, -5.0, 0.1, 1.0]);
             addEffectParamKeyframe(adjLayer, warpFx, 'waveHeight', curTime + dur, 0, [0.0, -5.0, 0.1, 1.0]);
@@ -40120,6 +40121,8 @@
           const warpFx = reg ? reg.createInstance('warp', 'Warp') : null;
           if (warpFx) {
             warpFx.style = 'fisheye';
+            warpFx.warpStyle = 'fisheye';
+            warpFx.tile = 1;
             adjLayer.effects.push(warpFx);
             const f9 = [0.33, 0.0, 0.67, 1.0];
             addEffectParamKeyframe(adjLayer, warpFx, 'bend', curTime - 6 * fd, 0, f9);
