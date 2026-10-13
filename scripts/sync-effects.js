@@ -29,21 +29,26 @@ const MANIFEST_PATH = path.join(EFFECTS_DIR, 'manifest.json');
 const BACKUP_DIR = path.join(EFFECTS_DIR, 'backup');
 const RESERVED_FILES = new Set(['loader.js', 'index.js']);
 
-function getActiveEffectsDir() {
-  const directFiles = fs.existsSync(EFFECTS_DIR)
-    ? fs.readdirSync(EFFECTS_DIR).filter(f => f.endsWith('.js') && !RESERVED_FILES.has(f) && !f.startsWith('.') && !f.startsWith('_'))
-    : [];
-  if (directFiles.length > 0) return EFFECTS_DIR;
-  if (fs.existsSync(BACKUP_DIR)) return BACKUP_DIR;
+function getCustomEffectFiles() {
+  if (!fs.existsSync(EFFECTS_DIR)) return [];
+  return fs.readdirSync(EFFECTS_DIR)
+    .filter(f => f.endsWith('.js') && !RESERVED_FILES.has(f) && !f.startsWith('.') && !f.startsWith('_'))
+    .sort();
+}
+
+function getFileDir(file) {
+  const directPath = path.join(EFFECTS_DIR, file);
+  if (fs.existsSync(directPath)) return EFFECTS_DIR;
+  if (fs.existsSync(path.join(BACKUP_DIR, file))) return BACKUP_DIR;
   return EFFECTS_DIR;
 }
 
 function listEffectFiles() {
-  const dir = getActiveEffectsDir();
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir)
-    .filter(f => f.endsWith('.js') && !RESERVED_FILES.has(f) && !f.startsWith('.') && !f.startsWith('_'))
-    .sort();
+  const direct = getCustomEffectFiles();
+  const backup = fs.existsSync(BACKUP_DIR)
+    ? fs.readdirSync(BACKUP_DIR).filter(f => f.endsWith('.js') && !RESERVED_FILES.has(f) && !f.startsWith('.') && !f.startsWith('_'))
+    : [];
+  return Array.from(new Set([...direct, ...backup])).sort();
 }
 
 /* ── Sandbox ─────────────────────────────────────────────────────────────── */
@@ -107,7 +112,7 @@ function loadEffectFile(file) {
   win.globalThis = win;
   win.global = win;
 
-  const activeDir = getActiveEffectsDir();
+  const activeDir = getFileDir(file);
   const filePath = path.join(activeDir, file);
   const code = fs.readFileSync(filePath, 'utf8');
   let error = null;
@@ -141,7 +146,7 @@ function regexFallback(file, code) {
 }
 
 function scanFile(file) {
-  const activeDir = getActiveEffectsDir();
+  const activeDir = getFileDir(file);
   const full = path.join(activeDir, file);
   let stat;
   try { stat = fs.statSync(full); } catch (_) { return null; }
@@ -200,7 +205,7 @@ function writeIfChanged(filePath, content) {
   return true;
 }
 
-function buildLoaderSource(files) {
+function buildLoaderSource(files, customFiles) {
   return `/**
  * OpenFishTools Studio - WebAssembly Effects Runtime Core & Silent Watermark Guard
  *
@@ -310,6 +315,23 @@ function buildLoaderSource(files) {
     console.error('[FishEffectsLoader] Failed to unpack effects from WASM:', unpackErr);
   }
 
+  // 5b. Evaluate custom / contributor effects added directly into effects/
+  var customFiles = ${JSON.stringify(customFiles || [])};
+  for (var c = 0; c < customFiles.length; c++) {
+    try {
+      var cXhr = new XMLHttpRequest();
+      var cUrl = 'effects/' + encodeURIComponent(customFiles[c]);
+      if (window.OFT_VERSION) cUrl += '?v=' + encodeURIComponent(window.OFT_VERSION);
+      cXhr.open('GET', cUrl, false);
+      cXhr.send(null);
+      if (cXhr.status >= 200 && cXhr.status < 300 && cXhr.responseText) {
+        (0, eval)(cXhr.responseText);
+      }
+    } catch (cErr) {
+      console.error('[FishEffectsLoader] Error executing custom effect ' + customFiles[c] + ':', cErr);
+    }
+  }
+
   // 6. Pre-warm WASM engine & GPU effects during loading for instantaneous editing
   global.prewarmWasmEffects = async function() {
     try {
@@ -357,12 +379,13 @@ function syncEffects() {
 
   const manifest = scanEffects();
   const files = Array.from(new Set(manifest.map(m => m.file))).sort();
+  const customFiles = getCustomEffectFiles();
 
   const manifestChanged = writeIfChanged(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + '\n');
-  const loaderChanged = writeIfChanged(LOADER_PATH, buildLoaderSource(files));
+  const loaderChanged = writeIfChanged(LOADER_PATH, buildLoaderSource(files, customFiles));
 
   console.log(
-    `[SyncEffects] ${manifest.length} effects in ${files.length} files discovered` +
+    `[SyncEffects] ${manifest.length} effects in ${files.length} files discovered (${customFiles.length} custom)` +
     (manifestChanged || loaderChanged ? ' (manifest/loader updated)' : ' (already up to date)')
   );
   return manifest;

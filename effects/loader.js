@@ -107,6 +107,23 @@
     console.error('[FishEffectsLoader] Failed to unpack effects from WASM:', unpackErr);
   }
 
+  // 5b. Evaluate custom / contributor effects added directly into effects/
+  var customFiles = [];
+  for (var c = 0; c < customFiles.length; c++) {
+    try {
+      var cXhr = new XMLHttpRequest();
+      var cUrl = 'effects/' + encodeURIComponent(customFiles[c]);
+      if (window.OFT_VERSION) cUrl += '?v=' + encodeURIComponent(window.OFT_VERSION);
+      cXhr.open('GET', cUrl, false);
+      cXhr.send(null);
+      if (cXhr.status >= 200 && cXhr.status < 300 && cXhr.responseText) {
+        (0, eval)(cXhr.responseText);
+      }
+    } catch (cErr) {
+      console.error('[FishEffectsLoader] Error executing custom effect ' + customFiles[c] + ':', cErr);
+    }
+  }
+
   // 6. Pre-warm WASM engine & GPU effects during loading for instantaneous editing
   global.prewarmWasmEffects = async function() {
     try {
