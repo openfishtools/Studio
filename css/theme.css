@@ -41,67 +41,74 @@
 }
 
 :root {
-  /* --- Brand & Primary Accent Colors (Matcha Tea: #98ce7b, #7fb862) --- */
-  --color-primary: #98ce7b;             /* Fresh Matcha Tea Vibrant Green */
-  --color-primary-hover: #abdd90;       /* Soft Light Matcha Hover */
-  --color-primary-active: #7fb862;      /* Deep Leaf Matcha Active */
-  --color-accent: #7fb862;              /* Secondary Matcha Accent */
-  --color-accent-subtle: #5c6e4e;       /* Earthy Herbal Green */
+  /* --- Brand & Primary Accent Colors (Matcha Tea: Luminous Fresh Matcha) --- */
+  --color-primary: #aef380;             /* Fresh Vibrant Matcha Green (Crisp & High Contrast) */
+  --color-primary-hover: #c4f99b;       /* Bright Matcha Hover */
+  --color-primary-active: #95df64;      /* Solid Leaf Matcha Active */
+  --color-accent: #95df64;              /* Secondary Matcha Accent */
+  --color-accent-subtle: #6d8b57;       /* Soft Herbal Green */
   --color-danger: #ef4444;              /* Destructive Red Token */
   --color-danger-hover: #dc2626;        /* Destructive Red Hover */
   --color-danger-bg: rgba(239, 68, 68, 0.15);
   --color-danger-text: #ffffff;         /* Crisp High-Contrast Text on Danger */
 
-  /* --- Surface & Background Colors (Matcha Canvas & Surfaces) --- */
-  --bg-canvas: #0d1109;                 /* Deep Herbal Tea Dark Canvas (#0d1109) */
-  --bg-dashboard: #151a0f;              /* Dark Matcha Surface 1 (#151a0f) */
-  --bg-panel: #1d2415;                  /* Elevated Matcha Panel Surface 2 (#1d2415) */
-  --bg-panel-hover: #26301c;            /* Panel Hover Background */
-  --bg-panel-active: #151a0f;           /* Panel Active Background */
-  --bg-panel-inner: #151a0f;            /* Inner Item Background */
-  --bg-panel-inner-hover: #26301c;      /* Inner Item Hover (Distinct from #1d2415 panel) */
-  --bg-timeline: #10150b;               /* Timeline Surface (darker than controller panel) */
-  --bg-preview: #060905;                /* Preview Well (near-black, darkest surface) */
+  /* --- Surface & Background Colors (Refined Modern Dark Mode) --- */
+  --bg-canvas: #12170e;                 /* Elevated Clean Dark Canvas */
+  --bg-dashboard: #192014;              /* Dark Matcha Surface 1 */
+  --bg-panel: #222b1b;                  /* Elevated Matcha Panel Surface 2 */
+  --bg-panel-hover: #2b3723;            /* Panel Hover Background */
+  --bg-panel-active: #192014;           /* Panel Active Background */
+  --bg-panel-inner: #192014;            /* Inner Item Background */
+  --bg-panel-inner-hover: #2b3723;      /* Inner Item Hover */
+  --bg-timeline: #151b10;               /* Timeline Surface */
+  --bg-preview: #0c1009;                /* Preview Well */
   
   /* --- Badge & Tag Colors --- */
-  --badge-prealpha-bg: #2a3321;         /* Muted Matcha Olive Pill */
-  --badge-prealpha-text: #98ce7b;       /* Bright Matcha Pill Text */
-  --badge-count-bg: #98ce7b;           /* Solid Matcha Fill Badge */
-  --badge-count-text: #0d1109;         /* Dark Text on Matcha Badge */
+  --badge-prealpha-bg: #2e3a24;         /* Matcha Pill */
+  --badge-prealpha-text: #aef380;       /* Bright Matcha Pill Text */
+  --badge-count-bg: #aef380;           /* Solid Matcha Fill Badge */
+  --badge-count-text: #12170e;         /* Dark Text on Matcha Badge */
 
   /* --- Timeline Track Accent Tokens --- */
-  --track-video: #98ce7b;               /* Video Track Bright Matcha */
-  --track-video-dark: #5c6e4e;          /* Video Track Hidden Shade */
-  --track-image: #abdd90;               /* Image Track Light Matcha */
-  --track-image-dark: #5c6e4e;          /* Image Track Hidden Shade */
+  --track-video: #aef380;               /* Video Track Bright Matcha */
+  --track-video-dark: #648250;          /* Video Track Hidden Shade */
+  --track-image: #c4f99b;               /* Image Track Light Matcha */
+  --track-image-dark: #648250;          /* Image Track Hidden Shade */
   --track-audio: #bbf29b;               /* Audio Track Vibrant Luminous Matcha (Bright & Clear) */
-  --track-audio-dark: #648250;          /* Audio Track Hidden Shade (Readable, Not Too Dark) */
-  --track-adj: #7fb862;                 /* Adjustment Track Leaf Matcha */
-  --track-adj-dark: #3f5233;            /* Adjustment Track Hidden Shade */
-  --track-color: #d4f8a8;               /* Color / Solid Track Pale Lime Matcha */
-  --track-color-dark: #6e8454;          /* Color Track Hidden Shade */
-  --track-text: #c8ff8c;                /* Text Track Bright Luminous Lime-Matcha (High Contrast) */
-  --track-text-dark: #5c6e4e;           /* Text Track Hidden Shade */
+  --track-audio-dark: #648250;          /* Audio Track Hidden Shade */
+  --track-adj: #95df64;                 /* Adjustment Track Leaf Matcha */
+  --track-adj-dark: #465a37;            /* Adjustment Track Hidden Shade */
+  --track-color: #dcfbc0;               /* Color / Solid Track Pale Lime Matcha */
+  --track-color-dark: #748c5a;          /* Color Track Hidden Shade */
+  --track-text: #c8ff8c;                /* Text Track Bright Luminous Lime-Matcha */
+  --track-text-dark: #648250;           /* Text Track Hidden Shade */
 
   /* --- Tech Grid Overlay Colors --- */
-  --grid-line-thin: rgba(152, 206, 123, 0.18);
-  --grid-line-major: rgba(152, 206, 123, 0.45);
-  --grid-crosshair: #98ce7b;
-  --grid-dot: rgba(152, 206, 123, 0.55);
+  --grid-line-thin: rgba(174, 243, 128, 0.22);
+  --grid-line-major: rgba(174, 243, 128, 0.50);
+  --grid-crosshair: #aef380;
+  --grid-dot: rgba(174, 243, 128, 0.65);
+
+  /* --- App Logo & Hero Vector Accents --- */
+  --logo-base: #385d0b;
+  --logo-surface: #38ab08;
+  --logo-shadow: #76c90e;
+  --logo-accent: #ccff33;
 
   /* --- Typography Colors --- */
-  --text-primary: #98ce7b;              /* Main Matcha Brand Header/Accent */
-  --text-secondary: #98ce7b;            /* Fresh Matcha Brand Secondary Text */
-  --text-muted: #a5b39a;                /* Soft Herbal Sage Secondary Text */
-  --text-dim: #5c6e4e;                  /* Earthy Muted Indicator */
+  --text-primary: #aef380;              /* Main Matcha Brand Header/Accent */
+  --text-secondary: #d4f8b6;            /* Crisp High-Contrast Secondary Text */
+  --text-muted: #b9cbb0;                /* Clean Soft Sage Secondary Text */
+  --text-dim: #799168;                  /* Earthy Muted Indicator */
 
   /* --- Flat Styling (No blur, no glow, no drop shadow) --- */
-  --border-panel: #2a3321;              /* Solid Panel & Divider Border */
-  --border-subtle: rgba(152, 206, 123, 0.22);
-  --border-focus: #98ce7b;
+  --border-panel: #334028;              /* Solid Panel & Divider Border */
+  --border-subtle: rgba(174, 243, 128, 0.26);
+  --border-focus: #aef380;
   --shadow-panel: none;
   --shadow-button-glow: none;
   --shadow-active: none;
+  --shadow-popover: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.35)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2));
 
   /* --- Dedicated Keyframe Theme Tokens (100% Theme-Native & High-Contrast) --- */
   --kf-default-bg: #151a0f;            /* Dark surface core */
@@ -120,63 +127,69 @@
 /* Optional Alternate Themes (Full 100% token coverage for all windows, containers & components) */
 [data-theme="cyber-cyan"] {
   /* Brand & Accents */
-  --color-primary: #00e5ff;
-  --color-primary-hover: #5df2ff;
-  --color-primary-active: #00b4c8;
-  --color-accent: #008ba3;
-  --color-accent-subtle: #006b7d;
+  --color-primary: #38f2ff;
+  --color-primary-hover: #7df8ff;
+  --color-primary-active: #00e5ff;
+  --color-accent: #00c2e0;
+  --color-accent-subtle: #008ea6;
   --color-danger: #ff5370;
   --color-danger-hover: #ff3355;
   --color-danger-bg: rgba(255, 83, 112, 0.15);
   --color-danger-text: #ffffff;
 
   /* Surfaces & Containers */
-  --bg-canvas: #040d14;
-  --bg-dashboard: #0a1e28;
-  --bg-panel: #0c3040;
-  --bg-panel-hover: #104157;
-  --bg-panel-active: #08232f;
-  --bg-panel-inner: #092836;
-  --bg-panel-inner-hover: #144f69;
-  --bg-timeline: #071e28;
-  --bg-preview: #030a10;
+  --bg-canvas: #081522;
+  --bg-dashboard: #0e2436;
+  --bg-panel: #15364d;
+  --bg-panel-hover: #1c4766;
+  --bg-panel-active: #0e2436;
+  --bg-panel-inner: #0e2436;
+  --bg-panel-inner-hover: #1c4766;
+  --bg-timeline: #0b1e2c;
+  --bg-preview: #050e17;
 
   /* Badges */
-  --badge-prealpha-bg: #092836;
-  --badge-prealpha-text: #00e5ff;
-  --badge-count-bg: #00e5ff;
-  --badge-count-text: #040d14;
+  --badge-prealpha-bg: #15364d;
+  --badge-prealpha-text: #38f2ff;
+  --badge-count-bg: #38f2ff;
+  --badge-count-text: #081522;
 
   /* Timeline Track Tokens */
-  --track-video: #00e5ff;
-  --track-video-dark: #006b7d;
-  --track-image: #5df2ff;
-  --track-image-dark: #006b7d;
+  --track-video: #38f2ff;
+  --track-video-dark: #008ea6;
+  --track-image: #7df8ff;
+  --track-image-dark: #008ea6;
   --track-audio: #6ee7b7;
   --track-audio-dark: #0f766e;
-  --track-adj: #008ba3;
-  --track-adj-dark: #092836;
-  --track-color: #5df2ff;
-  --track-color-dark: #006b7d;
-  --track-text: #67e8f9;
-  --track-text-dark: #155e75;
+  --track-adj: #00c2e0;
+  --track-adj-dark: #0e2436;
+  --track-color: #7df8ff;
+  --track-color-dark: #008ea6;
+  --track-text: #a5f3fc;
+  --track-text-dark: #0e7490;
 
   /* Grid Overlay */
-  --grid-line-thin: rgba(0, 229, 255, 0.18);
-  --grid-line-major: rgba(0, 229, 255, 0.45);
-  --grid-crosshair: #00e5ff;
-  --grid-dot: rgba(0, 229, 255, 0.55);
+  --grid-line-thin: rgba(56, 242, 255, 0.20);
+  --grid-line-major: rgba(56, 242, 255, 0.48);
+  --grid-crosshair: #38f2ff;
+  --grid-dot: rgba(56, 242, 255, 0.60);
+
+  /* App Logo & Hero Vector Accents */
+  --logo-base: #00485a;
+  --logo-surface: #0094b0;
+  --logo-shadow: #00ccee;
+  --logo-accent: #5ef8ff;
 
   /* Typography */
-  --text-primary: #00e5ff;
-  --text-secondary: #7dd3fc;
-  --text-muted: #008ba3;
-  --text-dim: #005664;
+  --text-primary: #38f2ff;
+  --text-secondary: #a5f3fc;
+  --text-muted: #38bdf8;
+  --text-dim: #0284c7;
 
   /* Borders */
-  --border-panel: #144f69;
-  --border-subtle: rgba(0, 229, 255, 0.22);
-  --border-focus: #00e5ff;
+  --border-panel: #1e5374;
+  --border-subtle: rgba(56, 242, 255, 0.25);
+  --border-focus: #38f2ff;
 
   /* Dedicated Keyframe Theme Tokens */
   --kf-default-bg: #0a1e28;
@@ -190,63 +203,69 @@
 
 [data-theme="amber-terminal"] {
   /* Brand & Accents */
-  --color-primary: #ffaa00;
-  --color-primary-hover: #ffc44d;
-  --color-primary-active: #cc8800;
-  --color-accent: #a86c0c;
-  --color-accent-subtle: #805309;
+  --color-primary: #ffbe2e;
+  --color-primary-hover: #ffd266;
+  --color-primary-active: #ffaa00;
+  --color-accent: #f59e0b;
+  --color-accent-subtle: #b45309;
   --color-danger: #ff5252;
   --color-danger-hover: #e04848;
   --color-danger-bg: rgba(255, 82, 82, 0.15);
   --color-danger-text: #ffffff;
 
   /* Surfaces & Containers */
-  --bg-canvas: #120b02;
-  --bg-dashboard: #241605;
-  --bg-panel: #38240a;
-  --bg-panel-hover: #4d310e;
-  --bg-panel-active: #291a07;
-  --bg-panel-inner: #2f1e08;
-  --bg-panel-inner-hover: #54360e;
-  --bg-timeline: #1e1305;
-  --bg-preview: #0d0802;
+  --bg-canvas: #161005;
+  --bg-dashboard: #241a0b;
+  --bg-panel: #362711;
+  --bg-panel-hover: #473417;
+  --bg-panel-active: #241a0b;
+  --bg-panel-inner: #241a0b;
+  --bg-panel-inner-hover: #473417;
+  --bg-timeline: #1c1407;
+  --bg-preview: #0f0a03;
 
   /* Badges */
-  --badge-prealpha-bg: #2f1e08;
-  --badge-prealpha-text: #ffaa00;
-  --badge-count-bg: #ffaa00;
-  --badge-count-text: #120b02;
+  --badge-prealpha-bg: #362711;
+  --badge-prealpha-text: #ffbe2e;
+  --badge-count-bg: #ffbe2e;
+  --badge-count-text: #161005;
 
   /* Timeline Track Tokens */
-  --track-video: #ffaa00;
-  --track-video-dark: #805309;
-  --track-image: #ffc44d;
-  --track-image-dark: #805309;
+  --track-video: #ffbe2e;
+  --track-video-dark: #b45309;
+  --track-image: #ffd266;
+  --track-image-dark: #b45309;
   --track-audio: #fde047;
   --track-audio-dark: #926d15;
-  --track-adj: #cc8800;
-  --track-adj-dark: #2f1e08;
-  --track-color: #ffc44d;
-  --track-color-dark: #805309;
-  --track-text: #fde047;
-  --track-text-dark: #854d0e;
+  --track-adj: #f59e0b;
+  --track-adj-dark: #241a0b;
+  --track-color: #ffd266;
+  --track-color-dark: #b45309;
+  --track-text: #fde68a;
+  --track-text-dark: #a16207;
 
   /* Grid Overlay */
-  --grid-line-thin: rgba(255, 170, 0, 0.18);
-  --grid-line-major: rgba(255, 170, 0, 0.45);
-  --grid-crosshair: #ffaa00;
-  --grid-dot: rgba(255, 170, 0, 0.55);
+  --grid-line-thin: rgba(255, 190, 46, 0.20);
+  --grid-line-major: rgba(255, 190, 46, 0.48);
+  --grid-crosshair: #ffbe2e;
+  --grid-dot: rgba(255, 190, 46, 0.60);
+
+  /* App Logo & Hero Vector Accents */
+  --logo-base: #543200;
+  --logo-surface: #a66000;
+  --logo-shadow: #e68a00;
+  --logo-accent: #ffdb4d;
 
   /* Typography */
-  --text-primary: #ffaa00;
-  --text-secondary: #fcd34d;
-  --text-muted: #a86c0c;
-  --text-dim: #613e06;
+  --text-primary: #ffbe2e;
+  --text-secondary: #fde68a;
+  --text-muted: #eab308;
+  --text-dim: #a16207;
 
   /* Borders */
-  --border-panel: #54360e;
-  --border-subtle: rgba(255, 170, 0, 0.22);
-  --border-focus: #ffaa00;
+  --border-panel: #59401b;
+  --border-subtle: rgba(255, 190, 46, 0.25);
+  --border-focus: #ffbe2e;
 
   /* Dedicated Keyframe Theme Tokens */
   --kf-default-bg: #241605;
@@ -257,3 +276,312 @@
   --kf-selected-border: #120b02;
   --kf-selected-dot: #ffaa00;
 }
+
+[data-theme="amethyst"],
+[data-theme="amethyst-purple"] {
+  /* Brand & Accents */
+  --color-primary: #d8b4fe;
+  --color-primary-hover: #ebd5ff;
+  --color-primary-active: #c084fc;
+  --color-accent: #b04bf6;
+  --color-accent-subtle: #8b28db;
+  --color-danger: #ff5252;
+  --color-danger-hover: #e04848;
+  --color-danger-bg: rgba(255, 82, 82, 0.15);
+  --color-danger-text: #ffffff;
+
+  /* Surfaces & Containers */
+  --bg-canvas: #130e1b;
+  --bg-dashboard: #1e162b;
+  --bg-panel: #2c2040;
+  --bg-panel-hover: #3a2b53;
+  --bg-panel-active: #1e162b;
+  --bg-panel-inner: #1e162b;
+  --bg-panel-inner-hover: #3a2b53;
+  --bg-timeline: #171121;
+  --bg-preview: #0b0711;
+
+  /* Badges */
+  --badge-prealpha-bg: #2c2040;
+  --badge-prealpha-text: #d8b4fe;
+  --badge-count-bg: #d8b4fe;
+  --badge-count-text: #130e1b;
+
+  /* Timeline Track Tokens */
+  --track-video: #d8b4fe;
+  --track-video-dark: #8b28db;
+  --track-image: #ebd5ff;
+  --track-image-dark: #8b28db;
+  --track-audio: #a5b4fc;
+  --track-audio-dark: #4f46e5;
+  --track-adj: #b04bf6;
+  --track-adj-dark: #1e162b;
+  --track-color: #ebd5ff;
+  --track-color-dark: #8b28db;
+  --track-text: #f3e8ff;
+  --track-text-dark: #7e22ce;
+
+  /* Grid Overlay */
+  --grid-line-thin: rgba(216, 180, 254, 0.20);
+  --grid-line-major: rgba(216, 180, 254, 0.48);
+  --grid-crosshair: #d8b4fe;
+  --grid-dot: rgba(216, 180, 254, 0.60);
+
+  /* App Logo & Hero Vector Accents */
+  --logo-base: #45186b;
+  --logo-surface: #822cb8;
+  --logo-shadow: #b04bf6;
+  --logo-accent: #ebd5ff;
+
+  /* Typography */
+  --text-primary: #d8b4fe;
+  --text-secondary: #f3e8ff;
+  --text-muted: #c084fc;
+  --text-dim: #9333ea;
+
+  /* Borders */
+  --border-panel: #4b376b;
+  --border-subtle: rgba(216, 180, 254, 0.25);
+  --border-focus: #d8b4fe;
+
+  /* Dedicated Keyframe Theme Tokens */
+  --kf-default-bg: #181124;
+  --kf-default-border: #e9d5ff;
+  --kf-active-bg: #c084fc;
+  --kf-active-border: #0e0a14;
+  --kf-selected-bg: #ffffff;
+  --kf-selected-border: #0e0a14;
+  --kf-selected-dot: #c084fc;
+}
+
+[data-theme="rose"],
+[data-theme="rose-red"] {
+  /* Brand & Accents */
+  --color-primary: #fda4af;
+  --color-primary-hover: #fecdd3;
+  --color-primary-active: #fb7185;
+  --color-accent: #f43f5e;
+  --color-accent-subtle: #be123c;
+  --color-danger: #ff5252;
+  --color-danger-hover: #e04848;
+  --color-danger-bg: rgba(255, 82, 82, 0.15);
+  --color-danger-text: #ffffff;
+
+  /* Surfaces & Containers */
+  --bg-canvas: #180a0f;
+  --bg-dashboard: #261017;
+  --bg-panel: #3a1823;
+  --bg-panel-hover: #4c202f;
+  --bg-panel-active: #261017;
+  --bg-panel-inner: #261017;
+  --bg-panel-inner-hover: #4c202f;
+  --bg-timeline: #1f0d13;
+  --bg-preview: #0f0508;
+
+  /* Badges */
+  --badge-prealpha-bg: #3a1823;
+  --badge-prealpha-text: #fda4af;
+  --badge-count-bg: #fda4af;
+  --badge-count-text: #180a0f;
+
+  /* Timeline Track Tokens */
+  --track-video: #fda4af;
+  --track-video-dark: #be123c;
+  --track-image: #fecdd3;
+  --track-image-dark: #be123c;
+  --track-audio: #f472b6;
+  --track-audio-dark: #9d174d;
+  --track-adj: #f43f5e;
+  --track-adj-dark: #261017;
+  --track-color: #fecdd3;
+  --track-color-dark: #be123c;
+  --track-text: #ffe4e6;
+  --track-text-dark: #9f1239;
+
+  /* Grid Overlay */
+  --grid-line-thin: rgba(253, 164, 175, 0.20);
+  --grid-line-major: rgba(253, 164, 175, 0.48);
+  --grid-crosshair: #fda4af;
+  --grid-dot: rgba(253, 164, 175, 0.60);
+
+  /* App Logo & Hero Vector Accents */
+  --logo-base: #590820;
+  --logo-surface: #b81643;
+  --logo-shadow: #f43f5e;
+  --logo-accent: #ffb8c4;
+
+  /* Typography */
+  --text-primary: #fda4af;
+  --text-secondary: #ffe4e6;
+  --text-muted: #fb7185;
+  --text-dim: #e11d48;
+
+  /* Borders */
+  --border-panel: #63283a;
+  --border-subtle: rgba(253, 164, 175, 0.25);
+  --border-focus: #fda4af;
+
+  /* Dedicated Keyframe Theme Tokens */
+  --kf-default-bg: #220d13;
+  --kf-default-border: #fecdd3;
+  --kf-active-bg: #fb7185;
+  --kf-active-border: #14080b;
+  --kf-selected-bg: #ffffff;
+  --kf-selected-border: #14080b;
+  --kf-selected-dot: #fb7185;
+}
+
+[data-theme="ocean"],
+[data-theme="ocean-blue"] {
+  /* Brand & Accents */
+  --color-primary: #7dd3fc;
+  --color-primary-hover: #bae6fd;
+  --color-primary-active: #38bdf8;
+  --color-accent: #0ea5e9;
+  --color-accent-subtle: #0284c7;
+  --color-danger: #ff5252;
+  --color-danger-hover: #e04848;
+  --color-danger-bg: rgba(255, 82, 82, 0.15);
+  --color-danger-text: #ffffff;
+
+  /* Surfaces & Containers */
+  --bg-canvas: #081322;
+  --bg-dashboard: #0f223a;
+  --bg-panel: #152f52;
+  --bg-panel-hover: #1d3f6d;
+  --bg-panel-active: #0f223a;
+  --bg-panel-inner: #0f223a;
+  --bg-panel-inner-hover: #1d3f6d;
+  --bg-timeline: #0b1a2d;
+  --bg-preview: #050e18;
+
+  /* Badges */
+  --badge-prealpha-bg: #152f52;
+  --badge-prealpha-text: #7dd3fc;
+  --badge-count-bg: #7dd3fc;
+  --badge-count-text: #081322;
+
+  /* Timeline Track Tokens */
+  --track-video: #7dd3fc;
+  --track-video-dark: #0284c7;
+  --track-image: #bae6fd;
+  --track-image-dark: #0284c7;
+  --track-audio: #34d399;
+  --track-audio-dark: #065f46;
+  --track-adj: #0ea5e9;
+  --track-adj-dark: #0f223a;
+  --track-color: #bae6fd;
+  --track-color-dark: #0284c7;
+  --track-text: #e0f2fe;
+  --track-text-dark: #0369a1;
+
+  /* Grid Overlay */
+  --grid-line-thin: rgba(125, 211, 252, 0.20);
+  --grid-line-major: rgba(125, 211, 252, 0.48);
+  --grid-crosshair: #7dd3fc;
+  --grid-dot: rgba(125, 211, 252, 0.60);
+
+  /* App Logo & Hero Vector Accents */
+  --logo-base: #0a3556;
+  --logo-surface: #0572ad;
+  --logo-shadow: #0296e3;
+  --logo-accent: #93e0ff;
+
+  /* Typography */
+  --text-primary: #7dd3fc;
+  --text-secondary: #e0f2fe;
+  --text-muted: #38bdf8;
+  --text-dim: #0284c7;
+
+  /* Borders */
+  --border-panel: #254b80;
+  --border-subtle: rgba(125, 211, 252, 0.25);
+  --border-focus: #7dd3fc;
+
+  /* Dedicated Keyframe Theme Tokens */
+  --kf-default-bg: #0b192c;
+  --kf-default-border: #bae6fd;
+  --kf-active-bg: #38bdf8;
+  --kf-active-border: #060e18;
+  --kf-selected-bg: #ffffff;
+  --kf-selected-border: #060e18;
+  --kf-selected-dot: #38bdf8;
+}
+
+[data-theme="after-effects"],
+[data-theme="ae"] {
+  /* Brand & Accents */
+  --color-primary: #9999ff;
+  --color-primary-hover: #b8b8ff;
+  --color-primary-active: #7d7dff;
+  --color-accent: #cf96fd;
+  --color-accent-subtle: #584ea6;
+  --color-danger: #ff5252;
+  --color-danger-hover: #e04848;
+  --color-danger-bg: rgba(255, 82, 82, 0.15);
+  --color-danger-text: #ffffff;
+
+  /* Surfaces & Containers */
+  --bg-canvas: #12111a;
+  --bg-dashboard: #1a1826;
+  --bg-panel: #242236;
+  --bg-panel-hover: #2f2b47;
+  --bg-panel-active: #1a1826;
+  --bg-panel-inner: #1a1826;
+  --bg-panel-inner-hover: #2f2b47;
+  --bg-timeline: #151322;
+  --bg-preview: #0a0910;
+
+  /* Badges */
+  --badge-prealpha-bg: #242236;
+  --badge-prealpha-text: #9999ff;
+  --badge-count-bg: #9999ff;
+  --badge-count-text: #12111a;
+
+  /* Timeline Track Tokens */
+  --track-video: #9999ff;
+  --track-video-dark: #4f4db3;
+  --track-image: #cf96fd;
+  --track-image-dark: #7c4da6;
+  --track-audio: #5ce1e6;
+  --track-audio-dark: #1b7a7e;
+  --track-adj: #e066ff;
+  --track-adj-dark: #1a1826;
+  --track-color: #ff99c8;
+  --track-color-dark: #9e4a6d;
+  --track-text: #ede9fe;
+  --track-text-dark: #584ea6;
+
+  /* Grid Overlay */
+  --grid-line-thin: rgba(153, 153, 255, 0.20);
+  --grid-line-major: rgba(153, 153, 255, 0.48);
+  --grid-crosshair: #9999ff;
+  --grid-dot: rgba(153, 153, 255, 0.60);
+
+  /* App Logo & Hero Vector Accents */
+  --logo-base: #1c173d;
+  --logo-surface: #32276e;
+  --logo-shadow: #5c4ae4;
+  --logo-accent: #cf96fd;
+
+  /* Typography */
+  --text-primary: #9999ff;
+  --text-secondary: #ede9fe;
+  --text-muted: #b4a8e6;
+  --text-dim: #7368a8;
+
+  /* Borders */
+  --border-panel: #3c3758;
+  --border-subtle: rgba(153, 153, 255, 0.25);
+  --border-focus: #9999ff;
+
+  /* Dedicated Keyframe Theme Tokens */
+  --kf-default-bg: #191728;
+  --kf-default-border: #b4a8e6;
+  --kf-active-bg: #9999ff;
+  --kf-active-border: #12111a;
+  --kf-selected-bg: #ffffff;
+  --kf-selected-border: #12111a;
+  --kf-selected-dot: #9999ff;
+}
+

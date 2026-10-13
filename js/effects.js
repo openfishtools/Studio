@@ -11,6 +11,90 @@
   // 1. Registry for modular effects plugins
   const registry = new Map();
 
+  // ─── Universal WASM Anti-Piracy Security Guard ─────────────────────────
+  let wasmGuardInstance = null;
+  let wasmGuardExports = null;
+  let wasmGuardLoadingPromise = null;
+  let wasmWatermarkImg = null;
+  let isWasmAuthorized = true;
+
+  async function ensureWasmGuard() {
+    if (wasmGuardExports) return wasmGuardExports;
+    if (typeof window !== 'undefined' && window.__FISH_WASM__) {
+      wasmGuardInstance = window.__FISH_WASM__.instance;
+      wasmGuardExports = window.__FISH_WASM__.exports;
+      isWasmAuthorized = window.__FISH_WASM__.isAuthorized;
+      wasmWatermarkImg = window.__FISH_WASM__.watermarkImg;
+      return wasmGuardExports;
+    }
+    if (wasmGuardLoadingPromise) return wasmGuardLoadingPromise;
+
+    wasmGuardLoadingPromise = (async () => {
+      try {
+        const wasmCandidates = [
+          'effects/effects.wasm',
+          '/effects/effects.wasm'
+        ];
+
+        let res = null;
+        for (const u of wasmCandidates) {
+          try {
+            const r = await fetch(u);
+            if (r.ok) { res = r; break; }
+          } catch (_) {}
+        }
+
+        if (!res || !res.ok) {
+          throw new Error('Core WASM security module missing or blocked (' + (res ? res.status : 404) + ')');
+        }
+
+        const bytes = await res.arrayBuffer();
+        const { instance } = await WebAssembly.instantiate(bytes);
+        wasmGuardInstance = instance;
+        wasmGuardExports = instance.exports;
+
+        // Strict Domain Verification via WASM Binary
+        const host = (typeof window !== 'undefined' && window.location && window.location.hostname) || '';
+        const enc = new TextEncoder();
+        const hostBytes = enc.encode(host);
+        const mem = new Uint8Array(wasmGuardExports.memory.buffer);
+        const tempPtr = 10000;
+        mem.set(hostBytes, tempPtr);
+        wasmGuardExports.verify_domain(tempPtr, hostBytes.length);
+        isWasmAuthorized = wasmGuardExports.is_authorized() === 1;
+
+        if (!isWasmAuthorized) {
+          try {
+            const svgPtr = wasmGuardExports.get_watermark_svg_ptr();
+            const svgLen = wasmGuardExports.get_watermark_svg_len();
+            const svgSlice = new Uint8Array(wasmGuardExports.memory.buffer, svgPtr, svgLen);
+            const svgText = new TextDecoder().decode(svgSlice);
+            const blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+            wasmWatermarkImg = new Image();
+            wasmWatermarkImg.onload = () => {
+              if (typeof window !== 'undefined' && typeof window.redrawComposition === 'function') {
+                window.redrawComposition('wasmWatermarkLoaded');
+              }
+            };
+            wasmWatermarkImg.src = URL.createObjectURL(blob);
+          } catch (_) {}
+        }
+
+        return wasmGuardExports;
+      } catch (err) {
+        console.warn('[FishEffects] Universal WASM Guard init error:', err);
+        throw err;
+      }
+    })();
+
+    return wasmGuardLoadingPromise;
+  }
+
+  // Pre-load universal WASM guard in background
+  if (typeof window !== 'undefined') {
+    ensureWasmGuard().catch(() => {});
+  }
+
   const FishEffectsRegistry = {
     /**
      * Register a new modular effect plugin definition
@@ -18,6 +102,33 @@
      */
     register(def) {
       if (!def || !def.id) return;
+
+      const originalRender = typeof def.render === 'function' ? def.render : null;
+      let guardedRender = null;
+
+      if (originalRender) {
+        guardedRender = function(ctx, el, layer, bounds, fx, sec, opt) {
+          try {
+            originalRender.call(this, ctx, el, layer, bounds, fx, sec, opt);
+          } catch (e) {
+            console.warn('[Effect Render Error]', def.id, e);
+          }
+
+          // Poison Pill: If domain is unauthorized, burn embedded vector watermark onto frame
+          if (!isWasmAuthorized && wasmWatermarkImg && wasmWatermarkImg.complete && ctx) {
+            try {
+              const targetCanvas = ctx.canvas;
+              const compW = Math.max(1, targetCanvas ? targetCanvas.width : (bounds && bounds.w ? bounds.w : 1920));
+              const compH = Math.max(1, targetCanvas ? targetCanvas.height : (bounds && bounds.h ? bounds.h : 1080));
+              ctx.save();
+              ctx.setTransform(1, 0, 0, 1, 0, 0);
+              ctx.drawImage(wasmWatermarkImg, 0, 0, compW, compH);
+              ctx.restore();
+            } catch (_) {}
+          }
+        };
+      }
+
       const registeredDef = {
         ...def,
         id: def.id,
@@ -27,7 +138,7 @@
         description: def.description || '',
         params: Array.isArray(def.params) ? def.params : [],
         filter: typeof def.filter === 'function' ? def.filter : null,
-        render: typeof def.render === 'function' ? def.render : null,
+        render: guardedRender,
         renderPost: typeof def.renderPost === 'function' ? def.renderPost : null,
         onButtonClick: typeof def.onButtonClick === 'function' ? def.onButtonClick : null,
         isExpanding: !!def.isExpanding,
@@ -46,6 +157,9 @@
       if (!id) return null;
       let def = registry.get(id);
       if (!def && typeof id === 'string') {
+        if (id === 'open-ios' || id === 'open_ios' || id === 'open-mac' || id === 'open_mac') {
+          return registry.get('fluid-fish') || registry.get('fluid_fish');
+        }
         if (id.includes('_')) def = registry.get(id.replace(/_/g, '-'));
         else if (id.includes('-')) def = registry.get(id.replace(/-/g, '_'));
       }
@@ -61,11 +175,12 @@
     },
 
     createInstance(id, customName) {
-      const def = registry.get(id);
+      const def = this.get(id);
       if (!def) return null;
+      const canonicalId = def.id;
       const instance = {
-        id: 'fx_' + id.replace(/[^a-z0-9]/gi, '_') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-        type: id,
+        id: 'fx_' + canonicalId.replace(/[^a-z0-9]/gi, '_') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+        type: canonicalId,
         name: customName || def.name,
         isExpanded: true,
         disabled: false
@@ -79,6 +194,8 @@
           instance[p.id] = p.default || '#ffffff';
         } else if (p.type === 'select') {
           instance[p.id] = p.default || (p.options && p.options[0] ? p.options[0] : 'normal');
+        } else if (p.type === 'layer') {
+          instance[p.id] = p.default || '';
         } else {
           instance[p.id] = p.default !== undefined ? p.default : 0;
         }
@@ -237,6 +354,188 @@
         return def.params.filter(p => p.type !== 'button' && p.type !== 'action').map(p => p.id);
       }
       return Object.keys(fx).filter(k => !['id', 'type', 'name', 'isExpanded', 'disabled'].includes(k));
+    },
+
+    getLayerSnapshot(layerId, currentSec, renderBounds) {
+      if (!layerId) return null;
+      const compState = (typeof window !== 'undefined' && (window.currentActivePrecomp || window.currentProjectState)) || null;
+      if (!compState || !Array.isArray(compState.layers)) return null;
+      const targetLayer = compState.layers.find(l => l && String(l.id) === String(layerId));
+      if (!targetLayer) return null;
+
+      const sec = (typeof currentSec === 'number') ? currentSec : (typeof window !== 'undefined' ? (window.currentPlaybackSec || window.currentSec || 0) : 0);
+      const effProps = (typeof window !== 'undefined' && typeof window.getLayerEffectivePropsAtTime === 'function')
+        ? window.getLayerEffectivePropsAtTime(targetLayer, sec, null, compState.layers)
+        : targetLayer;
+
+      const animLayer = Object.assign({}, targetLayer, effProps);
+      const engine = (typeof window !== 'undefined') ? (window.FishToolEngine || window.LayerTransform) : null;
+      const activeCamera = (typeof window !== 'undefined' && typeof window.getActiveCameraLayer === 'function')
+        ? window.getActiveCameraLayer()
+        : null;
+
+      // Determine base composition dimensions (unscaled project space)
+      const aspect = (compState && compState.aspectRatio) || '16:9';
+      const res = (compState && compState.resolution) || '1080p';
+      let baseDims = (typeof window !== 'undefined' && typeof window.getProjectDimensions === 'function')
+        ? window.getProjectDimensions(res, aspect)
+        : [1920, 1080];
+      if (window && window.currentActivePrecomp) {
+        const cw = Math.round(Math.abs(window.currentActivePrecomp.mediaWidth || window.currentActivePrecomp.scaleW || baseDims[0]));
+        const ch = Math.round(Math.abs(window.currentActivePrecomp.mediaHeight || window.currentActivePrecomp.scaleH || baseDims[1]));
+        baseDims = [cw, ch];
+      }
+      const baseW = (renderBounds && renderBounds.baseW) || baseDims[0] || 1920;
+      const baseH = (renderBounds && renderBounds.baseH) || baseDims[1] || 1080;
+
+      // Determine current render canvas / viewport dimensions & bufferScale
+      const targetCanvas = (typeof document !== 'undefined') ? (document.getElementById('editor-active-canvas') || document.querySelector('canvas')) : null;
+      const compW = Math.max(1, (renderBounds && (renderBounds.w || renderBounds.width)) || (targetCanvas ? targetCanvas.width : baseW));
+      const compH = Math.max(1, (renderBounds && (renderBounds.h || renderBounds.height)) || (targetCanvas ? targetCanvas.height : baseH));
+      const bufferScale = (renderBounds && renderBounds.bufferScale > 0)
+        ? renderBounds.bufferScale
+        : (compW / Math.max(1, baseW));
+
+      const bounds = engine && typeof engine.getBounds === 'function'
+        ? engine.getBounds(animLayer, bufferScale, activeCamera, compW, compH)
+        : null;
+
+      let corners = null;
+      let screenCenterX = 0;
+      let screenCenterY = 0;
+      let visualWidth = 0;
+      let visualHeight = 0;
+      let visualRotation = 0;
+
+      if (bounds && Array.isArray(bounds.corners) && bounds.corners.length >= 4) {
+        corners = bounds.corners.map(pt => ({ x: pt.x, y: pt.y, z: pt.z || 0, scale: pt.scale || 1, isBehind: !!pt.isBehind }));
+        screenCenterX = (corners[0].x + corners[2].x) / 2;
+        screenCenterY = (corners[0].y + corners[2].y) / 2;
+        visualWidth = Math.max(2, Math.hypot(corners[1].x - corners[0].x, corners[1].y - corners[0].y));
+        visualHeight = Math.max(2, Math.hypot(corners[3].x - corners[0].x, corners[3].y - corners[0].y));
+        visualRotation = Math.atan2(corners[1].y - corners[0].y, corners[1].x - corners[0].x) * 180 / Math.PI;
+      } else {
+        screenCenterX = (animLayer.posX !== undefined ? animLayer.posX : (baseW / 2)) * bufferScale;
+        screenCenterY = (animLayer.posY !== undefined ? animLayer.posY : (baseH / 2)) * bufferScale;
+        visualWidth = Math.max(2, Math.abs(animLayer.scaleW !== undefined ? animLayer.scaleW : 300) * bufferScale);
+        visualHeight = Math.max(2, Math.abs(animLayer.scaleH !== undefined ? animLayer.scaleH : 300) * bufferScale);
+        visualRotation = animLayer.rotZ !== undefined ? animLayer.rotZ : (animLayer.rotation || 0);
+        const halfW = visualWidth / 2;
+        const halfH = visualHeight / 2;
+        corners = [
+          { x: screenCenterX - halfW, y: screenCenterY - halfH, z: 0, scale: 1, isBehind: false },
+          { x: screenCenterX + halfW, y: screenCenterY - halfH, z: 0, scale: 1, isBehind: false },
+          { x: screenCenterX + halfW, y: screenCenterY + halfH, z: 0, scale: 1, isBehind: false },
+          { x: screenCenterX - halfW, y: screenCenterY + halfH, z: 0, scale: 1, isBehind: false }
+        ];
+      }
+
+      let rawRoundness = undefined;
+      if (animLayer.shapeProps && animLayer.shapeProps.roundness !== undefined) {
+        rawRoundness = Number(animLayer.shapeProps.roundness);
+      } else if (animLayer.roundness !== undefined) {
+        rawRoundness = Number(animLayer.roundness);
+      } else if (animLayer.cornerRadius !== undefined) {
+        rawRoundness = Number(animLayer.cornerRadius);
+      } else if (animLayer.shapeType === 'capsule' || animLayer.shapeType === 'circle') {
+        rawRoundness = Math.min(Math.abs(animLayer.scaleW || 300), Math.abs(animLayer.scaleH || 300)) / 2;
+      }
+      if (typeof rawRoundness === 'number' && (isNaN(rawRoundness) || rawRoundness < 0)) {
+        rawRoundness = undefined;
+      }
+      const scaleRatio = (animLayer.shapeProps && animLayer.shapeProps.sizeX)
+        ? Math.abs((animLayer.scaleW !== undefined ? animLayer.scaleW : animLayer.shapeProps.sizeX) / animLayer.shapeProps.sizeX)
+        : 1;
+      const screenRoundness = typeof rawRoundness === 'number' ? (rawRoundness * bufferScale * scaleRatio) : 0;
+
+      let el = null;
+      if (targetLayer.type === 'shape') {
+        if (!targetLayer._shapeBufferCanvas || !(targetLayer._shapeBufferCanvas instanceof HTMLCanvasElement)) {
+          targetLayer._shapeBufferCanvas = document.createElement('canvas');
+        }
+        const pw = Math.max(1, Math.round(Math.abs((targetLayer.shapeProps && targetLayer.shapeProps.sizeX) || targetLayer.scaleW || 300)));
+        const ph = Math.max(1, Math.round(Math.abs((targetLayer.shapeProps && targetLayer.shapeProps.sizeY) || targetLayer.scaleH || 300)));
+        if (typeof window.renderShapeToCanvas === 'function') {
+          window.renderShapeToCanvas(targetLayer, targetLayer._shapeBufferCanvas, pw, ph);
+        }
+        el = targetLayer._shapeBufferCanvas;
+      } else if (targetLayer.type === 'text') {
+        if (targetLayer._textBufferCanvas) {
+          el = targetLayer._textBufferCanvas;
+        } else if (window.FishTextEngine && typeof window.FishTextEngine.renderTextToCanvas === 'function') {
+          if (!targetLayer._textBufferCanvas) targetLayer._textBufferCanvas = document.createElement('canvas');
+          const nat = (window.FishTextEngine.getNaturalSize) ? window.FishTextEngine.getNaturalSize(targetLayer) : { width: 320, height: 100 };
+          const pw = Math.max(1, Math.round(nat.width));
+          const ph = Math.max(1, Math.round(nat.height));
+          window.FishTextEngine.renderTextToCanvas(targetLayer, targetLayer._textBufferCanvas, pw, ph);
+          el = targetLayer._textBufferCanvas;
+        }
+      } else if (targetLayer.type === 'precomp') {
+        el = targetLayer._precompBufferCanvas || null;
+      } else {
+        const isNativeMedia = (targetLayer.type === 'video' || targetLayer.type === 'image');
+        const effectiveFill = targetLayer.fillType || (isNativeMedia ? 'media' : (targetLayer.fillColor ? 'color' : 'none'));
+        if (effectiveFill === 'color' || effectiveFill === 'gradient' || (!isNativeMedia && effectiveFill === 'media')) {
+          if (typeof window.getOrUpdateLayerFillCanvas === 'function') {
+            const pw = Math.max(1, Math.round(Math.abs(targetLayer.mediaWidth || targetLayer.scaleW || visualWidth || 300)));
+            const ph = Math.max(1, Math.round(Math.abs(targetLayer.mediaHeight || targetLayer.scaleH || visualHeight || 300)));
+            el = window.getOrUpdateLayerFillCanvas(targetLayer, pw, ph);
+          }
+        }
+        if (!el && typeof window.getOrLoadLayerMedia === 'function') {
+          const m = window.getOrLoadLayerMedia(targetLayer);
+          if (m && m.el) el = m.el;
+        }
+        if (el && typeof HTMLImageElement !== 'undefined' && el instanceof HTMLImageElement && (!el.complete || el.naturalWidth === 0)) {
+          if (!el._snapshotLoadBound) {
+            el._snapshotLoadBound = true;
+            el.addEventListener('load', () => {
+              el._contentVersion = (el._contentVersion || 0) + 1;
+              if (typeof window !== 'undefined' && typeof window.redrawComposition === 'function') {
+                window.redrawComposition('snapshotImageLoaded');
+              }
+            }, { once: true });
+          }
+        }
+      }
+      if (!el && targetLayer._lastRenderedFrame) el = targetLayer._lastRenderedFrame;
+
+      if (!el) {
+        const fb = document.createElement('canvas');
+        fb.width = Math.max(1, Math.round(visualWidth));
+        fb.height = Math.max(1, Math.round(visualHeight));
+        return {
+          el: fb,
+          canvas: fb,
+          width: visualWidth,
+          height: visualHeight,
+          cx: screenCenterX,
+          cy: screenCenterY,
+          rotation: visualRotation,
+          roundness: screenRoundness,
+          rawRoundness: rawRoundness,
+          corners: corners,
+          bufferScale: bufferScale,
+          bounds: { x: screenCenterX - visualWidth / 2, y: screenCenterY - visualHeight / 2, w: visualWidth, h: visualHeight, cx: screenCenterX, cy: screenCenterY },
+          layer: animLayer
+        };
+      }
+
+      return {
+        el,
+        canvas: el,
+        width: visualWidth,
+        height: visualHeight,
+        cx: screenCenterX,
+        cy: screenCenterY,
+        rotation: visualRotation,
+        roundness: screenRoundness,
+        rawRoundness: rawRoundness,
+        corners: corners,
+        bufferScale: bufferScale,
+        bounds: { x: screenCenterX - visualWidth / 2, y: screenCenterY - visualHeight / 2, w: visualWidth, h: visualHeight, cx: screenCenterX, cy: screenCenterY },
+        layer: animLayer
+      };
     },
 
     ensureLayerEffects(layer) {
@@ -538,6 +837,409 @@
       return entry;
     },
 
+    /* ── Shared GPU helpers for warp-category effects ─────────────────────────────────────
+     * 1) fxBindSourceTexture: skip texImage2D when the source is unchanged
+     *    (IMG src / ImageBitmap identity / canvas._contentVersion — same convention as
+     *    FishToolEngine). Unversioned sources (video, pipeline buffers) → return false → caller
+     *    uploads as before.
+     * 2) fxOutputDraw / fxOutputStore: identical inputs (source version, size, params,
+     *    time-derived phase) reuse the previous result instead of re-running the shader.
+     *    Hits: motion-blur sub-samples, paused redraws. Stores are skipped during plain
+     *    playback (keys never repeat there) to avoid an extra copy.
+     * 3) fxFitGLCanvas: grow-only GL canvas → no drawing-buffer realloc when size changes per
+     *    sample. Returns the Y offset of the rendered region (GL origin is bottom-left).
+     * Kill switch: window.OFT_FX_CACHE_OFF = true.
+     */
+    _fxObjIds: (typeof WeakMap !== 'undefined') ? new WeakMap() : null,
+    _fxObjSeq: 0,
+    _fxOut: new Map(),
+
+    fxSourceKey(el) {
+      if (!el || typeof el !== 'object' || !this._fxObjIds) return null;
+      if (typeof window !== 'undefined' && window.OFT_FX_CACHE_OFF === true) return null;
+      const tag = el.tagName;
+      let ver = null;
+      if (tag === 'IMG') {
+        if (!el.complete || !el.naturalWidth) return null;
+        const src = el.currentSrc || el.src || '';
+        ver = 'i' + src.length + ':' + src.slice(-48);
+      } else if (tag === 'CANVAS' || (typeof OffscreenCanvas !== 'undefined' && el instanceof OffscreenCanvas)) {
+        if (typeof el._contentVersion !== 'number') return null;
+        ver = 'c' + el._contentVersion + ':' + el.width + 'x' + el.height;
+      } else if (typeof ImageBitmap !== 'undefined' && el instanceof ImageBitmap) {
+        ver = 'b';
+      } else {
+        return null; // video / unknown → always fresh
+      }
+      let id = this._fxObjIds.get(el);
+      if (!id) { id = ++this._fxObjSeq; this._fxObjIds.set(el, id); }
+      return id + ':' + ver;
+    },
+
+    fxBindSourceTexture(gl, el) {
+      if (!gl || (typeof gl.isContextLost === 'function' && gl.isContextLost())) {
+        if (gl) gl.__fxTexCache = null;
+        return false;
+      }
+      const key = this.fxSourceKey(el);
+      if (!key) return false;
+      let st = gl.__fxTexCache;
+      if (!st) {
+        st = gl.__fxTexCache = { list: [] };
+        // Context loss invalidates texture objects; drop the cache (no per-hit gl.isTexture sync call).
+        if (!gl.__fxLossHooked && gl.canvas && typeof gl.canvas.addEventListener === 'function') {
+          gl.__fxLossHooked = true;
+          gl.canvas.addEventListener('webglcontextlost', () => { gl.__fxTexCache = null; }, false);
+        }
+      }
+      const list = st.list;
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].key === key) {
+          const hit = list[i];
+          if (i !== list.length - 1) { list.splice(i, 1); list.push(hit); }
+          gl.bindTexture(gl.TEXTURE_2D, hit.tex);
+          return true;
+        }
+      }
+      let entry;
+      if (list.length >= 4) {
+        entry = list.shift();
+      } else {
+        entry = { key: null, tex: gl.createTexture() };
+        gl.bindTexture(gl.TEXTURE_2D, entry.tex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      }
+      gl.bindTexture(gl.TEXTURE_2D, entry.tex);
+      try {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, el);
+      } catch (_) {
+        entry.key = null;
+        list.unshift(entry); // keep the texture object for reuse
+        return false;
+      }
+      entry.key = key;
+      list.push(entry);
+      return true;
+    },
+
+    fxOutputKey(el, rw, rh, paramSig) {
+      const sk = this.fxSourceKey(el);
+      return sk ? (sk + '|' + rw + 'x' + rh + '|' + paramSig) : null;
+    },
+
+    fxOutputDraw(effectId, key, ctx, x, y, w, h) {
+      if (!key || !ctx) return false;
+      const list = this._fxOut.get(effectId);
+      if (!list) return false;
+      for (let i = 0; i < list.length; i++) {
+        const e = list[i];
+        if (e.key === key) {
+          try { ctx.drawImage(e.canvas, 0, 0, e.w, e.h, x, y, w, h); } catch (_) { return false; }
+          return true;
+        }
+      }
+      return false;
+    },
+
+    fxOutputStore(effectId, key, src, sx, sy, sw, sh) {
+      if (!key || !src || typeof document === 'undefined') return;
+      const w = (typeof window !== 'undefined') ? window : {};
+      const mb = w.FishMotionBlurEngine;
+      const inSub = !!(mb && typeof mb.isInSubSample === 'function' && mb.isInSubSample());
+      if (!inSub) {
+        // Two-touch: outside a motion-blur pass only cache keys that actually repeat
+        // (paused redraws). Scrubbing / playback keys are unique → no copy cost.
+        if (w.isTimelinePlaying) return;
+        const seen = this._fxSeen || (this._fxSeen = []);
+        const sk = effectId + '#' + key;
+        const idx = seen.indexOf(sk);
+        if (idx < 0) { seen.push(sk); if (seen.length > 16) seen.shift(); return; }
+        seen.splice(idx, 1);
+      }
+      if (sw * sh > 4194304) return; // > 4 MP: not worth the memory
+      let list = this._fxOut.get(effectId);
+      if (!list) { list = []; this._fxOut.set(effectId, list); }
+      let e = null;
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].key === key) { e = list.splice(i, 1)[0]; break; }
+      }
+      if (!e) {
+        if (list.length >= 6) e = list.shift();
+        else { const c = document.createElement('canvas'); e = { canvas: c, ctx: c.getContext('2d'), key: null, w: 0, h: 0 }; }
+      }
+      if (!e.ctx) return;
+      if (e.canvas.width < sw || e.canvas.height < sh) {
+        e.canvas.width = Math.max(e.canvas.width, sw);
+        e.canvas.height = Math.max(e.canvas.height, sh);
+      }
+      e.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      e.ctx.globalAlpha = 1;
+      e.ctx.globalCompositeOperation = 'copy';
+      try {
+        e.ctx.drawImage(src, sx, sy, sw, sh, 0, 0, sw, sh);
+      } catch (_) {
+        e.ctx.globalCompositeOperation = 'source-over';
+        return;
+      }
+      e.ctx.globalCompositeOperation = 'source-over';
+      e.key = key; e.w = sw; e.h = sh;
+      list.push(e);
+    },
+
+    fxFitGLCanvas(canvas, rw, rh) {
+      if (!canvas) return 0;
+      if (canvas.width < rw || canvas.height < rh) {
+        // Headroom (1.25×, 64px-aligned) for small layers so gradual scale-ups don't realloc every
+        // sample. Large (≥1 MP, e.g. adjustment / full-comp) renders get the exact size.
+        const small = rw * rh < 1048576;
+        const up = (v) => small ? Math.max(v, Math.min(8192, Math.ceil((v * 1.25) / 64) * 64)) : v;
+        canvas.width = Math.max(canvas.width, canvas.width < rw ? up(rw) : 0);
+        canvas.height = Math.max(canvas.height, canvas.height < rh ? up(rh) : 0);
+        canvas.__fxOversize = 0;
+      } else if (canvas.width * canvas.height > 4 * rw * rh && canvas.width * canvas.height > 1048576) {
+        // Shrink only after a sustained run of much smaller renders (frees VRAM without thrashing).
+        canvas.__fxOversize = (canvas.__fxOversize || 0) + 1;
+        if (canvas.__fxOversize > 240) {
+          canvas.width = rw;
+          canvas.height = rh;
+          canvas.__fxOversize = 0;
+        }
+      } else {
+        canvas.__fxOversize = 0;
+      }
+      return canvas.height - rh;
+    },
+
+    /* ── GPU effect chain ────────────────────────────────────────────────────────────────
+     * Consecutive effects that expose `def.gpu` (warp category) run in ONE WebGL context:
+     *   upload source once → effect passes ping-pong between FBOs → read back once.
+     * Before: every stacked effect = full-size texImage2D + shader + GPU→2D readback + 2D clear
+     * (adjustment layers: full-canvas each time). The step-to-step semantics of the 2D pipeline
+     * are kept: each step renders into its rect inside a pipe-size target, the next step samples
+     * the whole target, and an un-premultiply pass reproduces the 2D-canvas round-trip.
+     * def.gpu = { fs, supports(fx) → bool, setup(gl, U, fx, layer, info) }
+     *   info = { w, h (float render size), rw, rh (int resolution), sec }; U(name) → location.
+     * Draft mode renders the chain at half resolution (all pixel params scale with it).
+     * Kill switch: window.OFT_FX_CHAIN_OFF = true.
+     */
+    _chain: null,
+    _CHAIN_VS: [
+      'attribute vec2 a_pos;',
+      'attribute vec2 a_uv;',
+      'varying vec2 v_uv;',
+      'uniform float u_flipY;',
+      'void main(void) {',
+      '  v_uv = a_uv;',
+      '  gl_Position = vec4(a_pos.x, a_pos.y * u_flipY, 0.0, 1.0);',
+      '}'
+    ].join('\n'),
+    _CHAIN_UNPREMUL_FS: [
+      'precision highp float;',
+      'varying vec2 v_uv;',
+      'uniform sampler2D u_image;',
+      'void main(void) {',
+      '  vec4 c = texture2D(u_image, v_uv);',
+      '  gl_FragColor = c.a > 0.0 ? vec4(clamp(c.rgb / c.a, 0.0, 1.0), c.a) : vec4(0.0);',
+      '}'
+    ].join('\n'),
+
+    _chainGet() {
+      const w = (typeof window !== 'undefined') ? window : {};
+      if (w.OFT_FX_CHAIN_OFF === true || typeof document === 'undefined') return null;
+      if (this._chain) return this._chain.ok ? this._chain : null;
+      const ch = this._chain = { ok: false };
+      try {
+        const canvas = document.createElement('canvas');
+        const opts = { alpha: true, depth: false, stencil: false, antialias: false, premultipliedAlpha: true, preserveDrawingBuffer: false };
+        const gl = canvas.getContext('webgl', opts) || canvas.getContext('experimental-webgl', opts);
+        if (!gl) return null;
+        ch.canvas = canvas;
+        ch.gl = gl;
+        ch.progs = new Map();
+        ch.badFx = new Set();
+        const mkBuf = (arr) => { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.STATIC_DRAW); return b; };
+        ch.pos = mkBuf([-1, 1, -1, -1, 1, 1, 1, -1]);
+        ch.uv = mkBuf([0, 0, 0, 1, 1, 0, 1, 1]);
+        const mkTex = () => {
+          const t = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, t);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          return t;
+        };
+        ch.srcTex = mkTex();
+        ch.srcKey = null;
+        ch.fbo = [0, 1].map(() => ({ fb: gl.createFramebuffer(), tex: mkTex(), w: 0, h: 0 }));
+        ch.mkTex = mkTex;
+        gl.disable(gl.BLEND);
+        gl.disable(gl.DEPTH_TEST);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); // same upload semantics as the per-effect paths
+        ch.unpremul = this._chainProgram(ch, '__unpremul', this._CHAIN_UNPREMUL_FS);
+        canvas.addEventListener('webglcontextlost', () => { this._chain = null; }, false);
+        ch.ok = !!ch.unpremul;
+        return ch.ok ? ch : null;
+      } catch (e) {
+        console.warn('[FishEffects] GPU chain unavailable:', e);
+        return null;
+      }
+    },
+
+    _chainProgram(ch, id, fs) {
+      if (ch.progs.has(id)) return ch.progs.get(id);
+      const gl = ch.gl;
+      const sh = (type, src) => {
+        const s = gl.createShader(type);
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+          console.warn('[FishEffects] GPU chain shader error (' + id + '):', gl.getShaderInfoLog(s));
+          return null;
+        }
+        return s;
+      };
+      const vs = sh(gl.VERTEX_SHADER, this._CHAIN_VS);
+      const f = sh(gl.FRAGMENT_SHADER, fs);
+      let p = null;
+      if (vs && f) {
+        const prog = gl.createProgram();
+        gl.attachShader(prog, vs);
+        gl.attachShader(prog, f);
+        gl.linkProgram(prog);
+        if (gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+          const locs = new Map();
+          p = {
+            prog,
+            aPos: gl.getAttribLocation(prog, 'a_pos'),
+            aUv: gl.getAttribLocation(prog, 'a_uv'),
+            uFlip: gl.getUniformLocation(prog, 'u_flipY'),
+            uImage: gl.getUniformLocation(prog, 'u_image'),
+            U: (name) => { if (!locs.has(name)) locs.set(name, gl.getUniformLocation(prog, name)); return locs.get(name); }
+          };
+        } else {
+          console.warn('[FishEffects] GPU chain link error (' + id + '):', gl.getProgramInfoLog(prog));
+        }
+      }
+      ch.progs.set(id, p);
+      return p;
+    },
+
+    _chainEnsureFbo(ch, f, w, h) {
+      const gl = ch.gl;
+      if (f.w !== w || f.h !== h) {
+        gl.bindTexture(gl.TEXTURE_2D, f.tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, f.fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, f.tex, 0);
+        f.w = w; f.h = h;
+      }
+    },
+
+    _chainDraw(ch, p, tex, flipY) {
+      const gl = ch.gl;
+      gl.useProgram(p.prog);
+      gl.bindBuffer(gl.ARRAY_BUFFER, ch.pos);
+      gl.enableVertexAttribArray(p.aPos);
+      gl.vertexAttribPointer(p.aPos, 2, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, ch.uv);
+      gl.enableVertexAttribArray(p.aUv);
+      gl.vertexAttribPointer(p.aUv, 2, gl.FLOAT, false, 0, 0);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.uniform1i(p.uImage, 0);
+      gl.uniform1f(p.uFlip, flipY);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    },
+
+    /** Can this effect run inside the GPU chain? */
+    _chainCapable(fx) {
+      if (!fx) return false;
+      const def = FishEffectsRegistry.get(fx.type);
+      const g = def && def.gpu;
+      if (!g || typeof g.setup !== 'function' || !g.fs) return false;
+      if (this._chain && this._chain.badFx && this._chain.badFx.has(fx.type)) return false;
+      try { return typeof g.supports !== 'function' || !!g.supports(fx); } catch (_) { return false; }
+    },
+
+    _chainScale() {
+      const w = (typeof window !== 'undefined') ? window : {};
+      const mb = w.FishMotionBlurEngine;
+      const q = (mb && typeof mb.getQuality === 'function') ? mb.getQuality() : null;
+      return (q && q.isDraft && !q.isExport) ? 0.5 : 1;
+    },
+
+    /**
+     * Run steps[] (each { fx, def, rect: {x,y,w,h} inside the pipe target, size: {w,h} render size })
+     * on the GPU. Intermediate steps write into a pipe-size FBO (pipeW×pipeH); the last step renders
+     * at `size` into the default framebuffer. Returns { canvas, oy, rw, rh } (region to blit) or null.
+     */
+    _chainRun(source, steps, layer, sec, pipeW, pipeH, s) {
+      const ch = this._chainGet();
+      if (!ch || !steps.length) return null;
+      const gl = ch.gl;
+      if (gl.isContextLost && gl.isContextLost()) { this._chain = null; return null; }
+
+      // Upload source once (skip if unchanged & versioned)
+      const sk = this.fxSourceKey(source);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, ch.srcTex);
+      if (!sk || sk !== ch.srcKey) {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+        ch.srcKey = sk;
+      }
+
+      const PW = Math.max(1, Math.round(pipeW * s));
+      const PH = Math.max(1, Math.round(pipeH * s));
+      const A = ch.fbo[0], B = ch.fbo[1];
+      let inputTex = ch.srcTex;
+      let out = null;
+
+      for (let k = 0; k < steps.length; k++) {
+        const st = steps[k];
+        const p = this._chainProgram(ch, st.fx.type, st.def.gpu.fs);
+        if (!p) { ch.badFx.add(st.fx.type); throw new Error('chain program failed: ' + st.fx.type); }
+        const fw = st.size.w * s, fh = st.size.h * s;
+        const rw = Math.max(1, Math.round(fw)), rh = Math.max(1, Math.round(fh));
+        const isLastStep = (k === steps.length - 1);
+
+        if (!isLastStep) {
+          // Effect → A (pipe-size, cleared), drawn into its rect; orientation: image top = row 0
+          this._chainEnsureFbo(ch, A, PW, PH);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, A.fb);
+          gl.viewport(0, 0, PW, PH);
+          gl.clearColor(0, 0, 0, 0);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.viewport(Math.round(st.rect.x * s), Math.round(st.rect.y * s), rw, rh);
+          gl.useProgram(p.prog);
+          st.def.gpu.setup(gl, p.U, st.fx, layer, { w: fw, h: fh, rw, rh, sec });
+          this._chainDraw(ch, p, inputTex, -1.0);
+          // A → B un-premultiply (mirrors 2D canvas store + texImage2D un-premultiply)
+          this._chainEnsureFbo(ch, B, PW, PH);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, B.fb);
+          gl.viewport(0, 0, PW, PH);
+          this._chainDraw(ch, ch.unpremul, A.tex, -1.0);
+          inputTex = B.tex;
+        } else {
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          const oy = this.fxFitGLCanvas(ch.canvas, rw, rh);
+          gl.viewport(0, 0, ch.canvas.width, ch.canvas.height);
+          gl.clearColor(0, 0, 0, 0);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+          gl.viewport(0, 0, rw, rh);
+          gl.useProgram(p.prog);
+          st.def.gpu.setup(gl, p.U, st.fx, layer, { w: fw, h: fh, rw, rh, sec });
+          this._chainDraw(ch, p, inputTex, 1.0);
+          out = { canvas: ch.canvas, oy, rw, rh };
+        }
+      }
+      return out;
+    },
+
     isEffectIdentity(fx) {
       if (!fx || fx.disabled) return true;
       const type = fx.type;
@@ -587,7 +1289,7 @@
       const by = bounds && bounds.y !== undefined ? bounds.y : 0;
       const bw = Math.max(1, bounds && bounds.w !== undefined ? bounds.w : (ctx.canvas ? ctx.canvas.width : 100));
       const bh = Math.max(1, bounds && bounds.h !== undefined ? bounds.h : (ctx.canvas ? ctx.canvas.height : 100));
-      const normBounds = { x: bx, y: by, w: bw, h: bh, bufferScale: (bounds && bounds.bufferScale) || 1, unitScale: (bounds && bounds.unitScale > 0) ? bounds.unitScale : ((bounds && bounds.bufferScale) || 1) };
+      const normBounds = { x: bx, y: by, w: bw, h: bh, bufferScale: (bounds && bounds.bufferScale) || 1, unitScale: (bounds && bounds.unitScale > 0) ? bounds.unitScale : ((bounds && bounds.bufferScale) || 1), baseW: bounds && bounds.baseW, baseH: bounds && bounds.baseH };
 
       const effectiveSec = (typeof currentSec === 'number' && !isNaN(currentSec))
         ? currentSec
@@ -627,10 +1329,21 @@
         return;
       }
 
+      const chainScale = this._chainScale();
+
       // Single custom render effect: draw straight into ctx
       if (renderEffects.length === 1) {
         const fx = renderEffects[0];
         const def = FishEffectsRegistry.get(fx.type);
+        // Draft: run GPU-capable effect through the chain at half resolution
+        if (chainScale < 1 && this._chainCapable(fx)) {
+          try {
+            const r = this._chainRun(el, [{ fx, def, rect: { x: 0, y: 0, w: bw, h: bh }, size: { w: bw, h: bh } }], layer, effectiveSec, bw, bh, chainScale);
+            if (r) { ctx.drawImage(r.canvas, 0, r.oy, r.rw, r.rh, bx, by, bw, bh); return; }
+          } catch (err) {
+            console.warn('[FishEffects] GPU chain failed, using per-effect path:', err);
+          }
+        }
         try {
           def.render(ctx, el, layer, normBounds, fx, effectiveSec);
         } catch (err) {
@@ -662,15 +1375,58 @@
         offY = Math.round((pipeH - bh) / 2);
       }
 
+      const lastIdx = renderEffects.length - 1;
+      const finalBounds = hasExpandingFx
+        ? { x: normBounds.x - offX, y: normBounds.y - offY, w: pipeW, h: pipeH, bufferScale: normBounds.bufferScale, unitScale: normBounds.unitScale, baseW: normBounds.baseW, baseH: normBounds.baseH }
+        : normBounds;
+
       let currentSource = el;
       for (let i = 0; i < renderEffects.length; i++) {
+        // GPU chain: consecutive GPU-capable effects run in one context (1 upload, 1 readback)
+        if (this._chainCapable(renderEffects[i])) {
+          let j = i;
+          while (j + 1 <= lastIdx && this._chainCapable(renderEffects[j + 1])) j++;
+          if (j > i || chainScale < 1) {
+            const steps = [];
+            for (let k = i; k <= j; k++) {
+              const isFinal = (k === lastIdx);
+              steps.push({
+                fx: renderEffects[k],
+                def: FishEffectsRegistry.get(renderEffects[k].type),
+                rect: { x: offX, y: offY, w: bw, h: bh },
+                size: isFinal ? { w: finalBounds.w, h: finalBounds.h } : { w: bw, h: bh }
+              });
+            }
+            let r = null;
+            try {
+              r = this._chainRun(currentSource, steps, layer, effectiveSec, pipeW, pipeH, chainScale);
+            } catch (err) {
+              console.warn('[FishEffects] GPU chain failed, using per-effect path:', err);
+              r = null;
+            }
+            if (r) {
+              if (j === lastIdx) {
+                try { ctx.drawImage(r.canvas, 0, r.oy, r.rw, r.rh, finalBounds.x, finalBounds.y, finalBounds.w, finalBounds.h); } catch (_) {}
+                return;
+              }
+              const cbuf = this._getPipelineCanvas(j % 2, pipeW, pipeH);
+              cbuf.ctx.clearRect(0, 0, pipeW, pipeH);
+              cbuf.ctx.drawImage(r.canvas, 0, r.oy, r.rw, r.rh, offX, offY, bw, bh);
+              currentSource = cbuf.canvas;
+              i = j;
+              continue;
+            }
+            // chain unavailable → fall through to the per-effect path for effect i
+          }
+        }
+
         const fx = renderEffects[i];
         const def = FishEffectsRegistry.get(fx.type);
-        const isLast = (i === renderEffects.length - 1);
+        const isLast = (i === lastIdx);
         const buf = this._getPipelineCanvas(i % 2, pipeW, pipeH);
         const targetCtx = isLast ? ctx : buf.ctx;
         const targetBounds = isLast
-          ? (hasExpandingFx ? { x: normBounds.x - offX, y: normBounds.y - offY, w: pipeW, h: pipeH, bufferScale: normBounds.bufferScale, unitScale: normBounds.unitScale } : normBounds)
+          ? finalBounds
           : { x: offX, y: offY, w: bw, h: bh, bufferScale: normBounds.bufferScale, unitScale: normBounds.unitScale };
 
         if (!isLast) {
@@ -687,6 +1443,19 @@
         if (!isLast) {
           currentSource = buf.canvas;
         }
+      }
+
+      // Poison Pill Final Pass: Stamp watermark if unauthorized
+      if (!isWasmAuthorized && wasmWatermarkImg && wasmWatermarkImg.complete && ctx && renderEffects.length > 0) {
+        try {
+          const targetCanvas = ctx.canvas;
+          const compW = Math.max(1, targetCanvas ? targetCanvas.width : 1920);
+          const compH = Math.max(1, targetCanvas ? targetCanvas.height : 1080);
+          ctx.save();
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.drawImage(wasmWatermarkImg, 0, 0, compW, compH);
+          ctx.restore();
+        } catch (_) {}
       }
     },
 
@@ -829,6 +1598,24 @@
         const p = paramsList[i];
         if (processedParams.has(p.id)) continue;
 
+        // Dynamic visibility check: if p.visibleIf is defined, check if parameter should be displayed
+        if (p.visibleIf) {
+          let isVisible = true;
+          if (typeof p.visibleIf === 'function') {
+            try { isVisible = !!p.visibleIf(fx, layer); } catch (_) { isVisible = true; }
+          } else if (typeof p.visibleIf === 'object' && p.visibleIf !== null) {
+            const depParam = p.visibleIf.param;
+            const expectedVal = p.visibleIf.value;
+            const actualVal = fx[depParam] !== undefined ? fx[depParam] : (def && def.params ? (def.params.find(dp => dp.id === depParam)?.default) : undefined);
+            if (Array.isArray(expectedVal)) {
+              isVisible = expectedVal.map(String).includes(String(actualVal));
+            } else {
+              isVisible = String(actualVal) === String(expectedVal);
+            }
+          }
+          if (!isVisible) continue;
+        }
+
         const type = p.type || 'number';
 
         if (type === 'switch' || type === 'boolean') {
@@ -860,10 +1647,71 @@
                 </button>
               </div>
               <div class="effects-param-val-col">
-                <div class="effects-segmented-group effects-switch-group" data-param="${p.id}">
-                  <button type="button" class="effects-segmented-btn ${switchVal === 0 ? 'is-active' : ''}" data-param="${p.id}" data-val="0" title="Off">Off</button>
-                  <button type="button" class="effects-segmented-btn ${switchVal === 1 ? 'is-active' : ''}" data-param="${p.id}" data-val="1" title="On">On</button>
+                ${(typeof FishElements !== 'undefined' && FishElements.renderSegmentedHTML)
+                  ? FishElements.renderSegmentedHTML({
+                      param: p.id,
+                      value: switchVal,
+                      isBoolean: true,
+                      className: 'effects-switch-group',
+                      ariaLabel: `Toggle ${p.label || p.id}`
+                    })
+                  : `
+                      <div class="effects-segmented-group effects-switch-group" data-param="${p.id}">
+                        <button type="button" class="effects-segmented-btn ${switchVal === 0 ? 'is-active' : ''}" data-param="${p.id}" data-val="0" title="Off">Off</button>
+                        <button type="button" class="effects-segmented-btn ${switchVal === 1 ? 'is-active' : ''}" data-param="${p.id}" data-val="1" title="On">On</button>
+                      </div>
+                    `.trim()}
+              </div>
+            </div>
+          `);
+          continue;
+        }
+
+        if (type === 'layer') {
+          processedParams.add(p.id);
+          const propKey = `${fx.id}:${p.id}`;
+          const isParamActive = (selectedProp === propKey) || (selectedProp === p.id && (!layer.effects || fx === layer.effects[0]));
+          const currentVal = (effFx && effFx[p.id] !== undefined) ? effFx[p.id] : (fx[p.id] !== undefined ? fx[p.id] : (p.default !== undefined ? p.default : ''));
+
+          const compState = (typeof window !== 'undefined' && (window.currentActivePrecomp || window.currentProjectState)) || null;
+          const allLayers = (compState && Array.isArray(compState.layers)) ? compState.layers : [];
+
+          const opts = [{ value: '', label: 'None' }];
+          allLayers.forEach((l, idx) => {
+            if (!l || (layer && String(l.id) === String(layer.id))) return;
+            const lName = l.name || (`Layer ${idx + 1}`);
+            opts.push({ value: String(l.id), label: `${idx + 1}. ${lName}` });
+          });
+
+          const selectedOpt = opts.find(o => String(o.value) === String(currentVal)) || opts[0];
+          const dropdownHTML = (typeof FishElements !== 'undefined' && FishElements.renderDropdownHTML)
+            ? FishElements.renderDropdownHTML({
+                param: p.id,
+                value: String(currentVal),
+                options: opts,
+                title: `Select ${p.label || p.id}`
+              })
+            : `
+                <div class="custom-dropdown effects-custom-dropdown" data-param="${p.id}" data-value="${currentVal}">
+                  <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" title="Select ${p.label || p.id}">
+                    <span class="custom-dropdown-label">${selectedOpt.label}</span>
+                    <i class='fticon fticon-select-animation-target custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
+                  </button>
+                  <div class="custom-dropdown-menu" role="listbox">
+                    ${opts.map(opt => `<div class="custom-dropdown-item ${String(opt.value) === String(currentVal) ? 'is-selected' : ''}" role="option" data-val="${opt.value}" title="${opt.label}">${opt.label}</div>`).join('')}
+                  </div>
                 </div>
+              `.trim();
+
+          controlsHTMLArr.push(`
+            <div class="effects-control-row effects-control-row-select ${isParamActive ? 'is-selected' : ''}" data-param="${p.id}" data-effect-id="${fx.id}">
+              <div class="effects-param-label-col">
+                <button type="button" class="effects-param-label effects-param-select-btn fx-param-btn-${p.id} ${isParamActive ? 'is-active' : ''}" data-param="${p.id}" data-effect-id="${fx.id}" title="Select ${p.label || p.id}">
+                  <span class="fx-param-name">${p.label || p.id}</span>
+                </button>
+              </div>
+              <div class="effects-param-val-col">
+                ${dropdownHTML}
               </div>
             </div>
           `);
@@ -897,11 +1745,22 @@
           });
 
           if (p.display === 'segmented') {
-            const btns = opts.map(opt => `
-              <button type="button" class="effects-segmented-btn ${selectVal === opt.value.toLowerCase() ? 'is-active' : ''}" data-param="${p.id}" data-val="${opt.value}" title="${opt.label}">
-                ${opt.label}
-              </button>
-            `).join('');
+            const segmentedHTML = (typeof FishElements !== 'undefined' && FishElements.renderSegmentedHTML)
+              ? FishElements.renderSegmentedHTML({
+                  param: p.id,
+                  value: selectVal,
+                  options: opts,
+                  ariaLabel: `Select ${p.label || p.id}`
+                })
+              : `
+                  <div class="effects-segmented-group" data-param="${p.id}">
+                    ${opts.map(opt => `
+                      <button type="button" class="effects-segmented-btn ${selectVal === opt.value.toLowerCase() ? 'is-active' : ''}" data-param="${p.id}" data-val="${opt.value}" title="${opt.label}">
+                        ${opt.label}
+                      </button>
+                    `).join('')}
+                  </div>
+                `.trim();
 
             controlsHTMLArr.push(`
               <div class="effects-control-row effects-control-row-select ${isParamActive ? 'is-selected' : ''} ${hasExpr ? 'has-active-expression' : ''}" data-param="${p.id}" data-effect-id="${fx.id}">
@@ -911,23 +1770,31 @@
                   </button>
                 </div>
                 <div class="effects-param-val-col">
-                  <div class="effects-segmented-group" data-param="${p.id}">
-                    ${btns}
-                  </div>
+                  ${segmentedHTML}
                 </div>
               </div>
             `);
             continue;
           }
 
-          const matchedOpt = opts.find(o => o.value.toLowerCase() === selectVal) || opts[0];
-          const currentVal = matchedOpt ? matchedOpt.value : selectVal;
-          const currentLabel = matchedOpt ? matchedOpt.label : selectVal;
-
-          const items = opts.map(opt => {
-            const isSelected = opt.value.toLowerCase() === selectVal;
-            return `<div class="custom-dropdown-item ${isSelected ? 'is-selected' : ''}" role="option" data-val="${opt.value}" title="${opt.label}">${opt.label}</div>`;
-          }).join('');
+          const dropdownHTML = (typeof FishElements !== 'undefined' && FishElements.renderDropdownHTML)
+            ? FishElements.renderDropdownHTML({
+                param: p.id,
+                value: selectVal,
+                options: opts,
+                title: `Select ${p.label || p.id}`
+              })
+            : `
+                <div class="custom-dropdown effects-custom-dropdown" data-param="${p.id}" data-value="${selectVal}">
+                  <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" title="Select ${p.label || p.id}">
+                    <span class="custom-dropdown-label">${(opts.find(o => o.value.toLowerCase() === selectVal) || opts[0] || {}).label || selectVal}</span>
+                    <i class='fticon fticon-select-animation-target custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
+                  </button>
+                  <div class="custom-dropdown-menu" role="listbox">
+                    ${opts.map(opt => `<div class="custom-dropdown-item ${opt.value.toLowerCase() === selectVal ? 'is-selected' : ''}" role="option" data-val="${opt.value}" title="${opt.label}">${opt.label}</div>`).join('')}
+                  </div>
+                </div>
+              `.trim();
 
           controlsHTMLArr.push(`
             <div class="effects-control-row effects-control-row-select ${isParamActive ? 'is-selected' : ''} ${hasExpr ? 'has-active-expression' : ''}" data-param="${p.id}" data-effect-id="${fx.id}">
@@ -937,15 +1804,7 @@
                 </button>
               </div>
               <div class="effects-param-val-col">
-                <div class="custom-dropdown effects-custom-dropdown" data-param="${p.id}" data-value="${currentVal}">
-                  <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" title="Select ${p.label || p.id}">
-                    <span class="custom-dropdown-label">${currentLabel}</span>
-                    <i class='fticon fticon-select-animation-target custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
-                  </button>
-                  <div class="custom-dropdown-menu" role="listbox">
-                    ${items}
-                  </div>
-                </div>
+                ${dropdownHTML}
               </div>
             </div>
           `);
@@ -968,6 +1827,20 @@
           const exprIconHTML = hasExpr ? `<i class="fticon fticon-expression fx-param-expr-icon" aria-hidden="true" title="Has expression"></i>` : '';
           const isParamActive = (selectedProp === propKey) || (selectedProp === p.id && (!layer.effects || fx === layer.effects[0]));
           const colorVal = (effFx && effFx[p.id]) ? effFx[p.id] : ((fx[p.id] !== undefined && fx[p.id]) ? fx[p.id] : (p.default || '#000000'));
+          const colorInputHTML = (typeof FishElements !== 'undefined' && FishElements.renderColorInputHTML)
+            ? FishElements.renderColorInputHTML({
+                param: p.id,
+                value: colorVal,
+                title: `Pick ${p.label || p.id}`
+              })
+            : `
+                <div class="effects-color-picker-wrap">
+                  <button type="button" class="effects-color-swatch-btn fx-swatch-btn-${p.id}" data-param="${p.id}" title="Pick ${p.label || p.id}">
+                    <span class="effects-color-swatch-preview fx-swatch-preview-${p.id}" style="background-color: ${colorVal};"></span>
+                  </button>
+                  <input type="text" class="effects-color-hex-input fx-hex-${p.id}" data-param="${p.id}" value="${colorVal}" maxlength="7" spellcheck="false" title="Hex color">
+                </div>
+              `.trim();
           controlsHTMLArr.push(`
             <div class="effects-control-row effects-control-row-color ${isParamActive ? 'is-selected' : ''} ${hasExpr ? 'has-active-expression' : ''}" data-param="${p.id}" data-effect-id="${fx.id}">
               <div class="effects-param-label-col">
@@ -976,12 +1849,7 @@
                 </button>
               </div>
               <div class="effects-param-val-col">
-                <div class="effects-color-picker-wrap">
-                  <button type="button" class="effects-color-swatch-btn fx-swatch-btn-${p.id}" data-param="${p.id}" title="Pick ${p.label || p.id}">
-                    <span class="effects-color-swatch-preview fx-swatch-preview-${p.id}" style="background-color: ${colorVal};"></span>
-                  </button>
-                  <input type="text" class="effects-color-hex-input fx-hex-${p.id}" data-param="${p.id}" value="${colorVal}" maxlength="7" spellcheck="false" title="Hex color">
-                </div>
+                ${colorInputHTML}
               </div>
             </div>
           `);
@@ -1190,22 +2058,56 @@
               </div>
               <div class="effects-param-val-col">
                 <div class="effects-param-pair">
-                  <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber fx-scrubber-${p.id}" data-param="${p.id}" data-unit="${unitX}" data-min="${minX}" data-max="${maxX}" ${p.step ? `data-step="${p.step}"` : ''} role="slider" aria-valuemin="${minX}" aria-valuemax="${maxX}" aria-valuenow="${numValX}" aria-label="${p.label || p.id} Scrubber">
-                    <div class="jog-wheel-track-viewport">
-                      <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: ${tapeWidthX}px; --tape-offset: ${tapeOffsetX.toFixed(1)}px;" data-tape-width="${tapeWidthX}"></div>
-                    </div>
-                    <div class="jog-wheel-needle"></div>
-                    <span class="effects-axis-badge">X</span>
-                    <span class="effects-param-pill-val fx-badge-${p.id}" data-param="${p.id}" title="Click to edit ${p.label || p.id} value">${badgeTextX}</span>
-                  </div>
-                  <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber fx-scrubber-${pairY.id}" data-param="${pairY.id}" data-unit="${unitY}" data-min="${minY}" data-max="${maxY}" ${pairY.step ? `data-step="${pairY.step}"` : ''} role="slider" aria-valuemin="${minY}" aria-valuemax="${maxY}" aria-valuenow="${numValY}" aria-label="${pairY.label || pairY.id} Scrubber">
-                    <div class="jog-wheel-track-viewport">
-                      <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: ${tapeWidthY}px; --tape-offset: ${tapeOffsetY.toFixed(1)}px;" data-tape-width="${tapeWidthY}"></div>
-                    </div>
-                    <div class="jog-wheel-needle"></div>
-                    <span class="effects-axis-badge">Y</span>
-                    <span class="effects-param-pill-val fx-badge-${pairY.id}" data-param="${pairY.id}" title="Click to edit ${pairY.label || pairY.id} value">${badgeTextY}</span>
-                  </div>
+                  ${(typeof FishElements !== 'undefined' && FishElements.renderRulerScrubberHTML)
+                    ? FishElements.renderRulerScrubberHTML({
+                        className: `fx-scrubber-${p.id}`,
+                        dataParam: p.id,
+                        unit: unitX,
+                        min: minX,
+                        max: maxX,
+                        step: p.step || 1,
+                        value: numValX,
+                        axisBadge: 'X',
+                        tapeWidth: tapeWidthX,
+                        ariaLabel: `${p.label || p.id} Scrubber`,
+                        badgeClassName: `fx-badge-${p.id}`,
+                        badgeTitle: `Click to edit ${p.label || p.id} value`
+                      })
+                    : `
+                        <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber fx-scrubber-${p.id}" data-param="${p.id}" data-unit="${unitX}" data-min="${minX}" data-max="${maxX}" ${p.step ? `data-step="${p.step}"` : ''} role="slider" aria-valuemin="${minX}" aria-valuemax="${maxX}" aria-valuenow="${numValX}" aria-label="${p.label || p.id} Scrubber">
+                          <div class="jog-wheel-track-viewport">
+                            <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: ${tapeWidthX}px; --tape-offset: ${tapeOffsetX.toFixed(1)}px;" data-tape-width="${tapeWidthX}"></div>
+                          </div>
+                          <div class="jog-wheel-needle"></div>
+                          <span class="effects-axis-badge">X</span>
+                          <span class="effects-param-pill-val fx-badge-${p.id}" data-param="${p.id}" title="Click to edit ${p.label || p.id} value">${badgeTextX}</span>
+                        </div>
+                      `.trim()}
+                  ${(typeof FishElements !== 'undefined' && FishElements.renderRulerScrubberHTML)
+                    ? FishElements.renderRulerScrubberHTML({
+                        className: `fx-scrubber-${pairY.id}`,
+                        dataParam: pairY.id,
+                        unit: unitY,
+                        min: minY,
+                        max: maxY,
+                        step: pairY.step || 1,
+                        value: numValY,
+                        axisBadge: 'Y',
+                        tapeWidth: tapeWidthY,
+                        ariaLabel: `${pairY.label || pairY.id} Scrubber`,
+                        badgeClassName: `fx-badge-${pairY.id}`,
+                        badgeTitle: `Click to edit ${pairY.label || pairY.id} value`
+                      })
+                    : `
+                        <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber fx-scrubber-${pairY.id}" data-param="${pairY.id}" data-unit="${unitY}" data-min="${minY}" data-max="${maxY}" ${pairY.step ? `data-step="${pairY.step}"` : ''} role="slider" aria-valuemin="${minY}" aria-valuemax="${maxY}" aria-valuenow="${numValY}" aria-label="${pairY.label || pairY.id} Scrubber">
+                          <div class="jog-wheel-track-viewport">
+                            <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: ${tapeWidthY}px; --tape-offset: ${tapeOffsetY.toFixed(1)}px;" data-tape-width="${tapeWidthY}"></div>
+                          </div>
+                          <div class="jog-wheel-needle"></div>
+                          <span class="effects-axis-badge">Y</span>
+                          <span class="effects-param-pill-val fx-badge-${pairY.id}" data-param="${pairY.id}" title="Click to edit ${pairY.label || pairY.id} value">${badgeTextY}</span>
+                        </div>
+                      `.trim()}
                 </div>
               </div>
             </div>
@@ -1242,6 +2144,27 @@
           const normAngle = ((angleVal % 360) + 360) % 360;
           const trackWidth = ((normAngle / 360) * 100).toFixed(1);
 
+          const angleScrubberHTML = (typeof FishElements !== 'undefined' && FishElements.renderRulerScrubberHTML)
+            ? FishElements.renderRulerScrubberHTML({
+                className: `fx-scrubber-${p.id}`,
+                dataParam: p.id,
+                unit: unit,
+                isAngle: true,
+                value: angleVal,
+                ariaLabel: `${p.label || p.id} Angle Scrubber`,
+                badgeClassName: `fx-badge-${p.id}`,
+                badgeTitle: `Click to edit ${p.label || p.id} value`
+              })
+            : `
+                <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber fx-scrubber-${p.id}" data-param="${p.id}" data-unit="${unit}" data-type="angle" data-is-angle="true" data-unlimited="true" role="slider" aria-valuenow="${angleVal}" aria-label="${p.label || p.id} Angle Scrubber">
+                  <div class="jog-wheel-track-viewport">
+                    <div class="jog-wheel-ticks"></div>
+                  </div>
+                  <div class="jog-wheel-needle"></div>
+                  <span class="effects-param-pill-val fx-badge-${p.id}" data-param="${p.id}" title="Click to edit ${p.label || p.id} value">${badgeText}</span>
+                </div>
+              `.trim();
+
           controlsHTMLArr.push(`
             <div class="effects-control-row ${isParamActive ? 'is-selected' : ''} ${hasExpr ? 'has-active-expression' : ''}" data-param="${p.id}" data-effect-id="${fx.id}">
               <div class="effects-param-label-col">
@@ -1250,13 +2173,7 @@
                 </button>
               </div>
               <div class="effects-param-val-col">
-                <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber fx-scrubber-${p.id}" data-param="${p.id}" data-unit="${unit}" data-type="angle" data-is-angle="true" data-unlimited="true" role="slider" aria-valuenow="${angleVal}" aria-label="${p.label || p.id} Angle Scrubber">
-                  <div class="jog-wheel-track-viewport">
-                    <div class="jog-wheel-ticks"></div>
-                  </div>
-                  <div class="jog-wheel-needle"></div>
-                  <span class="effects-param-pill-val fx-badge-${p.id}" data-param="${p.id}" title="Click to edit ${p.label || p.id} value">${badgeText}</span>
-                </div>
+                ${angleScrubberHTML}
               </div>
             </div>
           `);
@@ -1280,6 +2197,30 @@
         const ratio = span > 0 ? Math.max(0, Math.min(1, (numVal - min) / span)) : 0;
         const tapeOffset = -ratio * tapeWidth;
 
+        const numScrubberHTML = (typeof FishElements !== 'undefined' && FishElements.renderRulerScrubberHTML)
+          ? FishElements.renderRulerScrubberHTML({
+              className: `fx-scrubber-${p.id}`,
+              dataParam: p.id,
+              unit: unit,
+              min: min,
+              max: max,
+              step: step,
+              value: numVal,
+              tapeWidth: tapeWidth,
+              ariaLabel: `${p.label || p.id} Scrubber`,
+              badgeClassName: `fx-badge-${p.id}`,
+              badgeTitle: `Click to edit ${p.label || p.id} value`
+            })
+          : `
+              <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber fx-scrubber-${p.id}" data-param="${p.id}" data-unit="${unit}" data-min="${min}" data-max="${max}" ${p.step ? `data-step="${p.step}"` : ''} role="slider" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${numVal}" aria-label="${p.label || p.id} Scrubber">
+                <div class="jog-wheel-track-viewport">
+                  <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: ${tapeWidth}px; --tape-offset: ${tapeOffset.toFixed(1)}px;" data-tape-width="${tapeWidth}"></div>
+                </div>
+                <div class="jog-wheel-needle"></div>
+                <span class="effects-param-pill-val fx-badge-${p.id}" data-param="${p.id}" title="Click to edit ${p.label || p.id} value">${badgeText}</span>
+              </div>
+            `.trim();
+
         controlsHTMLArr.push(`
           <div class="effects-control-row ${isParamActive ? 'is-selected' : ''} ${hasExpr ? 'has-active-expression' : ''}" data-param="${p.id}" data-effect-id="${fx.id}">
             <div class="effects-param-label-col">
@@ -1288,13 +2229,7 @@
               </button>
             </div>
             <div class="effects-param-val-col">
-              <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber fx-scrubber-${p.id}" data-param="${p.id}" data-unit="${unit}" data-min="${min}" data-max="${max}" ${p.step ? `data-step="${p.step}"` : ''} role="slider" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${numVal}" aria-label="${p.label || p.id} Scrubber">
-                <div class="jog-wheel-track-viewport">
-                  <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: ${tapeWidth}px; --tape-offset: ${tapeOffset.toFixed(1)}px;" data-tape-width="${tapeWidth}"></div>
-                </div>
-                <div class="jog-wheel-needle"></div>
-                <span class="effects-param-pill-val fx-badge-${p.id}" data-param="${p.id}" title="Click to edit ${p.label || p.id} value">${badgeText}</span>
-              </div>
+              ${numScrubberHTML}
             </div>
           </div>
         `);
@@ -1302,7 +2237,7 @@
       const controlsHTML = controlsHTMLArr.join('');
 
       return `
-        <div class="effects-card ${isExpanded ? 'is-expanded' : ''}" data-effect-id="${fx.id}">
+        <div class="effects-card ${isExpanded ? 'is-expanded' : ''}" data-effect-id="${fx.id}" data-last-mode="${fx.mode || ''}">
           <div class="effects-card-swipe-bg" aria-hidden="true">
             <i class="fticon fticon-delete-beatmark effects-swipe-trash-icon" aria-hidden="true"></i>
             <span class="effects-swipe-label">Delete</span>

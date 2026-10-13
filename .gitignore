@@ -32,3 +32,16 @@ wrangler.jsonc
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Backups & Raw Uncompiled Effect Scripts
+effects/backup/
+backup/
+*.backup
+*.bak
+
+# Raw Icon Assets & Uncompiled Test Fonts
+fticons/raw icons/
+fticons/test.ttf
+fticons/test.woff2
+fticons/test_*.woff2
+fticons/cleaned.woff2

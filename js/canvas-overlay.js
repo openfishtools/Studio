@@ -218,7 +218,7 @@
         const state = window.currentProjectState;
         allSelectedIds.forEach(id => {
           const l = (state && state.layers || []).find(layer => layer.id === id);
-          if (!l || l.hidden || l.type === 'camera' || l.type === 'audio') return;
+          if (!l || l.type === 'camera' || l.type === 'audio') return;
           const b = l._canvasBounds;
           if (b && (!b.isBehindCamera || (b.posZ || 0) < 950)) {
             window.CanvasWireframe.draw(ctx, b, {
@@ -227,7 +227,8 @@
               isAnchorMode: false,
               color: colors.primary,
               bgColor: colors.bg,
-              dprScale
+              dprScale,
+              hidden: !!l.hidden
             });
           }
         });
@@ -235,7 +236,7 @@
         const state = window.currentProjectState;
         const selId = allSelectedIds[0];
         const selL = (state && state.layers || []).find(l => l.id === selId);
-        if (selL && !selL.hidden && selL.type !== 'camera' && selL.type !== 'audio') {
+        if (selL && selL.type !== 'camera' && selL.type !== 'audio') {
           const b = selL._canvasBounds;
           if (b && (!b.isBehindCamera || (b.posZ || 0) < 950)) {
             const isAnchor = typeof window.isAnchorMode === 'function' ? window.isAnchorMode() : (window.moveAnchorSubmode === 'anchor');
@@ -245,7 +246,8 @@
               isAnchorMode: isAnchor,
               color: colors.primary,
               bgColor: colors.bg,
-              dprScale
+              dprScale,
+              hidden: !!selL.hidden
             });
           }
         }

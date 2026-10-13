@@ -174,3 +174,20 @@
   pointer-events: none;
   user-select: none;
 }
+
+/* 4. Boolean Off/On toggle: green marks On (right) only.
+   Off-active stays neutral, so green never sits on "Off". */
+.text-toggle-switch .segmented-switch-item[data-val="false"].is-active,
+.text-toggle-switch .segmented-switch-item[data-val="false"].is-selected,
+.effects-switch-group .effects-segmented-btn[data-val="0"].is-active {
+  background-color: var(--bg-panel);
+  color: var(--text-primary);
+  border-right-color: var(--border-subtle);
+}
+
+.text-toggle-switch .segmented-switch-item[data-val="false"].is-active:hover,
+.text-toggle-switch .segmented-switch-item[data-val="false"].is-selected:hover,
+.effects-switch-group .effects-segmented-btn[data-val="0"].is-active:hover {
+  background-color: var(--bg-panel-hover);
+  color: var(--text-primary);
+}

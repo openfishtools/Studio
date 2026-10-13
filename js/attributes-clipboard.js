@@ -51,7 +51,7 @@
       row: 'grid',
       label: 'Edit Shape',
       icon: '<i class="fticon fticon-edit-shape" aria-hidden="true"></i>',
-      isApplicable: (l) => l && l.type === 'shape'
+      isApplicable: (l) => l && (l.type === 'shape' || l.type === 'image' || l.type === 'video' || (l.type === 'precomp' && !l.collapseTransformations))
     },
     text: {
       id: 'text',
@@ -340,11 +340,11 @@
     }
 
     // 3. Edit Shape
-    if (categoriesSet.has('shape') && layer.type === 'shape') {
+    if (categoriesSet.has('shape') && (layer.type === 'shape' || layer.type === 'image' || layer.type === 'video' || (layer.type === 'precomp' && !layer.collapseTransformations))) {
       payload.data.shape = {
         shapeType: layer.shapeType || 'rectangle',
         shapeProps: layer.shapeProps ? JSON.parse(JSON.stringify(layer.shapeProps)) : {},
-        roundness: layer.roundness,
+        roundness: layer.roundness !== undefined ? layer.roundness : (layer.shapeProps ? layer.shapeProps.roundness : undefined),
         strokeColor: layer.strokeColor,
         strokeWidth: layer.strokeWidth,
         strokeType: layer.strokeType,
@@ -617,16 +617,24 @@
     }
 
     // 3. Edit Shape
-    if (categoriesSet.has('shape') && payload.data.shape && targetLayer.type === 'shape') {
+    if (categoriesSet.has('shape') && payload.data.shape) {
       const d = payload.data.shape;
-      if (d.shapeType) targetLayer.shapeType = d.shapeType;
-      if (d.shapeProps) targetLayer.shapeProps = JSON.parse(JSON.stringify(d.shapeProps));
-      if (d.roundness !== undefined) targetLayer.roundness = d.roundness;
-      if (d.strokeColor !== undefined) targetLayer.strokeColor = d.strokeColor;
-      if (d.strokeWidth !== undefined) targetLayer.strokeWidth = d.strokeWidth;
-      if (d.strokeType !== undefined) targetLayer.strokeType = d.strokeType;
-      if (d.isSolid !== undefined) targetLayer.isSolid = d.isSolid;
-      if (d.keyframes) applyShiftedKeyframes(targetLayer, d.keyframes, sourceStartSec, sourceDur, targetStartSec, targetDur);
+      if (targetLayer.type === 'shape') {
+        if (d.shapeType) targetLayer.shapeType = d.shapeType;
+        if (d.shapeProps) targetLayer.shapeProps = JSON.parse(JSON.stringify(d.shapeProps));
+        if (d.roundness !== undefined) targetLayer.roundness = d.roundness;
+        if (d.strokeColor !== undefined) targetLayer.strokeColor = d.strokeColor;
+        if (d.strokeWidth !== undefined) targetLayer.strokeWidth = d.strokeWidth;
+        if (d.strokeType !== undefined) targetLayer.strokeType = d.strokeType;
+        if (d.isSolid !== undefined) targetLayer.isSolid = d.isSolid;
+        if (d.keyframes) applyShiftedKeyframes(targetLayer, d.keyframes, sourceStartSec, sourceDur, targetStartSec, targetDur);
+      } else if (targetLayer.type === 'image' || targetLayer.type === 'video' || (targetLayer.type === 'precomp' && !targetLayer.collapseTransformations)) {
+        if (d.roundness !== undefined) {
+          targetLayer.roundness = d.roundness;
+        } else if (d.shapeProps && d.shapeProps.roundness !== undefined) {
+          targetLayer.roundness = d.shapeProps.roundness;
+        }
+      }
     }
 
     // 4. Edit Group (Precompose)

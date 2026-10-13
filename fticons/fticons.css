@@ -1,6 +1,6 @@
 @font-face {
     font-family: "fticons";
-    src: url("./fticons.woff2?bc059f79f0ea5661453238e225306598") format("woff2");
+    src: url(".//fticons.woff2?1decc2e03c8d3fcfaa25af4be56938ed") format("woff2");
 }
 
 [class^="fticon-"]:before, [class*=" fticon-"]:before {
@@ -23,17 +23,23 @@
 .fticon-add-reverb-effect:before {
     content: "\e003";
 }
-.fticon-back:before {
-    content: "\e004";
+.fticon-animate:before {
+    content: "\e0c9";
+}
+.fticon-arrow-1-stroke:before {
+    content: "\e0ca";
 }
 .fticon-back-2:before {
     content: "\e005";
 }
+.fticon-back-to-projects-2:before {
+    content: "\e007";
+}
 .fticon-back-to-projects:before {
     content: "\e006";
 }
-.fticon-back-to-projects-2:before {
-    content: "\e007";
+.fticon-back:before {
+    content: "\e004";
 }
 .fticon-badge-3d:before {
     content: "\e008";
@@ -52,9 +58,6 @@
 }
 .fticon-camera:before {
     content: "\e00d";
-}
-.fticon-capsule:before {
-    content: "\e00e";
 }
 .fticon-check:before {
     content: "\e00f";
@@ -77,9 +80,6 @@
 .fticon-circle:before {
     content: "\e015";
 }
-.fticon-close:before {
-    content: "\e016";
-}
 .fticon-close-2:before {
     content: "\e017";
 }
@@ -91,6 +91,9 @@
 }
 .fticon-close-export:before {
     content: "\e01a";
+}
+.fticon-close:before {
+    content: "\e016";
 }
 .fticon-collapse-transformations:before {
     content: "\e01b";
@@ -107,14 +110,23 @@
 .fticon-control:before {
     content: "\e01f";
 }
-.fticon-copy:before {
-    content: "\e020";
-}
 .fticon-copy-link:before {
     content: "\e021";
 }
+.fticon-copy:before {
+    content: "\e020";
+}
+.fticon-custom-animate:before {
+    content: "\e0c9";
+}
 .fticon-custom-resolution:before {
     content: "\e022";
+}
+.fticon-custom-style:before {
+    content: "\e0c8";
+}
+.fticon-custom-text:before {
+    content: "\e0b7";
 }
 .fticon-cut-left:before {
     content: "\e023";
@@ -143,29 +155,17 @@
 .fticon-desktop-view:before {
     content: "\e02b";
 }
-.fticon-dial-transform-rotate:before {
-    content: "\e02c";
-}
 .fticon-donate-qris-toggle:before {
     content: "\e02d";
 }
 .fticon-download-as-png:before {
     content: "\e02e";
 }
-.fticon-drag-to-reorder:before {
-    content: "\e02f";
-}
 .fticon-drag-to-reorder-layer:before {
     content: "\e030";
 }
-.fticon-ease-in:before {
-    content: "\e031";
-}
-.fticon-ease-in-out:before {
-    content: "\e032";
-}
-.fticon-ease-out:before {
-    content: "\e033";
+.fticon-drag-to-reorder:before {
+    content: "\e02f";
 }
 .fticon-edit-group-enter-precompose:before {
     content: "\e034";
@@ -194,9 +194,6 @@
 .fticon-expand-right:before {
     content: "\e03c";
 }
-.fticon-export:before {
-    content: "\e03d";
-}
 .fticon-export-2:before {
     content: "\e03e";
 }
@@ -206,20 +203,23 @@
 .fticon-export-presets-json:before {
     content: "\e040";
 }
+.fticon-export:before {
+    content: "\e03d";
+}
 .fticon-expression:before {
     content: "\e041";
-}
-.fticon-eye:before {
-    content: "\e042";
 }
 .fticon-eye-off:before {
     content: "\e043";
 }
-.fticon-eyedropper:before {
-    content: "\e044";
+.fticon-eye:before {
+    content: "\e042";
 }
 .fticon-eyedropper-2:before {
     content: "\e045";
+}
+.fticon-eyedropper:before {
+    content: "\e044";
 }
 .fticon-fill-color-media-gradient:before {
     content: "\e046";
@@ -241,9 +241,6 @@
 }
 .fticon-heart:before {
     content: "\e04c";
-}
-.fticon-icon:before {
-    content: "\e04d";
 }
 .fticon-icon-10:before {
     content: "\e04e";
@@ -368,6 +365,9 @@
 .fticon-icon-9:before {
     content: "\e076";
 }
+.fticon-icon:before {
+    content: "\e04d";
+}
 .fticon-import-media:before {
     content: "\e077";
 }
@@ -392,9 +392,6 @@
 .fticon-lightning:before {
     content: "\e07e";
 }
-.fticon-linear-easing:before {
-    content: "\e07f";
-}
 .fticon-link-aspect-ratio:before {
     content: "\e080";
 }
@@ -413,14 +410,14 @@
 .fticon-media-fill:before {
     content: "\e085";
 }
-.fticon-more:before {
-    content: "\e086";
-}
 .fticon-more-2:before {
     content: "\e087";
 }
 .fticon-more-options:before {
     content: "\e088";
+}
+.fticon-more:before {
+    content: "\e086";
 }
 .fticon-move-layer:before {
     content: "\e089";
@@ -434,11 +431,11 @@
 .fticon-next:before {
     content: "\e08c";
 }
-.fticon-no-fill:before {
-    content: "\e08d";
-}
 .fticon-no-fill-transparent:before {
     content: "\e08e";
+}
+.fticon-no-fill:before {
+    content: "\e08d";
 }
 .fticon-null:before {
     content: "\e08f";
@@ -461,11 +458,11 @@
 .fticon-pickwhip:before {
     content: "\e095";
 }
-.fticon-play:before {
-    content: "\e096";
-}
 .fticon-play-pause:before {
     content: "\e097";
+}
+.fticon-play:before {
+    content: "\e096";
 }
 .fticon-plus:before {
     content: "\e098";
@@ -473,11 +470,11 @@
 .fticon-polygon:before {
     content: "\e099";
 }
-.fticon-preset-gallery:before {
-    content: "\e09a";
-}
 .fticon-preset-gallery-2:before {
     content: "\e09b";
+}
+.fticon-preset-gallery:before {
+    content: "\e09a";
 }
 .fticon-previous:before {
     content: "\e09c";
@@ -504,25 +501,19 @@
     content: "\e0a3";
 }
 .fticon-rotate:before {
-    content: "\e0a4";
+    content: "\e0cb";
 }
-.fticon-rotate-x:before {
-    content: "\e0a5";
-}
-.fticon-rotate-y:before {
-    content: "\e0a6";
-}
-.fticon-rotate-z:before {
-    content: "\e0a7";
+.fticon-rotation:before {
+    content: "\e0cc";
 }
 .fticon-save-graph-preset:before {
     content: "\e0a8";
 }
-.fticon-save-preset:before {
-    content: "\e0a9";
-}
 .fticon-save-preset-2:before {
     content: "\e0aa";
+}
+.fticon-save-preset:before {
+    content: "\e0a9";
 }
 .fticon-scale:before {
     content: "\e0ab";
@@ -553,6 +544,9 @@
 }
 .fticon-speed:before {
     content: "\e0b4";
+}
+.fticon-style:before {
+    content: "\e0c8";
 }
 .fticon-switch-to-mobile-view:before {
     content: "\e0b5";
@@ -596,17 +590,14 @@
 .fticon-view-qr-code:before {
     content: "\e0c2";
 }
-.fticon-volume:before {
-    content: "\e0c3";
-}
 .fticon-volume-2:before {
     content: "\e0c4";
 }
 .fticon-volume-mute:before {
     content: "\e0c5";
 }
-.fticon-z-graph-easing:before {
-    content: "\e0c6";
+.fticon-volume:before {
+    content: "\e0c3";
 }
 .fticon-z-position-ruler:before {
     content: "\e0c7";

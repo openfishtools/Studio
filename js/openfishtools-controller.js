@@ -199,31 +199,53 @@
     return JSON.stringify({ error: false, message: isVertical ? 'Flipped vertically' : 'Flipped horizontally' });
   }
 
-  // --- VELOCITY: TWIXTOR ---
-  function applyTwixtorVelocity() {
+  function getSelectedLayers() {
     const layers = (window.currentProjectState && window.currentProjectState.layers) || [];
-    const selId = window.selectedLayerId || (window.selectedLayerIds && window.selectedLayerIds.size === 1 ? Array.from(window.selectedLayerIds)[0] : null);
-    const selLayer = layers.find(l => l.id === selId);
-    if (!selLayer) return JSON.stringify({ error: true, tool: 'Twixtor', type: 'warn', message: 'Please select a video or precompose layer first.' });
-    if (selLayer.type !== 'video' && selLayer.type !== 'precomp') {
-      const msg = 'Twixtor velocity is only supported on video and precompose layers!';
-      if (typeof window.showEffectsRackToast === 'function') window.showEffectsRackToast(msg);
-      return JSON.stringify({ error: true, tool: 'Twixtor', type: 'warn', message: msg });
+    const ids = new Set();
+    if (window.selectedLayerIds && window.selectedLayerIds.size > 0) {
+      window.selectedLayerIds.forEach(id => ids.add(id));
+    }
+    if (window.selectedLayerId) ids.add(window.selectedLayerId);
+    let selected = layers.filter(l => ids.has(l.id));
+    if (selected.length === 0 && layers.length > 0) {
+      const fallback = layers.find(l => !l.hidden && l.type !== 'audio') || layers[0];
+      if (fallback) selected = [fallback];
+    }
+    return selected;
+  }
+
+  function getActiveBeatMarkers(layer, clipStart, clipEnd) {
+    let markers = [];
+    if (layer && Array.isArray(layer.markers) && layer.markers.length > 0) {
+      markers = layer.markers.map(m => (typeof m === 'number' ? m : (m.time || 0)));
+    }
+    const pState = window.currentProjectState;
+    if (pState && Array.isArray(pState.beatmarks) && pState.beatmarks.length > 0) {
+      const inRange = pState.beatmarks.filter(b => b >= clipStart - 0.02 && b <= clipEnd + 0.02);
+      markers = markers.concat(inRange);
     }
 
-    const pps = window.currentPixelsPerSecond || 80;
-    const clipStart = selLayer.startSec !== undefined ? selLayer.startSec : ((selLayer.startPx || 0) / pps);
-    const clipDur = selLayer.durationSec !== undefined ? selLayer.durationSec : ((selLayer.widthPx || 400) / pps);
-    const clipEnd = clipStart + clipDur;
+    let unique = Array.from(new Set(markers.map(m => Number(m.toFixed(3))))).sort((a, b) => a - b);
+    unique = unique.filter(t => t >= clipStart - 0.02 && t <= clipEnd + 0.02);
 
-    const allBeatmarks = (Array.isArray(window.currentProjectState.beatmarks) ? window.currentProjectState.beatmarks : [])
-      .concat(Array.isArray(selLayer.markers) ? selLayer.markers.map(m => typeof m === 'number' ? m : m.time) : []);
-    const uniqueBms = Array.from(new Set(allBeatmarks))
-      .filter(t => t >= clipStart - 0.001 && t <= clipEnd + 0.001)
-      .sort((a, b) => a - b);
+    if (unique.length < 2) {
+      unique = [];
+      const step = 0.6;
+      for (let t = clipStart; t <= clipEnd - 0.05; t += step) {
+        unique.push(Number(t.toFixed(3)));
+      }
+      if (unique.length < 2) {
+        unique = [Number(clipStart.toFixed(3)), Number(((clipStart + clipEnd) / 2).toFixed(3)), Number(clipEnd.toFixed(3))];
+      }
+    }
+    return unique;
+  }
 
-    if (uniqueBms.length < 2) {
-      const msg = 'Please place at least 2 beatmarks across the video layer to generate velocity speed ramps.';
+  // --- VELOCITY: TWIXTOR ---
+  function applyTwixtorVelocity() {
+    const selected = getSelectedLayers();
+    if (selected.length === 0) {
+      const msg = 'Please select at least one layer to apply Twixtor velocity.';
       if (typeof window.showEffectsRackToast === 'function') window.showEffectsRackToast(msg);
       return JSON.stringify({ error: true, tool: 'Twixtor', type: 'warn', message: msg });
     }
@@ -232,87 +254,79 @@
       window.UndoRedoManager.recordSnapshot();
     }
 
-    selLayer.speedMode = 'speed';
-    if (!selLayer.keyframes) selLayer.keyframes = {};
+    const pps = window.currentPixelsPerSecond || 80;
+    selected.forEach(layer => {
+      layer.speedMode = 'speed';
+      layer.speedInterpolation = 'optical_flow';
+      layer.speed = 1.0;
 
-    const kfs = [];
-    if (uniqueBms[0] > clipStart + 0.05) {
-      kfs.push({
-        time: Number(clipStart.toFixed(3)),
-        value: { speed: 1.0 },
-        easing: [0.42, 0.0, 0.58, 1.0]
-      });
-    }
+      const clipStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
+      const clipDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
+      const clipEnd = clipStart + clipDur;
+      const markers = getActiveBeatMarkers(layer, clipStart, clipEnd);
 
-    for (let i = 0; i < uniqueBms.length; i++) {
-      const t = uniqueBms[i];
-      // Beatmark = 100% speed (1.0)
-      kfs.push({
-        time: Number(t.toFixed(3)),
-        value: { speed: 1.0 },
-        easing: [0.42, 0.0, 0.58, 1.0]
-      });
+      if (!layer.keyframes) layer.keyframes = {};
+      const kfs = [];
 
-      if (i < uniqueBms.length - 1) {
-        const nextT = uniqueBms[i + 1];
-        const mid = (t + nextT) / 2;
-        // Midpoint between beatmarks = 50% speed (0.5)
+      if (markers[0] > clipStart + 0.05) {
         kfs.push({
-          time: Number(mid.toFixed(3)),
-          value: { speed: 0.5 },
+          time: Number(clipStart.toFixed(3)),
+          value: { speed: 1.0 },
           easing: [0.42, 0.0, 0.58, 1.0]
         });
       }
-    }
 
-    if (uniqueBms[uniqueBms.length - 1] < clipEnd - 0.05) {
-      kfs.push({
-        time: Number(clipEnd.toFixed(3)),
-        value: { speed: 1.0 },
-        easing: [0.42, 0.0, 0.58, 1.0]
-      });
-    }
+      for (let i = 0; i < markers.length; i++) {
+        const t = markers[i];
+        kfs.push({
+          time: Number(t.toFixed(3)),
+          value: { speed: 1.0 },
+          easing: [0.42, 0.0, 0.58, 1.0]
+        });
+        if (i < markers.length - 1) {
+          const nextT = markers[i + 1];
+          const midT = (t + nextT) / 2;
+          kfs.push({
+            time: Number(midT.toFixed(3)),
+            value: { speed: 0.2 },
+            easing: [0.42, 0.0, 0.58, 1.0]
+          });
+        }
+      }
 
-    kfs.sort((a, b) => a.time - b.time);
-    selLayer.keyframes.speed = kfs;
+      if (markers[markers.length - 1] < clipEnd - 0.05) {
+        kfs.push({
+          time: Number(clipEnd.toFixed(3)),
+          value: { speed: 1.0 },
+          easing: [0.42, 0.0, 0.58, 1.0]
+        });
+      }
 
+      kfs.sort((a, b) => a.time - b.time);
+      layer.keyframes.speed = kfs;
+
+      if (typeof window.invalidatePreviewCacheForLayer === 'function') {
+        window.invalidatePreviewCacheForLayer(layer);
+      }
+    });
+
+    window.activeKeyframeProperty = 'speed';
     if (typeof window.syncSpeedControllerValues === 'function') window.syncSpeedControllerValues();
     if (typeof window.updateSpeedKeyframeBtnState === 'function') window.updateSpeedKeyframeBtnState();
     if (typeof window.updateTimelineKeyframeMarkersHighlight === 'function') window.updateTimelineKeyframeMarkersHighlight();
+    if (typeof window.updateAllGraphBtnStates === 'function') window.updateAllGraphBtnStates();
     if (typeof window.renderTimelineLayers === 'function') window.renderTimelineLayers();
-    if (typeof window.invalidatePreviewCacheForLayer === 'function') window.invalidatePreviewCacheForLayer(selLayer);
     if (typeof window.redrawComposition === 'function') window.redrawComposition('twixtor-velocity');
     if (typeof window.saveCurrentProjectLayers === 'function') window.saveCurrentProjectLayers(true);
-    if (typeof window.showEffectsRackToast === 'function') window.showEffectsRackToast('Twixtor Velocity Applied (100% / 50%)');
+    if (typeof window.showEffectsRackToast === 'function') window.showEffectsRackToast(`Twixtor Velocity Applied (${selected.length} layer${selected.length > 1 ? 's' : ''})`);
     return JSON.stringify({ error: false, message: 'Twixtor velocity applied' });
   }
 
   // --- VELOCITY: TIME REMAP ---
   function applyTimeRemapVelocity() {
-    const layers = (window.currentProjectState && window.currentProjectState.layers) || [];
-    const selId = window.selectedLayerId || (window.selectedLayerIds && window.selectedLayerIds.size === 1 ? Array.from(window.selectedLayerIds)[0] : null);
-    const selLayer = layers.find(l => l.id === selId);
-    if (!selLayer) return JSON.stringify({ error: true, tool: 'Time Remap', type: 'warn', message: 'Please select a video or precompose layer first.' });
-    if (selLayer.type !== 'video' && selLayer.type !== 'precomp') {
-      const msg = 'Time Remap is only supported on video and precompose layers!';
-      if (typeof window.showEffectsRackToast === 'function') window.showEffectsRackToast(msg);
-      return JSON.stringify({ error: true, tool: 'Time Remap', type: 'warn', message: msg });
-    }
-
-    const pps = window.currentPixelsPerSecond || 80;
-    const clipStart = selLayer.startSec !== undefined ? selLayer.startSec : ((selLayer.startPx || 0) / pps);
-    const clipDur = selLayer.durationSec !== undefined ? selLayer.durationSec : ((selLayer.widthPx || 400) / pps);
-    const clipEnd = clipStart + clipDur;
-    const srcOffset = selLayer.sourceOffsetSec || 0;
-
-    const allBeatmarks = (Array.isArray(window.currentProjectState.beatmarks) ? window.currentProjectState.beatmarks : [])
-      .concat(Array.isArray(selLayer.markers) ? selLayer.markers.map(m => typeof m === 'number' ? m : m.time) : []);
-    const bms = Array.from(new Set(allBeatmarks))
-      .filter(t => t > clipStart + 0.04 && t < clipEnd - 0.04)
-      .sort((a, b) => a - b);
-
-    if (bms.length === 0) {
-      const msg = 'Please place at least one beatmark inside the video layer for Time Remap velocity.';
+    const selected = getSelectedLayers();
+    if (selected.length === 0) {
+      const msg = 'Please select at least one layer to apply Time Remap velocity.';
       if (typeof window.showEffectsRackToast === 'function') window.showEffectsRackToast(msg);
       return JSON.stringify({ error: true, tool: 'Time Remap', type: 'warn', message: msg });
     }
@@ -321,35 +335,66 @@
       window.UndoRedoManager.recordSnapshot();
     }
 
-    selLayer.speedMode = 'time_remap';
-    if (!selLayer.keyframes) selLayer.keyframes = {};
+    const pps = window.currentPixelsPerSecond || 80;
+    selected.forEach(layer => {
+      layer.speedMode = 'time_remap';
+      layer.speedInterpolation = 'optical_flow';
 
-    const times = [clipStart, ...bms, clipEnd];
-    const slowmoEasing = [0.2, 0.8, 0.8, 0.2]; // Matching original JSX repo avgSpeed * 4, 20% influence curve
+      const clipStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
+      const clipDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
+      const clipEnd = clipStart + clipDur;
+      const srcOffset = layer.sourceOffsetSec || 0;
+      const markers = getActiveBeatMarkers(layer, clipStart, clipEnd);
 
-    const kfs = [];
-    for (let i = 0; i < times.length; i++) {
-      const t = times[i];
-      const localOffset = t - clipStart;
-      const val = Number((srcOffset + localOffset).toFixed(3));
-      kfs.push({
-        time: Number(t.toFixed(3)),
-        value: { timeRemap: val },
-        easing: (i < times.length - 1) ? slowmoEasing : [0.0, 0.0, 1.0, 1.0]
-      });
-    }
+      if (!layer.keyframes) layer.keyframes = {};
+      const kfs = [];
 
-    selLayer.keyframes.timeRemap = kfs;
-    selLayer.timeRemap = srcOffset;
+      const S_CURVE_EASE = [0.20, 0.70, 0.80, 0.30];
 
+      if (markers[0] > clipStart + 0.05) {
+        kfs.push({
+          time: Number(clipStart.toFixed(3)),
+          value: { timeRemap: Number(srcOffset.toFixed(3)) },
+          easing: [...S_CURVE_EASE]
+        });
+      }
+
+      for (let i = 0; i < markers.length; i++) {
+        const t = markers[i];
+        const sourceTime = srcOffset + (t - clipStart);
+        kfs.push({
+          time: Number(t.toFixed(3)),
+          value: { timeRemap: Number(sourceTime.toFixed(3)) },
+          easing: [...S_CURVE_EASE]
+        });
+      }
+
+      if (markers[markers.length - 1] < clipEnd - 0.05) {
+        kfs.push({
+          time: Number(clipEnd.toFixed(3)),
+          value: { timeRemap: Number((srcOffset + clipDur).toFixed(3)) },
+          easing: [...S_CURVE_EASE]
+        });
+      }
+
+      kfs.sort((a, b) => a.time - b.time);
+      layer.keyframes.timeRemap = kfs;
+      layer.timeRemap = srcOffset;
+
+      if (typeof window.invalidatePreviewCacheForLayer === 'function') {
+        window.invalidatePreviewCacheForLayer(layer);
+      }
+    });
+
+    window.activeKeyframeProperty = 'timeRemap';
     if (typeof window.syncSpeedControllerValues === 'function') window.syncSpeedControllerValues();
     if (typeof window.updateSpeedKeyframeBtnState === 'function') window.updateSpeedKeyframeBtnState();
     if (typeof window.updateTimelineKeyframeMarkersHighlight === 'function') window.updateTimelineKeyframeMarkersHighlight();
+    if (typeof window.updateAllGraphBtnStates === 'function') window.updateAllGraphBtnStates();
     if (typeof window.renderTimelineLayers === 'function') window.renderTimelineLayers();
-    if (typeof window.invalidatePreviewCacheForLayer === 'function') window.invalidatePreviewCacheForLayer(selLayer);
     if (typeof window.redrawComposition === 'function') window.redrawComposition('timeremap-velocity');
     if (typeof window.saveCurrentProjectLayers === 'function') window.saveCurrentProjectLayers(true);
-    if (typeof window.showEffectsRackToast === 'function') window.showEffectsRackToast('Time Remap Slow-Mo Graph Applied');
+    if (typeof window.showEffectsRackToast === 'function') window.showEffectsRackToast(`Time Remap Velocity Applied (${selected.length} layer${selected.length > 1 ? 's' : ''})`);
     return JSON.stringify({ error: false, message: 'Time Remap velocity applied' });
   }
 
@@ -3042,6 +3087,12 @@
         break;
 
       default:
+        if (typeof window.applyCutefishEffect === 'function' && typeof tool === 'string' && tool.startsWith('CF_')) {
+          const targets = (typeof window.getSelectedLayersForFishTool === 'function')
+            ? window.getSelectedLayersForFishTool()
+            : [window.currentProjectState && window.currentProjectState.layers && window.currentProjectState.layers.find(l => l.id === window.selectedLayerId)].filter(Boolean);
+          return window.applyCutefishEffect(tool, targets);
+        }
         break;
     }
   }

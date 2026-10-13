@@ -17,13 +17,12 @@
     defaultProps: {
       sizeX: 300,
       sizeY: 300,
-      sides: 6,
-      roundness: 0
+      sides: 6
     },
     controls: {
       size: true,
-      roundness: true,
-      step: { label: 'Sides', min: 3, max: 12, default: 6 },
+      roundness: false,
+      step: { label: 'Sides', min: 3, max: 24, default: 6 },
       star: false
     },
     getContour(shapeProps = {}, sx = 300, sy = 300) {

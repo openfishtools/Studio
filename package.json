@@ -1,6 +1,6 @@
 {
   "name": "openfishtools-studio",
-  "version": "0.5.132",
+  "version": "0.6.0",
   "description": "Professional lightweight browser-based motion graphics video editor in the browser",
   "main": "js/main.js",
   "scripts": {
@@ -35,7 +35,7 @@
     "keyframing"
   ],
   "author": "FishTool Studio Team",
-  "license": "MIT",
+  "license": "CC-BY-NC-SA-4.0",
   "dependencies": {
     "mp4-muxer": "^5.2.2"
   },

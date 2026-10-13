@@ -1172,6 +1172,14 @@
   display: block;
   font-size: 20px;}
 
+#blend-opacity-row .effects-param-val-col {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  width: 100%;
+}
+
 .blend-slider-container {
   flex: 1;
   height: 28px;
@@ -1181,11 +1189,18 @@
   position: relative;
   touch-action: none;
   user-select: none;
+  padding: 0 4px;
+}
+
+.blend-slider-container:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .blend-slider-track {
   width: 100%;
-  height: 3px;
+  height: 4px;
   background-color: var(--badge-prealpha-bg);
   border-radius: 999px;
   position: relative;
@@ -1212,6 +1227,7 @@
   cursor: grab;
   pointer-events: none;
   transition: transform 0.1s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
 }
 
 .blend-slider-container:active .blend-slider-thumb {
@@ -1231,9 +1247,16 @@
   text-align: center;
   line-height: 1;
   flex-shrink: 0;
-  border: none;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
   outline: none;
   user-select: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.blend-opacity-badge:hover {
+  border-color: var(--color-primary);
+  background-color: var(--bg-panel-hover, #242c1e);
 }
 
 /* 2. Blend Mode Accordion List */
@@ -2239,103 +2262,42 @@
   color: var(--color-primary);
 }
 
-.shape-control-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  background-color: var(--bg-panel-inner);
-  border-radius: 6px;
-  padding: 6px 8px;
-  box-sizing: border-box;
-}
 
-.shape-control-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 
-.shape-control-label {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-}
-
-.shape-control-values {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.shape-val-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px 6px;
-  background-color: var(--bg-canvas);
-  color: var(--color-primary);
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  min-width: 44px;
-  text-align: right;
-  box-sizing: border-box;
-}
-
+/* Link Button in Size Label Column */
 .shape-link-btn {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   border-radius: 4px;
-  border: none;
+  border: 1px solid var(--border-panel);
   background-color: var(--bg-canvas);
   color: var(--text-muted);
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   padding: 0;
+  flex-shrink: 0;
   outline: none !important;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.shape-link-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--text-primary);
 }
 
 .shape-link-btn.is-active {
   background-color: var(--color-primary);
+  border-color: var(--color-primary);
   color: var(--bg-canvas);
 }
 
+.shape-link-btn i.fticon,
 .shape-link-btn svg {
-  width: 14px;
-  height: 14px;
-  font-size: 14px;}
-
-.shape-link-btn i.fticon {
-  width: 14px;
-  height: 14px;
-  font-size: 14px;}
-
-.shape-control-row .jog-wheel-container,
-.shape-control-row .jog-wheel-container.is-horizontal {
-  width: 100%;
-  height: 32px;
-  min-height: 32px;
-  margin-top: 4px;
-  border-radius: 6px;
-}
-
-.shape-dual-rulers {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.shape-dual-rulers .jog-wheel-container {
-  flex: 1;
-  min-width: 0;
-  height: 32px;
-  min-height: 32px;
+  width: 12px;
+  height: 12px;
+  font-size: 12px;
 }
 
 /* ==========================================================================

@@ -66,6 +66,26 @@
     isInSubSample() { return this._subDepth > 0; }
 
     /**
+     * Preview-only time snap for an effect's OWN animation (wave phase, turbulence evolution)
+     * inside a layer-level motion-blur pass: effect time takes at most K distinct values per
+     * shutter (preview 4, draft/mobile 2) so their GPU output can be reused across samples
+     * (FishEffects.fxOutputDraw). The layer transform still uses every sample time.
+     * Export / outside a pass → returns sec unchanged.
+     */
+    snapEffectSec(sec) {
+      const win = this._win;
+      if (!win || this._subDepth === 0 || !(win.exposure > 0) || typeof sec !== 'number') return sec;
+      const q = this.getQuality();
+      if (q.isExport) return sec;
+      const K = (q.isDraft || q.isMobile) ? 2 : 4;
+      if (K >= (win.n || 0)) return sec;
+      const u = (sec - win.tStart) / win.exposure;
+      if (!(u >= -0.001 && u <= 1.001)) return sec;
+      const k = Math.min(K - 1, Math.max(0, Math.floor(u * K)));
+      return win.tStart + ((k + 0.5) / K) * win.exposure;
+    }
+
+    /**
      * Should an effect/text engine accumulate its own shutter blur right now?
      * False inside a layer-level sample (the layer pass already averages those frames).
      */
@@ -244,7 +264,7 @@
 
       const normIn = (typeof window !== 'undefined' && window.FishTextEngine && typeof window.FishTextEngine.normalizeAnimIn === 'function')
         ? window.FishTextEngine.normalizeAnimIn(tp.animIn || tp.animation)
-        : (tp.animIn || tp.animation || 'bounce_1');
+        : (tp.animIn || tp.animation || 'none');
       const normOut = (typeof window !== 'undefined' && window.FishTextEngine && typeof window.FishTextEngine.normalizeAnimOut === 'function')
         ? window.FishTextEngine.normalizeAnimOut(tp.animOut)
         : (tp.animOut || 'none');
@@ -266,7 +286,7 @@
       if (localT1 < 0 || localT0 > clipDur) return false;
 
       // Continuous kinetic motions are active throughout clip
-      if (normIn === 'wave' || normIn === 'glitch' || normOut === 'wave' || normOut === 'glitch') {
+      if (normIn === 'glitch' || normOut === 'glitch') {
         return true;
       }
 
@@ -280,13 +300,16 @@
       const aScl = tp.animScale !== undefined && tp.animScale !== '' ? Number(tp.animScale) : 100;
       const aOp = tp.animOpacity !== undefined && tp.animOpacity !== '' ? Number(tp.animOpacity) : 100;
       const hasAnimator = aPosX !== 0 || aPosY !== 0 || aRot !== 0 || aScl !== 100 || aOp !== 100;
+      const hasAnimatorOut = (Number(tp.animOutPosX) || 0) !== 0 || (Number(tp.animOutPosY) || 0) !== 0 ||
+        (Number(tp.animOutRotation) || 0) !== 0 || (tp.animOutScale !== undefined && tp.animOutScale !== '' && Number(tp.animOutScale) !== 100) ||
+        (tp.animOutOpacity !== undefined && tp.animOutOpacity !== '' && Number(tp.animOutOpacity) !== 100);
 
       const inActive = (normIn !== 'none' || hasAnimator);
       if (inActive && localT0 < inDur && localT1 > 0) {
         return true;
       }
 
-      const outActive = (normOut !== 'none' || hasAnimator);
+      const outActive = (normOut !== 'none' || hasAnimatorOut);
       if (outActive && localT1 > outStartSec && localT0 < clipDur) {
         return true;
       }
@@ -398,6 +421,24 @@
       const p0 = window.getLayerEffectivePropsAtTime(checkLayer, tStart, null, pool);
       const p1 = window.getLayerEffectivePropsAtTime(checkLayer, tEnd, null, pool);
       if (!p0 || !p1) return false;
+
+      // Animated effect params (def.motionParams, e.g. Warp bend/distort) count as motion.
+      if (this._effectParamsAnimate(p0, p1)) return true;
+
+      // For fluid transition effects (Fluid Fish): also check if referenced firstLayer or destLayer has motion
+      if (Array.isArray(checkLayer.effects)) {
+        for (const f of checkLayer.effects) {
+          if (!f || f.disabled) continue;
+          if (f.type === 'fluid-fish' || f.type === 'open-ios' || f.type === 'open-mac') {
+            const firstId = f.firstLayer;
+            const destId = f.destLayer;
+            const lFirst = pool && firstId ? pool.find(l => l && (l.id === firstId || String(l.id) === String(firstId))) : null;
+            const lDest = pool && destId ? pool.find(l => l && (l.id === destId || String(l.id) === String(destId))) : null;
+            if (lFirst && this.hasMotion(lFirst, currentSec, cfg, fps, pool, cameraLayer)) return true;
+            if (lDest && this.hasMotion(lDest, currentSec, cfg, fps, pool, cameraLayer)) return true;
+          }
+        }
+      }
 
       // Helper: shortest angular path diff, normalized to [0, 180]
       const angDiff = (a, b) => {
@@ -547,10 +588,75 @@
      *   def.selfBlur     : effect accumulates its own shutter when run top-level (shatter)
      *   def.motionTravel(layer, fx, info) → screen px the effect's content moves across the shutter
      *        info = { t0, t1, exposure, bufferScale, camTravelPx, size }
+     *   def.motionParams : string[] of numeric param ids whose animation over the shutter = motion (opt-in)
      */
     _effectDef(fx) {
       const reg = (typeof window !== 'undefined') ? window.FishEffectsRegistry : null;
       return (reg && typeof reg.get === 'function' && fx) ? reg.get(fx.type) : null;
+    }
+
+    /** True when any effect's declared motionParams differ between two evaluated prop sets. */
+    _effectParamsAnimate(p0, p1) {
+      const a = p0 && p0.effects, b = p1 && p1.effects;
+      if (!Array.isArray(a) || !Array.isArray(b)) return false;
+      const n = Math.min(a.length, b.length);
+      for (let i = 0; i < n; i++) {
+        const f0 = a[i], f1 = b[i];
+        if (!f0 || !f1 || f0.disabled || f1.disabled || f0.type !== f1.type) continue;
+        const d = this._effectDef(f0);
+        if (!d || !Array.isArray(d.motionParams)) continue;
+        for (const k of d.motionParams) {
+          const v0 = Number(f0[k]), v1 = Number(f1[k]);
+          if (isFinite(v0) && isFinite(v1) && Math.abs(v0 - v1) > 0.01) return true;
+        }
+      }
+      return false;
+    }
+
+    /**
+     * Extra dirty-rect padding (buffer px) for content effects draw outside the layer bounds.
+     * Returns -1 when the extent is unknown/unbounded → caller must use the full canvas.
+     */
+    _rectEffectPad(layer, bufferScale) {
+      if (!layer) return -1;
+      const bs = bufferScale || 1;
+      let extra = 0;
+      if (Array.isArray(layer.effects)) {
+        const layerHalf = 0.5 * Math.max(Math.abs(layer.scaleW || 0), Math.abs(layer.scaleH || 0), 100);
+        for (const f of layer.effects) {
+          if (!f || f.disabled) continue;
+          const d = this._effectDef(f);
+          // Procedural displacement not captured by bounds probes / unbounded extent → full canvas
+          if (f.type === 'shake' || f.type === 'oscillate' || f.type === 'swing' || f.type === 'transform' ||
+              f.type === 'particle-engine' || f.type === 'tile' ||
+              (d && (d.cameraDriven || d.category === 'movement'))) return -1;
+          let p;
+          const tileOn = (f.tile === 1 || f.tile === true || f.tile === '1' || f.tile === 'true' || f.tile === 'on');
+          if ((f.type === 'wave-warp' || f.type === 'turbulent-displace') && tileOn) return -1; // mirror fills render area
+          if (f.type === 'wave-warp') {
+            p = Math.abs(Number(f.waveHeight !== undefined ? f.waveHeight : 25)) * 1.1 + 8;
+          } else if (f.type === 'turbulent-displace') {
+            p = Math.abs(Number(f.amount !== undefined ? f.amount : 50)) * 1.6 + 8;
+          } else if (f.type === 'warp' || f.type === 'optic-compensation') {
+            p = layerHalf + 8; // geometric warps can push content up to ~half the layer outward
+          } else if (d && d.category === 'warp') {
+            return -1; // unknown warp → full canvas
+          } else {
+            // Sum of any size-like params (shadow distance, glow radius, blur, spread...) bounds the overflow.
+            let sz = 0;
+            for (const k of ['distance', 'radius', 'blur', 'size', 'softness', 'spread', 'length', 'offsetX', 'offsetY', 'amount']) {
+              const v = Number(f[k]);
+              if (isFinite(v)) sz += Math.abs(v);
+            }
+            p = 24 + sz * 2;
+            if (f.type === 'deep-glow' || (d && d.isExpanding)) p = Math.max(p, 160);
+          }
+          if (!isFinite(p)) return -1;
+          extra += Math.min(800, p); // effects chain → overflows add up
+        }
+      }
+      if (layer._dofBlur > 0) extra += layer._dofBlur * 3 + 8;
+      return Math.min(2000, extra) * bs;
     }
 
     hasCameraDrivenEffect(layer) {
@@ -605,7 +711,7 @@
      * N from projected corner travel + effect travel, bounded by getQuality() (draft/mobile/preview/export).
      * Also returns the union screen rect the layer sweeps (null = unknown/large → full canvas).
      */
-    planSamples(layer, bufferScale, camera, tStart, exposureTime, compState = null) {
+    planSamples(layer, bufferScale, camera, tStart, exposureTime, compState = null, el = null) {
       const w = (typeof window !== 'undefined') ? window : {};
       const isExport = !!(w._isExportingVideo === true || w._isExportingSequence === true || w.isExporting === true);
       if (w.isTransformInteracting && !isExport) {
@@ -640,10 +746,11 @@
       try {
         for (let i = 0; i <= probes; i++) {
           const t = tStart + (i / probes) * exposureTime;
-          const eff = getEff(layer, t, null, pool);
+          const eff = getEff(layer._rawLayer || layer, t, null, pool);
           const al = Object.assign({}, layer, eff);
-          if (layer.type === 'text' && typeof this.compensateTextPad === 'function' && layer._textBufferCanvas) {
-            Object.assign(al, this.compensateTextPad(layer, layer._textBufferCanvas, al));
+          const textSrc = el || layer._textBufferCanvas;
+          if (layer.type === 'text' && typeof this.compensateTextPad === 'function' && textSrc) {
+            Object.assign(al, this.compensateTextPad(layer, textSrc, al));
           }
           const cam = camLayer ? getEff(camLayer, t, null, pool) : camera;
           const b = engine.getBounds(al, bufferScale, cam);
@@ -668,13 +775,68 @@
       const cfg = this.getConfig(compState);
       const fixedN = Math.max(2, cfg.samples || 16);
 
-      // Adaptive sampling: 1 sample per `spacing` physical pixels of travel to prevent
-      // discrete ghosting. `spacing` comes from the quality tier (draft/mobile/preview/export).
-      const adaptiveN = travel > 0 ? Math.ceil(travel / (spacing * (bufferScale || 1))) : fixedN;
+      // Effect travel (camera-driven / motionTravel hooks) counts as motion too.
+      // Wave Warp travel is analytic: amplitude × phase rate × exposure (buffer px).
+      let waveTravel = 0, hasWave = false, otherMove = false;
+      if (Array.isArray(layer.effects)) {
+        for (const f of layer.effects) {
+          if (!f || f.disabled) continue;
+          if (f.type === 'wave-warp') {
+            hasWave = true;
+            const hgt = Math.abs(Number(f.waveHeight !== undefined ? f.waveHeight : 25)) || 0;
+            const spd = Math.abs(Number(f.speed !== undefined ? f.speed : 1)) || 0;
+            if (spd > 0 && hgt > 0) {
+              const wt = String(f.waveType || 'sine').toLowerCase();
+              const jumpy = (wt === 'square' || wt === 'noise' || wt === 'sawtooth');
+              const tr = hgt * (jumpy ? 2 : Math.min(2, Math.PI * 2 * spd * exposureTime)) * (bufferScale || 1);
+              if (tr > waveTravel) waveTravel = tr;
+            }
+          } else if (f.type === 'fluid-fish' || f.type === 'open-ios' || f.type === 'open-mac') {
+            const p0 = getEff ? getEff(layer, tStart, null, pool) : null;
+            const p1 = getEff ? getEff(layer, tStart + exposureTime, null, pool) : null;
+            if (this._effectParamsAnimate(p0, p1)) {
+              otherMove = true;
+            } else {
+              const firstId = f.firstLayer;
+              const destId = f.destLayer;
+              const lFirst = pool && firstId ? pool.find(l => l && (l.id === firstId || String(l.id) === String(firstId))) : null;
+              const lDest = pool && destId ? pool.find(l => l && (l.id === destId || String(l.id) === String(destId))) : null;
+              if ((lFirst && this.hasMotion(lFirst, tStart, cfg, 60, pool, camLayer)) ||
+                  (lDest && this.hasMotion(lDest, tStart, cfg, 60, pool, camLayer))) {
+                otherMove = true;
+              }
+            }
+          } else if (this.hasMovementEffect({ effects: [f] })) {
+            otherMove = true;
+          }
+        }
+      }
+      const motionTravel = Math.max(travel, fxInfo.travel || 0, waveTravel);
+      // Zero-overhead stationary layer bypass: static layers need only 1 pass
+      if (!otherMove && !hasWave && !fxInfo.hasFxMotion && motionTravel <= 0.5) {
+        return { n: 1, rect: null, travel: 0 };
+      }
+      // Procedural movement effects (shake/oscillate/...) are not captured by the probes → unknown travel.
+      const unknownTravel = otherMove;
 
-      // User Samples setting is the baseline; adaptive grows past it on long trails.
-      // Clamped by the quality-tier cap (draft/mobile/preview/export) and hard max 64.
-      const n = Math.max(minN, Math.min(64, maxN, Math.max(fixedN, adaptiveN)));
+      let n;
+      if (q.isExport) {
+        // Export (unchanged): User Samples setting is the baseline; adaptive grows past it on long trails.
+        const adaptiveN = travel > 0 ? Math.ceil(travel / (spacing * (bufferScale || 1))) : fixedN;
+        n = Math.max(minN, Math.min(64, maxN, Math.max(fixedN, adaptiveN)));
+      } else {
+        // Preview: AE "adaptive sample limit" — Samples is the CEILING, not the floor.
+        // 1 sample per `spacing` on-screen (buffer) px; slow/short moves use few samples.
+        const adaptiveN = unknownTravel ? fixedN : Math.ceil(motionTravel / spacing);
+        n = Math.max(minN, Math.min(maxN, fixedN, adaptiveN));
+        // Warp effects (wave/turbulent) and fluid transitions (Fluid Fish) in preview:
+        // cap to K distinct samples to prevent heavy full-canvas stalling while maintaining smooth trails.
+        if (Array.isArray(layer.effects) &&
+            layer.effects.some(f => f && !f.disabled && (f.type === 'wave-warp' || f.type === 'turbulent-displace' || f.type === 'fluid-fish' || f.type === 'open-ios' || f.type === 'open-mac'))) {
+          const K = (q.isDraft || q.isMobile) ? 2 : 4;
+          n = Math.max(2, Math.min(n, K));
+        }
+      }
 
       let rect = null;
       if (isFinite(minX) && isFinite(maxX) && isFinite(minY) && isFinite(maxY)) {
@@ -710,7 +872,7 @@
       const targetH = ctx.canvas.height;
       if (targetW <= 0 || targetH <= 0) return;
 
-      const plan = this.planSamples(layer, bufferScale, camera, tStart, exposureTime, compState);
+      const plan = this.planSamples(layer, bufferScale, camera, tStart, exposureTime, compState, el);
       const samples = plan.n;
 
       if (samples <= 1) {
@@ -718,8 +880,22 @@
         return;
       }
 
-      // Dirty rect: disabled due to coordinate space mismatch with viewport transform
+      // Dirty rect: every per-sample op (clear, render, running-mean composite, final blit) is
+      // limited to the screen area the layer sweeps during the shutter. Coordinates are in the
+      // sample canvas's local space (identity transform, same space renderSinglePassFn draws in);
+      // the final blit uses the same rect under ctx's transform, so viewport/camera stay consistent.
+      // Falls back to full canvas when the extent is unknown (rect null / unbounded effects).
       let rx = 0, ry = 0, rw = targetW, rh = targetH;
+      const fxPad = (w.OFT_MB_FULL_CANVAS === true) ? -1 : this._rectEffectPad(layer, bufferScale);
+      if (plan.rect && fxPad >= 0) {
+        const x0 = Math.max(0, Math.floor(plan.rect.x - fxPad));
+        const y0 = Math.max(0, Math.floor(plan.rect.y - fxPad));
+        const x1 = Math.min(targetW, Math.ceil(plan.rect.x + plan.rect.w + fxPad));
+        const y1 = Math.min(targetH, Math.ceil(plan.rect.y + plan.rect.h + fxPad));
+        if (x1 > x0 && y1 > y0) {
+          rx = x0; ry = y0; rw = x1 - x0; rh = y1 - y0;
+        }
+      }
 
       if (!this._accumCanvas) this._accumCanvas = document.createElement('canvas');
       if (this._accumCanvas.width !== targetW || this._accumCanvas.height !== targetH) {
@@ -760,6 +936,8 @@
         ? camera
         : (camera && camera._rawCamera ? camera._rawCamera : null);
 
+      const prevWin = this._win || null;
+      this._win = { tStart, exposure: exposureTime, n: samples };
       this.beginSubSample();
       try {
         for (let i = 0; i < samples; i++) {
@@ -797,6 +975,7 @@
         }
       } finally {
         this.endSubSample();
+        this._win = prevWin;
       }
 
       // Reset composite mode before drawing result to destination

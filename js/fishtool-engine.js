@@ -136,6 +136,7 @@
       this._sceneFboW = 0;
       this._sceneFboH = 0;
       this._sceneGLFailed = false;
+      this.timeScale = 0.52; // Balanced smooth speed (~550ms duration)
 
       this._initGL();
     }
@@ -378,13 +379,10 @@
 
     _getEffectProcessedElement(el, layer, bounds, currentSec = null) {
       if (!el || typeof document === 'undefined') return { el, padX: 0, padY: 0, origW: bounds.w || 100, origH: bounds.h || 100 };
-      if (!window.FishEffects || typeof window.FishEffects.renderLayer !== 'function') {
-        return { el, padX: 0, padY: 0, origW: bounds.w || 100, origH: bounds.h || 100 };
-      }
-      if (!Array.isArray(layer.effects) || layer.effects.length === 0) {
-        return { el, padX: 0, padY: 0, origW: bounds.w || 100, origH: bounds.h || 100 };
-      }
-      const activeFx = layer.effects.filter(f => f && !f.disabled &&
+      const isPrecompCollapsed = (layer && layer.type === 'precomp' && !!layer.collapseTransformations);
+      const rVal = (!isPrecompCollapsed && layer && typeof layer.roundness === 'number') ? layer.roundness : 0;
+      const rawEffects = Array.isArray(layer && layer.effects) ? layer.effects : [];
+      const activeFx = rawEffects.filter(f => f && !f.disabled &&
         f.type !== 'tile' &&
         f.type !== 'rgb-split' &&
         f.type !== 'drop-shadow' &&
@@ -394,7 +392,7 @@
         f.type !== 'pyramid_3d' &&
         f.type !== 'sphere_3d'
       );
-      if (activeFx.length === 0) {
+      if (activeFx.length === 0 && rVal <= 0) {
         return { el, padX: 0, padY: 0, origW: bounds.w || 100, origH: bounds.h || 100 };
       }
 
@@ -457,7 +455,36 @@
       const bScaleFx = (bounds && bounds.bufferScale) || 1;
       const quadCompW = Math.abs(bounds && (bounds.absW || bounds.w) || 0) / bScaleFx;
       const unitScale = quadCompW > 0 ? (w / quadCompW) : 1;
-      window.FishEffects.renderLayer(this._fxCtx, el, fakeLayer, { x: padX, y: padY, w, h, bufferScale: bScaleFx, unitScale }, curSec);
+
+      if (rVal > 0) {
+        this._fxCtx.save();
+        const maxR = Math.min(w, h) / 2;
+        const scaleK = w / Math.max(1, Math.abs((bounds && (bounds.absW || bounds.w)) || w));
+        const r = Math.min(rVal * scaleK, maxR);
+        this._fxCtx.beginPath();
+        if (typeof this._fxCtx.roundRect === 'function') {
+          this._fxCtx.roundRect(padX, padY, w, h, r);
+        } else {
+          this._fxCtx.moveTo(padX + r, padY);
+          this._fxCtx.arcTo(padX + w, padY, padX + w, padY + h, r);
+          this._fxCtx.arcTo(padX + w, padY + h, padX, padY + h, r);
+          this._fxCtx.arcTo(padX, padY + h, padX, padY, r);
+          this._fxCtx.arcTo(padX, padY, padX + w, padY, r);
+          this._fxCtx.closePath();
+        }
+        this._fxCtx.clip();
+      }
+
+      if (activeFx.length > 0 && window.FishEffects && typeof window.FishEffects.renderLayer === 'function') {
+        window.FishEffects.renderLayer(this._fxCtx, el, fakeLayer, { x: padX, y: padY, w, h, bufferScale: bScaleFx, unitScale }, curSec);
+      } else {
+        this._fxCtx.drawImage(el, padX, padY, w, h);
+      }
+
+      if (rVal > 0) {
+        this._fxCtx.restore();
+      }
+
       return { el: this._fxCanvas, padX, padY, origW: w, origH: h };
     }
 
@@ -1246,6 +1273,25 @@
         }
         const drawX = -absW / 2 - (bounds.anchorX || 0);
         const drawY = -absH / 2 - (bounds.anchorY || 0);
+        const isPrecompCollapsed = (layer && layer.type === 'precomp' && !!layer.collapseTransformations);
+        const rVal = (!isPrecompCollapsed && layer && typeof layer.roundness === 'number') ? layer.roundness : 0;
+        const hasRoundClip = (rVal > 0);
+        if (hasRoundClip) {
+          const maxR = Math.min(absW, absH) / 2;
+          const r = Math.min(rVal, maxR);
+          ctx.beginPath();
+          if (typeof ctx.roundRect === 'function') {
+            ctx.roundRect(drawX, drawY, absW, absH, r);
+          } else {
+            ctx.moveTo(drawX + r, drawY);
+            ctx.arcTo(drawX + absW, drawY, drawX + absW, drawY + absH, r);
+            ctx.arcTo(drawX + absW, drawY + absH, drawX, drawY + absH, r);
+            ctx.arcTo(drawX, drawY + absH, drawX, drawY, r);
+            ctx.arcTo(drawX, drawY, drawX + absW, drawY, r);
+            ctx.closePath();
+          }
+          ctx.clip();
+        }
         try {
           const curSec = (typeof currentSec === 'number' && !isNaN(currentSec))
             ? currentSec
@@ -2996,6 +3042,8 @@
       if (Array.isArray(layer.effects) && layer.effects.some(f => f && !f.disabled)) return false;
       if (window.FishEffects && typeof window.FishEffects.buildFilter === 'function' && window.FishEffects.buildFilter(layer) !== '') return false;
       if (layer._dofBlur && layer._dofBlur > 0.5) return false;
+      const isPrecompCollapsed = (layer.type === 'precomp' && !!layer.collapseTransformations);
+      if (!isPrecompCollapsed && typeof layer.roundness === 'number' && layer.roundness > 0) return false;
       return true;
     }
 
@@ -3422,10 +3470,75 @@
 
       return out;
     }
+
+    /**
+     * Micro Physics Spring Solver (Damped Harmonic Oscillator)
+     * Provides authentic physics-based spring bounce for UI & 3D layers.
+     * @param {Object} options
+     * @param {number} [options.from=0] Initial value
+     * @param {number} [options.to=1] Target value
+     * @param {number} [options.stiffness=280] Spring constant k
+     * @param {number} [options.damping=18] Damping ratio c
+     * @param {number} [options.mass=1] Mass m
+     * @param {number} [options.velocity=0] Initial velocity
+     * @param {Function} options.onUpdate Value callback (currentVal, currentVel)
+     * @param {Function} [options.onComplete] Callback on settled
+     * @returns {Function} Cancel callback
+     */
+    spring({ from = 0, to = 1, stiffness = 280, damping = 18, mass = 1, velocity = 0, onUpdate, onComplete, timeScale } = {}) {
+      let current = from;
+      let vel = velocity;
+      let lastTime = performance.now();
+      let animId = null;
+
+      const step = (now) => {
+        let dt = (now - lastTime) / 1000;
+        lastTime = now;
+        if (dt > 0.064) dt = 0.064;
+
+        const effectiveScale = typeof timeScale === 'number' ? timeScale : (typeof this.timeScale === 'number' ? this.timeScale : 1.0);
+        dt = dt * effectiveScale;
+
+        const springForce = -stiffness * (current - to);
+        const dampingForce = -damping * vel;
+        const accel = (springForce + dampingForce) / mass;
+
+        vel += accel * dt;
+        current += vel * dt;
+
+        if (typeof onUpdate === 'function') {
+          onUpdate(current, vel);
+        }
+
+        if (Math.abs(current - to) < 0.005 && Math.abs(vel) < 0.01) {
+          if (typeof onUpdate === 'function') onUpdate(to, 0);
+          if (typeof onComplete === 'function') onComplete();
+          return;
+        }
+
+        animId = requestAnimationFrame(step);
+      };
+
+      animId = requestAnimationFrame(step);
+      return () => {
+        if (animId) cancelAnimationFrame(animId);
+      };
+    }
+
+    /**
+     * Set animation playback speed multiplier (e.g. 0.20 for super slowmo, 1.0 for normal)
+     * @param {number} scale
+     */
+    setTimeScale(scale = 1.0) {
+      this.timeScale = scale;
+    }
+
+
   }
 
   const engine = new FishToolEngineCore();
 
   window.FishToolEngine = engine;
   window.LayerTransform = engine; // Seamless drop-in alias
+
 })(window);

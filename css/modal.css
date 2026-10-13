@@ -376,15 +376,25 @@
 }
 
 .custom-dropdown-item {
-  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 12px;
   font-family: var(--font-brand);
   font-size: 13px;
   font-weight: 700;
   color: var(--text-primary);
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition: background-color 0.12s ease, color 0.12s ease;
   text-align: left;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  line-height: 32px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .custom-dropdown-item:hover {
@@ -2916,7 +2926,7 @@
 .modal-import-card {
   width: clamp(320px, 92vw, 420px) !important;
   max-width: 420px;
-  border-radius: 20px !important;
+  border-radius: 20px;
   background-color: var(--bg-dashboard);
   border: 1px solid var(--border-subtle);
   overflow: hidden;
@@ -3682,6 +3692,13 @@
   transform: translateX(-50%) translateY(0);
 }
 
+.editor-toast.toast-error,
+.dashboard-toast.toast-error {
+  background-color: var(--color-danger, #ef4444) !important;
+  color: var(--color-danger-text, #ffffff) !important;
+  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.35);
+}
+
 /* ==========================================================================
    PRESET GALLERY & SAVED ELEMENTS MODAL STYLES
    - 100% Theme token driven, flat surfaces, zero blur/shadow
@@ -4091,6 +4108,216 @@
 .element-gallery-card-delete:hover {
   color: #ff5555;
   background-color: var(--bg-dashboard);
+}
+
+/* ==========================================================================
+   MODULAR POP-UP & DRAWER: APP SETTINGS (.settings-modal-card)
+   Flat & borderless, zero shadows, zero gradients, 100% theme tokens
+   ========================================================================== */
+.settings-modal-card {
+  width: clamp(340px, 92vw, 440px) !important;
+  max-width: 440px;
+  border-radius: 20px !important;
+  background-color: var(--bg-dashboard);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+@media (max-width: 600px) {
+  .settings-modal-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    border-radius: 28px 28px 0 0 !important;
+    border: none !important;
+    border-top: 1px solid var(--border-subtle) !important;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
+.settings-modal-handle {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .settings-modal-handle {
+    display: block;
+    width: 44px;
+    height: 5px;
+    border-radius: 3px;
+    background-color: var(--color-primary);
+    margin: 10px auto 2px auto;
+    cursor: pointer;
+  }
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px 20px;
+  background-color: var(--bg-dashboard);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.settings-modal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-primary);
+}
+
+.settings-modal-title-wrap i {
+  font-size: 17px;
+  line-height: 1;
+}
+
+.settings-modal-body {
+  padding: 18px 20px 22px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: 72dvh;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-group-title {
+  font-family: var(--font-brand);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.settings-theme-current {
+  font-family: var(--font-brand);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.settings-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+@media (max-width: 360px) {
+  .settings-theme-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.theme-card-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  outline: none;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  -webkit-tap-highlight-color: transparent;
+  text-align: left;
+}
+
+.theme-card-item:hover {
+  background-color: var(--bg-panel-hover);
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+}
+
+.theme-card-item:active {
+  transform: scale(0.98);
+}
+
+.theme-card-item.is-selected {
+  border-color: var(--color-primary);
+  background-color: var(--bg-panel-hover);
+}
+
+.theme-card-color-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-card-check {
+  display: none;
+}
+
+.theme-card-item.is-selected .theme-card-check {
+  display: block;
+}
+
+.theme-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.theme-card-name {
+  font-family: var(--font-brand);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theme-card-desc {
+  font-family: var(--font-brand);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.settings-group-info {
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  padding: 10px 14px;
+  gap: 8px;
+}
+
+.settings-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-brand);
+  font-size: 12px;
+}
+
+.settings-info-label {
+  color: var(--text-muted);
+}
+
+.settings-info-val {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 

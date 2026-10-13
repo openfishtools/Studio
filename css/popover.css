@@ -24,8 +24,10 @@
   min-width: 180px;
   max-width: calc(100vw - 24px);
   outline: none;
-  border: 1px solid var(--color-primary);
+  border: none;
   box-shadow: none;
+  -webkit-filter: var(--shadow-popover, drop-shadow(0 4px 14px rgba(0, 0, 0, 0.35)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2)));
+  filter: var(--shadow-popover, drop-shadow(0 4px 14px rgba(0, 0, 0, 0.35)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2)));
   pointer-events: none;
   opacity: 0;
   transform: scale(0);
@@ -49,9 +51,7 @@
   width: 12px;
   height: 12px;
   background-color: inherit;
-  border-style: solid;
-  border-color: inherit;
-  border-width: 0;
+  border: none;
   pointer-events: none;
   box-sizing: border-box;
   z-index: -1;
@@ -65,10 +65,6 @@
   bottom: auto !important;
   -webkit-transform: translateX(-50%) rotate(45deg);
   transform: translateX(-50%) rotate(45deg);
-  border-top-width: 1px;
-  border-left-width: 1px;
-  border-bottom-width: 0;
-  border-right-width: 0;
 }
 
 .popover-card[data-placement^="top"] > .popover-tail {
@@ -76,26 +72,18 @@
   top: auto !important;
   -webkit-transform: translateX(-50%) rotate(45deg);
   transform: translateX(-50%) rotate(45deg);
-  border-bottom-width: 1px;
-  border-right-width: 1px;
-  border-top-width: 0;
-  border-left-width: 0;
 }
 
 .popover-card[data-placement^="right"] > .popover-tail {
   left: -6px;
   -webkit-transform: translateY(-50%) rotate(45deg);
   transform: translateY(-50%) rotate(45deg);
-  border-bottom-width: 1px;
-  border-left-width: 1px;
 }
 
 .popover-card[data-placement^="left"] > .popover-tail {
   right: -6px;
   -webkit-transform: translateY(-50%) rotate(45deg);
   transform: translateY(-50%) rotate(45deg);
-  border-top-width: 1px;
-  border-right-width: 1px;
 }
 
 /* Popover Content Typography & Sections */
@@ -220,7 +208,7 @@
   min-width: 168px;
   border-radius: 10px;
   background-color: var(--bg-panel);
-  border: 1px solid var(--color-primary);
+  border: none;
   box-shadow: none;
 }
 
@@ -232,11 +220,11 @@
 
 /* ==========================================================================
    DESKTOP RIGHT-CLICK CONTEXT MENU (AFTER EFFECTS / NATIVE OS STYLE)
-   Clean flat rectangular surface, no tail, crisp border, instant response.
+   Clean flat rectangular surface, no tail, subtle drop shadow, instant response.
    ========================================================================== */
 .popover-card.is-context-menu {
   border-radius: 8px !important;
-  border: 1px solid var(--border-panel) !important;
+  border: none !important;
   background-color: var(--bg-panel-inner) !important;
   padding: 4px !important;
   min-width: 172px !important;
@@ -729,12 +717,12 @@
   overflow: visible;
   border-radius: 12px;
   background-color: var(--bg-panel);
-  border: 1px solid var(--color-primary);
+  border: none;
 }
 
 .popover-card.is-embed-panel > .popover-tail {
   background-color: var(--bg-panel);
-  border-color: var(--color-primary);
+  border: none;
 }
 
 .popover-embed-header {
@@ -863,7 +851,7 @@
   padding: 8px;
   border-radius: 10px;
   background-color: var(--bg-panel);
-  border: 1px solid var(--color-primary);
+  border: none;
   box-shadow: none;
 }
 
@@ -1033,7 +1021,7 @@
    ========================================================================== */
 .popover-card.is-confirm-popover {
   background-color: var(--bg-panel);
-  border: 1px solid var(--border-subtle);
+  border: none;
   border-radius: 8px;
   box-sizing: border-box;
   box-shadow: none;
@@ -1098,7 +1086,7 @@
   min-width: unset;
   width: auto;
   background-color: var(--bg-panel);
-  border: 1px solid var(--color-primary);
+  border: none;
   border-radius: 8px;
   box-shadow: none;
 }
@@ -1151,7 +1139,7 @@
   gap: 8px;
   border-radius: 10px;
   background-color: var(--bg-panel);
-  border: 1px solid var(--border-subtle);
+  border: none;
 }
 
 .expression-popover-header {
@@ -1227,7 +1215,7 @@
   flex-direction: column;
   gap: 8px;
   background-color: var(--bg-panel);
-  border: 1px solid var(--color-primary);
+  border: none;
   border-radius: 10px;
   box-shadow: none;
 }
@@ -1286,7 +1274,7 @@
   width: 270px;
   padding: 8px;
   background-color: var(--bg-panel);
-  border: 1px solid var(--border-subtle);
+  border: none;
   border-radius: 12px;
   box-sizing: border-box;
 }
@@ -1494,6 +1482,114 @@
 .attr-action-btn:active {
   background-color: var(--color-primary-hover);
   transform: scale(0.98);
+}
+
+/* ==========================================================================
+   EXTENSIONS POPOVER (.is-extensions-popover)
+   ========================================================================== */
+.popover-card.is-extensions-popover {
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  max-height: 480px;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background-color: var(--bg-dashboard, #121710);
+  border: none;
+}
+
+.is-extensions-popover .popover-header {
+  height: 38px;
+  padding: 0 12px;
+  background: var(--bg-panel, #182014);
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.is-extensions-popover .popover-header-title-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-primary, #ffffff);
+}
+
+.is-extensions-popover .extension-popover-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 120px;
+  max-height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.extension-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px 20px;
+  margin: 16px;
+  border: 1px dashed var(--border-subtle, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.015);
+  box-sizing: border-box;
+  gap: 8px;
+}
+
+.extension-empty-icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--bg-panel, #182014);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted, #7e9471);
+  margin-bottom: 4px;
+}
+
+.extension-empty-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary, #ffffff);
+  letter-spacing: 0.2px;
+}
+
+.extension-empty-desc {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted, #7e9471);
+  max-width: 240px;
+}
+
+.extension-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.extension-card {
+  flex-shrink: 0 !important;
+  width: 100%;
+}
+
+.ctrl-btn.ctrl-btn-fish.is-active {
+  background: var(--accent-subtle, rgba(152, 206, 123, 0.2)) !important;
+  color: var(--accent-primary, #98ce7b) !important;
+  border-color: var(--accent-primary, #98ce7b) !important;
 }
 
 

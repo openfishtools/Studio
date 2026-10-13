@@ -15,9 +15,10 @@
   --desktop-btn-h-sm: 28px;
   --desktop-btn-h: 30px;
   --desktop-btn-h-lg: 40px;
-  --desktop-layer-panel-w: 240px;
+  --desktop-layer-panel-w: 340px;
   --desktop-control-col-w: 72px;
   --desktop-parent-col-w: 76px;
+  --desktop-extension-width: 300px;
 }
 
 .fticon {
@@ -868,12 +869,6 @@
   border-color: var(--border-subtle);
 }
 
-.desktop-panel-extension .desktop-panel-header-btn#desktop-fishtool-btn-close:hover {
-  background-color: var(--color-danger);
-  color: var(--color-danger-text);
-  border-color: var(--color-danger);
-}
-
 .desktop-panel-extension .desktop-panel-header-btn svg {
   display: block;
 }
@@ -885,25 +880,214 @@
   min-height: 0;
   position: relative;
   background-color: var(--bg-dashboard);
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
 }
 
-.desktop-panel-extension .popover-loader-box {
-  position: absolute;
-  inset: 0;
+/* Extension Resizing Splitter */
+.desktop-split-extension {
+  background-color: transparent;
+  width: 5px;
+  min-width: 5px;
+  cursor: col-resize;
+  position: relative;
   z-index: 10;
-  background-color: var(--bg-dashboard);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
 }
 
-.desktop-panel-extension iframe.desktop-extension-frame {
+/* Extension Empty State (Columns & Cards) */
+.extension-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 32px 20px;
+  margin: 16px;
+  border: 1px dashed var(--border-subtle, rgba(255, 255, 255, 0.1));
+  border-radius: var(--desktop-radius, 6px);
+  background: rgba(255, 255, 255, 0.015);
+  box-sizing: border-box;
+  gap: 8px;
+}
+
+.extension-empty-icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--bg-panel, #182014);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted, #7e9471);
+  margin-bottom: 4px;
+}
+
+.extension-empty-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary, #ffffff);
+  letter-spacing: 0.2px;
+}
+
+.extension-empty-desc {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted, #7e9471);
+  max-width: 240px;
+}
+
+.extension-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+/* Extension Card Skeleton / Container */
+.extension-card {
+  flex-shrink: 0 !important;
   width: 100%;
-  height: 100%;
+  background: var(--bg-panel, #182014);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  border-radius: var(--desktop-radius, 6px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.extension-card:hover {
+  border-color: var(--border-muted, rgba(255, 255, 255, 0.2));
+}
+
+.extension-card-header {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-panel-inner, rgba(0, 0, 0, 0.15));
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+}
+
+.extension-card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.extension-card-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary, #ffffff);
+}
+
+.extension-card-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.extension-btn-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 6px;
+}
+
+.extension-btn {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--desktop-radius-sm, 4px);
+  background: var(--bg-panel, #182014);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  color: var(--text-primary, #ffffff);
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  user-select: none;
+}
+
+.extension-btn:hover {
+  background: var(--bg-panel-hover, #202b1b);
+  border-color: var(--accent-primary, #98ce7b);
+  color: var(--accent-primary, #98ce7b);
+}
+
+.extension-btn:active {
+  transform: scale(0.98);
+}
+
+/* Popover Extensions (.is-extensions-popover) */
+.popover-card.is-extensions-popover {
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  max-height: 480px;
+  display: none;
+  flex-direction: column;
+  padding: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-dashboard, #121710);
   border: none;
-  background-color: transparent;
+  box-shadow: none;
+  -webkit-filter: var(--shadow-popover, drop-shadow(0 4px 14px rgba(0, 0, 0, 0.35)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2)));
+  filter: var(--shadow-popover, drop-shadow(0 4px 14px rgba(0, 0, 0, 0.35)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2)));
+  z-index: 1000;
+}
+
+.popover-card.is-extensions-popover.is-active {
+  display: flex;
+}
+
+.is-extensions-popover .popover-header {
+  height: 38px;
+  padding: 0 12px;
+  background: var(--bg-panel, #182014);
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.is-extensions-popover .popover-header-title-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-primary, #ffffff);
+}
+
+.is-extensions-popover .extension-popover-body {
   flex: 1;
-  display: block;
+  overflow-y: auto;
+  min-height: 120px;
+  max-height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.ctrl-btn.ctrl-btn-fish.is-active {
+  background: var(--accent-subtle, rgba(152, 206, 123, 0.2)) !important;
+  color: var(--accent-primary, #98ce7b) !important;
+  border-color: var(--accent-primary, #98ce7b) !important;
 }
 
 /* --- 3D. Right Panel: Inspector / Properties Rack --- */
@@ -1268,6 +1452,7 @@
 .desktop-panel-right .volume-controller-layout,
 .desktop-panel-right .speed-controller-layout,
 .desktop-panel-right .shape-controller-layout,
+.desktop-panel-right .text-controller-layout,
 .desktop-panel-right .camera-controller-layout,
 .desktop-panel-right .fill-controller-layout,
 .desktop-panel-right .graph-editor-container,
@@ -1491,6 +1676,33 @@
   flex-shrink: 0 !important;
 }
 
+.desktop-panel-right .text-tools-col,
+#desktop-panel-inspector .text-tools-col {
+  grid-template-columns: repeat(3, 1fr) !important;
+}
+
+.desktop-panel-right .text-tools-col .transform-tool-btn .fticon,
+#desktop-panel-inspector .text-tools-col .transform-tool-btn .fticon {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  margin-right: 5px !important;
+  font-size: 13px !important;
+}
+
+.desktop-panel-right .transform-tools-col .transform-tool-btn .fticon,
+#desktop-panel-inspector .transform-tools-col .transform-tool-btn .fticon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  line-height: 1;
+  margin-right: 5px;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
 .desktop-panel-right .transform-tool-btn,
 #desktop-panel-inspector .transform-tool-btn {
   width: 100% !important;
@@ -1550,13 +1762,6 @@
 #desktop-panel-inspector .transform-tool-btn.is-active .transform-tool-label {
   font-weight: 700 !important;
   color: var(--bg-canvas) !important;
-}
-
-.desktop-panel-right .transform-tool-btn svg,
-.desktop-panel-right .transform-tool-btn .fticon,
-#desktop-panel-inspector .transform-tool-btn svg,
-#desktop-panel-inspector .transform-tool-btn .fticon {
-  display: none !important;
 }
 
 /* Row 3: Full Width Interactive Work Area for Subviews */
@@ -1985,7 +2190,7 @@
   position: absolute !important;
   inset: 0 !important;
   width: auto !important;
-  background-image: linear-gradient(to bottom, var(--text-secondary) 0px, var(--text-secondary) 1.5px, transparent 1.5px) !important;
+  background-image: linear-gradient(to bottom, var(--color-primary) 0px, var(--color-primary) 1.5px, transparent 1.5px) !important;
   background-size: 100% 16px !important;
   background-position-x: center !important;
   opacity: 0.65 !important;
@@ -2630,6 +2835,18 @@
   padding: 4px 0 !important;
 }
 
+/* Explicit override when an effects-control-row is hidden or has display: none */
+.desktop-panel-right .effects-control-row[style*="display: none"],
+.desktop-panel-right .effects-control-row[style*="display:none"],
+#desktop-panel-inspector .effects-control-row[style*="display: none"],
+#desktop-panel-inspector .effects-control-row[style*="display:none"],
+.desktop-panel-right .effects-control-row.is-hidden,
+#desktop-panel-inspector .effects-control-row.is-hidden,
+.desktop-panel-right .effects-control-row[hidden],
+#desktop-panel-inspector .effects-control-row[hidden] {
+  display: none !important;
+}
+
 .desktop-panel-right .effects-param-label-col,
 #desktop-panel-inspector .effects-param-label-col {
   display: flex !important;
@@ -2641,6 +2858,9 @@
 #desktop-panel-inspector .effects-param-label,
 .desktop-panel-right .effects-param-select-btn,
 #desktop-panel-inspector .effects-param-select-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
   font-family: var(--font-brand) !important;
   font-size: 10.5px !important;
   font-weight: 600 !important;
@@ -2698,6 +2918,108 @@
 .desktop-panel-right .effects-param-pill:active,
 #desktop-panel-inspector .effects-param-pill:active {
   border-color: var(--color-primary) !important;
+}
+
+/* Explicit override when an effects-param-pill or jog-wheel-container is hidden or has display: none */
+.desktop-panel-right .effects-param-pill[style*="display: none"],
+.desktop-panel-right .effects-param-pill[style*="display:none"],
+#desktop-panel-inspector .effects-param-pill[style*="display: none"],
+#desktop-panel-inspector .effects-param-pill[style*="display:none"],
+.desktop-panel-right .effects-param-pill.is-hidden,
+#desktop-panel-inspector .effects-param-pill.is-hidden,
+.desktop-panel-right .effects-param-pill[hidden],
+#desktop-panel-inspector .effects-param-pill[hidden],
+.desktop-panel-right .effects-param-pair[style*="display: none"],
+.desktop-panel-right .effects-param-pair[style*="display:none"],
+#desktop-panel-inspector .effects-param-pair[style*="display: none"],
+#desktop-panel-inspector .effects-param-pair[style*="display:none"],
+.desktop-panel-right .effects-param-pair.is-hidden,
+#desktop-panel-inspector .effects-param-pair.is-hidden,
+.desktop-panel-right .effects-param-pair[hidden],
+#desktop-panel-inspector .effects-param-pair[hidden],
+#jog-shape-size-linked[style*="display: none"],
+#jog-shape-size-linked.is-hidden,
+#jog-shape-size-linked[hidden],
+#jog-shape-size-unlinked[style*="display: none"],
+#jog-shape-size-unlinked.is-hidden,
+#jog-shape-size-unlinked[hidden] {
+  display: none !important;
+}
+
+/* Professional Shape Aspect Ratio Link Button */
+.shape-link-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px !important;
+  margin-left: 6px !important;
+  padding: 0 !important;
+  border-radius: var(--desktop-radius-sm, 4px) !important;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.14)) !important;
+  background-color: var(--bg-canvas, #151515) !important;
+  color: var(--text-secondary, #94a3b8) !important;
+  cursor: pointer !important;
+  flex-shrink: 0 !important;
+  outline: none !important;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+.shape-link-btn:hover {
+  background-color: var(--bg-panel-hover, rgba(255, 255, 255, 0.08)) !important;
+  border-color: var(--border-strong, rgba(255, 255, 255, 0.28)) !important;
+  color: var(--text-primary, #ffffff) !important;
+}
+
+.shape-link-btn.is-active {
+  background-color: rgba(152, 206, 123, 0.15) !important;
+  border-color: rgba(152, 206, 123, 0.5) !important;
+  color: var(--color-primary, #98ce7b) !important;
+}
+
+.shape-link-btn.is-active:hover {
+  background-color: rgba(152, 206, 123, 0.25) !important;
+  border-color: var(--color-primary, #98ce7b) !important;
+  color: var(--color-primary, #98ce7b) !important;
+}
+
+.shape-link-btn svg,
+.transform-link-btn svg {
+  width: 13px !important;
+  height: 13px !important;
+  flex-shrink: 0 !important;
+  pointer-events: none !important;
+}
+
+.shape-link-btn .svg-link-on,
+.transform-link-btn .svg-link-on {
+  display: block !important;
+}
+
+.shape-link-btn .svg-link-off,
+.transform-link-btn .svg-link-off {
+  display: none !important;
+}
+
+.shape-link-btn.is-active .svg-link-on,
+.transform-link-btn.is-active .svg-link-on {
+  display: block !important;
+}
+
+.shape-link-btn.is-active .svg-link-off,
+.transform-link-btn.is-active .svg-link-off {
+  display: none !important;
+}
+
+.shape-link-btn:not(.is-active) .svg-link-on,
+.transform-link-btn:not(.is-active) .svg-link-on {
+  display: none !important;
+}
+
+.shape-link-btn:not(.is-active) .svg-link-off,
+.transform-link-btn:not(.is-active) .svg-link-off {
+  display: block !important;
 }
 
 .desktop-panel-right .effects-pill-track,
@@ -2830,22 +3152,23 @@
 #desktop-panel-inspector .effects-custom-dropdown .custom-dropdown-menu {
   position: absolute !important;
   top: calc(100% + 2px) !important;
-  left: 0 !important;
   right: 0 !important;
+  left: auto !important;
   min-width: 100% !important;
-  width: 100% !important;
+  width: max-content !important;
+  max-width: 320px !important;
   background-color: var(--bg-panel) !important;
   border: 1px solid var(--border-strong) !important;
   border-radius: var(--desktop-radius-sm) !important;
-  padding: 2px !important;
+  padding: 4px !important;
   display: flex !important;
   flex-direction: column !important;
-  gap: 1px !important;
+  gap: 3px !important;
   z-index: 1200 !important;
   box-sizing: border-box !important;
-  max-height: 180px !important;
+  max-height: 260px !important;
   overflow-y: auto !important;
-  scrollbar-width: none !important;
+  scrollbar-width: thin !important;
   opacity: 0 !important;
   pointer-events: none !important;
   transform: translateY(-4px) !important;
@@ -2861,26 +3184,35 @@
 
 .desktop-panel-right .effects-custom-dropdown .custom-dropdown-menu::-webkit-scrollbar,
 #desktop-panel-inspector .effects-custom-dropdown .custom-dropdown-menu::-webkit-scrollbar {
-  display: none !important;
+  width: 4px !important;
+}
+
+.desktop-panel-right .effects-custom-dropdown .custom-dropdown-menu::-webkit-scrollbar-thumb,
+#desktop-panel-inspector .effects-custom-dropdown .custom-dropdown-menu::-webkit-scrollbar-thumb {
+  background: var(--border-subtle) !important;
+  border-radius: 4px !important;
 }
 
 .desktop-panel-right .effects-custom-dropdown .custom-dropdown-item,
 #desktop-panel-inspector .effects-custom-dropdown .custom-dropdown-item {
   display: flex !important;
   align-items: center !important;
-  height: 20px !important;
-  min-height: 20px !important;
-  padding: 0 6px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  padding: 0 10px !important;
   font-family: var(--font-brand) !important;
-  font-size: 10px !important;
+  font-size: 11.5px !important;
   font-weight: 600 !important;
   color: var(--text-primary) !important;
-  border-radius: 2px !important;
+  border-radius: 4px !important;
   cursor: pointer !important;
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   user-select: none !important;
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+  line-height: 28px !important;
   transition: background-color 0.08s ease, color 0.08s ease !important;
 }
 
@@ -3422,8 +3754,9 @@
   order: 3 !important;
   width: 100% !important;
   height: auto !important;
-  min-height: 0 !important;
-  flex: 1 !important;
+  min-height: auto !important;
+  flex: none !important;
+  flex-shrink: 0 !important;
   background-color: var(--bg-panel) !important;
   border: 1px solid var(--border-subtle) !important;
   border-radius: var(--desktop-radius) !important;
@@ -3524,22 +3857,60 @@
   max-width: none !important;
 }
 
-/* Subview B: Spectrum Mixer View */
+/* Subview B: Spectrum Mixer View (Row: [Alpha Slider] [SV Box in Center] [Color Wheel]) */
 .desktop-panel-right .color-picker-view-spectrum:not([style*="display: none"]),
 #desktop-panel-inspector .color-picker-view-spectrum:not([style*="display: none"]) {
   width: 100% !important;
   display: flex !important;
-  flex-direction: column !important;
-  align-items: stretch !important;
-  gap: 10px !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex: none !important;
+  flex-shrink: 0 !important;
+  gap: 8px !important;
   padding: 0 !important;
   box-sizing: border-box !important;
 }
 
-.desktop-panel-right .color-picker-sv-box,
-#desktop-panel-inspector .color-picker-sv-box {
-  width: 100% !important;
+.desktop-panel-right .color-picker-mixer-row,
+#desktop-panel-inspector .color-picker-mixer-row,
+.desktop-panel-right #fill-view-color .color-picker-mixer-row,
+#desktop-panel-inspector #fill-view-color .color-picker-mixer-row {
+  display: contents !important;
+}
+
+/* 1. Left: Alpha (Opacity) Slider */
+.desktop-panel-right .color-picker-alpha-box,
+#desktop-panel-inspector .color-picker-alpha-box,
+.desktop-panel-right #fill-view-color .color-picker-alpha-box,
+#desktop-panel-inspector #fill-view-color .color-picker-alpha-box {
+  order: 1 !important;
+  width: 22px !important;
   height: 120px !important;
+  min-width: 22px !important;
+  min-height: 120px !important;
+  border-radius: 6px !important;
+  border: 1px solid var(--border-subtle) !important;
+  position: relative !important;
+  cursor: pointer !important;
+  box-sizing: border-box !important;
+  flex: none !important;
+  flex-shrink: 0 !important;
+}
+
+/* 2. Center: Saturation & Brightness (SV) Box */
+.desktop-panel-right .color-picker-sv-box,
+#desktop-panel-inspector .color-picker-sv-box,
+.desktop-panel-right #fill-view-color .color-picker-sv-box,
+#desktop-panel-inspector #fill-view-color .color-picker-sv-box {
+  order: 2 !important;
+  width: auto !important;
+  height: 120px !important;
+  min-height: 120px !important;
+  max-height: 120px !important;
+  flex: 1 1 0 !important;
+  min-width: 50px !important;
+  flex-shrink: 1 !important;
   border-radius: 6px !important;
   border: 1px solid var(--border-subtle) !important;
   position: relative !important;
@@ -3548,46 +3919,23 @@
   box-sizing: border-box !important;
 }
 
-.desktop-panel-right .color-picker-mixer-row,
-#desktop-panel-inspector .color-picker-mixer-row {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  justify-content: space-around !important;
-  gap: 12px !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-  padding: 2px 0 !important;
-  order: 2 !important;
-}
-
-.desktop-panel-right #fill-view-color .color-picker-sv-box,
-#desktop-panel-inspector #fill-view-color .color-picker-sv-box {
-  order: 1 !important;
-}
-
+/* 3. Right: Hue Wheel Ring */
 .desktop-panel-right .color-picker-wheel-box,
-#desktop-panel-inspector .color-picker-wheel-box {
+#desktop-panel-inspector .color-picker-wheel-box,
+.desktop-panel-right #fill-view-color .color-picker-wheel-box,
+#desktop-panel-inspector #fill-view-color .color-picker-wheel-box {
+  order: 3 !important;
   width: 120px !important;
   height: 120px !important;
+  min-width: 120px !important;
+  min-height: 120px !important;
   position: relative !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
+  flex: none !important;
   flex-shrink: 0 !important;
   cursor: pointer !important;
-}
-
-.desktop-panel-right .color-picker-alpha-box,
-#desktop-panel-inspector .color-picker-alpha-box {
-  width: 22px !important;
-  height: 120px !important;
-  border-radius: 6px !important;
-  border: 1px solid var(--border-subtle) !important;
-  position: relative !important;
-  cursor: pointer !important;
-  box-sizing: border-box !important;
-  flex-shrink: 0 !important;
 }
 
 /* 3B. Gradient Panel (#fill-view-gradient) */
@@ -3991,40 +4339,17 @@
   text-align: right !important;
 }
 
-.desktop-panel-right .camera-control-row,
-.desktop-panel-right .shape-control-row {
-  width: 100% !important;
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 6px !important;
-  margin-bottom: 12px !important;
-}
-
-.desktop-panel-right .camera-control-header,
-.desktop-panel-right .shape-control-header {
+.desktop-panel-right #blend-opacity-row .effects-param-val-col {
+  flex: 1 !important;
   display: flex !important;
   align-items: center !important;
-  justify-content: space-between !important;
-  width: 100% !important;
+  gap: 8px !important;
+  min-width: 0 !important;
 }
 
-.desktop-panel-right .camera-control-label,
-.desktop-panel-right .shape-control-label {
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  color: var(--text-secondary) !important;
-  text-transform: uppercase !important;
-}
 
-.desktop-panel-right .camera-val-badge,
-.desktop-panel-right .shape-val-badge {
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  color: var(--color-primary) !important;
-}
-
-.desktop-panel-right .jog-wheel-container.is-horizontal,
-.desktop-panel-right .jog-wheel-container:not(.is-vertical) {
+.desktop-panel-right .jog-wheel-container.is-horizontal:not(.effects-param-pill),
+.desktop-panel-right .jog-wheel-container:not(.is-vertical):not(.effects-param-pill) {
   width: 100% !important;
   height: 36px !important;
   border-radius: var(--desktop-radius-sm) !important;
@@ -4032,8 +4357,7 @@
   border: 1px solid var(--border-subtle) !important;
 }
 
-.desktop-panel-right .transform-dual-rulers:not([style*="display: none"]),
-.desktop-panel-right .shape-dual-rulers:not([style*="display: none"]) {
+.desktop-panel-right .transform-dual-rulers:not([style*="display: none"]) {
   display: grid !important;
   grid-template-columns: 1fr 1fr !important;
   gap: 8px !important;
@@ -4048,6 +4372,7 @@
 /* 5. Desktop Inspector Subviews Consistency (Text, Camera, Beatmark, Audio, Speed) */
 /* Text Subview */
 .desktop-panel-right #layer-drawer-text-view .shape-work-area {
+  order: 3 !important;
   height: 100% !important;
   max-height: none !important;
   padding: 12px 10px 24px 10px !important;
@@ -4143,28 +4468,6 @@
 }
 
 /* Camera Subview */
-.desktop-panel-right .camera-toggle-row {
-  display: flex !important;
-  flex-direction: row !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-  background-color: var(--bg-panel) !important;
-  border: 1px solid var(--border-subtle) !important;
-  border-radius: var(--desktop-radius-sm) !important;
-  padding: 8px 10px !important;
-  box-sizing: border-box !important;
-}
-
-.desktop-panel-right .camera-toggle-label-wrap {
-  display: flex !important;
-  flex-direction: column !important;
-  gap: 2px !important;
-}
-
-.desktop-panel-right .camera-toggle-subtext {
-  font-size: 10px !important;
-  color: var(--text-muted) !important;
-}
 
 .desktop-panel-right .camera-dof-group {
   display: flex !important;
@@ -4937,7 +5240,7 @@
   position: relative;
   overflow: hidden;
   flex-shrink: 0;
-  z-index: 15;
+  z-index: auto !important;
 }
 
 /* Timeline Layers Viewport across full width */
@@ -4948,6 +5251,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   background-color: var(--bg-canvas);
+  z-index: auto !important;
 }
 
 /* Timeline Lane Separator Lines & Clips */
@@ -4974,6 +5278,7 @@
   display: flex !important;
   overflow: visible !important;
   background-color: var(--bg-panel-inner);
+  border-top: 1px solid var(--border-panel) !important;
   border-bottom: 1px solid var(--border-panel) !important;
   box-sizing: border-box !important;
 }
@@ -4984,7 +5289,7 @@
   min-width: var(--desktop-layer-panel-w);
   height: 100% !important;
   flex-shrink: 0;
-  background-color: var(--bg-panel-inner);
+  background-color: var(--bg-panel-inner) !important;
   border-right: 1px solid var(--border-panel);
   border-bottom: none !important;
   display: flex;
@@ -4992,7 +5297,8 @@
   justify-content: space-between;
   padding: 0 8px;
   box-sizing: border-box;
-  z-index: 2;
+  z-index: 100 !important;
+  position: relative !important;
   user-select: none;
 }
 
@@ -5007,9 +5313,31 @@
   user-select: none;
 }
 
+.desktop-ruler-col-name-group {
+  flex: 1;
+  min-width: 40px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.desktop-ruler-col-num-hdr {
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+  margin-left: 52px;
+  margin-right: 6px;
+  font-family: var(--font-brand);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  user-select: none;
+}
+
 .desktop-ruler-col-label.col-name {
   flex: 1;
-  min-width: 30px;
+  min-width: 20px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5060,7 +5388,7 @@
 .desktop-ruler-col-label.col-parent {
   width: var(--desktop-parent-col-w, 76px);
   text-align: left;
-  padding-left: 2px;
+  padding-left: 0;
   flex-shrink: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -5069,7 +5397,7 @@
 
 /* Ruler Gutter Column Resizers (Layer Name vs M vs Parent) */
 .desktop-ruler-col-resizer {
-  width: 8px;
+  width: 6px;
   height: 100%;
   cursor: col-resize;
   flex-shrink: 0;
@@ -5078,7 +5406,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 -2px;
+  margin: 0;
+}
+
+.desktop-ruler-col-resizer.desktop-ruler-col-resizer-panel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
 }
 
 .desktop-ruler-col-resizer::after {
@@ -5104,7 +5440,7 @@
   width: 10px;
   margin-left: -5px;
   cursor: col-resize;
-  z-index: 45;
+  z-index: 98 !important;
   background: transparent;
   touch-action: none;
   pointer-events: auto;
@@ -5258,8 +5594,9 @@
   background-color: var(--bg-panel-inner) !important;
   border-right: 1px solid var(--border-panel) !important;
   gap: 0 !important;
-  z-index: 25 !important;
+  z-index: 95 !important;
   top: 2px !important;
+  position: absolute !important;
 }
 
 /* --- Compact Lane Heights & Solid Layer Dividers (34px — Desktop NLE standard) --- */
@@ -5418,6 +5755,117 @@
   display: flex !important;
 }
 
+/* Desktop Precomp Expand Button (Next to Eye Button) - hidden on desktop, only twistie is used */
+.desktop-timeline-wrapper .timeline-layer-ctrl-pill .timeline-layer-precomp-expand-btn {
+  display: none !important;
+}
+
+/* Desktop Precomp Child Rows: Normal standard 34px rows (no staircase indentation) */
+.desktop-timeline-wrapper .timeline-track-lane.is-precomp-child {
+  height: 34px !important;
+  min-height: 34px !important;
+  background-color: transparent !important;
+}
+
+.desktop-timeline-wrapper .timeline-lane-pill-slot.is-precomp-child {
+  width: 100% !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+  background-color: var(--bg-panel-inner) !important;
+  border-bottom: 1px solid var(--border-panel) !important;
+  box-sizing: border-box !important;
+}
+
+.desktop-timeline-wrapper .timeline-lane-reorder-slot.is-precomp-child {
+  height: 34px !important;
+  min-height: 34px !important;
+}
+
+.desktop-timeline-wrapper .timeline-layer-ctrl-pill.is-precomp-child {
+  width: 100% !important;
+  min-width: 100% !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  gap: 6px !important;
+  padding: 0 8px !important;
+  margin: 0 !important;
+  font-size: 12px !important;
+  border-left: none !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  box-sizing: border-box !important;
+}
+
+.desktop-timeline-wrapper .timeline-layer-ctrl-pill.is-precomp-child .timeline-precomp-tree-branch {
+  display: none !important;
+}
+
+.desktop-timeline-wrapper .timeline-layer-ctrl-pill.is-precomp-child .desktop-child-twistie-spacer {
+  width: 14px !important;
+  height: 14px !important;
+  flex-shrink: 0 !important;
+  display: inline-block !important;
+}
+
+.desktop-timeline-wrapper .timeline-layer-ctrl-pill.is-precomp-child .timeline-layer-eye-btn {
+  width: 20px !important;
+  height: 20px !important;
+  flex-shrink: 0 !important;
+}
+
+.desktop-timeline-wrapper .timeline-layer-ctrl-pill.is-precomp-child .desktop-layer-name-text,
+.desktop-timeline-wrapper .timeline-layer-ctrl-pill.is-precomp-child .timeline-child-pill-label {
+  font-size: 12px !important;
+  color: var(--text-primary) !important;
+  flex: 1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.desktop-timeline-wrapper .timeline-clip-block.is-precomp-child,
+.desktop-timeline-wrapper .timeline-track-lane.is-precomp-child .timeline-clip-block {
+  height: 28px !important;
+  top: 3px !important;
+  font-size: 11px !important;
+  padding: 0 8px !important;
+  border-radius: var(--desktop-radius-sm, 3px) !important;
+  display: flex !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
+}
+
+.desktop-timeline-wrapper .timeline-clip-block.is-precomp-child.is-selected,
+.desktop-timeline-wrapper .timeline-track-lane.is-precomp-child .timeline-clip-block.is-selected {
+  padding-left: 22px !important;
+  padding-right: 22px !important;
+}
+
+.desktop-timeline-wrapper .timeline-clip-block.is-precomp-child .timeline-clip-tag {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 16px !important;
+  line-height: 16px !important;
+  font-size: 9px !important;
+  padding: 0 4px !important;
+  margin-right: 5px !important;
+  border-radius: 2px !important;
+  vertical-align: middle !important;
+}
+
+.desktop-timeline-wrapper .timeline-clip-block.is-precomp-child .clip-label {
+  font-size: 11px !important;
+  line-height: 28px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+}
+
 /* Injected layer name text (by desktop.js) */
 .desktop-layer-name-text {
   flex: 1;
@@ -5434,17 +5882,21 @@
   pointer-events: none;
 }
 
-/* Layer Number Index */
-.desktop-layer-index {
+/* Layer Number Index & Spacer */
+.desktop-layer-index,
+.desktop-layer-index-spacer {
   font-family: var(--font-brand);
   font-size: 10px;
   font-weight: 600;
   color: var(--text-muted);
   width: 14px;
+  min-width: 14px;
+  height: 14px;
   text-align: center;
   flex-shrink: 0;
   user-select: none;
   pointer-events: none;
+  display: inline-block;
 }
 
 /* Authentic AE Null Layer Icon */
@@ -6119,7 +6571,7 @@
   max-width: 240px;
   box-sizing: border-box;
   background-color: var(--bg-panel) !important;
-  border: 1px solid var(--color-primary) !important;
+  border: none !important;
   border-radius: 8px !important;
   box-shadow: none !important;
 }
@@ -6189,11 +6641,70 @@
 }
 
 /* ==========================================================================
+   DESKTOP HORIZONTAL TIMELINE SCROLLBAR
+   ========================================================================== */
+.desktop-timeline-scrollbar-bar {
+  height: 14px;
+  min-height: 14px;
+  background-color: var(--bg-panel-inner);
+  border-top: 1px solid var(--border-panel);
+  display: flex;
+  position: relative;
+  z-index: 30;
+  box-sizing: border-box;
+  user-select: none;
+}
+
+.desktop-scrollbar-gutter-fill {
+  width: var(--desktop-layer-panel-w, 240px);
+  min-width: var(--desktop-layer-panel-w, 240px);
+  height: 100%;
+  background-color: var(--bg-panel-inner);
+  border-right: 1px solid var(--border-panel);
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.desktop-scrollbar-track {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.28);
+  position: relative;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.desktop-scrollbar-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  min-width: 28px;
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  cursor: grab;
+  will-change: transform, width;
+  transition: background-color 0.12s ease;
+  box-sizing: border-box;
+}
+
+.desktop-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.35);
+}
+
+.desktop-scrollbar-thumb:active,
+.desktop-scrollbar-thumb.is-dragging {
+  background-color: var(--color-primary);
+  cursor: grabbing;
+}
+
+/* ==========================================================================
    DESKTOP FLOATING TIMELINE ZOOM SLIDER (Always On Top, Bottom-Right)
    ========================================================================== */
 .desktop-timeline-floating-zoom {
   position: absolute;
-  bottom: 12px;
+  bottom: 22px;
   right: 16px;
   z-index: 55;
   display: inline-flex;
@@ -6875,7 +7386,7 @@
 /* Uniform Tick Lines & Color for Scale and Rotate Sliders (matching scale) */
 .desktop-panel-right #pane-transform-rotate .jog-wheel-container:not(.is-vertical) .jog-wheel-ticks,
 .desktop-panel-right #jog-rotate-y .jog-wheel-ticks {
-  background-image: linear-gradient(to right, var(--text-secondary) 0px, var(--text-secondary) 1px, transparent 1px) !important;
+  background-image: linear-gradient(to right, var(--color-primary) 0px, var(--color-primary) 1px, transparent 1px) !important;
   background-size: 16px 100% !important;
   background-position-y: top !important;
   opacity: 0.65 !important;
@@ -6886,7 +7397,7 @@
   left: 0 !important;
   right: 0 !important;
   width: auto !important;
-  background-image: linear-gradient(to bottom, var(--text-secondary) 0px, var(--text-secondary) 1px, transparent 1px) !important;
+  background-image: linear-gradient(to bottom, var(--color-primary) 0px, var(--color-primary) 1px, transparent 1px) !important;
   background-size: 100% 16px !important;
   background-position-x: left !important;
   background-position-y: top !important;

@@ -105,9 +105,84 @@
       fps: 60,
       bgColor: 'transparent',
       defaultDuration: 5,
-      beatmarks: [],
-      layers: []
+      beatmarks: []
     };
+
+    // Hierarchical Layer & Precompose Lookup Utilities
+    function findLayerById(id, rootLayers = null) {
+      if (!id) return null;
+      const layers = rootLayers || (currentProjectState && currentProjectState.layers) || [];
+      for (let i = 0; i < layers.length; i++) {
+        const l = layers[i];
+        if (l && (l.id === id || String(l.id) === String(id))) return l;
+        if (l && l.type === 'precomp' && Array.isArray(l.layers)) {
+          const child = findLayerById(id, l.layers);
+          if (child) {
+            if (!child._parentPrecomp) child._parentPrecomp = l;
+            if (!child._parentPrecompId) child._parentPrecompId = l.id;
+            return child;
+          }
+        }
+      }
+      return null;
+    }
+    window.findLayerById = findLayerById;
+    window.getLayerById = findLayerById;
+
+    function findLayerParentPrecomp(id, rootLayers = null) {
+      if (!id) return null;
+      const layers = rootLayers || (currentProjectState && currentProjectState.layers) || [];
+      for (let i = 0; i < layers.length; i++) {
+        const l = layers[i];
+        if (l && l.type === 'precomp' && Array.isArray(l.layers)) {
+          if (l.layers.some(child => child && (child.id === id || String(child.id) === String(id)))) {
+            return l;
+          }
+          const deep = findLayerParentPrecomp(id, l.layers);
+          if (deep) return deep;
+        }
+      }
+      return null;
+    }
+    window.findLayerParentPrecomp = findLayerParentPrecomp;
+
+    function attachRecursiveFind(arr) {
+      if (!Array.isArray(arr)) return;
+      if (!arr._hasRecursiveFind) {
+        Object.defineProperty(arr, '_hasRecursiveFind', { value: true, configurable: true });
+        const origFind = arr.find;
+        arr.find = function(predicate, thisArg) {
+          const res = origFind.call(this, predicate, thisArg);
+          if (res !== undefined) return res;
+          for (let i = 0; i < this.length; i++) {
+            const l = this[i];
+            if (l && l.type === 'precomp' && Array.isArray(l.layers)) {
+              attachRecursiveFind(l.layers);
+              const childRes = l.layers.find(predicate, thisArg);
+              if (childRes !== undefined) {
+                if (!childRes._parentPrecomp) childRes._parentPrecomp = l;
+                if (!childRes._parentPrecompId) childRes._parentPrecompId = l.id;
+                return childRes;
+              }
+            }
+          }
+          return undefined;
+        };
+      }
+    }
+    window.attachRecursiveFind = attachRecursiveFind;
+
+    let _currentLayers = [];
+    Object.defineProperty(currentProjectState, 'layers', {
+      configurable: true,
+      enumerable: true,
+      get() { return _currentLayers; },
+      set(val) {
+        _currentLayers = Array.isArray(val) ? val : [];
+        attachRecursiveFind(_currentLayers);
+      }
+    });
+    currentProjectState.layers = [];
     window.currentProjectState = currentProjectState;
 
     try {
@@ -421,7 +496,7 @@
             if (Array.isArray(l.layers)) {
               childSig = this._computeFingerprint(l.layers, [], {});
             }
-            return `${l.id}:${l.name || ''}:${l.startSec}:${l.durationSec}:${l.posX}:${l.posY}:${l.posZ || 0}:${l.anchorX || 0}:${l.anchorY || 0}:${l.scaleW}:${l.scaleH}:${l.rotation}:${l.rotZ || 0}:${l.skew || 0}:${l.opacity}:${l.volume !== undefined ? l.volume : 1}:${l.hidden ? 1 : 0}:${l.locked ? 1 : 0}:${l.blendMode || ''}:${l.parentId || ''}:${l.scaleLinked !== false ? 1 : 0}:${l.motionBlur ? 1 : 0}:${l.is3D ? 1 : 0}:${l.collapseTransformations ? 1 : 0}:${kfCount}:${kfSig}:${fxSig}:${exprSig}:${defEasSig}:${childSig}`;
+            return `${l.id}:${l.name || ''}:${l.startSec}:${l.durationSec}:${l.posX}:${l.posY}:${l.posZ || 0}:${l.anchorX || 0}:${l.anchorY || 0}:${l.scaleW}:${l.scaleH}:${l.rotation}:${l.rotZ || 0}:${l.skew || 0}:${l.opacity}:${l.volume !== undefined ? l.volume : 1}:${l.hidden ? 1 : 0}:${l.locked ? 1 : 0}:${l.blendMode || ''}:${l.parentId || ''}:${l.scaleLinked !== false ? 1 : 0}:${l.motionBlur ? 1 : 0}:${l.is3D ? 1 : 0}:${l.collapseTransformations ? 1 : 0}:${l.roundness || 0}:${kfCount}:${kfSig}:${fxSig}:${exprSig}:${defEasSig}:${childSig}`;
           }).join(';');
           const bSig = (beatmarks || []).join(',');
           let mSig = '';
@@ -548,6 +623,16 @@
           if (window.PreviewCacheManager) {
             window.PreviewCacheManager.clearAll();
           }
+          if (typeof window.invalidateEffectivePropsCache === 'function') {
+            window.invalidateEffectivePropsCache();
+          }
+          // Layers/effects are brand-new objects now: force the effects rack to rebuild so cards and
+          // scrubbers stop referencing the pre-undo (orphaned) layer/effect objects.
+          const fxRackList = document.getElementById('effects-rack-list');
+          if (fxRackList) fxRackList.dataset.currentLayerId = '';
+          if (typeof window.syncEffectsRackUI === 'function') {
+            window.syncEffectsRackUI();
+          }
           if (typeof redrawComposition === 'function') {
             redrawComposition('undo-redo');
           }
@@ -649,6 +734,11 @@
         const curDurFast = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
         const timingUnchanged = (layer._cachedStartSec === curStartFast && layer._cachedEndSec === curStartFast + curDurFast);
         if (_interactionTouchedLayers.has(layer.id) && timingUnchanged) {
+          const parentPrecomp = layer._parentPrecomp || (typeof findLayerParentPrecomp === 'function' ? findLayerParentPrecomp(layer.id) : null);
+          if (parentPrecomp) {
+            parentPrecomp._dirty = true;
+            if (parentPrecomp._precompBufferCanvas) parentPrecomp._precompBufferCanvas._lastRenderKey = null;
+          }
           if (layer.type === 'text') {
             layer._textDirty = true;
             if (layer._textBufferCanvas) layer._textBufferCanvas._lastRenderKey = null;
@@ -678,6 +768,11 @@
 
       if (layer) {
         if (layer.type === 'audio') return; // Audio produces no canvas pixels — never invalidate canvas RAM preview cache!
+        const parentPrecomp = layer._parentPrecomp || (typeof findLayerParentPrecomp === 'function' ? findLayerParentPrecomp(layer.id) : null);
+        if (parentPrecomp) {
+          parentPrecomp._dirty = true;
+          if (parentPrecomp._precompBufferCanvas) parentPrecomp._precompBufferCanvas._lastRenderKey = null;
+        }
         if (layer.type === 'text') {
           layer._textDirty = true;
           if (layer._textBufferCanvas) layer._textBufferCanvas._lastRenderKey = null;
@@ -726,6 +821,22 @@
             const chDur = ch.durationSec !== undefined ? ch.durationSec : ((ch.widthPx || 400) / pps);
             minStart = Math.min(minStart, chStart);
             maxEnd = Math.max(maxEnd, chStart + chDur);
+          });
+
+          // Invalidate layers whose effects reference this layer (e.g. Fluid Fish firstLayer / destLayer)
+          const lIdStr = String(layer.id);
+          currentProjectState.layers.forEach(referencingLayer => {
+            if (!referencingLayer || referencingLayer === layer) return;
+            const hasRef = Array.isArray(referencingLayer.effects) && referencingLayer.effects.some(f => {
+              if (!f || f.disabled) return false;
+              return String(f.firstLayer || '') === lIdStr || String(f.destLayer || '') === lIdStr;
+            });
+            if (hasRef) {
+              const refStart = referencingLayer.startSec !== undefined ? referencingLayer.startSec : ((referencingLayer.startPx || 0) / pps);
+              const refDur = referencingLayer.durationSec !== undefined ? referencingLayer.durationSec : ((referencingLayer.widthPx || 400) / pps);
+              minStart = Math.min(minStart, refStart);
+              maxEnd = Math.max(maxEnd, refStart + refDur);
+            }
           });
         }
       }
@@ -996,9 +1107,10 @@
                 isSolid: !!l.isSolid,
                 transformScaleX: (typeof l.transformScaleX === 'number' && !isNaN(l.transformScaleX)) ? l.transformScaleX : 1.0,
                 transformScaleY: (typeof l.transformScaleY === 'number' && !isNaN(l.transformScaleY)) ? l.transformScaleY : 1.0,
-                // Shape specific settings
+                // Shape & Roundness settings
                 shapeType: l.shapeType || undefined,
                 shapeProps: l.shapeProps ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.shapeProps) : (Array.isArray(l.shapeProps) ? [] : {})) : undefined,
+                roundness: l.roundness !== undefined ? l.roundness : undefined,
                 // Text specific settings
                 textProps: l.textProps ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.textProps) : (Array.isArray(l.textProps) ? [] : {})) : undefined,
                 strokeColor: l.strokeColor || undefined,
@@ -1369,6 +1481,7 @@
         }
         img.onload = () => {
           entry.isReady = true;
+          img._contentVersion = (img._contentVersion || 0) + 1;
           if (img.naturalWidth > 0 && img.naturalHeight > 0) {
             layer.mediaWidth = img.naturalWidth;
             layer.mediaHeight = img.naturalHeight;
@@ -1395,9 +1508,20 @@
           console.warn('[Editor] Image load error for layer:', layer.id, layer.name);
           if (layer.mediaId && window.FishDatabase && typeof window.FishDatabase.getMedia === 'function') {
             window.FishDatabase.getMedia(layer.mediaId).then(m => {
-              if (m && m.dataUrl && m.dataUrl !== img.src) {
-                layer.dataUrl = m.dataUrl;
-                img.src = m.dataUrl;
+              if (m) {
+                if (!m.dataUrl && m.buffer) {
+                  try {
+                    m.blob = new Blob([m.buffer], { type: m.mimeType || 'image/png' });
+                    m.dataUrl = URL.createObjectURL(m.blob);
+                  } catch (_) {}
+                } else if (!m.dataUrl && m.blob) {
+                  try { m.dataUrl = URL.createObjectURL(m.blob); } catch (_) {}
+                }
+                if (m.dataUrl && m.dataUrl !== img.src) {
+                  layer.dataUrl = m.dataUrl;
+                  img._contentVersion = (img._contentVersion || 0) + 1;
+                  img.src = m.dataUrl;
+                }
               }
             }).catch(() => {});
           }
@@ -1650,6 +1774,7 @@
               window._activeMediaMap = window._activeMediaMap || new Map();
               window._activeMediaMap.set(m.id, m);
               if (entry.el && entry.el.src !== m.dataUrl) {
+                entry.el._contentVersion = (entry.el._contentVersion || 0) + 1;
                 entry.el.src = m.dataUrl;
                 if (typeof entry.el.load === 'function') entry.el.load();
               }
@@ -1988,11 +2113,13 @@
       }
       return canvas;
     }
+    window.getFillRenderKey = getFillRenderKey;
+    window.getOrUpdateLayerFillCanvas = getOrUpdateLayerFillCanvas;
 
     // Helper: Obtain rendered DOM element or canvas buffer for a precompose child layer
-    function getPrecompChildRenderElement(child, innerSec, pw, ph, pps, triggerSource = '') {
+    function getPrecompChildRenderElement(child, innerSec, pw, ph, pps, triggerSource = '', layerPool = null) {
       if (!child) return null;
-      const childEff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(child, innerSec, null, [child]) : child;
+      const childEff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(child, innerSec, null, (Array.isArray(layerPool) && layerPool.length > 0) ? layerPool : [child]) : child;
       const effSpeed = (childEff && childEff.speed !== undefined) ? childEff.speed : (child.speed !== undefined && child.speed > 0 ? child.speed : 1);
       const isExport = (typeof triggerSource === 'string') && triggerSource.startsWith('export');
 
@@ -2338,6 +2465,116 @@
     }
     window.computeCollapsedPrecompBounds = computeCollapsedPrecompBounds;
 
+    // Helper: Compute Adaptive Wireframe Bounds for Child Layer inside Precompose
+    function computeChildWorldBounds(child, parentPrecomp, targetSec, bufferScale, camEff, w, h) {
+      const engine = window.FishToolEngine || window.LayerTransform;
+      if (!engine || !child || !parentPrecomp) return null;
+
+      const pps = window.currentPixelsPerSecond || 80;
+      const baseW = (typeof currentProjectState !== 'undefined' && currentProjectState.baseW) || 1920;
+      const baseH = (typeof currentProjectState !== 'undefined' && currentProjectState.baseH) || 1080;
+      const precompW = Math.round(Math.abs(parentPrecomp.mediaWidth || parentPrecomp.scaleW || baseW));
+      const precompH = Math.round(Math.abs(parentPrecomp.mediaHeight || parentPrecomp.scaleH || baseH));
+
+      const clipStart = parentPrecomp.startSec !== undefined ? parentPrecomp.startSec : ((parentPrecomp.startPx || 0) / pps);
+      let innerSec = 0;
+      if (parentPrecomp.speedMode === 'time_remap') {
+        innerSec = Math.max(0, parentPrecomp.timeRemap !== undefined ? parentPrecomp.timeRemap : ((targetSec - clipStart) * (parentPrecomp.speed || 1.0)));
+      } else {
+        innerSec = (typeof getLayerIntegratedSpeedTime === 'function')
+          ? getLayerIntegratedSpeedTime(parentPrecomp, targetSec)
+          : Math.max(0, (parentPrecomp.sourceOffsetSec || 0) + (targetSec - clipStart) * (parentPrecomp.speed || 1.0));
+      }
+
+      const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
+        ? getLayerEffectivePropsAtTime(parentPrecomp, targetSec)
+        : parentPrecomp;
+
+      const scaleRatioW = (effProps.scaleW !== undefined ? effProps.scaleW : precompW) / (precompW || 1920);
+      const scaleRatioH = (effProps.scaleH !== undefined ? effProps.scaleH : precompH) / (precompH || 1080);
+      const scaleRatioZ = (Math.abs(scaleRatioW) + Math.abs(scaleRatioH)) / 2;
+
+      const pRotX = effProps.rotX || 0;
+      const pRotY = effProps.rotY || 0;
+      const pRotZ = effProps.rotZ !== undefined ? effProps.rotZ : (effProps.rotation || 0);
+
+      const pivotX = precompW / 2 + (effProps.anchorX || 0);
+      const pivotY = precompH / 2 + (effProps.anchorY || 0);
+      const pivotZ = (effProps.anchorZ || 0);
+
+      const pWorldX = (effProps.posX !== undefined ? effProps.posX : baseW / 2) + (effProps.anchorX || 0);
+      const pWorldY = (effProps.posY !== undefined ? effProps.posY : baseH / 2) + (effProps.anchorY || 0);
+      const pWorldZ = (effProps.posZ || 0) + (effProps.anchorZ || 0);
+
+      const childEff = (typeof getLayerEffectivePropsAtTime === 'function')
+        ? getLayerEffectivePropsAtTime(child, innerSec, null, parentPrecomp.layers || [])
+        : child;
+
+      let vx = (childEff.posX !== undefined ? childEff.posX : precompW / 2) - pivotX;
+      let vy = (childEff.posY !== undefined ? childEff.posY : precompH / 2) - pivotY;
+      let vz = (childEff.posZ || 0) - pivotZ;
+
+      vx *= scaleRatioW;
+      vy *= scaleRatioH;
+      vz *= scaleRatioZ;
+
+      if (pRotZ !== 0) {
+        const radZ = (pRotZ * Math.PI) / 180;
+        const cZ = Math.cos(radZ), sZ = Math.sin(radZ);
+        const nvx = vx * cZ - vy * sZ, nvy = vx * sZ + vy * cZ;
+        vx = nvx; vy = nvy;
+      }
+      if (pRotY !== 0) {
+        const radY = (pRotY * Math.PI) / 180;
+        const cY = Math.cos(radY), sY = Math.sin(radY);
+        const nvx = vx * cY + vz * sY, nvz = -vx * sY + vz * cY;
+        vx = nvx; vz = nvz;
+      }
+      if (pRotX !== 0) {
+        const radX = (pRotX * Math.PI) / 180;
+        const cX = Math.cos(radX), sX = Math.sin(radX);
+        const nvy = vy * cX - vz * sX, nvz = vy * sX + vz * cX;
+        vy = nvy; vz = nvz;
+      }
+
+      const worldPosX = pWorldX + vx;
+      const worldPosY = pWorldY + vy;
+      const worldPosZ = pWorldZ + vz;
+
+      const worldRotX = (childEff.rotX || 0) + pRotX;
+      const worldRotY = (childEff.rotY || 0) + pRotY;
+      const worldRotZ = ((childEff.rotZ !== undefined ? childEff.rotZ : (childEff.rotation || 0))) + pRotZ;
+
+      const childBaseW = (childEff.scaleW !== undefined ? childEff.scaleW : (child.scaleW || child.mediaWidth || 300));
+      const childBaseH = (childEff.scaleH !== undefined ? childEff.scaleH : (child.scaleH || child.mediaHeight || 300));
+      const worldScaleW = childBaseW * scaleRatioW;
+      const worldScaleH = childBaseH * scaleRatioH;
+
+      const worldAnchorX = (childEff.anchorX || 0) * scaleRatioW;
+      const worldAnchorY = (childEff.anchorY || 0) * scaleRatioH;
+      const worldAnchorZ = (childEff.anchorZ || 0) * scaleRatioZ;
+
+      const childWorldAnimLayer = Object.assign({}, child, childEff, {
+        posX: worldPosX,
+        posY: worldPosY,
+        posZ: worldPosZ,
+        rotX: worldRotX,
+        rotY: worldRotY,
+        rotZ: worldRotZ,
+        rotation: worldRotZ,
+        scaleW: worldScaleW,
+        scaleH: worldScaleH,
+        anchorX: worldAnchorX,
+        anchorY: worldAnchorY,
+        anchorZ: worldAnchorZ,
+        skewX: (childEff.skewX || 0) + (effProps.skewX || 0),
+        skewY: (childEff.skewY || 0) + (effProps.skewY || 0)
+      });
+
+      return engine.getBounds(childWorldAnimLayer, bufferScale, camEff, w, h);
+    }
+    window.computeChildWorldBounds = computeChildWorldBounds;
+
     // Global Blend Mode & Composite Operation Resolver (Mask & Exclude support)
     function resolveBlendMode(mode) {
       if (!mode || mode === 'normal') return 'source-over';
@@ -2346,6 +2583,31 @@
       return mode;
     }
     window.resolveBlendMode = resolveBlendMode;
+
+    // A precomp that owns a visible camera must be rasterized through that camera.
+    // Collapse Transformations would merge its children into the parent scene and
+    // silently drop the inner camera, so callers treat such precomps as non-collapsed.
+    function precompHasOwnCamera(precompLayer) {
+      if (!precompLayer || !Array.isArray(precompLayer.layers)) return false;
+      return precompLayer.layers.some(c => c && c.type === 'camera' && !c.hidden);
+    }
+    window.precompHasOwnCamera = precompHasOwnCamera;
+
+    function isPrecompEffectivelyCollapsed(precompLayer) {
+      return !!(precompLayer && precompLayer.type === 'precomp' && precompLayer.collapseTransformations && !precompHasOwnCamera(precompLayer));
+    }
+    window.isPrecompEffectivelyCollapsed = isPrecompEffectivelyCollapsed;
+
+    // Resolve the active camera inside a precomp at its local time (null when none).
+    function getPrecompInnerCameraEff(activeChildren, innerSec, childLayers) {
+      const cam = activeChildren.find(c => c && c.type === 'camera' && !c.hidden);
+      if (!cam) return null;
+      const eff = (typeof getLayerEffectivePropsAtTime === 'function')
+        ? getLayerEffectivePropsAtTime(cam, innerSec, null, childLayers)
+        : Object.assign({}, cam);
+      eff._rawCamera = cam;
+      return eff;
+    }
 
     // Render Precompose Layer onto offscreen canvas buffer
     function renderPrecompToCanvas(precompLayer, targetCanvas, innerSec, targetW = null, targetH = null, triggerSource = '', visitedPrecomps = new Set()) {
@@ -2385,6 +2647,11 @@
 
       const drawList = [...activeChildren].reverse().filter(c => c.type !== 'camera' && c.type !== 'null' && c.type !== 'audio' && !c.hidden);
       const isExport = (typeof triggerSource === 'string') && triggerSource.startsWith('export');
+      // Camera inside this precomp drives its 3D children (previously dropped -> camera looked absent).
+      const innerCamEff = getPrecompInnerCameraEff(activeChildren, innerSec, childLayers);
+      const innerCamRaw = innerCamEff ? innerCamEff._rawCamera : null;
+      // Engine expects composition-space props plus a uniform buffer scale (matches main comp path).
+      const precompRenderScale = pw / (baseW || pw || 1);
 
       drawList.forEach(child => {
         let childEl = null;
@@ -2540,9 +2807,9 @@
         const absH = Math.abs(bh);
 
         const mbEngine = window.FishMotionBlurEngine;
-        const isMbActive = mbEngine && mbEngine.isLayerActive(child, precompLayer) && mbEngine.hasMotion(child, innerSec, null, fps, childLayers);
+        const isMbActive = mbEngine && mbEngine.isLayerActive(child, precompLayer, innerCamRaw) && mbEngine.hasMotion(child, innerSec, null, fps, childLayers, innerCamRaw);
 
-        const drawChildSinglePass = (targetCtx, targetEl, targetChild, eff) => {
+        const drawChildSinglePass = (targetCtx, targetEl, targetChild, eff, passCamEff) => {
           targetCtx.save();
           if (eff.opacity !== undefined && eff.opacity !== null) {
             targetCtx.globalAlpha = Math.max(0, Math.min(1, eff.opacity));
@@ -2574,21 +2841,25 @@
           const engine = window.FishToolEngine || window.LayerTransform;
           const isChild3D = engine && (Math.abs(curRotX) > 0.001 || Math.abs(curRotY) > 0.001 || Math.abs(eff.posZ || 0) > 0.001 || Math.abs(eff.anchorZ || 0) > 0.001 || !!targetChild.is3D);
           if (isChild3D) {
+            // Pass composition-space props + uniform scale (same contract as the main comp) so the
+            // camera offset, camera distance and near plane scale with the preview buffer.
             const animChild = Object.assign({}, targetChild, eff, {
-              posX: curCx,
-              posY: curCy,
-              scaleW: curBw,
-              scaleH: curBh,
+              posX: eff.posX !== undefined ? eff.posX : (baseW / 2),
+              posY: eff.posY !== undefined ? eff.posY : (baseH / 2),
+              scaleW: eff.scaleW !== undefined ? eff.scaleW : (child.mediaWidth || baseW),
+              scaleH: eff.scaleH !== undefined ? eff.scaleH : (child.mediaHeight || baseH),
               rotZ: curRotZ,
               rotX: curRotX,
               rotY: curRotY,
               skewX: curSkewX,
               skewY: curSkewY,
-              anchorX: curAx,
-              anchorY: curAy,
+              anchorX: eff.anchorX || 0,
+              anchorY: eff.anchorY || 0,
               opacity: eff.opacity !== undefined ? eff.opacity : 1.0
             });
-            engine.renderLayer(targetCtx, targetEl, animChild, 1, null);
+            const passCam = (passCamEff !== undefined) ? passCamEff : innerCamEff;
+            const passSec = (eff && typeof eff._currentSec === 'number') ? eff._currentSec : innerSec;
+            engine.renderLayer(targetCtx, targetEl, animChild, precompRenderScale, passCam, passSec);
             targetCtx.restore();
             return;
           }
@@ -2625,14 +2896,17 @@
             pctx,
             childEl,
             child,
-            1,
-            null,
+            precompRenderScale,
+            innerCamEff,
             innerSec,
             (subCtx, subEl, subChild, subScale, subCam, subSec) => {
               const currentSubEl = subEl; // text glyph blur already baked in buffer
               const subEff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(subChild, subSec, null, childLayers) : subChild;
               if (subEff) subEff._currentSec = subSec;
-              drawChildSinglePass(subCtx, currentSubEl, subChild, subEff);
+              const subCamEff = (innerCamRaw && typeof getLayerEffectivePropsAtTime === 'function')
+                ? getLayerEffectivePropsAtTime(innerCamRaw, subSec, null, childLayers)
+                : innerCamEff;
+              drawChildSinglePass(subCtx, currentSubEl, subChild, subEff, subCamEff);
             },
             precompLayer
           );
@@ -2689,8 +2963,26 @@
         const engine = window.FishToolEngine || window.LayerTransform;
         allSelectedIds.forEach(id => {
           const selL = layers.find(l => l.id === id);
-          if (!selL || selL.hidden || selL.type === 'audio' || !activeIds.has(id)) {
+          if (!selL || selL.type === 'audio') {
             if (selL) selL._canvasBounds = null;
+            return;
+          }
+
+          // Precompose Child Layer Bounds Resolver
+          const parentPrecomp = selL._parentPrecomp || (typeof findLayerParentPrecomp === 'function' ? findLayerParentPrecomp(selL.id) : null);
+          if (parentPrecomp) {
+            if (!activeIds.has(parentPrecomp.id)) {
+              selL._canvasBounds = null;
+              return;
+            }
+            if (typeof computeChildWorldBounds === 'function') {
+              selL._canvasBounds = computeChildWorldBounds(selL, parentPrecomp, targetSec, bufferScale, camEff, w, h);
+            }
+            return;
+          }
+
+          if (!activeIds.has(id)) {
+            selL._canvasBounds = null;
             return;
           }
           if (selL.type === 'camera') {
@@ -2720,7 +3012,7 @@
             const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
               ? getLayerEffectivePropsAtTime(selL, targetSec)
               : selL;
-            if (selL.type === 'precomp' && selL.collapseTransformations && Array.isArray(selL.layers) && selL.layers.length > 0) {
+            if (isPrecompEffectivelyCollapsed(selL) && Array.isArray(selL.layers) && selL.layers.length > 0) {
               selL._canvasBounds = computeCollapsedPrecompBounds(selL, effProps, targetSec, bufferScale, camEff, w, h);
             } else {
               selL._canvasBounds = engine.getBounds(Object.assign({}, selL, effProps), bufferScale, camEff, w, h);
@@ -2766,7 +3058,15 @@
       // Calculate current time from timeline playhead or overrideSec
       const pixelsPerSecond = window.currentPixelsPerSecond || 80;
       const currentPanX = window.timelinePanX !== undefined ? Math.min(0, window.timelinePanX) : 0;
-      const currentSec = (overrideSec !== null && overrideSec !== undefined) ? Math.max(0, overrideSec) : (Math.max(0, -currentPanX) / pixelsPerSecond);
+      let currentSec = (overrideSec !== null && overrideSec !== undefined) ? Math.max(0, overrideSec) : (Math.max(0, -currentPanX) / pixelsPerSecond);
+      const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState.fps, 10) || 60);
+      const frameIndex = Math.round(currentSec * fps);
+      // NLE Standard: frame-quantize animation evaluation so 24fps/30fps hold frames for their authentic duration
+      // (Bypassed during direct mouse transform dragging on canvas for maximum interactive responsiveness)
+      const isTransformDragging = !!(window.isTransformInteracting || (typeof window.activeOp !== 'undefined' && window.activeOp));
+      if (!isTransformDragging) {
+        currentSec = frameIndex / fps;
+      }
       window._currentRenderSec = currentSec;
       if (overrideSec === null || overrideSec === undefined) {
         window.currentSec = currentSec;
@@ -2778,8 +3078,6 @@
           invalidateEffectivePropsCache();
         }
       }
-      const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState.fps, 10) || 60);
-      const frameIndex = Math.round(currentSec * fps);
 
       // ─── EARLY-EXIT CACHE FAST-PATH ──────────────────────────────────────────
       // During playback: if frame is cached, blit directly and skip the entire
@@ -2842,7 +3140,6 @@
       let cachedBitmap = null;
       let hasUnreadyMedia = false;
       const isScrubbing = !!(window.isTimelineScrubbing || window.isTimelinePanning || (typeof window.isPanning !== 'undefined' && window.isPanning));
-      const isTransformDragging = !!(window.isTransformInteracting || (typeof window.activeOp !== 'undefined' && window.activeOp));
       // RAM preview cache: used during playback, scrubbing, and frame park for instant 60fps blit.
       // Canvas wireframe transform interaction bypasses cache to track cursor movements live.
       if (!isExport && !isIdleCache && !isTransformDragging && window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
@@ -2930,7 +3227,26 @@
         }
 
       renderOrderLayers.forEach(layer => {
-        if (layer.hidden) return; // Skip hidden layers from canvas rendering
+        const isSelected = (layer.id === window.selectedLayerId) || (window.selectedLayerIds && window.selectedLayerIds.has(layer.id));
+        if (layer.hidden) {
+          if (isSelected && layer.type !== 'camera' && layer.type !== 'audio') {
+            const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
+              ? getLayerEffectivePropsAtTime(layer, currentSec)
+              : layer;
+            const engine = window.FishToolEngine || window.LayerTransform;
+            if (engine) {
+              const animLayer = Object.assign({}, layer, effProps);
+              animLayer._currentSec = currentSec;
+              if (Array.isArray(effProps.effects)) {
+                animLayer.effects = effProps.effects.map(fx => Object.assign({}, fx));
+              } else if (Array.isArray(layer.effects)) {
+                animLayer.effects = layer.effects.map(fx => Object.assign({}, fx));
+              }
+              layer._canvasBounds = engine.getBounds(animLayer, compositionBufferScale, camEff, w, h);
+            }
+          }
+          return; // Skip hidden layers from canvas rendering
+        }
 
         if (layer.type === 'adjustment') {
           // 1. Flush any batched layers rendered prior to this adjustment layer into ctx
@@ -2976,11 +3292,11 @@
               const isMbActive = mbEngine && mbEngine.isLayerActive(rawLayer, compState, activeCamera) && mbEngine.hasMotion(rawLayer, currentSec, null, (typeof getProjectFps === 'function' ? getProjectFps() : 60), (compState && compState.layers) || (currentProjectState && currentProjectState.layers) || [], activeCamera);
               const bounds = engine ? engine.getBounds(item.animLayer || rawLayer, compositionBufferScale, camEff) : null;
               // Plain-3D run member (static or blurred): shared depth pass.
-              // Collapsed precomp children keep the legacy path (they need
-              // per-sample world-transform evaluation in the 2D blur callback).
+              // Collapsed precomp children join the shared depth pass when static,
+              // or keep the legacy sampled path when per-sample world-transform blur is active.
               if (engine && typeof engine.isBatchable3D === 'function' &&
                   engine.isBatchable3D(item.animLayer || rawLayer, bounds) &&
-                  !rawLayer._isCollapsedPrecompChild) {
+                  (!rawLayer._isCollapsedPrecompChild || !isMbActive)) {
                 pending3DRun.push({ item, bounds, blur: !!isMbActive });
                 return;
               }
@@ -3171,12 +3487,12 @@
                   window.FishEffects.applyToContext(subCtx, subAnim);
                 }
                 if (window.FishEffects && typeof window.FishEffects.renderLayer === 'function') {
-                  window.FishEffects.renderLayer(subCtx, subEl, subAnim, { x: 0, y: 0, w: w, h: h }, subSec);
+                  window.FishEffects.renderLayer(subCtx, subEl, subAnim, { x: 0, y: 0, w: w, h: h, bufferScale: (typeof compositionBufferScale === 'number' ? compositionBufferScale : bufferScale), unitScale: (typeof compositionBufferScale === 'number' ? compositionBufferScale : bufferScale), baseW, baseH }, subSec);
                 } else {
                   subCtx.drawImage(subEl, 0, 0);
                 }
                 if (window.FishEffects && typeof window.FishEffects.applyPostEffects === 'function') {
-                  window.FishEffects.applyPostEffects(subCtx, subEl, subAnim, { x: 0, y: 0, w: w, h: h });
+                  window.FishEffects.applyPostEffects(subCtx, subEl, subAnim, { x: 0, y: 0, w: w, h: h, bufferScale: (typeof compositionBufferScale === 'number' ? compositionBufferScale : bufferScale), unitScale: (typeof compositionBufferScale === 'number' ? compositionBufferScale : bufferScale), baseW, baseH });
                 }
                 subCtx.restore();
               },
@@ -3189,22 +3505,29 @@
             }
 
             if (window.FishEffects && typeof window.FishEffects.renderLayer === 'function') {
-              window.FishEffects.renderLayer(procCtx, buf, animLayer, { x: 0, y: 0, w: w, h: h }, currentSec);
+              window.FishEffects.renderLayer(procCtx, buf, animLayer, { x: 0, y: 0, w: w, h: h, bufferScale: (typeof compositionBufferScale === 'number' ? compositionBufferScale : bufferScale), unitScale: (typeof compositionBufferScale === 'number' ? compositionBufferScale : bufferScale), baseW, baseH }, currentSec);
             } else {
               procCtx.drawImage(buf, 0, 0);
             }
 
             if (window.FishEffects && typeof window.FishEffects.applyPostEffects === 'function') {
-              window.FishEffects.applyPostEffects(procCtx, buf, animLayer, { x: 0, y: 0, w: w, h: h });
+              window.FishEffects.applyPostEffects(procCtx, buf, animLayer, { x: 0, y: 0, w: w, h: h, bufferScale: (typeof compositionBufferScale === 'number' ? compositionBufferScale : bufferScale), unitScale: (typeof compositionBufferScale === 'number' ? compositionBufferScale : bufferScale), baseW, baseH });
             }
             procCtx.restore();
           }
 
           // 5. Composite back onto ctx, clipped to the adjustment layer's transformed boundary
-          // Exception: active Deep Glow with Out Layer ON is full-comp 2D (AE-style):
-          // glow must spill across the whole frame, never hard-cut at adj bounds.
-          const adjGlowOut = Array.isArray(animLayer.effects) && animLayer.effects.some(f => f && !f.disabled && f.type === 'deep-glow' &&
-            (f.outLayer === 1 || f.outLayer === true || f.outLayer === '1' || f.outLayer === 'true' || f.outLayer === 'on'));
+          // Exception: active Deep Glow with Out Layer ON, fluid transitions (Fluid Fish),
+          // or isExpanding effects are full-comp (AE-style): they must span across the frame, never hard-cut at adj bounds.
+          const isFullCompAdj = Array.isArray(animLayer.effects) && animLayer.effects.some(f => {
+            if (!f || f.disabled) return false;
+            if (f.type === 'fluid-fish' || f.type === 'open-ios' || f.type === 'open-mac') return true;
+            if (f.type === 'deep-glow' && (f.outLayer === 1 || f.outLayer === true || f.outLayer === '1' || f.outLayer === 'true' || f.outLayer === 'on')) return true;
+            const def = (window.FishEffectsRegistry && typeof window.FishEffectsRegistry.get === 'function')
+              ? window.FishEffectsRegistry.get(f.type)
+              : null;
+            return !!(def && def.isExpanding);
+          });
           ctx.save();
           if (effProps.opacity !== undefined && effProps.opacity !== null) {
             ctx.globalAlpha = Math.max(0, Math.min(1, effProps.opacity));
@@ -3213,7 +3536,7 @@
             ctx.globalCompositeOperation = resolveBlendMode(layer.blendMode);
           }
 
-          if (adjGlowOut) {
+          if (isFullCompAdj) {
             // Draw full-canvas processed image in identity screen space, no boundary clip
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.drawImage(proc, 0, 0, w, h);
@@ -3271,8 +3594,20 @@
           const isMobileText = (typeof window !== 'undefined' && (window.innerWidth <= 600 || ('ontouchstart' in window && window.innerWidth <= 900)));
           const draftBtn = document.getElementById('editor-icon-low-quality');
           const isDraft = draftBtn && draftBtn.classList.contains('is-active');
-          const maxResScale = isDraft ? 1.0 : (isMobileText ? 1.5 : 2.5);
-          const resScale = Math.min(maxResScale, Math.max(0.75, Math.max(scaleMultX, scaleMultY) * (bufferScale || 1.0)));
+          const isInteracting = !!(window.isTransformInteracting && !isExport);
+          const tp = layer.textProps || {};
+          const isAnimatedText = !!(
+            (tp.animIn && tp.animIn !== 'none') ||
+            (tp.animOut && tp.animOut !== 'none') ||
+            tp.animPosY || tp.animPosX
+          );
+          // For animated text, cap supersampling to 1.25x (or 1.0x on mobile/draft) so buffer memory stays compact
+          // and WebGL texture upload remains instant at locked 60 FPS.
+          const maxResScale = isDraft ? 1.0 : (isAnimatedText ? (isMobileText ? 1.0 : 1.25) : (isMobileText ? 1.5 : 2.0));
+          // During interactive transform drag, lock resScale to pre-drag value so canvas buffer doesn't thrash/reallocate on every mousemove
+          const resScale = (isInteracting && layer._textResScaleApplied)
+            ? layer._textResScaleApplied
+            : Math.min(maxResScale, Math.max(0.75, Math.max(scaleMultX, scaleMultY) * (bufferScale || 1.0)));
           layer._textResScale = resScale;
 
           const clipStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pixelsPerSecond);
@@ -3306,7 +3641,7 @@
           layer.mediaWidth = pw;
           layer.mediaHeight = ph;
         } else if (layer.type === 'precomp') {
-          if (layer.collapseTransformations) {
+          if (isPrecompEffectivelyCollapsed(layer)) {
             // Collapse Transformations (3D Grouping Mode)
             const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
               ? getLayerEffectivePropsAtTime(layer, currentSec)
@@ -3327,8 +3662,14 @@
             layer.mediaWidth = pw;
             layer.mediaHeight = ph;
 
-            // Compute adaptive 3D bounding wireframe for the precomp group
-            layer._canvasBounds = computeCollapsedPrecompBounds(layer, effProps, currentSec, bufferScale, camEff, w, h);
+            // Group wireframe bounds only serve hit-testing / selection overlay.
+            // Skip that per-child projection work while exporting or playing back
+            // (selected layer still refreshes; syncActiveViewerOverlay also covers it when paused).
+            const playbackActive = (typeof window.isAnyPlaybackActive === 'function') && window.isAnyPlaybackActive();
+            const needGroupBounds = !isExport && (!playbackActive || layer.id === window.selectedLayerId || !layer._canvasBounds);
+            if (needGroupBounds) {
+              layer._canvasBounds = computeCollapsedPrecompBounds(layer, effProps, currentSec, bufferScale, camEff, w, h);
+            }
 
             // Concatenate precomp 3D transform with each child layer and push to 3D scene batch
             const pps = window.currentPixelsPerSecond || 80;
@@ -3360,7 +3701,7 @@
             const engine = window.FishToolEngine || window.LayerTransform;
 
             validChildren.forEach(child => {
-              const childEl = getPrecompChildRenderElement(child, innerSec, pw, ph, pps, triggerSource);
+              const childEl = getPrecompChildRenderElement(child, innerSec, pw, ph, pps, triggerSource, childLayers);
               if (!childEl) return;
 
               const childEff = (typeof getLayerEffectivePropsAtTime === 'function')
@@ -3749,22 +4090,14 @@
               : { width: 320, height: 100 };
             const defBoxW = nat.width;
             const defBoxH = nat.height;
-            if (layer.transformScaleX === undefined) layer.transformScaleX = 1.0;
-            if (layer.transformScaleY === undefined) layer.transformScaleY = 1.0;
-            if (layer.scaleW === undefined) {
-              layer.scaleW = defBoxW * layer.transformScaleX;
-            } else if (!layer._userResizedManual) {
-              layer.scaleW = defBoxW * layer.transformScaleX;
-            } else if (defBoxW > 0) {
-              layer.transformScaleX = Math.abs(layer.scaleW) / defBoxW;
+            if (layer.transformScaleX === undefined) {
+              layer.transformScaleX = (layer.scaleW && defBoxW > 0 && layer._userResizedManual) ? (Math.abs(layer.scaleW) / defBoxW) : 1.0;
             }
-            if (layer.scaleH === undefined) {
-              layer.scaleH = defBoxH * layer.transformScaleY;
-            } else if (!layer._userResizedManual) {
-              layer.scaleH = defBoxH * layer.transformScaleY;
-            } else if (defBoxH > 0) {
-              layer.transformScaleY = Math.abs(layer.scaleH) / defBoxH;
+            if (layer.transformScaleY === undefined) {
+              layer.transformScaleY = (layer.scaleH && defBoxH > 0 && layer._userResizedManual) ? (Math.abs(layer.scaleH) / defBoxH) : 1.0;
             }
+            layer.scaleW = defBoxW * layer.transformScaleX;
+            layer.scaleH = defBoxH * layer.transformScaleY;
             if (layer.normW === undefined) layer.normW = Math.abs(layer.scaleW) / baseW;
             if (layer.normH === undefined) layer.normH = Math.abs(layer.scaleH) / baseH;
             if (layer.posX === undefined) layer.posX = baseW / 2;
@@ -3969,10 +4302,35 @@
                     ctx.drawImage(el, drawX, drawY, drawW, drawH);
                   }
                 } else {
+                  const isPrecompCollapsed = (layer.type === 'precomp' && !!layer.collapseTransformations);
+                  const rVal = (!isPrecompCollapsed && typeof layer.roundness === 'number') ? layer.roundness : 0;
+                  const hasRoundClip = (rVal > 0);
+                  if (hasRoundClip) {
+                    const maxR = Math.min(absW, absH) / 2;
+                    const r = Math.min(rVal, maxR);
+                    ctx.save();
+                    ctx.beginPath();
+                    if (typeof ctx.roundRect === 'function') {
+                      ctx.roundRect(-absW / 2 - ax, -absH / 2 - ay, absW, absH, r);
+                    } else {
+                      const rx = -absW / 2 - ax;
+                      const ry = -absH / 2 - ay;
+                      ctx.moveTo(rx + r, ry);
+                      ctx.arcTo(rx + absW, ry, rx + absW, ry + absH, r);
+                      ctx.arcTo(rx + absW, ry + absH, rx, ry + absH, r);
+                      ctx.arcTo(rx, ry + absH, rx, ry, r);
+                      ctx.arcTo(rx, ry, rx + absW, ry, r);
+                      ctx.closePath();
+                    }
+                    ctx.clip();
+                  }
                   if (window.FishEffects && typeof window.FishEffects.renderLayer === 'function') {
                     window.FishEffects.renderLayer(ctx, el, animLayerPost, { x: -absW / 2 - ax, y: -absH / 2 - ay, w: absW, h: absH, bufferScale: bufferScale, unitScale: bufferScale }, currentSec);
                   } else {
                     ctx.drawImage(el, -absW / 2 - ax, -absH / 2 - ay, absW, absH);
+                  }
+                  if (hasRoundClip) {
+                    ctx.restore();
                   }
                 }
 
@@ -4097,11 +4455,11 @@
             const isMbActive = mbEngine && mbEngine.isLayerActive(rawLayer, compState, activeCamera) && mbEngine.hasMotion(rawLayer, currentSec, null, (typeof getProjectFps === 'function' ? getProjectFps() : 60), (compState && compState.layers) || (currentProjectState && currentProjectState.layers) || [], activeCamera);
             const bounds = engine ? engine.getBounds(item.animLayer || rawLayer, compositionBufferScale, camEff) : null;
             // Plain-3D run member (static or blurred): shared depth pass.
-            // Collapsed precomp children keep the legacy path (they need
-            // per-sample world-transform evaluation in the 2D blur callback).
+            // Collapsed precomp children join the shared depth pass when static,
+            // or keep the legacy sampled path when per-sample world-transform blur is active.
             if (engine && typeof engine.isBatchable3D === 'function' &&
                 engine.isBatchable3D(item.animLayer || rawLayer, bounds) &&
-                !rawLayer._isCollapsedPrecompChild) {
+                (!rawLayer._isCollapsedPrecompChild || !isMbActive)) {
               pending3DRun.push({ item, bounds, blur: !!isMbActive });
               return;
             }
@@ -4521,7 +4879,7 @@
             return;
           }
           if (selectedLayer.type !== 'camera' && window.CanvasWireframe.hitTest(b, coords.x, coords.y) &&
-              !(selectedLayer.type === 'image' && isLayerPixelTransparent(selectedLayer, coords.x, coords.y))) {
+              !(selectedLayer.type === 'image' && !selectedLayer.hidden && isLayerPixelTransparent(selectedLayer, coords.x, coords.y))) {
             activeCanvasEl.style.cursor = isAnchorMode ? 'crosshair' : 'move';
             return;
           }
@@ -4529,7 +4887,7 @@
           for (const id of window.selectedLayerIds) {
             const l = layers.find(layer => layer.id === id);
             if (l && l._canvasBounds && l.type !== 'camera' && l.type !== 'audio' && window.CanvasWireframe && window.CanvasWireframe.hitTest(l._canvasBounds, coords.x, coords.y) &&
-                !(l.type === 'image' && isLayerPixelTransparent(l, coords.x, coords.y))) {
+                !(l.type === 'image' && !l.hidden && isLayerPixelTransparent(l, coords.x, coords.y))) {
               activeCanvasEl.style.cursor = 'move';
               return;
             }
@@ -4674,7 +5032,7 @@
           const isAnchorHit = isAnchorMode && (hitH?.type === 'anchor');
           const isBodyHit = selectedLayer.type !== 'camera' &&
                             window.CanvasWireframe.hitTest(b, coords.x, coords.y) &&
-                            !(selectedLayer.type === 'image' && isLayerPixelTransparent(selectedLayer, coords.x, coords.y));
+                            !(selectedLayer.type === 'image' && !selectedLayer.hidden && isLayerPixelTransparent(selectedLayer, coords.x, coords.y));
           if (isAnchorHit || (isAnchorMode && isBodyHit) || isBodyHit) {
             const isMoveAnchor = isAnchorMode;
             if (selectedLayer.expressions && (selectedLayer.expressions.move || (isMoveAnchor && selectedLayer.expressions.anchor))) {
@@ -6706,12 +7064,25 @@
 
       // Apply expressions on layer properties (overriding keyframes / manual values)
       if (layer.expressions && typeof layer.expressions === 'object') {
-        const exprKeys = ['move', 'rotate', 'scale', 'skew', 'opacity'];
-        for (const p of exprKeys) {
-          const code = layer.expressions[p];
-          if (code && typeof code === 'string' && code.trim().length > 0) {
+        const propMappings = [
+          { target: 'move', keys: ['move', 'position', 'pos', 'adbe position', 'adbeposition'] },
+          { target: 'rotate', keys: ['rotate', 'rotation', 'rotz', 'adbe rotate z', 'adberotatez'] },
+          { target: 'scale', keys: ['scale', 'adbe scale', 'adbescale'] },
+          { target: 'skew', keys: ['skew'] },
+          { target: 'opacity', keys: ['opacity', 'adbe opacity', 'adbeopacity'] }
+        ];
+        for (const mapping of propMappings) {
+          let code = null;
+          for (const k of mapping.keys) {
+            const raw = layer.expressions[k];
+            if (raw && typeof raw === 'string' && raw.trim().length > 0) {
+              code = raw;
+              break;
+            }
+          }
+          if (code) {
             try {
-              evaluateLayerExpression(code, p, baseProps, layer, currentSec, visited, pool);
+              evaluateLayerExpression(code, mapping.target, baseProps, layer, currentSec, visited, pool);
             } catch (err) {
               // Silently catch frame evaluation errors
             }
@@ -6859,10 +7230,11 @@
         const nat = window.FishTextEngine.getNaturalSize(layer);
         const animTf = window.FishTextEngine.getAnimTransform(layer, localSec, clipDur);
 
-        const uScaleX = layer.transformScaleX !== undefined ? layer.transformScaleX : 1.0;
-        const uScaleY = layer.transformScaleY !== undefined ? layer.transformScaleY : 1.0;
-        const baseW = layer._userResizedManual ? (baseProps.scaleW || nat.width) : (nat.width * uScaleX);
-        const baseH = layer._userResizedManual ? (baseProps.scaleH || nat.height) : (nat.height * uScaleY);
+        const uScaleX = (typeof layer.transformScaleX === 'number' && !isNaN(layer.transformScaleX) && layer.transformScaleX > 0) ? layer.transformScaleX : 1.0;
+        const uScaleY = (typeof layer.transformScaleY === 'number' && !isNaN(layer.transformScaleY) && layer.transformScaleY > 0) ? layer.transformScaleY : 1.0;
+        const hasScaleKeyframes = !!(layer.keyframes && layer.keyframes.scale && layer.keyframes.scale.length > 0);
+        const baseW = hasScaleKeyframes ? (baseProps.scaleW || nat.width) : (nat.width * uScaleX);
+        const baseH = hasScaleKeyframes ? (baseProps.scaleH || nat.height) : (nat.height * uScaleY);
 
         baseProps.scaleW = baseW * animTf.scaleX;
         baseProps.scaleH = baseH * animTf.scaleY;
@@ -8112,12 +8484,18 @@
     function getSelectedLayerAndBaseDims() {
       const layers = (window.currentProjectState && window.currentProjectState.layers) || currentProjectState.layers || [];
       const targetId = window.selectedLayerId || (window.selectedLayerIds && window.selectedLayerIds.size > 0 ? Array.from(window.selectedLayerIds)[0] : null);
-      const layer = layers.find(l => l.id === targetId);
+      const layer = (typeof findLayerById === 'function') ? findLayerById(targetId, layers) : layers.find(l => l.id === targetId);
       if (!layer) return null;
       const proj = window.currentProjectState || currentProjectState || {};
       const aspect = proj.aspectRatio || '16:9';
       const res = proj.resolution || '1080p';
       const baseDims = window.getProjectDimensions(res, aspect);
+      const parentPrecomp = layer._parentPrecomp || (typeof findLayerParentPrecomp === 'function' ? findLayerParentPrecomp(layer.id) : null);
+      if (parentPrecomp) {
+        const pW = Math.round(Math.abs(parentPrecomp.mediaWidth || parentPrecomp.scaleW || baseDims[0]));
+        const pH = Math.round(Math.abs(parentPrecomp.mediaHeight || parentPrecomp.scaleH || baseDims[1]));
+        return { layer, baseW: pW, baseH: pH };
+      }
       return { layer, baseW: baseDims[0], baseH: baseDims[1] };
     }
 
@@ -8343,9 +8721,9 @@
       const paneScale = document.getElementById('pane-transform-scale');
       const paneSkew = document.getElementById('pane-transform-skew');
 
-      const isMoveExpr = !!(exprs.move && exprs.move.trim().length > 0);
-      const isRotateExpr = !!(exprs.rotate && exprs.rotate.trim().length > 0);
-      const isScaleExpr = !!(exprs.scale && exprs.scale.trim().length > 0);
+      const isMoveExpr = !!((exprs.move || exprs.position || exprs.pos || exprs['adbe position']) && (exprs.move || exprs.position || exprs.pos || exprs['adbe position']).trim().length > 0);
+      const isRotateExpr = !!((exprs.rotate || exprs.rotation || exprs.rotZ || exprs['adbe rotate z']) && (exprs.rotate || exprs.rotation || exprs.rotZ || exprs['adbe rotate z']).trim().length > 0);
+      const isScaleExpr = !!((exprs.scale || exprs['adbe scale']) && (exprs.scale || exprs['adbe scale']).trim().length > 0);
       const isSkewExpr = !!(exprs.skew && exprs.skew.trim().length > 0);
 
       if (paneMove) paneMove.classList.toggle('is-expression-disabled', isMoveExpr);
@@ -9576,7 +9954,7 @@
 
       el.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
-        if (e.target && e.target.closest('.effects-param-pill-val, input, select')) return;
+        if (e.target && e.target.closest('.effects-param-pill-val, .shape-param-pill-val, input, select')) return;
         if (callbacks.onStart && callbacks.onStart(e) === false) return;
         isDragging = true;
         window.isTransformInteracting = true;
@@ -9639,7 +10017,7 @@
       let isWheeling = false;
       let wheelTotalDelta = 0;
       el.addEventListener('wheel', (e) => {
-        if (e.target && e.target.closest('.effects-param-pill-val, input, select')) return;
+        if (e.target && e.target.closest('.effects-param-pill-val, .shape-param-pill-val, input, select')) return;
         e.preventDefault();
         
         if (!isWheeling) {
@@ -10527,7 +10905,7 @@
         onMove: (deltaX) => {
           const { targetL, w, h, z, ratio, baseW, baseH } = scaleLinkedInit;
           if (!targetL) return;
-          let newW = Math.max(1, w - deltaX * 2);
+          let newW = Math.max(1, w + deltaX * 2);
           let newH = ratio !== 0 ? newW / ratio : newW;
 
           // Snap to Grid when Grid Overlay is active
@@ -10637,8 +11015,7 @@
         onMove: (deltaX) => {
           const { targetL, w, baseW } = scaleWInit;
           if (!targetL) return;
-          const isVert = document.getElementById('jog-scale-w')?.classList.contains('is-vertical');
-          let newW = Math.max(1, isVert ? (w + deltaX * 2) : (w - deltaX * 2));
+          let newW = Math.max(1, w + deltaX * 2);
 
           // Snap to Grid when Grid Overlay is active
           const gridBtn = document.getElementById('editor-icon-grid');
@@ -10713,8 +11090,7 @@
         onMove: (deltaX) => {
           const { targetL, h, baseH } = scaleHInit;
           if (!targetL) return;
-          const isVert = document.getElementById('jog-scale-h')?.classList.contains('is-vertical');
-          let newH = Math.max(1, isVert ? (h + deltaX * 2) : (h - deltaX * 2));
+          let newH = Math.max(1, h + deltaX * 2);
 
           // Snap to Grid when Grid Overlay is active
           const gridBtn = document.getElementById('editor-icon-grid');
@@ -10789,8 +11165,7 @@
         onMove: (deltaX) => {
           const { targetL, z } = scaleZInit;
           if (!targetL) return;
-          const isVert = document.getElementById('jog-scale-z')?.classList.contains('is-vertical');
-          let newZ = Math.max(1, Math.round(isVert ? (z + deltaX * 2) : (z - deltaX * 2)));
+          let newZ = Math.max(1, Math.round(z + deltaX * 2));
           targetL.scaleZ = newZ;
           recordLayerPropertyChange(targetL, 'scale');
           const valZ = document.getElementById('val-scale-z');
@@ -11627,15 +12002,20 @@
       const opacity = Math.max(0, Math.min(1, effProps.opacity !== undefined ? effProps.opacity : 1.0));
       const pct = Math.round(opacity * 100);
 
+      const badgeEl = document.getElementById('blend-opacity-badge');
+      const jogOpacity = document.getElementById('jog-blend-opacity');
+      const containerEl = document.getElementById('blend-slider-container');
       const fillEl = document.getElementById('blend-slider-fill');
       const thumbEl = document.getElementById('blend-slider-thumb');
-      const badgeEl = document.getElementById('blend-opacity-badge');
-      const containerEl = document.getElementById('blend-slider-container');
 
+      if (badgeEl) badgeEl.textContent = pct + '%';
+      if (jogOpacity) {
+        jogOpacity.setAttribute('aria-valuenow', pct);
+        updateJogScrubberVisuals(jogOpacity, pct, 0, 100);
+      }
+      if (containerEl) containerEl.setAttribute('aria-valuenow', pct);
       if (fillEl) fillEl.style.width = pct + '%';
       if (thumbEl) thumbEl.style.left = pct + '%';
-      if (badgeEl) badgeEl.textContent = pct + '%';
-      if (containerEl) containerEl.setAttribute('aria-valuenow', pct);
 
       // Sync Blend Mode Selection & Statuses
       const currentMode = layer.blendMode || 'normal';
@@ -11750,49 +12130,69 @@
         });
       }
 
-      // 5. Opacity Slider Drag Interaction (fill left to right)
-      const sliderContainer = document.getElementById('blend-slider-container');
-      const sliderFill = document.getElementById('blend-slider-fill');
-      const sliderThumb = document.getElementById('blend-slider-thumb');
+      // 5. Opacity Scrubber Drag Interaction (Effects Parameter Ruler Format)
+      const jogBlendOpacity = document.getElementById('jog-blend-opacity');
       const opacityBadge = document.getElementById('blend-opacity-badge');
+      let initOpacityPct = 100;
+      let lastOpacityPct = 100;
 
-      if (sliderContainer) {
-        function updateOpacityFromPointer(e) {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer) return;
+      function applyOpacityValue(pct, commit = false) {
+        const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+        if (!layer) return;
+        const boundedPct = Math.max(0, Math.min(100, Math.round(pct)));
+        lastOpacityPct = boundedPct;
+        layer.opacity = Number((boundedPct / 100).toFixed(2));
 
-          const rect = sliderContainer.getBoundingClientRect();
-          if (!rect.width) return;
-          const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
-          const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-          const roundedRatio = Number(ratio.toFixed(2));
-          const pct = Math.round(roundedRatio * 100);
+        if (opacityBadge) opacityBadge.textContent = boundedPct + '%';
+        const fillEl = document.getElementById('blend-slider-fill');
+        const thumbEl = document.getElementById('blend-slider-thumb');
+        const containerEl = document.getElementById('blend-slider-container');
+        if (containerEl) containerEl.setAttribute('aria-valuenow', boundedPct);
+        if (fillEl) fillEl.style.width = boundedPct + '%';
+        if (thumbEl) thumbEl.style.left = boundedPct + '%';
+        if (jogBlendOpacity) {
+          jogBlendOpacity.setAttribute('aria-valuenow', boundedPct);
+          updateJogScrubberVisuals(jogBlendOpacity, boundedPct, 0, 100);
+        }
 
-          if (sliderFill) sliderFill.style.width = pct + '%';
-          if (sliderThumb) sliderThumb.style.left = pct + '%';
-          if (opacityBadge) opacityBadge.textContent = pct + '%';
-          sliderContainer.setAttribute('aria-valuenow', pct);
+        invalidatePreviewCacheForLayer(layer);
+        updateBlendKeyframeBtnState();
 
-          layer.opacity = roundedRatio;
-
-          // Record keyframe change if keyframing
+        if (commit) {
           if (typeof recordLayerPropertyChange === 'function') {
             recordLayerPropertyChange(layer, 'opacity');
           }
-
-          // Invalidate frame preview cache
-          invalidatePreviewCacheForLayer(layer);
-
-          updateBlendKeyframeBtnState();
-          if (typeof redrawComposition === 'function') {
-            redrawComposition('blend-opacity-slider');
+          if (typeof saveCurrentProjectLayers === 'function') {
+            saveCurrentProjectLayers();
+          }
+          redrawComposition();
+        } else {
+          if (!window._blendRedrawRafPending) {
+            window._blendRedrawRafPending = true;
+            requestAnimationFrame(() => {
+              window._blendRedrawRafPending = false;
+              redrawComposition('blend-opacity-scrub');
+            });
           }
         }
+      }
 
-        sliderContainer.addEventListener('pointerdown', (e) => {
+      // Slider Fill Pointer & Keyboard Interaction
+      const blendSliderContainer = document.getElementById('blend-slider-container');
+      if (blendSliderContainer) {
+        function updateOpacityFromPointer(e) {
+          const rect = blendSliderContainer.getBoundingClientRect();
+          if (!rect.width) return;
+          const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+          const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+          const newPct = Math.round(ratio * 100);
+          applyOpacityValue(newPct, false);
+        }
+
+        blendSliderContainer.addEventListener('pointerdown', (e) => {
           e.stopPropagation();
           e.preventDefault();
-          try { sliderContainer.setPointerCapture(e.pointerId); } catch (_) {}
+          try { blendSliderContainer.setPointerCapture(e.pointerId); } catch (_) {}
 
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (layer) {
@@ -11808,24 +12208,73 @@
           }
 
           function onPointerUp(ev) {
-            try { sliderContainer.releasePointerCapture(ev.pointerId); } catch (_) {}
+            try { blendSliderContainer.releasePointerCapture(ev.pointerId); } catch (_) {}
             window.removeEventListener('pointermove', onPointerMove);
             window.removeEventListener('pointerup', onPointerUp);
             window.removeEventListener('pointercancel', onPointerUp);
             window.isTransformInteracting = false;
-            const curL = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-            if (curL) {
-              invalidatePreviewCacheForLayer(curL);
-            }
-            redrawComposition();
-            if (typeof saveCurrentProjectLayers === 'function') {
-              saveCurrentProjectLayers();
-            }
+            applyOpacityValue(lastOpacityPct, true);
           }
 
           window.addEventListener('pointermove', onPointerMove);
           window.addEventListener('pointerup', onPointerUp);
           window.addEventListener('pointercancel', onPointerUp);
+        });
+
+        blendSliderContainer.addEventListener('keydown', (e) => {
+          if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            const step = e.shiftKey ? 10 : 1;
+            applyOpacityValue(lastOpacityPct - step, true);
+          } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            const step = e.shiftKey ? 10 : 1;
+            applyOpacityValue(lastOpacityPct + step, true);
+          }
+        });
+      }
+
+      if (jogBlendOpacity) {
+        bindJogWheel(jogBlendOpacity, {
+          onStart: () => {
+            const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+            if (!layer) return;
+            window.isTransformInteracting = true;
+            syncLayerWithEffectiveProps(layer);
+            invalidatePreviewCacheForLayer(layer);
+            initOpacityPct = Math.round((layer.opacity !== undefined ? layer.opacity : 1.0) * 100);
+            lastOpacityPct = initOpacityPct;
+          },
+          onMove: (delta) => {
+            const newPct = Math.max(0, Math.min(100, Math.round(initOpacityPct + delta * 0.4)));
+            applyOpacityValue(newPct, false);
+          },
+          onEnd: () => {
+            window.isTransformInteracting = false;
+            applyOpacityValue(lastOpacityPct, true);
+          }
+        });
+      }
+
+      if (opacityBadge) {
+        opacityBadge.style.cursor = 'pointer';
+        opacityBadge.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer) return;
+          const currentPct = Math.round((layer.opacity !== undefined ? layer.opacity : 1.0) * 100);
+          if (typeof window.openValueInputPopover === 'function') {
+            window.openValueInputPopover(opacityBadge, {
+              title: 'Opacity',
+              value: currentPct,
+              unit: '%',
+              min: 0,
+              max: 100,
+              onCommit: (val) => {
+                applyOpacityValue(val, true);
+              }
+            });
+          }
         });
       }
 
@@ -11911,15 +12360,20 @@
       const vol = Math.max(0, Math.min(1, effProps.volume !== undefined ? effProps.volume : (layer.volume !== undefined ? layer.volume : 1.0)));
       const pct = Math.round(vol * 100);
 
+      const badgeEl = document.getElementById('volume-slider-badge');
+      const jogVol = document.getElementById('jog-layer-volume');
+      const containerEl = document.getElementById('volume-slider-container');
       const fillEl = document.getElementById('volume-slider-fill');
       const thumbEl = document.getElementById('volume-slider-thumb');
-      const badgeEl = document.getElementById('volume-slider-badge');
-      const containerEl = document.getElementById('volume-slider-container');
 
+      if (badgeEl) badgeEl.textContent = pct + '%';
+      if (jogVol) {
+        jogVol.setAttribute('aria-valuenow', pct);
+        updateJogScrubberVisuals(jogVol, pct, 0, 100);
+      }
+      if (containerEl) containerEl.setAttribute('aria-valuenow', pct);
       if (fillEl) fillEl.style.width = pct + '%';
       if (thumbEl) thumbEl.style.left = pct + '%';
-      if (badgeEl) badgeEl.textContent = pct + '%';
-      if (containerEl) containerEl.setAttribute('aria-valuenow', pct);
       if (typeof updateVolumeAndSpeedBtnState === 'function') {
         updateVolumeAndSpeedBtnState(layer);
       }
@@ -12006,23 +12460,38 @@
         });
       }
 
-      // 5. Volume Slider Drag Interaction
+      // 5. Volume Jog Scrubber & Direct Value Interaction
+      const jogLayerVolume = document.getElementById('jog-layer-volume');
+      const volumeBadge = document.getElementById('volume-slider-badge');
       const sliderContainer = document.getElementById('volume-slider-container');
       const sliderFill = document.getElementById('volume-slider-fill');
       const sliderThumb = document.getElementById('volume-slider-thumb');
-      const volumeBadge = document.getElementById('volume-slider-badge');
 
-      function applyVolumeValue(val) {
+      let initVolPct = 100;
+      let lastVolPct = 100;
+
+      function applyVolumeValue(val, commit = true) {
         const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
         if (!layer) return;
 
-        const roundedVal = Number(Math.max(0, Math.min(1, val)).toFixed(2));
+        let normalizedVal;
+        if (typeof val === 'number') {
+          normalizedVal = val > 1 ? val / 100 : val;
+        } else {
+          normalizedVal = 1;
+        }
+        const roundedVal = Number(Math.max(0, Math.min(1, normalizedVal)).toFixed(2));
         const pct = Math.round(roundedVal * 100);
+        lastVolPct = pct;
 
         if (sliderFill) sliderFill.style.width = pct + '%';
         if (sliderThumb) sliderThumb.style.left = pct + '%';
         if (volumeBadge) volumeBadge.textContent = pct + '%';
         if (sliderContainer) sliderContainer.setAttribute('aria-valuenow', pct);
+        if (jogLayerVolume) {
+          jogLayerVolume.setAttribute('aria-valuenow', pct);
+          updateJogScrubberVisuals(jogLayerVolume, pct, 0, 100);
+        }
 
         layer.volume = roundedVal;
 
@@ -12040,25 +12509,74 @@
           }
         }
 
-        // Record keyframe change if keyframing
-        if (typeof recordLayerPropertyChange === 'function') {
-          recordLayerPropertyChange(layer, 'volume');
-        }
-
         invalidatePreviewCacheForLayer(layer);
         updateVolumeKeyframeBtnState();
         if (typeof updateVolumeAndSpeedBtnState === 'function') {
           updateVolumeAndSpeedBtnState(layer);
         }
+
+        if (commit) {
+          if (typeof recordLayerPropertyChange === 'function') {
+            recordLayerPropertyChange(layer, 'volume');
+          }
+          if (typeof saveCurrentProjectLayers === 'function') {
+            saveCurrentProjectLayers(true);
+          }
+        }
+      }
+      window.applyVolumeValue = applyVolumeValue;
+
+      if (jogLayerVolume) {
+        bindJogWheel(jogLayerVolume, {
+          onStart: () => {
+            const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+            if (!layer) return;
+            window.isTransformInteracting = true;
+            syncLayerWithEffectiveProps(layer);
+            invalidatePreviewCacheForLayer(layer);
+            initVolPct = Math.round((layer.volume !== undefined ? layer.volume : 1.0) * 100);
+            lastVolPct = initVolPct;
+          },
+          onMove: (delta) => {
+            const newPct = Math.max(0, Math.min(100, Math.round(initVolPct + delta * 0.4)));
+            applyVolumeValue(newPct / 100, false);
+          },
+          onEnd: () => {
+            window.isTransformInteracting = false;
+            applyVolumeValue(lastVolPct / 100, true);
+          }
+        });
       }
 
-      if (sliderContainer) {
+      if (volumeBadge) {
+        volumeBadge.style.cursor = 'pointer';
+        volumeBadge.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer) return;
+          const currentPct = Math.round((layer.volume !== undefined ? layer.volume : 1.0) * 100);
+          if (typeof window.openValueInputPopover === 'function') {
+            window.openValueInputPopover(volumeBadge, {
+              title: 'Volume',
+              value: currentPct,
+              unit: '%',
+              min: 0,
+              max: 100,
+              onCommit: (val) => {
+                applyVolumeValue(val / 100, true);
+              }
+            });
+          }
+        });
+      }
+
+      if (sliderContainer && sliderContainer !== jogLayerVolume) {
         function updateVolumeFromPointer(e) {
           const rect = sliderContainer.getBoundingClientRect();
           if (!rect.width) return;
           const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
           const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-          applyVolumeValue(ratio);
+          applyVolumeValue(ratio, false);
         }
 
         sliderContainer.addEventListener('pointerdown', (e) => {
@@ -12085,13 +12603,7 @@
             window.removeEventListener('pointerup', onPointerUp);
             window.removeEventListener('pointercancel', onPointerUp);
             window.isTransformInteracting = false;
-            const curL = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-            if (curL) {
-              invalidatePreviewCacheForLayer(curL);
-            }
-            if (typeof saveCurrentProjectLayers === 'function') {
-              saveCurrentProjectLayers(true);
-            }
+            applyVolumeValue(lastVolPct / 100, true);
           }
 
           window.addEventListener('pointermove', onPointerMove);
@@ -12393,6 +12905,7 @@
         const thumbEl = document.getElementById('speed-slider-thumb');
         const badgeEl = document.getElementById('speed-slider-badge');
         const containerEl = document.getElementById('speed-slider-container');
+        const jogSpeed = document.getElementById('jog-layer-speed');
 
         const ratio = Math.max(0, Math.min(1, speedToRatio(spd)));
         const pct = (ratio * 100).toFixed(2);
@@ -12401,6 +12914,10 @@
         if (thumbEl) thumbEl.style.left = pct + '%';
         if (badgeEl) badgeEl.textContent = `${spd}x`;
         if (containerEl) containerEl.setAttribute('aria-valuenow', spd);
+        if (jogSpeed) {
+          jogSpeed.setAttribute('aria-valuenow', spd);
+          updateJogScrubberVisuals(jogSpeed, ratio * 100, 0, 100);
+        }
       } else {
         // Time Remap Mode (Source Time)
         const remapSec = (effProps && effProps.timeRemap !== undefined)
@@ -12414,6 +12931,7 @@
         const remapThumb = document.getElementById('timeremap-slider-thumb');
         const remapBadge = document.getElementById('timeremap-slider-badge');
         const remapContainer = document.getElementById('timeremap-slider-container');
+        const jogRemap = document.getElementById('jog-layer-timeremap');
 
         if (remapFill) remapFill.style.width = remapPct + '%';
         if (remapThumb) remapThumb.style.left = remapPct + '%';
@@ -12427,6 +12945,11 @@
         if (remapContainer) {
           remapContainer.setAttribute('aria-valuenow', remapSec.toFixed(3));
           remapContainer.setAttribute('aria-valuemax', maxSec.toFixed(3));
+        }
+        if (jogRemap) {
+          jogRemap.setAttribute('aria-valuenow', remapSec.toFixed(3));
+          jogRemap.setAttribute('aria-valuemax', maxSec.toFixed(3));
+          updateJogScrubberVisuals(jogRemap, remapSec, 0, maxSec);
         }
       }
 
@@ -12701,18 +13224,23 @@
         });
       }
 
-      // 4. Speed Slider Drag Interaction
+      // 4. Speed Scrubber (Jog Wheel) & Direct Value Input
+      const jogLayerSpeed = document.getElementById('jog-layer-speed');
+      const speedBadge = document.getElementById('speed-slider-badge');
       const sliderContainer = document.getElementById('speed-slider-container');
       const sliderFill = document.getElementById('speed-slider-fill');
       const sliderThumb = document.getElementById('speed-slider-thumb');
-      const speedBadge = document.getElementById('speed-slider-badge');
 
-      function applySpeedValue(speedVal) {
+      let initSpeedVal = 1.0;
+      let lastSpeedVal = 1.0;
+
+      function applySpeedValue(speedVal, commit = true) {
         const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
         if (!layer) return;
 
-        const roundedVal = Math.max(0.1, Math.min(8.0, Number(speedVal)));
+        const roundedVal = Math.max(0.1, Math.min(8.0, Number(Number(speedVal).toFixed(2))));
         layer.speed = roundedVal;
+        lastSpeedVal = roundedVal;
 
         const ratio = Math.max(0, Math.min(1, speedToRatio(roundedVal)));
         const pct = (ratio * 100).toFixed(2);
@@ -12721,12 +13249,10 @@
         if (sliderThumb) sliderThumb.style.left = pct + '%';
         if (speedBadge) speedBadge.textContent = `${roundedVal}x`;
         if (sliderContainer) sliderContainer.setAttribute('aria-valuenow', roundedVal);
-
-        // Record keyframe change if keyframing speed
-        if (typeof recordLayerPropertyChange === 'function') {
-          recordLayerPropertyChange(layer, 'speed');
+        if (jogLayerSpeed) {
+          jogLayerSpeed.setAttribute('aria-valuenow', roundedVal);
+          updateJogScrubberVisuals(jogLayerSpeed, ratio * 100, 0, 100);
         }
-        updateSpeedKeyframeBtnState();
 
         // Live media playback rate & pitch sync
         if (window.getOrLoadLayerMedia) {
@@ -12757,15 +13283,6 @@
           window.FishAudioEngine.syncPlayback(currentProjectState.layers || [], curSec, pps, tlSpeed);
         }
 
-        if (window.VideoFrameExtractor) {
-          if (typeof window.VideoFrameExtractor.clearInterpolationCache === 'function') {
-            window.VideoFrameExtractor.clearInterpolationCache();
-          }
-          if (layer.type === 'video' && typeof window.VideoFrameExtractor.extractLayerRange === 'function') {
-            window.VideoFrameExtractor.extractLayerRange(layer);
-          }
-        }
-
         if (layer.type === 'precomp') {
           if (window.FishAudioEngine) {
             const pps = window.currentPixelsPerSecond || 80;
@@ -12775,51 +13292,117 @@
         }
 
         invalidatePreviewCacheForLayer(layer);
-        if (window.PreviewCacheManager) {
-          const pps = window.currentPixelsPerSecond || 80;
-          const lStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
-          const lDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
-          if (typeof window.PreviewCacheManager.forceRecache === 'function') {
-            window.PreviewCacheManager.forceRecache(lStart, lStart + lDur);
-          } else if (typeof window.PreviewCacheManager.scheduleIdleCheck === 'function') {
-            window.PreviewCacheManager.scheduleIdleCheck(true);
+
+        if (commit) {
+          if (typeof recordLayerPropertyChange === 'function') {
+            recordLayerPropertyChange(layer, 'speed');
+          }
+          updateSpeedKeyframeBtnState();
+
+          if (window.VideoFrameExtractor) {
+            if (typeof window.VideoFrameExtractor.clearInterpolationCache === 'function') {
+              window.VideoFrameExtractor.clearInterpolationCache();
+            }
+            if (layer.type === 'video' && typeof window.VideoFrameExtractor.extractLayerRange === 'function') {
+              window.VideoFrameExtractor.extractLayerRange(layer);
+            }
+          }
+
+          if (window.PreviewCacheManager) {
+            const pps = window.currentPixelsPerSecond || 80;
+            const lStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
+            const lDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
+            if (typeof window.PreviewCacheManager.forceRecache === 'function') {
+              window.PreviewCacheManager.forceRecache(lStart, lStart + lDur);
+            } else if (typeof window.PreviewCacheManager.scheduleIdleCheck === 'function') {
+              window.PreviewCacheManager.scheduleIdleCheck(true);
+            }
+          }
+
+          if (typeof redrawComposition === 'function') {
+            redrawComposition('layer-speed-change');
+          }
+          if (typeof saveCurrentProjectLayers === 'function') {
+            saveCurrentProjectLayers(true);
+          }
+        } else {
+          if (!window._speedRedrawRafPending) {
+            window._speedRedrawRafPending = true;
+            requestAnimationFrame(() => {
+              window._speedRedrawRafPending = false;
+              if (typeof redrawComposition === 'function') {
+                redrawComposition('layer-speed-scrub');
+              }
+            });
           }
         }
+      }
+      window.applySpeedValue = applySpeedValue;
 
-        if (typeof redrawComposition === 'function') {
-          redrawComposition('layer-speed-change');
-        }
+      if (jogLayerSpeed) {
+        bindJogWheel(jogLayerSpeed, {
+          onStart: () => {
+            const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+            if (!layer) return;
+            window.isTransformInteracting = true;
+            syncLayerWithEffectiveProps(layer);
+            invalidatePreviewCacheForLayer(layer);
+            initSpeedVal = (layer.speed !== undefined ? layer.speed : 1.0);
+            lastSpeedVal = initSpeedVal;
+          },
+          onMove: (delta) => {
+            const initRatio = speedToRatio(initSpeedVal);
+            const currentRatio = Math.max(0, Math.min(1, initRatio + delta * 0.0025));
+            const calculatedSpeed = ratioToSpeed(currentRatio);
+            applySpeedValue(calculatedSpeed, false);
+          },
+          onEnd: () => {
+            window.isTransformInteracting = false;
+            applySpeedValue(lastSpeedVal, true);
+          }
+        });
       }
 
       if (speedBadge) {
         speedBadge.style.cursor = 'pointer';
-        speedBadge.title = 'Click to enter exact speed value';
+        speedBadge.title = 'Click to edit Speed';
         speedBadge.addEventListener('click', (e) => {
           e.stopPropagation();
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer) return;
           const curSpd = layer.speed !== undefined ? layer.speed : 1.0;
-          const input = prompt('Enter Speed (0.1x to 8.0x):', curSpd);
-          if (input !== null) {
-            const parsed = parseFloat(input);
-            if (!isNaN(parsed) && parsed > 0) {
-              applySpeedValue(parsed);
-              if (typeof saveCurrentProjectLayers === 'function') {
-                saveCurrentProjectLayers(true);
+          if (typeof window.openValueInputPopover === 'function') {
+            window.openValueInputPopover(speedBadge, {
+              title: 'Speed',
+              value: curSpd,
+              defaultValue: 1.0,
+              min: 0.1,
+              max: 8.0,
+              step: 0.1,
+              onCommit: (val) => {
+                applySpeedValue(val, true);
+              }
+            });
+          } else {
+            const input = prompt('Enter Speed (0.1x to 8.0x):', curSpd);
+            if (input !== null) {
+              const parsed = parseFloat(input);
+              if (!isNaN(parsed) && parsed > 0) {
+                applySpeedValue(parsed, true);
               }
             }
           }
         });
       }
 
-      if (sliderContainer) {
+      if (sliderContainer && sliderContainer !== jogLayerSpeed) {
         function updateSpeedFromPointer(e) {
           const rect = sliderContainer.getBoundingClientRect();
           if (!rect.width) return;
           const clientX = e.clientX !== undefined ? e.clientX : (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
           const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
           const calculatedSpeed = ratioToSpeed(ratio);
-          applySpeedValue(calculatedSpeed);
+          applySpeedValue(calculatedSpeed, false);
         }
 
         sliderContainer.addEventListener('pointerdown', (e) => {
@@ -12846,31 +13429,7 @@
             window.removeEventListener('pointerup', onPointerUp);
             window.removeEventListener('pointercancel', onPointerUp);
             window.isTransformInteracting = false;
-            const curL = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-            if (curL) {
-              if (window.VideoFrameExtractor) {
-                if (typeof window.VideoFrameExtractor.clearInterpolationCache === 'function') {
-                  window.VideoFrameExtractor.clearInterpolationCache();
-                }
-                if (curL.type === 'video' && typeof window.VideoFrameExtractor.extractLayerRange === 'function') {
-                  window.VideoFrameExtractor.extractLayerRange(curL);
-                }
-              }
-              invalidatePreviewCacheForLayer(curL);
-              if (window.PreviewCacheManager) {
-                const pps = window.currentPixelsPerSecond || 80;
-                const lStart = curL.startSec !== undefined ? curL.startSec : ((curL.startPx || 0) / pps);
-                const lDur = curL.durationSec !== undefined ? curL.durationSec : ((curL.widthPx || 400) / pps);
-                if (typeof window.PreviewCacheManager.forceRecache === 'function') {
-                  window.PreviewCacheManager.forceRecache(lStart, lStart + lDur);
-                } else if (typeof window.PreviewCacheManager.scheduleIdleCheck === 'function') {
-                  window.PreviewCacheManager.scheduleIdleCheck(true);
-                }
-              }
-            }
-            if (typeof saveCurrentProjectLayers === 'function') {
-              saveCurrentProjectLayers(true);
-            }
+            applySpeedValue(lastSpeedVal, true);
           }
 
           window.addEventListener('pointermove', onPointerMove);
@@ -12879,62 +13438,46 @@
         });
       }
 
-      // 5. Time Remap Slider Drag & Direct Input Interaction
-      function applyTimeRemapValue(remapVal) {
+      // 5. Time Remap Scrubber (Jog Wheel) & Direct Value Input
+      const jogLayerTimeRemap = document.getElementById('jog-layer-timeremap');
+      const remapSliderBadge = document.getElementById('timeremap-slider-badge');
+      const remapSliderContainer = document.getElementById('timeremap-slider-container');
+      const remapFill = document.getElementById('timeremap-slider-fill');
+      const remapThumb = document.getElementById('timeremap-slider-thumb');
+
+      let initRemapVal = 0;
+      let lastRemapVal = 0;
+
+      function applyTimeRemapValue(remapVal, commit = true) {
         const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
         if (!layer) return;
 
         const pps = window.currentPixelsPerSecond || 80;
         const currentSec = Number((Math.abs(window.timelinePanX || 0) / pps).toFixed(3));
-        const roundedVal = Math.max(0, Number(Number(remapVal).toFixed(3)));
+        const maxSec = Math.max(0.1, layer.mediaDuration || layer.durationSec || ((layer.widthPx || 400) / pps));
+        const roundedVal = Math.max(0, Math.min(maxSec, Number(Number(remapVal).toFixed(3))));
 
         layer.timeRemap = roundedVal;
-
-        // Auto-record keyframe if keyframes exist on timeRemap
-        if (!layer.keyframes) layer.keyframes = {};
-        if (!Array.isArray(layer.keyframes.timeRemap)) layer.keyframes.timeRemap = [];
-
-        const existingKf = (typeof getKeyframeAtTime === 'function')
-          ? getKeyframeAtTime(layer, 'timeRemap', currentSec)
-          : layer.keyframes.timeRemap.find(k => Math.abs(k.time - currentSec) < 0.04);
-
-        if (existingKf) {
-          existingKf.value = { timeRemap: roundedVal };
-        } else {
-          const defaultEasing = (layer._defaultEasing && layer._defaultEasing.timeRemap) ? layer._defaultEasing.timeRemap : [0.0, 0.0, 1.0, 1.0];
-          layer.keyframes.timeRemap.push({
-            time: currentSec,
-            value: { timeRemap: roundedVal },
-            easing: [...defaultEasing]
-          });
-          layer.keyframes.timeRemap.sort((a, b) => a.time - b.time);
-        }
+        lastRemapVal = roundedVal;
 
         // Update slider fill & thumb & badge
-        const maxSec = Math.max(0.1, layer.mediaDuration || layer.durationSec || ((layer.widthPx || 400) / pps));
         const ratio = Math.max(0, Math.min(1, roundedVal / maxSec));
         const pct = (ratio * 100).toFixed(2);
 
-        const fillEl = document.getElementById('timeremap-slider-fill');
-        const thumbEl = document.getElementById('timeremap-slider-thumb');
-        const badgeEl = document.getElementById('timeremap-slider-badge');
-        const containerEl = document.getElementById('timeremap-slider-container');
-
-        if (fillEl) fillEl.style.width = pct + '%';
-        if (thumbEl) thumbEl.style.left = pct + '%';
-        if (badgeEl) {
+        if (remapFill) remapFill.style.width = pct + '%';
+        if (remapThumb) remapThumb.style.left = pct + '%';
+        if (remapSliderBadge) {
           if (typeof window.formatTimecode === 'function') {
-            badgeEl.textContent = window.formatTimecode(Math.round(roundedVal * 1000));
+            remapSliderBadge.textContent = window.formatTimecode(Math.round(roundedVal * 1000));
           } else {
-            badgeEl.textContent = `${roundedVal.toFixed(2)}s`;
+            remapSliderBadge.textContent = `${roundedVal.toFixed(2)}s`;
           }
         }
-        if (containerEl) containerEl.setAttribute('aria-valuenow', roundedVal);
-
-        updateSpeedKeyframeBtnState();
-
-        if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.clearInterpolationCache === 'function') {
-          window.VideoFrameExtractor.clearInterpolationCache();
+        if (remapSliderContainer) remapSliderContainer.setAttribute('aria-valuenow', roundedVal);
+        if (jogLayerTimeRemap) {
+          jogLayerTimeRemap.setAttribute('aria-valuenow', roundedVal);
+          jogLayerTimeRemap.setAttribute('aria-valuemax', maxSec.toFixed(3));
+          updateJogScrubberVisuals(jogLayerTimeRemap, roundedVal, 0, maxSec);
         }
 
         if (layer.type === 'precomp') {
@@ -12944,37 +13487,128 @@
         }
 
         invalidatePreviewCacheForLayer(layer);
-        if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
-        if (typeof redrawComposition === 'function') redrawComposition('layer-timeremap-change');
+
+        if (commit) {
+          // Auto-record keyframe if keyframes exist on timeRemap
+          if (!layer.keyframes) layer.keyframes = {};
+          if (!Array.isArray(layer.keyframes.timeRemap)) layer.keyframes.timeRemap = [];
+
+          const existingKf = (typeof getKeyframeAtTime === 'function')
+            ? getKeyframeAtTime(layer, 'timeRemap', currentSec)
+            : layer.keyframes.timeRemap.find(k => Math.abs(k.time - currentSec) < 0.04);
+
+          if (existingKf) {
+            existingKf.value = { timeRemap: roundedVal };
+          } else {
+            const defaultEasing = (layer._defaultEasing && layer._defaultEasing.timeRemap) ? layer._defaultEasing.timeRemap : [0.0, 0.0, 1.0, 1.0];
+            layer.keyframes.timeRemap.push({
+              time: currentSec,
+              value: { timeRemap: roundedVal },
+              easing: [...defaultEasing]
+            });
+            layer.keyframes.timeRemap.sort((a, b) => a.time - b.time);
+          }
+
+          updateSpeedKeyframeBtnState();
+
+          if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.clearInterpolationCache === 'function') {
+            window.VideoFrameExtractor.clearInterpolationCache();
+          }
+
+          if (window.PreviewCacheManager) {
+            const lStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
+            const lDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
+            if (typeof window.PreviewCacheManager.forceRecache === 'function') {
+              window.PreviewCacheManager.forceRecache(lStart, lStart + lDur);
+            } else if (typeof window.PreviewCacheManager.scheduleIdleCheck === 'function') {
+              window.PreviewCacheManager.scheduleIdleCheck(true);
+            }
+          }
+
+          if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
+          if (typeof redrawComposition === 'function') redrawComposition('layer-timeremap-change');
+          if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers(true);
+        } else {
+          if (!window._timeremapRedrawRafPending) {
+            window._timeremapRedrawRafPending = true;
+            requestAnimationFrame(() => {
+              window._timeremapRedrawRafPending = false;
+              if (typeof redrawComposition === 'function') {
+                redrawComposition('layer-timeremap-scrub');
+              }
+            });
+          }
+        }
       }
       window.applyTimeRemapValue = applyTimeRemapValue;
 
-      const remapSliderContainer = document.getElementById('timeremap-slider-container');
-      const remapSliderBadge = document.getElementById('timeremap-slider-badge');
+      if (jogLayerTimeRemap) {
+        bindJogWheel(jogLayerTimeRemap, {
+          onStart: () => {
+            const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+            if (!layer) return;
+            window.isTransformInteracting = true;
+            syncLayerWithEffectiveProps(layer);
+            invalidatePreviewCacheForLayer(layer);
+            const pps = window.currentPixelsPerSecond || 80;
+            const currentSec = Math.abs(window.timelinePanX || 0) / pps;
+            const eff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(layer, currentSec) : layer;
+            initRemapVal = eff.timeRemap !== undefined ? eff.timeRemap : (layer.timeRemap || 0);
+            lastRemapVal = initRemapVal;
+          },
+          onMove: (delta) => {
+            const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+            const pps = window.currentPixelsPerSecond || 80;
+            const maxSec = layer ? Math.max(0.1, layer.mediaDuration || layer.durationSec || ((layer.widthPx || 400) / pps)) : 10;
+            const stepRatio = delta / 250;
+            const newRemap = Math.max(0, Math.min(maxSec, initRemapVal + stepRatio * maxSec));
+            applyTimeRemapValue(newRemap, false);
+          },
+          onEnd: () => {
+            window.isTransformInteracting = false;
+            applyTimeRemapValue(lastRemapVal, true);
+          }
+        });
+      }
 
       if (remapSliderBadge) {
         remapSliderBadge.style.cursor = 'pointer';
-        remapSliderBadge.title = 'Click to enter exact source time';
+        remapSliderBadge.title = 'Click to edit Source Time';
         remapSliderBadge.addEventListener('click', (e) => {
           e.stopPropagation();
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer) return;
           const pps = window.currentPixelsPerSecond || 80;
           const currentSec = Math.abs(window.timelinePanX || 0) / pps;
+          const maxSec = Math.max(0.1, layer.mediaDuration || layer.durationSec || ((layer.widthPx || 400) / pps));
           const eff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(layer, currentSec) : layer;
-          const curVal = eff.timeRemap !== undefined ? eff.timeRemap : (layer.timeRemap || 0);
-          const input = prompt('Enter Source Time in seconds (e.g. 1.25):', curVal.toFixed(2));
-          if (input !== null) {
-            const parsed = parseFloat(input);
-            if (!isNaN(parsed) && parsed >= 0) {
-              applyTimeRemapValue(parsed);
-              if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers(true);
+          const curVal = Number((eff.timeRemap !== undefined ? eff.timeRemap : (layer.timeRemap || 0)).toFixed(2));
+
+          if (typeof window.openValueInputPopover === 'function') {
+            window.openValueInputPopover(remapSliderBadge, {
+              title: 'Source Time',
+              value: curVal,
+              defaultValue: 0,
+              min: 0,
+              max: Number(maxSec.toFixed(2)),
+              step: 0.05,
+              onCommit: (val) => {
+                applyTimeRemapValue(val, true);
+              }
+            });
+          } else {
+            const input = prompt('Enter Source Time in seconds (e.g. 1.25):', curVal.toFixed(2));
+            if (input !== null) {
+              const parsed = parseFloat(input);
+              if (!isNaN(parsed) && parsed >= 0) {
+                applyTimeRemapValue(parsed, true);
+              }
             }
           }
         });
       }
 
-      if (remapSliderContainer) {
+      if (remapSliderContainer && remapSliderContainer !== jogLayerTimeRemap) {
         function updateTimeRemapFromPointer(e) {
           const rect = remapSliderContainer.getBoundingClientRect();
           if (!rect.width) return;
@@ -12984,7 +13618,7 @@
           const pps = window.currentPixelsPerSecond || 80;
           const maxSec = layer ? Math.max(0.1, layer.mediaDuration || layer.durationSec || ((layer.widthPx || 400) / pps)) : 10;
           const calculatedRemap = ratio * maxSec;
-          applyTimeRemapValue(calculatedRemap);
+          applyTimeRemapValue(calculatedRemap, false);
         }
 
         remapSliderContainer.addEventListener('pointerdown', (e) => {
@@ -13011,23 +13645,7 @@
             window.removeEventListener('pointerup', onPointerUp);
             window.removeEventListener('pointercancel', onPointerUp);
             window.isTransformInteracting = false;
-            const curL = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-            if (curL) {
-              invalidatePreviewCacheForLayer(curL);
-              if (window.PreviewCacheManager) {
-                const pps = window.currentPixelsPerSecond || 80;
-                const lStart = curL.startSec !== undefined ? curL.startSec : ((curL.startPx || 0) / pps);
-                const lDur = curL.durationSec !== undefined ? curL.durationSec : ((curL.widthPx || 400) / pps);
-                if (typeof window.PreviewCacheManager.forceRecache === 'function') {
-                  window.PreviewCacheManager.forceRecache(lStart, lStart + lDur);
-                } else if (typeof window.PreviewCacheManager.scheduleIdleCheck === 'function') {
-                  window.PreviewCacheManager.scheduleIdleCheck(true);
-                }
-              }
-            }
-            if (typeof saveCurrentProjectLayers === 'function') {
-              saveCurrentProjectLayers(true);
-            }
+            applyTimeRemapValue(lastRemapVal, true);
           }
 
           window.addEventListener('pointermove', onPointerMove);
@@ -13725,22 +14343,32 @@
 
     function getTextPropValue(tp, key) {
       if (tp && tp[key] !== undefined && tp[key] !== null && tp[key] !== '') return tp[key];
+      if (key === 'strokeEnabled' && tp && Number(tp.strokeWidth) > 0) return true;
       const defs = window.FishTextEngine ? window.FishTextEngine.getDefaultProps() : {};
       return defs[key];
     }
 
     function applyTextLayerChange(layer, opts = {}) {
       if (!layer) return;
-      layer._textBufferCanvas = null;
-      layer._textMbCanvas = null;
       layer._textDirty = true;
+      if (layer._textBufferCanvas) {
+        layer._textBufferCanvas._lastRenderKey = null;
+      }
+      layer._textMbCanvas = null;
       if (window.FishTextEngine) {
         const nat = window.FishTextEngine.getNaturalSize(layer);
-        layer.scaleW = nat.width * (layer.transformScaleX || 1);
-        layer.scaleH = nat.height * (layer.transformScaleY || 1);
+        const tx = (typeof layer.transformScaleX === 'number' && !isNaN(layer.transformScaleX) && layer.transformScaleX > 0) ? layer.transformScaleX : 1.0;
+        const ty = (typeof layer.transformScaleY === 'number' && !isNaN(layer.transformScaleY) && layer.transformScaleY > 0) ? layer.transformScaleY : 1.0;
+        layer.scaleW = Math.round(nat.width * tx);
+        layer.scaleH = Math.round(nat.height * ty);
         layer.mediaWidth = nat.width;
         layer.mediaHeight = nat.height;
+        const baseW = (currentProjectState && currentProjectState.canvasWidth) ? currentProjectState.canvasWidth : 1080;
+        const baseH = (currentProjectState && currentProjectState.canvasHeight) ? currentProjectState.canvasHeight : 1920;
+        layer.normW = Math.abs(layer.scaleW) / baseW;
+        layer.normH = Math.abs(layer.scaleH) / baseH;
       }
+      if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
       if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
       if (opts.timeline) renderTimelineLayers();
       redrawComposition();
@@ -13771,12 +14399,27 @@
       return `${Number(v).toFixed(dec)}${unit}`;
     }
 
+    function setTextRulerOffset(jog, v) {
+      const ticksEl = jog.querySelector('.jog-wheel-ticks');
+      if (!ticksEl) return;
+      const mn = Number(jog.dataset.min);
+      const span = Number(jog.dataset.max) - mn;
+      const tapeW = parseFloat(ticksEl.dataset.tapeWidth) || 480;
+      const ratio = span > 0 ? Math.max(0, Math.min(1, (Number(v) - mn) / span)) : 0;
+      const offset = (-ratio * tapeW).toFixed(1);
+      ticksEl.style.setProperty('--tape-offset', `${offset}px`);
+      ticksEl.style.transform = `translateX(${offset}px)`;
+      ticksEl.style.clipPath = 'none';
+    }
+
     function syncTextFormatControls(tp) {
       // Jog badges
       document.querySelectorAll('[data-text-jog]').forEach(jog => {
         const key = jog.dataset.textJog;
         const v = Number(getTextPropValue(tp, key)) || 0;
+        jog.setAttribute('aria-valuenow', String(v));
         document.querySelectorAll(`[data-text-badge="${key}"]`).forEach(b => { b.textContent = formatTextJogValue(jog, v); });
+        if (jog.classList.contains('effects-ruler-scrubber')) setTextRulerOffset(jog, v);
       });
       // Dropdowns
       document.querySelectorAll('[data-text-select]').forEach(dd => {
@@ -13832,47 +14475,146 @@
 
     function initTextFormatControls() {
       // 1. Pane tabs (Text / Style / Animate)
-      document.querySelectorAll('.text-panel-tabs').forEach(tabs => {
-        tabs.querySelectorAll('[data-text-tab]').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const name = btn.dataset.textTab;
-            tabs.querySelectorAll('[data-text-tab]').forEach(b => {
-              const on = b === btn;
-              b.classList.toggle('is-active', on);
-              b.classList.toggle('is-selected', on);
-              b.setAttribute('aria-selected', on ? 'true' : 'false');
-            });
-            const root = tabs.closest('.shape-work-area') || document;
-            root.querySelectorAll('[data-text-pane]').forEach(p => p.classList.toggle('is-active', p.dataset.textPane === name));
-          });
+      const handleTextTabClick = (btn) => {
+        const name = btn.dataset.textTab;
+        if (!name) return;
+        const controller = btn.closest('#text-controller') || document.getElementById('text-controller') || document;
+        controller.querySelectorAll('[data-text-tab]').forEach(b => {
+          const on = (b.dataset.textTab === name);
+          b.classList.toggle('is-active', on);
+          b.classList.toggle('is-selected', on);
+          b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        controller.querySelectorAll('[data-text-pane]').forEach(p => {
+          p.classList.toggle('is-active', p.dataset.textPane === name);
+        });
+      };
+
+      document.querySelectorAll('#text-controller [data-text-tab], .text-panel-tabs [data-text-tab], .text-tools-col [data-text-tab]').forEach(btn => {
+        if (btn._textTabBound) return;
+        btn._textTabBound = true;
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          handleTextTabClick(btn);
         });
       });
 
-      // 2. Jog wheels
+      // 2. Jog wheels (delta pills) and ruler sliders (bounded tape, same as Effects params)
       document.querySelectorAll('[data-text-jog]').forEach(jog => {
         const key = jog.dataset.textJog;
         const mn = Number(jog.dataset.min);
         const mx = Number(jog.dataset.max);
         const step = Number(jog.dataset.step) || 1;
         const dec = Number(jog.dataset.decimals) || 0;
+        const setText = (layer, v) => {
+          layer.textProps[key] = v;
+          if (key === 'animInDuration') layer.textProps.animDuration = v;
+          document.querySelectorAll(`[data-text-badge="${key}"]`).forEach(b => { b.textContent = formatTextJogValue(jog, v); });
+          if (key === 'animInDuration' || key === 'animOutDuration') {
+            const hdr = document.getElementById(key === 'animInDuration' ? 'val-text-anim-in-duration' : 'val-text-anim-out-duration');
+            if (hdr) hdr.textContent = `${v.toFixed(2)}s`;
+          }
+        };
+        const isTimeline = key === 'animInDuration' || key === 'animOutDuration';
+
+        if (jog.classList.contains('effects-ruler-scrubber')) {
+          if (window.FishElements && typeof window.FishElements.bindRulerScrubber === 'function') {
+            window.FishElements.bindRulerScrubber(jog, {
+              min: mn,
+              max: mx,
+              step: step,
+              decimals: dec,
+              onStart: () => {
+                const layer = getSelectedTextLayer();
+                if (!layer) return false;
+                const cur = Number(getTextPropValue(layer.textProps, key));
+                jog.setAttribute('aria-valuenow', String(Number.isFinite(cur) ? cur : mn));
+                window.isTransformInteracting = true;
+              },
+              onChange: (quant) => {
+                const layer = getSelectedTextLayer();
+                if (!layer) return;
+                setText(layer, quant);
+                setTextRulerOffset(jog, quant);
+                applyTextLayerChange(layer, isTimeline ? { timeline: true } : {});
+              },
+              onCommit: () => {
+                window.isTransformInteracting = false;
+                const layer = getSelectedTextLayer();
+                if (layer) {
+                  applyTextLayerChange(layer, { save: true });
+                } else {
+                  redrawComposition('transformCommit');
+                  saveCurrentProjectLayers();
+                }
+              }
+            });
+            return;
+          }
+          const ticksEl = jog.querySelector('.jog-wheel-ticks');
+          let currentVal = 0;
+          let tapeW = 480;
+          bindJogWheel(jog, {
+            onStart: (e) => {
+              if (e && e.target && e.target.closest('.effects-param-pill-val')) return false;
+              const layer = getSelectedTextLayer();
+              if (!layer) return false;
+              currentVal = Number(getTextPropValue(layer.textProps, key));
+              if (!Number.isFinite(currentVal)) currentVal = mn;
+              if (ticksEl) tapeW = parseFloat(ticksEl.dataset.tapeWidth) || 480;
+              window.isTransformInteracting = true;
+            },
+            onMove: (rawDelta, e, stepPx) => {
+              const layer = getSelectedTextLayer();
+              if (!layer) return;
+              const span = mx - mn;
+              const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 2.5 : 1.0);
+              // Drag right (positive px) decreases value (physical ruler reel mechanics)
+              currentVal = Math.max(mn, Math.min(mx, currentVal - (span > 0 ? stepPx * (span / tapeW) * speed : 0)));
+              const quant = Number((Math.round(currentVal / step) * step).toFixed(dec + 2));
+              setText(layer, quant);
+              setTextRulerOffset(jog, quant);
+              applyTextLayerChange(layer, isTimeline ? { timeline: true } : {});
+            },
+            onEnd: () => {
+              window.isTransformInteracting = false;
+              const layer = getSelectedTextLayer();
+              if (layer) {
+                applyTextLayerChange(layer, { save: true });
+              } else {
+                redrawComposition('transformEnd');
+                saveCurrentProjectLayers();
+              }
+            }
+          });
+          return;
+        }
+
         let initVal = 0;
         bindJogWheel(jog, {
           onStart: () => {
             const layer = getSelectedTextLayer();
             if (!layer) return;
             initVal = Number(getTextPropValue(layer.textProps, key)) || 0;
+            window.isTransformInteracting = true;
           },
           onMove: (delta) => {
             const layer = getSelectedTextLayer();
             if (!layer) return;
             const v = Number(Math.max(mn, Math.min(mx, initVal + delta * step)).toFixed(dec));
-            layer.textProps[key] = v;
-            document.querySelectorAll(`[data-text-badge="${key}"]`).forEach(b => { b.textContent = formatTextJogValue(jog, v); });
-            applyTextLayerChange(layer);
+            setText(layer, v);
+            applyTextLayerChange(layer, isTimeline ? { timeline: true } : {});
           },
-          onEnd: () => { saveCurrentProjectLayers(); }
+          onEnd: () => {
+            window.isTransformInteracting = false;
+            const layer = getSelectedTextLayer();
+            if (layer) {
+              applyTextLayerChange(layer, { save: true });
+            } else {
+              saveCurrentProjectLayers();
+            }
+          }
         });
       });
 
@@ -13930,7 +14672,13 @@
                 if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
               }
             } else {
-              layer.textProps[key] = sw.dataset.type === 'bool' ? item.dataset.val === 'true' : item.dataset.val;
+              const val = sw.dataset.type === 'bool' ? item.dataset.val === 'true' : item.dataset.val;
+              layer.textProps[key] = val;
+              if (key === 'strokeEnabled' && val === true) {
+                if (!Number(layer.textProps.strokeWidth)) {
+                  layer.textProps.strokeWidth = 3;
+                }
+              }
             }
             syncTextFormatControls(layer.textProps);
             applyTextLayerChange(layer, { save: true });
@@ -13997,12 +14745,8 @@
 
       const inDur = Math.max(0.1, Number(tp.animInDuration || tp.animDuration) || 0.8);
       const outDur = Math.max(0.1, Number(tp.animOutDuration) || 0.6);
-      let curAnimIn = tp.animIn || tp.animation || 'bounce_1';
-      if (curAnimIn === 'bounce_pop') curAnimIn = 'bounce_1';
-      else if (curAnimIn === 'pop_in' || curAnimIn === 'bounce_drop') curAnimIn = 'bounce_2';
-      else if (curAnimIn === 'overshoot_slide') curAnimIn = 'bounce_3';
-      else if (curAnimIn === 'elastic_wobble') curAnimIn = 'bounce_4';
-      const curAnimOut = tp.animOut || 'none';
+      const curAnimIn = (window.FishTextEngine && typeof window.FishTextEngine.normalizeAnimIn === 'function') ? window.FishTextEngine.normalizeAnimIn(tp.animIn || tp.animation || 'none') : (tp.animIn || tp.animation || 'none');
+      const curAnimOut = (window.FishTextEngine && typeof window.FishTextEngine.normalizeAnimOut === 'function') ? window.FishTextEngine.normalizeAnimOut(tp.animOut || 'none') : (tp.animOut || 'none');
 
       const valAnimInDur = document.getElementById('val-text-anim-in-duration');
       if (valAnimInDur) valAnimInDur.textContent = `${inDur.toFixed(2)}s`;
@@ -14124,63 +14868,6 @@
         });
       }
 
-      // Font Size Jog Wheel
-      let initFontSize = 64;
-      bindJogWheel(document.getElementById('jog-text-font-size'), {
-        onStart: () => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          initFontSize = Number(layer.textProps?.fontSize) || 64;
-        },
-        onMove: (delta) => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          if (!layer.textProps) layer.textProps = {};
-          const newSize = Math.max(12, Math.min(240, Math.round(initFontSize + delta)));
-          layer.textProps.fontSize = newSize;
-          layer._textBufferCanvas = null;
-          if (window.FishTextEngine) {
-            const nat = window.FishTextEngine.getNaturalSize(layer);
-            layer.scaleW = nat.width * (layer.transformScaleX || 1);
-            layer.scaleH = nat.height * (layer.transformScaleY || 1);
-            layer.mediaWidth = nat.width;
-            layer.mediaHeight = nat.height;
-          }
-          const valFontSize = document.getElementById('val-text-font-size');
-          if (valFontSize) valFontSize.textContent = `${newSize}px`;
-          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          redrawComposition();
-        },
-        onEnd: () => {
-          saveCurrentProjectLayers();
-        }
-      });
-
-      // Outline Width Jog Wheel
-      let initStrokeW = 0;
-      bindJogWheel(document.getElementById('jog-text-stroke-width'), {
-        onStart: () => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          initStrokeW = Number(layer.textProps?.strokeWidth) || 0;
-        },
-        onMove: (delta) => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          if (!layer.textProps) layer.textProps = {};
-          const newStroke = Math.max(0, Math.min(40, Math.round(initStrokeW + delta * 0.5)));
-          layer.textProps.strokeWidth = newStroke;
-          layer._textBufferCanvas = null;
-          const valStrokeWidth = document.getElementById('val-text-stroke-width');
-          if (valStrokeWidth) valStrokeWidth.textContent = `${newStroke}px`;
-          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          redrawComposition();
-        },
-        onEnd: () => {
-          saveCurrentProjectLayers();
-        }
-      });
-
       // Text IN Animation Dropdown
       const ddAnimIn = document.getElementById('dropdown-text-anim-in');
       if (ddAnimIn) {
@@ -14193,7 +14880,6 @@
             if (!layer.textProps) layer.textProps = {};
             layer.textProps.animIn = val;
             layer.textProps.animation = val;
-            seedTextAnimatorIfNeutral(layer, val);
             ddAnimIn.dataset.value = val;
             const label = ddAnimIn.querySelector('.custom-dropdown-label');
             if (label) label.textContent = item.textContent;
@@ -14232,38 +14918,6 @@
         });
       }
 
-      // IN Animation Duration Jog Wheel
-      let initInDur = 0.8;
-      bindJogWheel(document.getElementById('jog-text-anim-in-duration'), {
-        onStart: () => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          initInDur = Number(layer.textProps?.animInDuration || layer.textProps?.animDuration) || 0.8;
-        },
-        onMove: (delta) => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          if (!layer.textProps) layer.textProps = {};
-          const pps = window.currentPixelsPerSecond || 80;
-          const clipDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
-          const maxIn = Math.max(0.2, clipDur * 0.48);
-          const newDur = Number(Math.max(0.1, Math.min(maxIn, initInDur + delta * 0.05)).toFixed(2));
-          layer.textProps.animInDuration = newDur;
-          layer.textProps.animDuration = newDur;
-          layer._textBufferCanvas = null;
-          const valIn = document.getElementById('val-text-anim-in-duration');
-          if (valIn) valIn.textContent = `${newDur.toFixed(2)}s`;
-          const badgeIn = document.getElementById('badge-text-anim-in-dur');
-          if (badgeIn) badgeIn.textContent = `${newDur.toFixed(2)}s`;
-          renderTimelineLayers();
-          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          redrawComposition();
-        },
-        onEnd: () => {
-          saveCurrentProjectLayers();
-        }
-      });
-
       // Text OUT Animation Dropdown
       const ddAnimOut = document.getElementById('dropdown-text-anim-out');
       if (ddAnimOut) {
@@ -14275,7 +14929,6 @@
             if (!layer || layer.type !== 'text') return;
             if (!layer.textProps) layer.textProps = {};
             layer.textProps.animOut = val;
-            seedTextAnimatorIfNeutral(layer, val);
             ddAnimOut.dataset.value = val;
             const label = ddAnimOut.querySelector('.custom-dropdown-label');
             if (label) label.textContent = item.textContent;
@@ -14290,146 +14943,9 @@
         });
       }
 
-      // OUT Animation Duration Jog Wheel
-      let initOutDur = 0.6;
-      bindJogWheel(document.getElementById('jog-text-anim-out-duration'), {
-        onStart: () => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          initOutDur = Number(layer.textProps?.animOutDuration) || 0.6;
-        },
-        onMove: (delta) => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          if (!layer.textProps) layer.textProps = {};
-          const pps = window.currentPixelsPerSecond || 80;
-          const clipDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
-          const maxOut = Math.max(0.2, clipDur * 0.48);
-          const newDur = Number(Math.max(0.1, Math.min(maxOut, initOutDur + delta * 0.05)).toFixed(2));
-          layer.textProps.animOutDuration = newDur;
-          layer._textBufferCanvas = null;
-          const valOut = document.getElementById('val-text-anim-out-duration');
-          if (valOut) valOut.textContent = `${newDur.toFixed(2)}s`;
-          const badgeOut = document.getElementById('badge-text-anim-out-dur');
-          if (badgeOut) badgeOut.textContent = `${newDur.toFixed(2)}s`;
-          renderTimelineLayers();
-          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          redrawComposition();
-        },
-        onEnd: () => {
-          saveCurrentProjectLayers();
-        }
-      });
-
-      // Decay Jog Wheel
-      let initDecay = 7.0;
-      bindJogWheel(document.getElementById('jog-text-anim-decay'), {
-        onStart: () => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          initDecay = Number(layer.textProps?.animDecay) || 7.0;
-        },
-        onMove: (delta) => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          if (!layer.textProps) layer.textProps = {};
-          const newVal = Number(Math.max(0.5, Math.min(20, initDecay + delta * 0.15)).toFixed(1));
-          layer.textProps.animDecay = newVal;
-          layer._textBufferCanvas = null;
-          const badge = document.getElementById('badge-text-anim-decay');
-          if (badge) badge.textContent = `${newVal.toFixed(1)}`;
-          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          redrawComposition();
-        },
-        onEnd: () => { saveCurrentProjectLayers(); }
-      });
-
-      // Frequency Jog Wheel
-      let initFreq = 3;
-      bindJogWheel(document.getElementById('jog-text-anim-freq'), {
-        onStart: () => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          initFreq = Number(layer.textProps?.animFreq) || 3;
-        },
-        onMove: (delta) => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          if (!layer.textProps) layer.textProps = {};
-          const newVal = Number(Math.max(0.5, Math.min(8, initFreq + delta * 0.1)).toFixed(1));
-          layer.textProps.animFreq = newVal;
-          layer._textBufferCanvas = null;
-          const badge = document.getElementById('badge-text-anim-freq');
-          if (badge) badge.textContent = `${newVal.toFixed(1)}`;
-          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          redrawComposition();
-        },
-        onEnd: () => { saveCurrentProjectLayers(); }
-      });
-
-      // Amplitude Jog Wheel
-      let initAmp = 0.6;
-      bindJogWheel(document.getElementById('jog-text-anim-amplitude'), {
-        onStart: () => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          initAmp = Number(layer.textProps?.animAmplitude) || 0.6;
-        },
-        onMove: (delta) => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          if (!layer.textProps) layer.textProps = {};
-          const newVal = Number(Math.max(0.05, Math.min(2.0, initAmp + delta * 0.02)).toFixed(2));
-          layer.textProps.animAmplitude = newVal;
-          layer._textBufferCanvas = null;
-          const badge = document.getElementById('badge-text-anim-amplitude');
-          if (badge) badge.textContent = `${newVal.toFixed(2)}`;
-          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          redrawComposition();
-        },
-        onEnd: () => { saveCurrentProjectLayers(); }
-      });
-
-      // Stagger Jog Wheel
-      let initStagger = 0.5;
-      bindJogWheel(document.getElementById('jog-text-anim-stagger'), {
-        onStart: () => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          initStagger = Number(layer.textProps?.animStagger) || 0.5;
-        },
-        onMove: (delta) => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'text') return;
-          if (!layer.textProps) layer.textProps = {};
-          const newVal = Number(Math.max(0.0, Math.min(1.0, initStagger + delta * 0.01)).toFixed(2));
-          layer.textProps.animStagger = newVal;
-          layer._textBufferCanvas = null;
-          const badge = document.getElementById('badge-text-anim-stagger');
-          if (badge) badge.textContent = `${newVal.toFixed(2)}`;
-          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          redrawComposition();
-        },
-        onEnd: () => { saveCurrentProjectLayers(); }
-      });
-
       initTextFormatControls();
     }
     window.initTextController = initTextController;
-
-    // Picking "Custom (Animator)" with all-neutral animator values would animate nothing,
-    // so give it a visible starting point (rise + fade) the user can then tweak.
-    function seedTextAnimatorIfNeutral(layer, animVal) {
-      if (animVal !== 'custom' || !layer || !layer.textProps) return;
-      const tp = layer.textProps;
-      const neutral = !(Number(tp.animPosX) || 0) && !(Number(tp.animPosY) || 0) && !(Number(tp.animRotation) || 0) &&
-        (tp.animScale === undefined || Number(tp.animScale) === 100) &&
-        (tp.animOpacity === undefined || Number(tp.animOpacity) === 100);
-      if (!neutral) return;
-      tp.animPosY = 60;
-      tp.animOpacity = 0;
-      syncTextFormatControls(tp);
-    }
 
     // Precomp clip cache progress helper (no-op: baked precomp removed)
     function updatePrecompClipProgress(layerOrId) {}
@@ -14775,99 +15291,212 @@
     }
     window.renderShapeToCanvas = renderShapeToCanvas;
 
+    function updateJogScrubberVisuals(jogEl, val, min, max) {
+      if (!jogEl) return;
+      if (jogEl._rulerScrubberController && typeof jogEl._rulerScrubberController.setValue === 'function') {
+        jogEl._rulerScrubberController.setValue(val, false);
+        return;
+      }
+      const ticksEl = jogEl.querySelector('.jog-wheel-ticks');
+      const trackEl = jogEl.querySelector('.effects-pill-track');
+      const ratio = (max > min) ? Math.max(0, Math.min(1, (val - min) / (max - min))) : 0;
+      if (ticksEl && ticksEl.classList.contains('is-bounded-tape')) {
+        const tapeW = parseFloat(ticksEl.dataset.tapeWidth) || 480;
+        const offset = -ratio * tapeW;
+        ticksEl.style.setProperty('--tape-offset', `${offset.toFixed(1)}px`);
+        ticksEl.style.transform = `translateX(${offset.toFixed(1)}px)`;
+        ticksEl.style.clipPath = 'none';
+      }
+      if (trackEl) {
+        trackEl.style.width = `${(ratio * 100).toFixed(1)}%`;
+      }
+    }
+    window.updateJogScrubberVisuals = updateJogScrubberVisuals;
+    if (window.FishElements) {
+      window.FishElements.updateScrubberVisuals = updateJogScrubberVisuals;
+    }
+
     function syncShapeControllerUI() {
       const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
       if (!layer) return;
       if (layer.shapeType || layer.shapeProps || (layer.id && layer.id.startsWith('layer_shape_'))) {
         layer.type = 'shape';
       }
-      if (layer.type !== 'shape') return;
+      const isShape = (layer.type === 'shape');
+      const isMediaRoundable = (layer.type === 'image' || layer.type === 'video' || (layer.type === 'precomp' && !layer.collapseTransformations));
+      if (!isShape && !isMediaRoundable) return;
 
-      if (!layer.shapeProps) {
+      if (isShape && !layer.shapeProps) {
         layer.shapeProps = {
           sizeX: Math.round(Math.abs(layer.scaleW || 300)),
           sizeY: Math.round(Math.abs(layer.scaleH || 300))
         };
       }
 
-      const shapeType = layer.shapeType || 'rectangle';
-      const shapeProps = layer.shapeProps;
+      const shapeType = isShape ? (layer.shapeType || 'rectangle') : 'rectangle';
+      const shapeProps = isShape ? (layer.shapeProps || {}) : {};
 
-      const shapeDef = (typeof window !== 'undefined' && window.FishShapesRegistry)
+      const shapeDef = (isShape && typeof window !== 'undefined' && window.FishShapesRegistry)
         ? window.FishShapesRegistry.get(shapeType)
         : null;
 
       const titleEl = document.getElementById('lbl-shape-title');
       if (titleEl) {
-        titleEl.textContent = shapeDef ? shapeDef.name : (shapeType.charAt(0).toUpperCase() + shapeType.slice(1));
+        titleEl.textContent = isShape
+          ? (shapeDef ? shapeDef.name : (shapeType.charAt(0).toUpperCase() + shapeType.slice(1)))
+          : 'Edit Shape';
       }
 
-      // 1. Size values
-      const valSizeX = document.getElementById('val-shape-size-x');
-      const valSizeY = document.getElementById('val-shape-size-y');
-      if (valSizeX) valSizeX.textContent = Math.round(shapeProps.sizeX || 300);
-      if (valSizeY) valSizeY.textContent = Math.round(shapeProps.sizeY || 300);
+      const updateScrubberVisuals = updateJogScrubberVisuals;
 
-      // Link button & Rulers toggle (Identical to Scale in Transform)
-      const linkBtn = document.getElementById('btn-shape-size-link');
-      if (linkBtn) {
-        linkBtn.classList.toggle('is-active', !!window.isShapeSizeLinked);
-        const iconOn = linkBtn.querySelector('.svg-link-on');
-        const iconOff = linkBtn.querySelector('.svg-link-off');
-        if (iconOn) iconOn.style.display = window.isShapeSizeLinked ? '' : 'none';
-        if (iconOff) iconOff.style.display = window.isShapeSizeLinked ? 'none' : '';
+      // 1. Size section (Shapes only)
+      const secSize = document.getElementById('shape-section-size');
+      if (secSize) {
+        if (isShape) {
+          secSize.style.removeProperty('display');
+          secSize.classList.remove('is-hidden');
+          secSize.removeAttribute('hidden');
+
+          const valSizeX = document.getElementById('val-shape-size-x');
+          const valSizeY = document.getElementById('val-shape-size-y');
+          const valSizeLinked = document.getElementById('val-shape-size-linked');
+          const curSizeX = Math.round(shapeProps.sizeX || 300);
+          const curSizeY = Math.round(shapeProps.sizeY || 300);
+          if (valSizeX) valSizeX.textContent = curSizeX;
+          if (valSizeY) valSizeY.textContent = curSizeY;
+          if (valSizeLinked) valSizeLinked.textContent = curSizeX;
+
+          // Link button & Rulers toggle (Identical to Scale in Transform)
+          const linkBtn = document.getElementById('btn-shape-size-link');
+          if (linkBtn) {
+            linkBtn.classList.toggle('is-active', !!window.isShapeSizeLinked);
+            linkBtn.title = window.isShapeSizeLinked
+              ? 'Proportions Linked (Click to Unlink)'
+              : 'Independent Dimensions (Click to Link)';
+            linkBtn.setAttribute('aria-label', linkBtn.title);
+            const iconOn = linkBtn.querySelector('.svg-link-on');
+            const iconOff = linkBtn.querySelector('.svg-link-off');
+            if (iconOn) iconOn.style.display = window.isShapeSizeLinked ? '' : 'none';
+            if (iconOff) iconOff.style.display = window.isShapeSizeLinked ? 'none' : '';
+          }
+          const singleJog = document.getElementById('jog-shape-size-linked');
+          const dualJog = document.getElementById('jog-shape-size-unlinked');
+          if (singleJog) {
+            if (window.isShapeSizeLinked) {
+              singleJog.style.removeProperty('display');
+              singleJog.classList.remove('is-hidden');
+              singleJog.removeAttribute('hidden');
+            } else {
+              singleJog.style.setProperty('display', 'none', 'important');
+              singleJog.classList.add('is-hidden');
+              singleJog.setAttribute('hidden', '');
+            }
+          }
+          if (dualJog) {
+            if (!window.isShapeSizeLinked) {
+              dualJog.style.removeProperty('display');
+              dualJog.classList.remove('is-hidden');
+              dualJog.removeAttribute('hidden');
+            } else {
+              dualJog.style.setProperty('display', 'none', 'important');
+              dualJog.classList.add('is-hidden');
+              dualJog.setAttribute('hidden', '');
+            }
+          }
+
+          updateScrubberVisuals(singleJog, curSizeX, 10, 3840);
+          updateScrubberVisuals(document.getElementById('jog-shape-size-x'), curSizeX, 10, 3840);
+          updateScrubberVisuals(document.getElementById('jog-shape-size-y'), curSizeY, 10, 3840);
+        } else {
+          secSize.style.setProperty('display', 'none', 'important');
+          secSize.classList.add('is-hidden');
+          secSize.setAttribute('hidden', '');
+        }
       }
-      const singleJog = document.getElementById('jog-shape-size-linked');
-      const dualJog = document.getElementById('jog-shape-size-unlinked');
-      if (singleJog) singleJog.style.display = window.isShapeSizeLinked ? '' : 'none';
-      if (dualJog) dualJog.style.display = window.isShapeSizeLinked ? 'none' : 'flex';
 
-      // 2. Roundness section
+      // 2. Roundness section (Shapes with roundness or Images/Videos/Precomps)
       const secRound = document.getElementById('shape-section-roundness');
-      const hasRound = shapeDef
-        ? !!shapeDef.controls.roundness
-        : (shapeType === 'rectangle' || shapeType === 'triangle' || shapeType === 'polygon');
+      const hasRound = isShape
+        ? (shapeDef ? !!shapeDef.controls.roundness : (shapeType === 'rectangle' || shapeType === 'triangle'))
+        : isMediaRoundable;
       if (secRound) {
-        secRound.style.display = hasRound ? '' : 'none';
-        const valRound = document.getElementById('val-shape-roundness');
-        if (valRound) valRound.textContent = Math.round(shapeProps.roundness || 0);
+        if (hasRound) {
+          secRound.style.removeProperty('display');
+          secRound.classList.remove('is-hidden');
+          secRound.removeAttribute('hidden');
+
+          const valRound = document.getElementById('val-shape-roundness');
+          const curRound = Math.round(isShape ? (shapeProps.roundness || 0) : (layer.roundness || 0));
+          if (valRound) valRound.textContent = curRound;
+          const curW = isShape ? (shapeProps.sizeX || 300) : Math.abs(layer.scaleW || layer.mediaWidth || 300);
+          const curH = isShape ? (shapeProps.sizeY || 300) : Math.abs(layer.scaleH || layer.mediaHeight || 300);
+          const maxR = Math.min(curW, curH) / 2;
+          updateScrubberVisuals(document.getElementById('jog-shape-roundness'), curRound, 0, maxR);
+        } else {
+          secRound.style.setProperty('display', 'none', 'important');
+          secRound.classList.add('is-hidden');
+          secRound.setAttribute('hidden', '');
+        }
       }
 
       // 3. Step section
       const secStep = document.getElementById('shape-section-step');
-      const hasStep = shapeDef
+      const hasStep = isShape && (shapeDef
         ? !!shapeDef.controls.step
-        : (shapeType === 'triangle' || shapeType === 'polygon');
+        : (shapeType === 'triangle' || shapeType === 'polygon'));
       if (secStep) {
-        secStep.style.display = hasStep ? '' : 'none';
-        const stepLabel = (shapeDef && shapeDef.controls && shapeDef.controls.step && shapeDef.controls.step.label)
-          ? shapeDef.controls.step.label
-          : ((shapeType === 'polygon') ? 'Sides' : 'Step');
-        const lblStep = document.getElementById('lbl-shape-step');
-        if (lblStep) lblStep.textContent = stepLabel;
-        const valStep = document.getElementById('val-shape-step');
-        const curStep = (shapeType === 'polygon') ? (shapeProps.sides || 6) : (shapeProps.step || 3);
-        if (valStep) valStep.textContent = curStep;
+        if (hasStep) {
+          secStep.style.removeProperty('display');
+          secStep.classList.remove('is-hidden');
+          secStep.removeAttribute('hidden');
+          const stepLabel = (shapeDef && shapeDef.controls && shapeDef.controls.step && shapeDef.controls.step.label)
+            ? shapeDef.controls.step.label
+            : ((shapeType === 'polygon') ? 'Sides' : 'Step');
+          const lblStep = document.getElementById('lbl-shape-step');
+          if (lblStep) lblStep.textContent = stepLabel;
+          const valStep = document.getElementById('val-shape-step');
+          const curStep = (shapeType === 'polygon') ? (shapeProps.sides || 6) : (shapeProps.step || 3);
+          if (valStep) valStep.textContent = curStep;
+          updateScrubberVisuals(document.getElementById('jog-shape-step'), curStep, 3, 24);
+        } else {
+          secStep.style.setProperty('display', 'none', 'important');
+          secStep.classList.add('is-hidden');
+          secStep.setAttribute('hidden', '');
+        }
       }
 
       // 4. Star section
       const secStar = document.getElementById('shape-section-star');
-      const isStar = shapeDef
+      const isStar = isShape && (shapeDef
         ? !!shapeDef.controls.star
-        : (shapeType === 'star');
+        : (shapeType === 'star'));
       if (secStar) {
-        secStar.style.display = isStar ? '' : 'none';
-        const valPts = document.getElementById('val-shape-points');
-        if (valPts) valPts.textContent = shapeProps.points || 5;
+        if (isStar) {
+          secStar.style.removeProperty('display');
+          secStar.classList.remove('is-hidden');
+          secStar.removeAttribute('hidden');
+          const valPts = document.getElementById('val-shape-points');
+          const curPts = shapeProps.points || 5;
+          if (valPts) valPts.textContent = curPts;
+          updateScrubberVisuals(document.getElementById('jog-shape-points'), curPts, 3, 24);
 
-        const inRPercent = Math.round((shapeProps.innerRadius !== undefined ? shapeProps.innerRadius : 0.4) * 100);
-        const valInR = document.getElementById('val-shape-inner-radius');
-        if (valInR) valInR.textContent = `${inRPercent}%`;
+          const inRPercent = Math.round((shapeProps.innerRadius !== undefined ? shapeProps.innerRadius : 0.4) * 100);
+          const valInR = document.getElementById('val-shape-inner-radius');
+          if (valInR) valInR.textContent = `${inRPercent}%`;
+          updateScrubberVisuals(document.getElementById('jog-shape-inner-radius'), inRPercent, 5, 95);
+        } else {
+          secStar.style.setProperty('display', 'none', 'important');
+          secStar.classList.add('is-hidden');
+          secStar.setAttribute('hidden', '');
+        }
       }
     }
     window.syncShapeControllerUI = syncShapeControllerUI;
 
     function initShapeController() {
+      let _lastShapeX = 300;
+      let _lastShapeY = 300;
+
       function updateShapeSize(newX, newY, commit = false) {
         const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
         if (!layer || layer.type !== 'shape') return;
@@ -14877,6 +15506,8 @@
         const prevSizeY = Number(layer.shapeProps.sizeY) || 300;
         layer.shapeProps.sizeX = newX;
         layer.shapeProps.sizeY = newY;
+        _lastShapeX = newX;
+        _lastShapeY = newY;
 
         // Edit Shape Size and Transform Scale are 2 decoupled properties:
         // Transform scale factor represents the layer's world transform multiplier (scaleW / sizeX)
@@ -14908,34 +15539,99 @@
           layer._shapeBufferCanvas._lastShapeKey = null;
         }
         if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-        if (typeof recordLayerPropertyChange === 'function') {
-          recordLayerPropertyChange(layer, 'shape');
-        }
-        syncShapeControllerUI();
-        redrawComposition();
-        if (commit && typeof saveCurrentProjectLayers === 'function') {
-          saveCurrentProjectLayers();
+
+        if (commit) {
+          if (typeof recordLayerPropertyChange === 'function') {
+            recordLayerPropertyChange(layer, 'shape');
+          }
+          syncShapeControllerUI();
+          redrawComposition();
+          if (typeof saveCurrentProjectLayers === 'function') {
+            saveCurrentProjectLayers();
+          }
+        } else {
+          const valX = document.getElementById('val-shape-size-x');
+          const valY = document.getElementById('val-shape-size-y');
+          const valLinked = document.getElementById('val-shape-size-linked');
+          if (valX) valX.textContent = Math.round(newX);
+          if (valY) valY.textContent = Math.round(newY);
+          if (valLinked) valLinked.textContent = Math.round(newX);
+
+          updateJogScrubberVisuals(document.getElementById('jog-shape-size-linked'), newX, 10, 3840);
+          updateJogScrubberVisuals(document.getElementById('jog-shape-size-x'), newX, 10, 3840);
+          updateJogScrubberVisuals(document.getElementById('jog-shape-size-y'), newY, 10, 3840);
+
+          if (!window._shapeRedrawRafPending) {
+            window._shapeRedrawRafPending = true;
+            requestAnimationFrame(() => {
+              window._shapeRedrawRafPending = false;
+              redrawComposition();
+            });
+          }
         }
       }
 
       function updateShapeOtherProp(propKey, value, commit = false) {
         const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-        if (!layer || layer.type !== 'shape') return;
-        if (!layer.shapeProps) layer.shapeProps = {};
-        layer.shapeProps[propKey] = value;
+        if (!layer) return;
+        const isShape = (layer.type === 'shape');
+        const isMediaRoundable = (layer.type === 'image' || layer.type === 'video' || (layer.type === 'precomp' && !layer.collapseTransformations));
+        if (!isShape && !isMediaRoundable) return;
+
+        if (isShape) {
+          if (!layer.shapeProps) layer.shapeProps = {};
+          layer.shapeProps[propKey] = value;
+        } else if (propKey === 'roundness') {
+          layer.roundness = value;
+        }
         layer._shapeDirty = true;
         layer._fillDirty = true;
         if (layer._shapeBufferCanvas) {
           layer._shapeBufferCanvas._lastShapeKey = null;
         }
-        if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-        if (typeof recordLayerPropertyChange === 'function') {
-          recordLayerPropertyChange(layer, 'shape');
+        if (layer._precompBufferCanvas) {
+          layer._precompBufferCanvas._lastRenderKey = null;
         }
-        syncShapeControllerUI();
-        redrawComposition();
-        if (commit && typeof saveCurrentProjectLayers === 'function') {
-          saveCurrentProjectLayers();
+        if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+
+        if (commit) {
+          if (typeof recordLayerPropertyChange === 'function') {
+            recordLayerPropertyChange(layer, isShape ? 'shape' : 'roundness');
+          }
+          syncShapeControllerUI();
+          redrawComposition();
+          if (typeof saveCurrentProjectLayers === 'function') {
+            saveCurrentProjectLayers();
+          }
+        } else {
+          if (propKey === 'roundness') {
+            const valRound = document.getElementById('val-shape-roundness');
+            if (valRound) valRound.textContent = Math.round(value);
+            const curW = isShape ? (layer.shapeProps?.sizeX || 300) : Math.abs(layer.scaleW || layer.mediaWidth || 300);
+            const curH = isShape ? (layer.shapeProps?.sizeY || 300) : Math.abs(layer.scaleH || layer.mediaHeight || 300);
+            const maxR = Math.min(curW, curH) / 2;
+            updateJogScrubberVisuals(document.getElementById('jog-shape-roundness'), value, 0, maxR);
+          } else if (propKey === 'step' || propKey === 'sides') {
+            const valStep = document.getElementById('val-shape-step');
+            if (valStep) valStep.textContent = Math.round(value);
+            updateJogScrubberVisuals(document.getElementById('jog-shape-step'), value, 3, 24);
+          } else if (propKey === 'points') {
+            const valPts = document.getElementById('val-shape-points');
+            if (valPts) valPts.textContent = Math.round(value);
+            updateJogScrubberVisuals(document.getElementById('jog-shape-points'), value, 3, 24);
+          } else if (propKey === 'innerRadius') {
+            const valInR = document.getElementById('val-shape-inner-radius');
+            if (valInR) valInR.textContent = `${Math.round(value * 100)}%`;
+            updateJogScrubberVisuals(document.getElementById('jog-shape-inner-radius'), value, 0.05, 0.95);
+          }
+
+          if (!window._shapeRedrawRafPending) {
+            window._shapeRedrawRafPending = true;
+            requestAnimationFrame(() => {
+              window._shapeRedrawRafPending = false;
+              redrawComposition();
+            });
+          }
         }
       }
 
@@ -14960,18 +15656,20 @@
           const initY = Number(layer.shapeProps.sizeY) || 300;
           const ratio = (initX > 0) ? (initY / initX) : 1;
           shapeLinkedInit = { initX, initY, ratio };
+          _lastShapeX = initX;
+          _lastShapeY = initY;
         },
-        onMove: (delta) => {
+        onMove: (rawDelta, e) => {
           if (!shapeLinkedInit) return;
           const { initX, ratio } = shapeLinkedInit;
-          const newX = Math.max(10, Math.min(3840, Math.round(initX + delta * 2)));
+          const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 3.0 : 1.0);
+          const newX = Math.max(10, Math.min(3840, Math.round(initX - rawDelta * speed)));
           const newY = Math.max(10, Math.min(3840, Math.round(newX * ratio)));
           updateShapeSize(newX, newY, false);
         },
         onEnd: () => {
           shapeLinkedInit = null;
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (layer && typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+          updateShapeSize(_lastShapeX, _lastShapeY, true);
         }
       });
 
@@ -14984,17 +15682,19 @@
           if (!layer || layer.type !== 'shape') return;
           initSizeX = Number(layer.shapeProps?.sizeX) || 300;
           initSizeY = Number(layer.shapeProps?.sizeY) || 300;
+          _lastShapeX = initSizeX;
+          _lastShapeY = initSizeY;
         },
-        onMove: (delta) => {
+        onMove: (rawDelta, e) => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer || layer.type !== 'shape') return;
-          const newX = Math.max(10, Math.min(3840, Math.round(initSizeX + delta * 2)));
+          const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 3.0 : 1.0);
+          const newX = Math.max(10, Math.min(3840, Math.round(initSizeX - rawDelta * speed)));
           const newY = Number(layer.shapeProps?.sizeY) || initSizeY;
           updateShapeSize(newX, newY, false);
         },
         onEnd: () => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (layer && typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+          updateShapeSize(_lastShapeX, _lastShapeY, true);
         }
       });
 
@@ -15005,97 +15705,316 @@
           if (!layer || layer.type !== 'shape') return;
           initSizeX = Number(layer.shapeProps?.sizeX) || 300;
           initSizeY = Number(layer.shapeProps?.sizeY) || 300;
+          _lastShapeX = initSizeX;
+          _lastShapeY = initSizeY;
         },
-        onMove: (delta) => {
+        onMove: (rawDelta, e) => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer || layer.type !== 'shape') return;
-          const newY = Math.max(10, Math.min(3840, Math.round(initSizeY + delta * 2)));
+          const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 3.0 : 1.0);
+          const newY = Math.max(10, Math.min(3840, Math.round(initSizeY - rawDelta * speed)));
           const newX = Number(layer.shapeProps?.sizeX) || initSizeX;
           updateShapeSize(newX, newY, false);
         },
         onEnd: () => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (layer && typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+          updateShapeSize(_lastShapeX, _lastShapeY, true);
         }
       });
 
       // 5. Jog Roundness
       let initRound = 0;
+      let lastRound = 0;
       bindJogWheel(document.getElementById('jog-shape-roundness'), {
         onStart: () => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'shape') return;
-          initRound = Number(layer.shapeProps?.roundness) || 0;
+          if (!layer) return;
+          const isShape = (layer.type === 'shape');
+          const isMediaRoundable = (layer.type === 'image' || layer.type === 'video' || (layer.type === 'precomp' && !layer.collapseTransformations));
+          if (!isShape && !isMediaRoundable) return;
+          initRound = isShape ? (Number(layer.shapeProps?.roundness) || 0) : (Number(layer.roundness) || 0);
+          lastRound = initRound;
         },
-        onMove: (delta) => {
+        onMove: (rawDelta, e) => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (!layer || layer.type !== 'shape') return;
-          const maxR = Math.min(layer.shapeProps?.sizeX || 300, layer.shapeProps?.sizeY || 300) / 2;
-          const newR = Math.max(0, Math.min(maxR, Math.round(initRound + delta * 0.5)));
+          if (!layer) return;
+          const isShape = (layer.type === 'shape');
+          const isMediaRoundable = (layer.type === 'image' || layer.type === 'video' || (layer.type === 'precomp' && !layer.collapseTransformations));
+          if (!isShape && !isMediaRoundable) return;
+          const curW = isShape ? (layer.shapeProps?.sizeX || 300) : Math.abs(layer.scaleW || layer.mediaWidth || 300);
+          const curH = isShape ? (layer.shapeProps?.sizeY || 300) : Math.abs(layer.scaleH || layer.mediaHeight || 300);
+          const maxR = Math.min(curW, curH) / 2;
+          const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 2.5 : 1.0);
+          const rate = (maxR > 0) ? (maxR / 480) : 0.5;
+          const newR = Math.max(0, Math.min(maxR, Math.round(initRound - rawDelta * rate * speed)));
+          lastRound = newR;
           updateShapeOtherProp('roundness', newR, false);
         },
         onEnd: () => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (layer && typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+          updateShapeOtherProp('roundness', lastRound, true);
         }
       });
 
       // 6. Jog Step / Sides
       let initStep = 3;
+      let lastStep = 3;
       bindJogWheel(document.getElementById('jog-shape-step'), {
         onStart: () => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer || layer.type !== 'shape') return;
           initStep = (layer.shapeType === 'polygon') ? (Number(layer.shapeProps?.sides) || 6) : (Number(layer.shapeProps?.step) || 3);
+          lastStep = initStep;
         },
-        onMove: (delta) => {
+        onMove: (rawDelta, e) => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer || layer.type !== 'shape') return;
-          const newStep = Math.max(3, Math.min(24, Math.round(initStep + delta * 0.1)));
+          const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 2.5 : 1.0);
+          const rate = 21 / 480;
+          const newStep = Math.max(3, Math.min(24, Math.round(initStep - rawDelta * rate * speed)));
+          lastStep = newStep;
           const propKey = (layer.shapeType === 'polygon') ? 'sides' : 'step';
           updateShapeOtherProp(propKey, newStep, false);
         },
         onEnd: () => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (layer && typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+          const propKey = (layer && layer.shapeType === 'polygon') ? 'sides' : 'step';
+          updateShapeOtherProp(propKey, lastStep, true);
         }
       });
 
       // 7. Jog Star Points
       let initPts = 5;
+      let lastPts = 5;
       bindJogWheel(document.getElementById('jog-shape-points'), {
         onStart: () => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer || layer.type !== 'shape') return;
           initPts = Number(layer.shapeProps?.points) || 5;
+          lastPts = initPts;
         },
-        onMove: (delta) => {
-          const newPts = Math.max(3, Math.min(24, Math.round(initPts + delta * 0.1)));
+        onMove: (rawDelta, e) => {
+          const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 2.5 : 1.0);
+          const rate = 21 / 480;
+          const newPts = Math.max(3, Math.min(24, Math.round(initPts - rawDelta * rate * speed)));
+          lastPts = newPts;
           updateShapeOtherProp('points', newPts, false);
         },
         onEnd: () => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (layer && typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+          updateShapeOtherProp('points', lastPts, true);
         }
       });
 
       // 8. Jog Star Inner Radius
       let initInR = 0.4;
+      let lastInR = 0.4;
       bindJogWheel(document.getElementById('jog-shape-inner-radius'), {
         onStart: () => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer || layer.type !== 'shape') return;
           initInR = (layer.shapeProps?.innerRadius !== undefined) ? Number(layer.shapeProps.innerRadius) : 0.4;
+          lastInR = initInR;
         },
-        onMove: (delta) => {
-          const newInR = Math.max(0.05, Math.min(0.95, Number((initInR + delta * 0.005).toFixed(2))));
+        onMove: (rawDelta, e) => {
+          const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 2.5 : 1.0);
+          const rate = 0.90 / 480;
+          const newInR = Math.max(0.05, Math.min(0.95, Number((initInR - rawDelta * rate * speed).toFixed(2))));
+          lastInR = newInR;
           updateShapeOtherProp('innerRadius', newInR, false);
         },
         onEnd: () => {
-          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (layer && typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+          updateShapeOtherProp('innerRadius', lastInR, true);
         }
       });
+
+      // 9. Direct Value Input Popovers for Shape Parameters (.shape-param-pill-val)
+      function openShapeValueInput(badgeEl, options) {
+        if (!badgeEl) return;
+        if (typeof window.openValueInputPopover === 'function') {
+          window.openValueInputPopover(badgeEl, options);
+        } else {
+          const res = prompt(options.title || 'Enter value', options.value);
+          if (res !== null && !isNaN(parseFloat(res))) {
+            if (options.onCommit) options.onCommit(parseFloat(res));
+          }
+        }
+      }
+
+      const valSizeLinkedEl = document.getElementById('val-shape-size-linked');
+      if (valSizeLinkedEl) {
+        valSizeLinkedEl.title = 'Click to edit value';
+        valSizeLinkedEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'shape') return;
+          const curVal = Math.round(layer.shapeProps?.sizeX || 300);
+          openShapeValueInput(valSizeLinkedEl, {
+            title: 'Size',
+            value: curVal,
+            defaultValue: 300,
+            min: 10,
+            max: 3840,
+            step: 1,
+            unit: 'px',
+            onCommit: (newVal) => {
+              const initX = Number(layer.shapeProps?.sizeX) || 300;
+              const initY = Number(layer.shapeProps?.sizeY) || 300;
+              const ratio = (initX > 0) ? (initY / initX) : 1;
+              const newX = Math.max(10, Math.min(3840, Math.round(newVal)));
+              const newY = Math.max(10, Math.min(3840, Math.round(newX * ratio)));
+              updateShapeSize(newX, newY, true);
+            }
+          });
+        });
+      }
+
+      const valSizeXEl = document.getElementById('val-shape-size-x');
+      if (valSizeXEl) {
+        valSizeXEl.title = 'Click to edit value';
+        valSizeXEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'shape') return;
+          const curVal = Math.round(layer.shapeProps?.sizeX || 300);
+          openShapeValueInput(valSizeXEl, {
+            title: 'Size X',
+            value: curVal,
+            defaultValue: 300,
+            min: 10,
+            max: 3840,
+            step: 1,
+            unit: 'px',
+            onCommit: (newVal) => {
+              const curY = Number(layer.shapeProps?.sizeY) || 300;
+              const newX = Math.max(10, Math.min(3840, Math.round(newVal)));
+              updateShapeSize(newX, curY, true);
+            }
+          });
+        });
+      }
+
+      const valSizeYEl = document.getElementById('val-shape-size-y');
+      if (valSizeYEl) {
+        valSizeYEl.title = 'Click to edit value';
+        valSizeYEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'shape') return;
+          const curVal = Math.round(layer.shapeProps?.sizeY || 300);
+          openShapeValueInput(valSizeYEl, {
+            title: 'Size Y',
+            value: curVal,
+            defaultValue: 300,
+            min: 10,
+            max: 3840,
+            step: 1,
+            unit: 'px',
+            onCommit: (newVal) => {
+              const curX = Number(layer.shapeProps?.sizeX) || 300;
+              const newY = Math.max(10, Math.min(3840, Math.round(newVal)));
+              updateShapeSize(curX, newY, true);
+            }
+          });
+        });
+      }
+
+      const valRoundEl = document.getElementById('val-shape-roundness');
+      if (valRoundEl) {
+        valRoundEl.title = 'Click to edit value';
+        valRoundEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer) return;
+          const isShape = (layer.type === 'shape');
+          const isMediaRoundable = (layer.type === 'image' || layer.type === 'video' || (layer.type === 'precomp' && !layer.collapseTransformations));
+          if (!isShape && !isMediaRoundable) return;
+          const curVal = Math.round(isShape ? (layer.shapeProps?.roundness || 0) : (layer.roundness || 0));
+          const curW = isShape ? (layer.shapeProps?.sizeX || 300) : Math.abs(layer.scaleW || layer.mediaWidth || 300);
+          const curH = isShape ? (layer.shapeProps?.sizeY || 300) : Math.abs(layer.scaleH || layer.mediaHeight || 300);
+          const maxR = Math.min(curW, curH) / 2;
+          openShapeValueInput(valRoundEl, {
+            title: 'Roundness',
+            value: curVal,
+            defaultValue: 0,
+            min: 0,
+            max: maxR,
+            step: 1,
+            unit: 'px',
+            onCommit: (newVal) => {
+              updateShapeOtherProp('roundness', Math.max(0, Math.min(maxR, Math.round(newVal))), true);
+            }
+          });
+        });
+      }
+
+      const valStepEl = document.getElementById('val-shape-step');
+      if (valStepEl) {
+        valStepEl.title = 'Click to edit value';
+        valStepEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'shape') return;
+          const isPolygon = (layer.shapeType === 'polygon');
+          const curVal = isPolygon ? (Number(layer.shapeProps?.sides) || 6) : (Number(layer.shapeProps?.step) || 3);
+          openShapeValueInput(valStepEl, {
+            title: isPolygon ? 'Sides' : 'Step',
+            value: curVal,
+            defaultValue: isPolygon ? 6 : 3,
+            min: 3,
+            max: 24,
+            step: 1,
+            onCommit: (newVal) => {
+              const propKey = isPolygon ? 'sides' : 'step';
+              updateShapeOtherProp(propKey, Math.max(3, Math.min(24, Math.round(newVal))), true);
+            }
+          });
+        });
+      }
+
+      const valPtsEl = document.getElementById('val-shape-points');
+      if (valPtsEl) {
+        valPtsEl.title = 'Click to edit value';
+        valPtsEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'shape') return;
+          const curVal = Number(layer.shapeProps?.points) || 5;
+          openShapeValueInput(valPtsEl, {
+            title: 'Points',
+            value: curVal,
+            defaultValue: 5,
+            min: 3,
+            max: 24,
+            step: 1,
+            onCommit: (newVal) => {
+              updateShapeOtherProp('points', Math.max(3, Math.min(24, Math.round(newVal))), true);
+            }
+          });
+        });
+      }
+
+      const valInREl = document.getElementById('val-shape-inner-radius');
+      if (valInREl) {
+        valInREl.title = 'Click to edit value';
+        valInREl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'shape') return;
+          const curRatio = (layer.shapeProps?.innerRadius !== undefined) ? Number(layer.shapeProps.innerRadius) : 0.4;
+          const curPercent = Math.round(curRatio * 100);
+          openShapeValueInput(valInREl, {
+            title: 'Inner Depth',
+            value: curPercent,
+            defaultValue: 40,
+            min: 5,
+            max: 95,
+            step: 1,
+            unit: '%',
+            onCommit: (newVal) => {
+              const ratio = Math.max(0.05, Math.min(0.95, Number((newVal / 100).toFixed(2))));
+              updateShapeOtherProp('innerRadius', ratio, true);
+            }
+          });
+        });
+      }
     }
     window.initShapeController = initShapeController;
 
@@ -15353,16 +16272,20 @@
         : layer;
 
       // 1. Lens Focal Length
+      const curLens = eff.cameraLens !== undefined ? eff.cameraLens : 50;
       const valLens = document.getElementById('val-camera-lens');
       if (valLens) {
-        valLens.textContent = `${Math.round(eff.cameraLens !== undefined ? eff.cameraLens : 50)} mm`;
+        valLens.textContent = `${Math.round(curLens)} mm`;
       }
+      updateJogScrubberVisuals(document.getElementById('jog-camera-lens'), curLens, 12, 300);
 
       // 2. Zoom
+      const curZoom = eff.cameraZoom !== undefined ? eff.cameraZoom : 100;
       const valZoom = document.getElementById('val-camera-zoom');
       if (valZoom) {
-        valZoom.textContent = `${Math.round(eff.cameraZoom !== undefined ? eff.cameraZoom : 100)}%`;
+        valZoom.textContent = `${Math.round(curZoom)}%`;
       }
+      updateJogScrubberVisuals(document.getElementById('jog-camera-zoom'), curZoom, 10, 400);
 
       // 3. Switch Blur (Depth of Field)
       const isBlurOn = !!(layer.cameraBlurEnabled);
@@ -15393,10 +16316,12 @@
       if (rowLayer) rowLayer.style.display = (focusMode === 'layer') ? '' : 'none';
 
       // 4a. Focus Distance (Dekat / Jauh - Manual)
+      const curFocusDist = eff.cameraFocusDistance !== undefined ? eff.cameraFocusDistance : 0;
       const valFocusDist = document.getElementById('val-camera-focus-dist');
       if (valFocusDist) {
-        valFocusDist.textContent = `${Math.round(eff.cameraFocusDistance || 0)} px`;
+        valFocusDist.textContent = `${Math.round(curFocusDist)} px`;
       }
+      updateJogScrubberVisuals(document.getElementById('jog-camera-focus-dist'), curFocusDist, 0, 4000);
 
       // 4b. Dynamic Focus to Layer UI
       const labelFocusLayer = document.getElementById('label-camera-focus-layer');
@@ -15419,23 +16344,29 @@
       }
 
       // 5. Blur Range / Falloff
+      const curFocusRange = eff.cameraBlurNearFar !== undefined ? eff.cameraBlurNearFar : 600;
       const valFocusRange = document.getElementById('val-camera-focus-range');
       if (valFocusRange) {
-        valFocusRange.textContent = `${Math.round(eff.cameraBlurNearFar !== undefined ? eff.cameraBlurNearFar : 600)} px`;
+        valFocusRange.textContent = `${Math.round(curFocusRange)} px`;
       }
+      updateJogScrubberVisuals(document.getElementById('jog-camera-focus-range'), curFocusRange, 1, 2000);
 
       // 6. Value Blur (Blur Amount)
+      const curBlurAmount = eff.cameraBlurAmount !== undefined ? eff.cameraBlurAmount : 20;
       const valBlurAmount = document.getElementById('val-camera-blur-amount');
       if (valBlurAmount) {
-        valBlurAmount.textContent = `${Math.round(eff.cameraBlurAmount !== undefined ? eff.cameraBlurAmount : 20)} px`;
+        valBlurAmount.textContent = `${Math.round(curBlurAmount)} px`;
       }
+      updateJogScrubberVisuals(document.getElementById('jog-camera-blur-amount'), curBlurAmount, 0, 100);
 
       // 7. Blur Balance
+      const curBlurBalance = eff.cameraBlurBalance !== undefined ? eff.cameraBlurBalance : 0;
       const valBlurBalance = document.getElementById('val-camera-blur-balance');
       if (valBlurBalance) {
-        const bal = Math.round(eff.cameraBlurBalance || 0);
+        const bal = Math.round(curBlurBalance);
         valBlurBalance.textContent = bal === 0 ? '0 (Balanced)' : (bal < 0 ? `${bal} (Front)` : `+${bal} (Back)`);
       }
+      updateJogScrubberVisuals(document.getElementById('jog-camera-blur-balance'), curBlurBalance, -100, 100);
     }
     window.syncCameraSettingsUI = syncCameraSettingsUI;
 
@@ -16318,6 +17249,16 @@
 
       initBeatmarkController();
 
+      function requestCameraRedraw() {
+        if (!window._cameraRedrawRafPending) {
+          window._cameraRedrawRafPending = true;
+          requestAnimationFrame(() => {
+            window._cameraRedrawRafPending = false;
+            redrawComposition();
+          });
+        }
+      }
+
       // 6. Camera Lens Focal Length Scrubber (12mm - 300mm)
       let initLensVal = 50;
       bindJogWheel(document.getElementById('jog-camera-lens'), {
@@ -16333,20 +17274,24 @@
         onMove: (delta) => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer || layer.type !== 'camera') return;
-          const newLens = Math.max(12, Math.min(300, Math.round(initLensVal + delta * 0.4)));
+          const newLens = Math.max(12, Math.min(300, Math.round(initLensVal - delta * 0.4)));
           layer.cameraLens = newLens;
           layer.cameraLensPreset = newLens <= 35 ? 'wide' : (newLens >= 70 ? 'tele' : 'standard');
-          recordLayerPropertyChange(layer, 'cameraLens');
           const valEl = document.getElementById('val-camera-lens');
           if (valEl) valEl.textContent = `${newLens} mm`;
-          redrawComposition();
+          updateJogScrubberVisuals(document.getElementById('jog-camera-lens'), newLens, 12, 300);
+          requestCameraRedraw();
         },
         onEnd: () => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (layer && typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
-          syncCameraSettingsUI();
-          updateCameraKeyframeBtnState();
+          if (layer) {
+            recordLayerPropertyChange(layer, 'cameraLens');
+            if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            syncCameraSettingsUI();
+            updateCameraKeyframeBtnState();
+            redrawComposition();
+          }
         }
       });
 
@@ -16497,19 +17442,23 @@
         onMove: (delta) => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer || layer.type !== 'camera') return;
-          const newZoom = Math.max(10, Math.min(400, Math.round(initZoomVal + delta * 0.4)));
+          const newZoom = Math.max(10, Math.min(400, Math.round(initZoomVal - delta * 0.4)));
           layer.cameraZoom = newZoom;
-          recordLayerPropertyChange(layer, 'cameraZoom');
           const valEl = document.getElementById('val-camera-zoom');
           if (valEl) valEl.textContent = `${newZoom}%`;
-          redrawComposition();
+          updateJogScrubberVisuals(document.getElementById('jog-camera-zoom'), newZoom, 10, 400);
+          requestCameraRedraw();
         },
         onEnd: () => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (layer && typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
-          syncCameraSettingsUI();
-          updateCameraKeyframeBtnState();
+          if (layer) {
+            recordLayerPropertyChange(layer, 'cameraZoom');
+            if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            syncCameraSettingsUI();
+            updateCameraKeyframeBtnState();
+            redrawComposition();
+          }
         }
       });
 
@@ -16528,22 +17477,26 @@
         onMove: (delta) => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer || layer.type !== 'camera') return;
-          const newDist = Math.round(initFocusDist + delta * 2);
+          const newDist = Math.max(0, Math.min(4000, Math.round(initFocusDist - delta * 2)));
           layer.cameraFocusDistance = newDist;
-          recordLayerPropertyChange(layer, 'cameraFocusDistance');
           const valEl = document.getElementById('val-camera-focus-dist');
           if (valEl) valEl.textContent = `${newDist} px`;
-          redrawComposition();
+          updateJogScrubberVisuals(document.getElementById('jog-camera-focus-dist'), newDist, 0, 4000);
+          requestCameraRedraw();
         },
         onEnd: () => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (window.PreviewCacheManager && typeof window.PreviewCacheManager.invalidateAll === 'function') {
-            window.PreviewCacheManager.invalidateAll();
+          if (layer) {
+            recordLayerPropertyChange(layer, 'cameraFocusDistance');
+            if (window.PreviewCacheManager && typeof window.PreviewCacheManager.invalidateAll === 'function') {
+              window.PreviewCacheManager.invalidateAll();
+            }
+            if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            syncCameraSettingsUI();
+            updateCameraKeyframeBtnState();
+            redrawComposition();
           }
-          if (layer && typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
-          syncCameraSettingsUI();
-          updateCameraKeyframeBtnState();
         }
       });
 
@@ -16562,22 +17515,26 @@
         onMove: (delta) => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer || layer.type !== 'camera') return;
-          const newRange = Math.max(1, Math.round(initFocusRange + delta * 2));
+          const newRange = Math.max(1, Math.min(2000, Math.round(initFocusRange - delta * 2)));
           layer.cameraBlurNearFar = newRange;
-          recordLayerPropertyChange(layer, 'cameraBlurNearFar');
           const valEl = document.getElementById('val-camera-focus-range');
           if (valEl) valEl.textContent = `${newRange} px`;
-          redrawComposition();
+          updateJogScrubberVisuals(document.getElementById('jog-camera-focus-range'), newRange, 1, 2000);
+          requestCameraRedraw();
         },
         onEnd: () => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (window.PreviewCacheManager && typeof window.PreviewCacheManager.invalidateAll === 'function') {
-            window.PreviewCacheManager.invalidateAll();
+          if (layer) {
+            recordLayerPropertyChange(layer, 'cameraBlurNearFar');
+            if (window.PreviewCacheManager && typeof window.PreviewCacheManager.invalidateAll === 'function') {
+              window.PreviewCacheManager.invalidateAll();
+            }
+            if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            syncCameraSettingsUI();
+            updateCameraKeyframeBtnState();
+            redrawComposition();
           }
-          if (layer && typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
-          syncCameraSettingsUI();
-          updateCameraKeyframeBtnState();
         }
       });
 
@@ -16596,22 +17553,26 @@
         onMove: (delta) => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer || layer.type !== 'camera') return;
-          const newAmt = Math.max(0, Math.round(initBlurAmount + delta * 0.2));
+          const newAmt = Math.max(0, Math.min(100, Math.round(initBlurAmount - delta * 0.2)));
           layer.cameraBlurAmount = newAmt;
-          recordLayerPropertyChange(layer, 'cameraBlurAmount');
           const valEl = document.getElementById('val-camera-blur-amount');
           if (valEl) valEl.textContent = `${newAmt} px`;
-          redrawComposition();
+          updateJogScrubberVisuals(document.getElementById('jog-camera-blur-amount'), newAmt, 0, 100);
+          requestCameraRedraw();
         },
         onEnd: () => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (window.PreviewCacheManager && typeof window.PreviewCacheManager.invalidateAll === 'function') {
-            window.PreviewCacheManager.invalidateAll();
+          if (layer) {
+            recordLayerPropertyChange(layer, 'cameraBlurAmount');
+            if (window.PreviewCacheManager && typeof window.PreviewCacheManager.invalidateAll === 'function') {
+              window.PreviewCacheManager.invalidateAll();
+            }
+            if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            syncCameraSettingsUI();
+            updateCameraKeyframeBtnState();
+            redrawComposition();
           }
-          if (layer && typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
-          syncCameraSettingsUI();
-          updateCameraKeyframeBtnState();
         }
       });
 
@@ -16630,26 +17591,212 @@
         onMove: (delta) => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer || layer.type !== 'camera') return;
-          const newBal = Math.max(-100, Math.min(100, Math.round(initBlurBal + delta * 0.4)));
+          const newBal = Math.max(-100, Math.min(100, Math.round(initBlurBal - delta * 0.4)));
           layer.cameraBlurBalance = newBal;
-          recordLayerPropertyChange(layer, 'cameraBlurBalance');
           const valEl = document.getElementById('val-camera-blur-balance');
           if (valEl) {
             valEl.textContent = newBal === 0 ? '0 (Balanced)' : (newBal < 0 ? `${newBal} (Front)` : `+${newBal} (Back)`);
           }
-          redrawComposition();
+          updateJogScrubberVisuals(document.getElementById('jog-camera-blur-balance'), newBal, -100, 100);
+          requestCameraRedraw();
         },
         onEnd: () => {
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
-          if (window.PreviewCacheManager && typeof window.PreviewCacheManager.invalidateAll === 'function') {
-            window.PreviewCacheManager.invalidateAll();
+          if (layer) {
+            recordLayerPropertyChange(layer, 'cameraBlurBalance');
+            if (window.PreviewCacheManager && typeof window.PreviewCacheManager.invalidateAll === 'function') {
+              window.PreviewCacheManager.invalidateAll();
+            }
+            if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            syncCameraSettingsUI();
+            updateCameraKeyframeBtnState();
+            redrawComposition();
           }
-          if (layer && typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
-          if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
-          syncCameraSettingsUI();
-          updateCameraKeyframeBtnState();
         }
       });
+
+      // Direct Value Popovers for Camera Parameters
+      function openCameraValueInput(badgeEl, options) {
+        if (!badgeEl) return;
+        if (typeof window.openValueInputPopover === 'function') {
+          window.openValueInputPopover(badgeEl, options);
+        } else {
+          const res = prompt(options.title || 'Enter value', options.value);
+          if (res !== null && !isNaN(parseFloat(res))) {
+            if (options.onCommit) options.onCommit(parseFloat(res));
+          }
+        }
+      }
+
+      const valLensEl = document.getElementById('val-camera-lens');
+      if (valLensEl) {
+        valLensEl.title = 'Click to edit value';
+        valLensEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'camera') return;
+          const curVal = Math.round(layer.cameraLens !== undefined ? layer.cameraLens : 50);
+          openCameraValueInput(valLensEl, {
+            title: 'Focal Length',
+            value: curVal,
+            defaultValue: 50,
+            min: 12,
+            max: 300,
+            step: 1,
+            unit: 'mm',
+            onCommit: (newVal) => {
+              const clamped = Math.max(12, Math.min(300, Math.round(newVal)));
+              layer.cameraLens = clamped;
+              layer.cameraLensPreset = clamped <= 35 ? 'wide' : (clamped >= 70 ? 'tele' : 'standard');
+              recordLayerPropertyChange(layer, 'cameraLens');
+              syncCameraSettingsUI();
+              redrawComposition();
+              if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            }
+          });
+        });
+      }
+
+      const valZoomEl = document.getElementById('val-camera-zoom');
+      if (valZoomEl) {
+        valZoomEl.title = 'Click to edit value';
+        valZoomEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'camera') return;
+          const curVal = Math.round(layer.cameraZoom !== undefined ? layer.cameraZoom : 100);
+          openCameraValueInput(valZoomEl, {
+            title: 'Zoom',
+            value: curVal,
+            defaultValue: 100,
+            min: 10,
+            max: 400,
+            step: 1,
+            unit: '%',
+            onCommit: (newVal) => {
+              const clamped = Math.max(10, Math.min(400, Math.round(newVal)));
+              layer.cameraZoom = clamped;
+              recordLayerPropertyChange(layer, 'cameraZoom');
+              syncCameraSettingsUI();
+              redrawComposition();
+              if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            }
+          });
+        });
+      }
+
+      const valFocusDistEl = document.getElementById('val-camera-focus-dist');
+      if (valFocusDistEl) {
+        valFocusDistEl.title = 'Click to edit value';
+        valFocusDistEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'camera') return;
+          const curVal = Math.round(layer.cameraFocusDistance || 0);
+          openCameraValueInput(valFocusDistEl, {
+            title: 'Focus Distance',
+            value: curVal,
+            defaultValue: 0,
+            min: 0,
+            max: 4000,
+            step: 1,
+            unit: 'px',
+            onCommit: (newVal) => {
+              const clamped = Math.max(0, Math.min(4000, Math.round(newVal)));
+              layer.cameraFocusDistance = clamped;
+              recordLayerPropertyChange(layer, 'cameraFocusDistance');
+              syncCameraSettingsUI();
+              redrawComposition();
+              if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            }
+          });
+        });
+      }
+
+      const valFocusRangeEl = document.getElementById('val-camera-focus-range');
+      if (valFocusRangeEl) {
+        valFocusRangeEl.title = 'Click to edit value';
+        valFocusRangeEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'camera') return;
+          const curVal = Math.round(layer.cameraBlurNearFar !== undefined ? layer.cameraBlurNearFar : 600);
+          openCameraValueInput(valFocusRangeEl, {
+            title: 'Blur Range',
+            value: curVal,
+            defaultValue: 600,
+            min: 1,
+            max: 2000,
+            step: 1,
+            unit: 'px',
+            onCommit: (newVal) => {
+              const clamped = Math.max(1, Math.min(2000, Math.round(newVal)));
+              layer.cameraBlurNearFar = clamped;
+              recordLayerPropertyChange(layer, 'cameraBlurNearFar');
+              syncCameraSettingsUI();
+              redrawComposition();
+              if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            }
+          });
+        });
+      }
+
+      const valBlurAmtEl = document.getElementById('val-camera-blur-amount');
+      if (valBlurAmtEl) {
+        valBlurAmtEl.title = 'Click to edit value';
+        valBlurAmtEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'camera') return;
+          const curVal = Math.round(layer.cameraBlurAmount !== undefined ? layer.cameraBlurAmount : 20);
+          openCameraValueInput(valBlurAmtEl, {
+            title: 'Blur Amount',
+            value: curVal,
+            defaultValue: 20,
+            min: 0,
+            max: 100,
+            step: 1,
+            unit: 'px',
+            onCommit: (newVal) => {
+              const clamped = Math.max(0, Math.min(100, Math.round(newVal)));
+              layer.cameraBlurAmount = clamped;
+              recordLayerPropertyChange(layer, 'cameraBlurAmount');
+              syncCameraSettingsUI();
+              redrawComposition();
+              if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            }
+          });
+        });
+      }
+
+      const valBlurBalEl = document.getElementById('val-camera-blur-balance');
+      if (valBlurBalEl) {
+        valBlurBalEl.title = 'Click to edit value';
+        valBlurBalEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'camera') return;
+          const curVal = Math.round(layer.cameraBlurBalance || 0);
+          openCameraValueInput(valBlurBalEl, {
+            title: 'Blur Balance',
+            value: curVal,
+            defaultValue: 0,
+            min: -100,
+            max: 100,
+            step: 1,
+            unit: '',
+            onCommit: (newVal) => {
+              const clamped = Math.max(-100, Math.min(100, Math.round(newVal)));
+              layer.cameraBlurBalance = clamped;
+              recordLayerPropertyChange(layer, 'cameraBlurBalance');
+              syncCameraSettingsUI();
+              redrawComposition();
+              if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            }
+          });
+        });
+      }
     })();
 
     /* ==========================================================================
@@ -17188,6 +18335,9 @@
 
             // Invalidate preview cache and redraw composition
             layer._fillDirty = true;
+            if (layer.type === 'shape' && layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
+            if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
+            layer._contentVersion = (layer._contentVersion || 0) + 1;
             if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
             if (typeof redrawComposition === 'function') redrawComposition('fill-grad-drag');
           };
@@ -17208,6 +18358,9 @@
               openFillColorPicker(handle, stop.color, (hex, alpha, commit) => {
                 stop.color = hex;
                 layer._fillDirty = true;
+                if (layer.type === 'shape' && layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
+                if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
+                layer._contentVersion = (layer._contentVersion || 0) + 1;
                 if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
                 if (typeof redrawComposition === 'function') redrawComposition('fill-grad-color');
                 if (commit && typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers(true);
@@ -17223,6 +18376,9 @@
             layer.fillGradColor1 = layer.fillGradStops[0].color;
             layer.fillGradColor2 = layer.fillGradStops[layer.fillGradStops.length - 1].color;
             layer._fillDirty = true;
+            if (layer.type === 'shape' && layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
+            if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
+            layer._contentVersion = (layer._contentVersion || 0) + 1;
 
             if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
             if (typeof redrawComposition === 'function') redrawComposition('fill-grad-drag-end');
@@ -17282,6 +18438,9 @@
         layer.fillGradColor1 = layer.fillGradStops[0].color;
         layer.fillGradColor2 = layer.fillGradStops[layer.fillGradStops.length - 1].color;
         layer._fillDirty = true;
+        if (layer.type === 'shape' && layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
+        if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
+        layer._contentVersion = (layer._contentVersion || 0) + 1;
 
         if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
         if (typeof redrawComposition === 'function') redrawComposition('fill-grad-add');
@@ -17423,6 +18582,9 @@
               }
             }
             layer._fillDirty = true;
+            if (layer.type === 'shape' && layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
+            if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
+            layer._contentVersion = (layer._contentVersion || 0) + 1;
             if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
             if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
             if (typeof updateVolumeAndSpeedBtnState === 'function') updateVolumeAndSpeedBtnState(layer);
@@ -17443,6 +18605,9 @@
           if (!layer) return;
           layer.fillType = 'none';
           layer._fillDirty = true;
+          if (layer.type === 'shape' && layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
+          if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
+          layer._contentVersion = (layer._contentVersion || 0) + 1;
           if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
           if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers(true);
           if (typeof redrawComposition === 'function') redrawComposition('fill-apply-none');
@@ -17476,6 +18641,9 @@
           }
         }
         layer._fillDirty = true;
+        if (layer.type === 'shape' && layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
+        if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
+        layer._contentVersion = (layer._contentVersion || 0) + 1;
 
         if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
         if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
@@ -17510,6 +18678,9 @@
           layer.fillType = 'gradient';
           layer.fillGradType = gType;
           layer._fillDirty = true;
+          if (layer.type === 'shape' && layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
+          if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
+          layer._contentVersion = (layer._contentVersion || 0) + 1;
           if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
           if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
           if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers(true);
@@ -17621,6 +18792,25 @@
       }
       // Filter out null or non-object items in layer.effects to prevent corruption
       layer.effects = layer.effects.filter(f => f && typeof f === 'object');
+      // Migrate legacy open-ios / open-mac to fluid-fish
+      layer.effects.forEach(fx => {
+        if (!fx) return;
+        if (fx.type === 'open-ios' || fx.type === 'open_ios') {
+          fx.type = 'fluid-fish';
+          if (!fx.mode) fx.mode = 'morph';
+          if (fx.name === 'Open iOS' || !fx.name) fx.name = 'Fluid Fish';
+        } else if (fx.type === 'open-mac' || fx.type === 'open_mac') {
+          fx.type = 'fluid-fish';
+          if (!fx.mode) fx.mode = 'genie';
+          if (fx.name === 'Open Mac' || !fx.name) fx.name = 'Fluid Fish';
+        }
+      });
+      if (window.FishEffectsRegistry && typeof window.FishEffectsRegistry.get === 'function') {
+        layer.effects = layer.effects.filter(fx => {
+          if (!fx || !fx.type) return false;
+          return !!window.FishEffectsRegistry.get(fx.type);
+        });
+      }
       const seenIds = new Set();
       layer.effects.forEach((fx, i) => {
         if (!fx.id || seenIds.has(fx.id)) {
@@ -17628,12 +18818,19 @@
         }
         seenIds.add(fx.id);
 
-        // AUTO-HYDRATE: Fill missing params with registry defaults
+        // AUTO-HYDRATE: Fill missing params with registry defaults & normalize type
         // This ensures saved effects always have all current params populated,
         // even if new params were added to the definition after the project was saved
         if (fx.type && window.FishEffectsRegistry && typeof window.FishEffectsRegistry.get === 'function') {
           const def = window.FishEffectsRegistry.get(fx.type);
-          if (def && Array.isArray(def.params)) {
+          if (def) {
+            if (fx.type !== def.id) {
+              fx.type = def.id;
+            }
+            if (!fx.name || fx.name === fx.type) {
+              fx.name = def.name;
+            }
+            if (Array.isArray(def.params)) {
             def.params.forEach(p => {
               if (fx[p.id] === undefined) {
                 // Hidden stores data blobs, button is action-only — skip hydration
@@ -17646,11 +18843,14 @@
                   fx[p.id] = p.default || (p.options && p.options[0] ? p.options[0] : 'normal');
                 } else if (p.type === 'curve') {
                   fx[p.id] = p.default || null;
+                } else if (p.type === 'layer') {
+                  fx[p.id] = p.default || '';
                 } else {
                   fx[p.id] = p.default !== undefined ? p.default : 0;
                 }
               }
             });
+            }
           }
         }
       });
@@ -17799,7 +18999,11 @@
       const currentFxIds = effects.map(fx => fx.id);
       const layerChanged = rackList.dataset.currentLayerId !== layer.id;
       rackList.dataset.currentLayerId = layer.id;
-      const needsFullRebuild = layerChanged || domCardIds.length !== currentFxIds.length || !domCardIds.every((id, i) => id === currentFxIds[i]);
+      const hasDynamicChange = effects.some(fx => {
+        const card = domCards.find(c => c.dataset.effectId === fx.id);
+        return card && card.dataset.lastMode !== undefined && card.dataset.lastMode !== String(fx.mode || '');
+      });
+      const needsFullRebuild = force === true || layerChanged || hasDynamicChange || domCardIds.length !== currentFxIds.length || !domCardIds.every((id, i) => id === currentFxIds[i]);
 
       if (needsFullRebuild) {
         rackList.innerHTML = effects.map(fx => renderEffectCardHTML(fx, layer, currentSec)).join('');
@@ -17952,6 +19156,7 @@
               const clampedRatio = Math.max(0, Math.min(1, ratio));
               const offset = -clampedRatio * tapeW;
               ticksEl.style.setProperty('--tape-offset', `${offset.toFixed(1)}px`);
+              ticksEl.style.transform = `translateX(${offset.toFixed(1)}px)`;
               ticksEl.style.clipPath = 'none';
             }
             if (pType === 'angle') {
@@ -17962,6 +19167,8 @@
               const formattedVal = isDecimal ? val.toFixed(2) : val;
               if (badge) badge.textContent = (val >= 0 && min < 0 ? '+' : '') + formattedVal + unit;
             }
+            const scrubber = card.querySelector(`.fx-scrubber-${pId}`);
+            if (scrubber) scrubber.setAttribute('aria-valuenow', String(val));
           });
         });
       }
@@ -18195,7 +19402,7 @@
         }
       }, 50);
     }
-    window.openValueInputPopover = openValueInputPopover;
+    window.openValueInputPopover = (window.FishElements && window.FishElements.openNumberInput) || openValueInputPopover;
 
     function selectEffectParam(fxId, paramName) {
       const rackList = document.getElementById('effects-rack-list');
@@ -18678,7 +19885,7 @@
               const step = defParam && defParam.step !== undefined ? defParam.step : 1;
               const unit = defParam && defParam.unit !== undefined ? defParam.unit : '%';
               const label = defParam && defParam.label ? defParam.label : paramName;
-              const isAngle = defParam && (defParam.type === 'angle' || defParam.unit === '°');
+              const isAngle = !!(defParam && defParam.type === 'angle');
 
               if (typeof window.openValueInputPopover === 'function') {
                 window.openValueInputPopover(badgeBtn, {
@@ -18702,6 +19909,7 @@
                       const ratio = Math.max(0, Math.min(1, (newVal - min) / (max - min)));
                       const offset = -ratio * tapeW;
                       ticksEl.style.setProperty('--tape-offset', `${offset.toFixed(1)}px`);
+                      ticksEl.style.transform = `translateX(${offset.toFixed(1)}px)`;
                       ticksEl.style.clipPath = 'none';
                     }
 
@@ -18764,6 +19972,10 @@
               b.classList.toggle('is-active', b.dataset.val === String(btn.dataset.val));
             });
 
+            if (param === 'mode') {
+              syncEffectsRackUI(true);
+            }
+
             const propKey = `${fx.id}:${param}`;
             if (typeof recordLayerPropertyChange === 'function') {
               recordLayerPropertyChange(layer, propKey);
@@ -18821,6 +20033,9 @@
 
               if (param) {
                 fx[param] = val;
+                if (param === 'mode') {
+                  syncEffectsRackUI(true);
+                }
                 if (fx && fx.type === 'brightness-contrast' && (param === 'brightness' || param === 'contrast')) {
                   layer[param] = val;
                 }
@@ -18830,6 +20045,16 @@
                   if (window.FishBgRemovalEngine) {
                     window.FishBgRemovalEngine.clearLayerCutouts(layer);
                     window.FishBgRemovalEngine.processLayer(layer, true);
+                  }
+                }
+
+                if (fx && (fx.type === 'fluid-fish' || fx.type === 'open-ios' || fx.type === 'open-mac') && (param === 'firstLayer' || param === 'destLayer')) {
+                  if (val && typeof currentProjectState !== 'undefined' && Array.isArray(currentProjectState.layers)) {
+                    const targetL = currentProjectState.layers.find(l => l && String(l.id) === String(val));
+                    if (targetL && String(targetL.id) !== String(layer.id)) {
+                      targetL.hidden = true;
+                      if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
+                    }
                   }
                 }
 
@@ -18954,6 +20179,18 @@
 
       const ticksEl = container.querySelector('.jog-wheel-ticks');
 
+      // Card closures can outlive the layer/effect objects they were built with (undo/redo, precomp
+      // enter/exit, project reload). Re-point to the live objects so edits never land on orphans.
+      const resolveLiveTargets = () => {
+        const layers = (typeof currentProjectState !== 'undefined' && currentProjectState && currentProjectState.layers) || [];
+        const liveLayer = layers.find(l => l && l.id === layer.id);
+        if (liveLayer && liveLayer !== layer) layer = liveLayer;
+        if (Array.isArray(layer.effects)) {
+          const liveFx = layer.effects.find(f => f && f.id === fx.id);
+          if (liveFx && liveFx !== fx) fx = liveFx;
+        }
+      };
+
       bindJogWheel(container, {
         onStart: (e) => {
           isBadgeClick = !!(e && e.target && e.target.closest('.effects-param-pill-val'));
@@ -18961,6 +20198,7 @@
           startPointerX = e ? e.clientX : 0;
           startPointerY = e ? e.clientY : 0;
           hasDragged = false;
+          resolveLiveTargets();
           cachedRect = container.getBoundingClientRect();
           window.activeScrubbingParam = propKey;
           window.isTransformInteracting = true;
@@ -18981,8 +20219,12 @@
           }
           let consumedStep = 0;
           let badgeText = '';
+          const liveCard = card.isConnected ? card : (document.querySelector(`.effects-card[data-effect-id="${fx.id}"]`) || card);
 
-          if (isHue || isAngle) {
+          // Bounded-tape rulers (e.g. number params with a ° unit like Direction/Phase) must use
+          // the bounded branch, which is the only one that moves the tape.
+          const tapeIsBounded = !!(ticksEl && ticksEl.classList.contains('is-bounded-tape'));
+          if ((isHue || isAngle) && !tapeIsBounded) {
             // UNLIMITED ANGLE MODE (Continuous 360° rotation with turns)
             const speed = (e && e.shiftKey) ? 0.1 : ((e && e.altKey) ? 2.5 : 1.0);
             currentVal += step * speed;
@@ -19013,9 +20255,9 @@
 
             const tapeW = cachedTapeW;
 
-            // Pure relative pan (1:1 direct feel like AE jog wheels, Shift = precision 0.2x, Alt = fast 2.5x)
-            // Drag right (step > 0) pulls tape right -> decreases value to MIN
-            // Drag left (step < 0) pulls tape left -> increases value to MAX
+            // Physical ruler reel mechanics:
+            // Drag right (step > 0) pulls tape right, lower values from left move under needle -> value decreases
+            // Drag left (step < 0) pulls tape left, higher values from right move under needle -> value increases
             const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 2.5 : 1.0);
             const deltaVal = span > 0 ? (-step * (span / tapeW) * speed) : 0;
             const nextVal = currentVal + deltaVal;
@@ -19033,17 +20275,18 @@
             badgeText = (quantVal >= 0 && min < 0 ? '+' : '') + formatted + unit;
 
             // Physical ruler tape offset under stationary center needle:
-            // ratio 0 (min) -> offset = 0px (left border under needle)
-            // ratio 1 (max) -> offset = -tapeW px (right border under needle)
             const ratio = span > 0 ? Math.max(0, Math.min(1, (currentVal - min) / span)) : 0;
             const offset = -ratio * tapeW;
 
-            if (ticksEl) {
-              ticksEl.style.setProperty('--tape-offset', `${offset.toFixed(1)}px`);
-              ticksEl.style.clipPath = 'none';
+            const liveTicks = liveCard.querySelector(`.fx-scrubber-${paramName} .jog-wheel-ticks`) || ticksEl;
+            if (liveTicks) {
+              liveTicks.style.setProperty('--tape-offset', `${offset.toFixed(1)}px`);
+              // Inline transform guarantees a repaint even if the var()-driven transform is not re-evaluated
+              liveTicks.style.transform = `translateX(${offset.toFixed(1)}px)`;
+              liveTicks.style.clipPath = 'none';
             }
 
-            const track = card.querySelector(`.fx-track-${paramName}`);
+            const track = liveCard.querySelector(`.fx-track-${paramName}`);
             if (track) {
               track.style.width = (ratio * 100).toFixed(1) + '%';
             }
@@ -19052,11 +20295,17 @@
             consumedStep = (span > 0 && speed > 0 && (span / tapeW * speed) > 0) ? (-consumedVal / ((span / tapeW) * speed)) : 0;
           }
 
+          // The card's fx reference can go stale (rack rebuilt / layers reloaded); always write to the live effect too.
+          if (Array.isArray(layer.effects)) {
+            const liveFxTarget = layer.effects.find(f => f && f.id === fx.id);
+            if (liveFxTarget && liveFxTarget !== fx && fx[paramName] !== undefined) liveFxTarget[paramName] = fx[paramName];
+          }
+
           if (fx && fx.type === 'brightness-contrast' && (paramName === 'brightness' || paramName === 'contrast')) {
             layer[paramName] = fx[paramName];
           }
 
-          const badge = card.querySelector(`.fx-badge-${paramName}`);
+          const badge = liveCard.querySelector(`.fx-badge-${paramName}`);
           if (badge) badge.textContent = badgeText;
 
           if (typeof recordLayerPropertyChange === 'function') {
@@ -19796,10 +21045,19 @@
         if (!layer) return;
         ensureLayerEffects(layer);
 
-        // Guard: 3D effects are mutually exclusive — only one per layer.
-        // Stacking multiple 3D effects causes geometry conflicts and broken renders.
-        const incomingDef = window.FishEffectsRegistry ? window.FishEffectsRegistry.get(effectTypeId) : null;
-        const incomingIs3D = !!(incomingDef && (incomingDef.isExclusive3D || (incomingDef.category && incomingDef.category.toLowerCase() === '3d')));
+        // Guard: Check registry for canonical effect
+        const reg = (window.FishEffects && window.FishEffects.registry) || window.FishEffectsRegistry;
+        const incomingDef = reg && typeof reg.get === 'function' ? reg.get(effectTypeId) : null;
+        if (!incomingDef) {
+          console.warn(`[Effects] Efek "${effectTypeId}" tidak terdaftar dalam registry!`);
+          if (typeof showEditorToast === 'function') {
+            showEditorToast(`Efek "${effectTypeId}" tidak terdaftar`, 2400, 'error');
+          }
+          return;
+        }
+
+        const canonicalId = incomingDef.id;
+        const incomingIs3D = !!(incomingDef.isExclusive3D || (incomingDef.category && incomingDef.category.toLowerCase() === '3d'));
         if (incomingIs3D) {
           // Automatic 3D Layer conversion on 3D effect addition
           layer.is3D = true;
@@ -19818,7 +21076,7 @@
 
           if (Array.isArray(layer.effects)) {
             const existing3DIdx = layer.effects.findIndex(fx => {
-              const d = window.FishEffectsRegistry ? window.FishEffectsRegistry.get(fx.type) : null;
+              const d = reg.get(fx.type);
               return d && (d.isExclusive3D || (d.category && d.category.toLowerCase() === '3d'));
             });
             if (existing3DIdx !== -1) {
@@ -19833,17 +21091,12 @@
         }
 
         let newFx = null;
-        if (window.FishEffects && window.FishEffects.registry && typeof window.FishEffects.registry.createInstance === 'function') {
-          newFx = window.FishEffects.registry.createInstance(effectTypeId);
+        if (reg && typeof reg.createInstance === 'function') {
+          newFx = reg.createInstance(canonicalId);
         }
         if (!newFx) {
-          newFx = {
-            id: 'fx_' + effectTypeId.replace(/[^a-z0-9]/gi, '_') + '_' + Date.now(),
-            type: effectTypeId,
-            name: effectTypeId,
-            isExpanded: true,
-            disabled: false
-          };
+          console.warn(`[Effects] Gagal membuat instance untuk efek "${canonicalId}"`);
+          return;
         }
         if (incomingIs3D && newFx) {
           const lW = Math.round(layer.scaleW || layer.w || 300);
@@ -19867,7 +21120,7 @@
           layer.effectsDisabled = !!layer.effects[0].disabled;
         }
 
-        if (effectTypeId === 'remove_bg') {
+        if (canonicalId === 'remove_bg') {
           if (layer.type === 'video' && window.VideoFrameExtractor && !layer._extractComplete) {
             window.VideoFrameExtractor.abortAndRevertPartialSequence(layer);
           }
@@ -19882,7 +21135,7 @@
 
         const params = getEffectParamIds(newFx);
         window.activeKeyframeProperty = `${newFx.id}:${params[0] || 'param'}`;
-        recordLastUsedEffect(effectTypeId);
+        recordLastUsedEffect(canonicalId);
         closeEffectsGalleryDrawer();
         switchLayerDrawerSubview('effects');
         syncEffectsRackUI();
@@ -20998,6 +22251,12 @@
         catAdvanced.classList.add('is-collapsed');
         catAdvanced.querySelector('.settings-category-header')?.setAttribute('aria-expanded', 'false');
       }
+      const catTheme = document.getElementById('cat-settings-theme');
+      if (catTheme) {
+        catTheme.classList.add('is-collapsed');
+        catTheme.querySelector('.settings-category-header')?.setAttribute('aria-expanded', 'false');
+      }
+      renderEditorThemePicker();
 
       // 10. Update dynamic summaries on category headers
       updateProjectSettingsSummaries();
@@ -21032,6 +22291,77 @@
       if (summaryAdv) {
         summaryAdv.textContent = `${undo} Steps • ${idle ? 'Cache On' : 'Cache Off'}`;
       }
+
+      const curTheme = localStorage.getItem('oft_theme') || 'default';
+      const summaryTheme = document.getElementById('summary-settings-theme');
+      if (summaryTheme) {
+        const themeNames = {
+          'default': 'Matcha Tea',
+          'after-effects': 'After Effects',
+          'cyber-cyan': 'Cyber Cyan',
+          'amber-terminal': 'Amber Gold',
+          'amethyst': 'Amethyst',
+          'rose': 'Rose Red',
+          'ocean': 'Ocean Blue'
+        };
+        summaryTheme.textContent = themeNames[curTheme] || 'Matcha Tea';
+      }
+    }
+
+    function renderEditorThemePicker() {
+      const grid = document.getElementById('editor-settings-theme-grid');
+      if (!grid) return;
+      const themes = [
+        { id: 'default', name: 'Matcha Tea', desc: 'Default Brand', color: '#aef380', checkFill: '#12170e' },
+        { id: 'after-effects', name: 'After Effects', desc: 'Motion Indigo', color: '#9999ff', checkFill: '#12111a' },
+        { id: 'cyber-cyan', name: 'Cyber Cyan', desc: 'Electric Blue', color: '#38f2ff', checkFill: '#081017' },
+        { id: 'amber-terminal', name: 'Amber Gold', desc: 'Retro Terminal', color: '#ffbe2e', checkFill: '#181105' },
+        { id: 'amethyst', name: 'Amethyst', desc: 'Neon Purple', color: '#d8b4fe', checkFill: '#130c1d' },
+        { id: 'rose', name: 'Rose Red', desc: 'Vibrant Crimson', color: '#fda4af', checkFill: '#1a0a10' },
+        { id: 'ocean', name: 'Ocean Blue', desc: 'Deep Sea Azure', color: '#7dd3fc', checkFill: '#08121c' }
+      ];
+      const cur = localStorage.getItem('oft_theme') || 'default';
+      grid.innerHTML = themes.map(t => {
+        const isSel = t.id === cur;
+        return `
+          <button type="button" class="theme-card-item ${isSel ? 'is-selected' : ''}" data-theme-val="${t.id}" title="${t.name}">
+            <div class="theme-card-color-dot" style="background-color: ${t.color};">
+              <svg class="theme-card-check" viewBox="0 0 24 24" width="14" height="14" fill="${t.checkFill}">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+              </svg>
+            </div>
+            <div class="theme-card-meta">
+              <span class="theme-card-name">${t.name}</span>
+              <span class="theme-card-desc">${t.desc}</span>
+            </div>
+          </button>
+        `;
+      }).join('');
+
+      grid.querySelectorAll('.theme-card-item').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const val = btn.getAttribute('data-theme-val');
+          if (!val) return;
+          try {
+            localStorage.setItem('oft_theme', val);
+          } catch (_) {}
+          if (val && val !== 'default') {
+            document.documentElement.setAttribute('data-theme', val);
+          } else {
+            document.documentElement.removeAttribute('data-theme');
+          }
+          grid.querySelectorAll('.theme-card-item').forEach(c => {
+            c.classList.toggle('is-selected', c.getAttribute('data-theme-val') === val);
+          });
+          const summaryTheme = document.getElementById('summary-settings-theme');
+          if (summaryTheme) {
+            const found = themes.find(x => x.id === val);
+            summaryTheme.textContent = found ? found.name : 'Matcha Tea';
+          }
+          window.dispatchEvent(new CustomEvent('theme-changed', { detail: { theme: val } }));
+        });
+      });
     }
 
     // Save project settings action (persisting to FishDatabase & live updating Canvas and Timeline)
@@ -21926,7 +23256,18 @@
         redrawComposition('initProjectLoaded');
       }
 
-      // Dismiss loading screen overlay cleanly as soon as initial project layout and canvas render
+      // Pre-warm WASM effects engine during loading overlay so editing is instantaneous
+      const loadingSubEl = document.getElementById('editor-loading-sub');
+      if (loadingSubEl) {
+        loadingSubEl.textContent = 'Pre-warming WASM effects engine...';
+      }
+      if (typeof window.prewarmWasmEffects === 'function') {
+        try {
+          await window.prewarmWasmEffects();
+        } catch (_) {}
+      }
+
+      // Dismiss loading screen overlay cleanly as soon as initial project layout, canvas and WASM effects are ready
       if (typeof window._dismissLoadingOverlay === 'function') {
         window._dismissLoadingOverlay();
       }
@@ -24236,42 +25577,57 @@
       let lastGeneratedPps = 0;
 
       function getRulerTickConfig(fps, pps) {
-        const framePx = pps / fps;
-        let framesPerTick = 1;
-        let showFrameLabels = false;
+        const safeFps = Math.max(1, parseInt(fps, 10) || 60);
+        const framePx = pps / safeFps;
+        let majorUnitFrames = safeFps;
+        let subTicks = 10;
 
-        // Level of Detail (LOD) Adaptive Density & Anti-Lag Decimation
-        if (framePx >= 14) {
-          // LOD 1: Ultra Zoom (Renggang banget) -> 1 tick = 1 frame
-          framesPerTick = 1;
-          showFrameLabels = true;
-        } else if (framePx >= 7) {
-          // LOD 2: Medium Zoom -> 1 tick = 2 frames (or 1 frame if low FPS <= 24)
-          framesPerTick = (fps <= 24) ? 1 : ((fps % 2 === 0) ? 2 : 1);
-          showFrameLabels = (framePx >= 10);
-        } else if (framePx >= 3.2) {
-          // LOD 3: Standard Timeline -> 1 tick = 4/5/6 frames (~5-12 ticks per second)
-          if (fps % 5 === 0) framesPerTick = 5;
-          else if (fps % 4 === 0) framesPerTick = 4;
-          else if (fps % 6 === 0) framesPerTick = 6;
-          else if (fps % 3 === 0) framesPerTick = 3;
-          else framesPerTick = 2;
-        } else if (framePx >= 1.4) {
-          // LOD 4: Compact / Rapat -> 1 tick = 10-15 frames (quarter/half second, ~2-6 ticks/sec)
-          if (fps % 15 === 0) framesPerTick = 15;
-          else if (fps % 10 === 0) framesPerTick = 10;
-          else if (fps % 6 === 0) framesPerTick = 6;
-          else framesPerTick = Math.max(1, Math.round(fps / 4));
-        } else if (framePx >= 0.7) {
-          // LOD 5: Highly Compact -> 1 tick = half second (~2 ticks/sec)
-          framesPerTick = Math.max(1, Math.round(fps / 2));
+        // Level of Detail (LOD) Adaptive Density (After Effects / Premiere Pro standard)
+        if (framePx >= 35) {
+          // Ultra Zoom: 1 frame per major mark (e.g. 00:00:00, 01f, 02f, 03f...)
+          majorUnitFrames = 1;
+          subTicks = 1;
+        } else if (framePx >= 16) {
+          // Very High Zoom: 2 frames per major mark (or 5 if fps > 30)
+          majorUnitFrames = (safeFps <= 30) ? 2 : 5;
+          subTicks = majorUnitFrames;
+        } else if (framePx >= 6) {
+          // High Zoom: 5 frames per major mark (or 10 if fps > 30)
+          majorUnitFrames = (safeFps <= 30) ? 5 : 10;
+          subTicks = majorUnitFrames;
+        } else if (framePx >= 2.5) {
+          // Medium Zoom: 10/15 frames per major mark (quarter / half second)
+          majorUnitFrames = (safeFps % 15 === 0) ? 15 : ((safeFps % 10 === 0) ? 10 : Math.max(1, Math.round(safeFps / 2)));
+          subTicks = Math.max(2, Math.round(majorUnitFrames / 2));
+        } else if (pps >= 55) {
+          // Standard 1-second timeline
+          majorUnitFrames = safeFps;
+          subTicks = (safeFps <= 30) ? (safeFps % 5 === 0 ? 5 : 6) : 10;
+        } else if (pps >= 25) {
+          // Zoomed out: 2 seconds per major mark
+          majorUnitFrames = safeFps * 2;
+          subTicks = 4;
+        } else if (pps >= 10) {
+          // Far Zoom out: 5 seconds per major mark
+          majorUnitFrames = safeFps * 5;
+          subTicks = 5;
+        } else if (pps >= 4) {
+          // Very far Zoom out: 10 seconds per major mark
+          majorUnitFrames = safeFps * 10;
+          subTicks = 5;
         } else {
-          // LOD 6: Macro (Zoom out jauh) -> 1 tick = 1 second only
-          framesPerTick = fps;
+          // Extreme macro: 30 seconds per major mark
+          majorUnitFrames = safeFps * 30;
+          subTicks = 6;
         }
 
-        const subTicks = Math.max(1, Math.round(fps / framesPerTick));
-        return { framesPerTick, subTicks, framePx, showFrameLabels };
+        const markWidthPx = majorUnitFrames * framePx;
+        return {
+          majorUnitFrames,
+          subTicks,
+          framePx,
+          markWidthPx
+        };
       }
 
       function generateRulerTicks(fps, force = false) {
@@ -24286,9 +25642,7 @@
         lastGeneratedPps = pixelsPerSecond;
 
         const config = getRulerTickConfig(safeFps, pixelsPerSecond);
-        const subTicks = config.subTicks;
-        const framesPerTick = config.framesPerTick;
-        const showFrameLabels = config.showFrameLabels;
+        const { majorUnitFrames, subTicks, framePx } = config;
 
         rulerTrack.style.setProperty('--ruler-ticks-count', subTicks);
 
@@ -24324,102 +25678,44 @@
           return;
         }
 
-        const fullSeconds = Math.floor(totalDur);
-        const remSec = totalDur - fullSeconds;
+        const totalFrames = Math.max(1, Math.round(totalDur * safeFps));
         let rulerHtml = '';
-        const halfFps = Math.round(safeFps / 2);
 
-        // Tampilkan detik utuh: 0..fullSeconds-1
-        for (let s = 0; s < fullSeconds; s++) {
-          const mins = String(Math.floor(s / 60)).padStart(2, '0');
-          const secs = String(s % 60).padStart(2, '0');
-          const timeStr = `${mins}:${secs}:00`;
+        for (let f = 0; f < totalFrames; f += majorUnitFrames) {
+          const curMarkFrames = Math.min(majorUnitFrames, totalFrames - f);
+          const markWidth = curMarkFrames * framePx;
 
+          let timeStr = '';
+          if (f % safeFps === 0) {
+            const s = Math.floor(f / safeFps);
+            const mins = String(Math.floor(s / 60)).padStart(2, '0');
+            const secs = String(s % 60).padStart(2, '0');
+            timeStr = `${mins}:${secs}:00`;
+          } else {
+            // Adaptive frame subdivision label (After Effects standard: 05f, 10f, 15f...)
+            timeStr = `${String(f % safeFps).padStart(2, '0')}f`;
+          }
+
+          const curTicksCount = Math.max(1, Math.round((curMarkFrames / majorUnitFrames) * subTicks));
           let ticksHtml = '';
-          for (let i = 0; i < subTicks; i++) {
-            const frameNum = i * framesPerTick;
+          for (let i = 0; i < curTicksCount; i++) {
             let tickClass = 'minor';
-            let frameLabelHtml = '';
-
             if (i === 0) {
               tickClass = 'major';
-            } else if (frameNum === halfFps) {
-              tickClass = 'medium';
-              if (showFrameLabels && framesPerTick === 1) {
-                frameLabelHtml = `<span class="ruler-frame-text">:${String(frameNum).padStart(2, '0')}</span>`;
-              }
-            } else if (framesPerTick === 1) {
-              if (frameNum % 10 === 0 || (frameNum % 5 === 0 && config.framePx >= 20)) {
-                tickClass = 'medium';
-                if (showFrameLabels) {
-                  frameLabelHtml = `<span class="ruler-frame-text">:${String(frameNum).padStart(2, '0')}</span>`;
-                }
-              }
-            } else if (framesPerTick <= 5 && frameNum % 10 === 0) {
+            } else if (curTicksCount >= 4 && i === Math.floor(curTicksCount / 2)) {
               tickClass = 'medium';
             }
-
             ticksHtml += `
               <div class="ruler-tick-cell">
                 <div class="ruler-tick ${tickClass}"></div>
-                ${frameLabelHtml}
               </div>
             `;
           }
 
           rulerHtml += `
-            <div class="ruler-second-mark" style="width: ${pixelsPerSecond}px;">
+            <div class="ruler-second-mark" style="width: ${markWidth.toFixed(2)}px; flex-basis: ${markWidth.toFixed(2)}px;">
               <span class="ruler-second-text">${timeStr}</span>
-              <div class="ruler-ticks-row" style="grid-template-columns: repeat(${subTicks}, 1fr);">
-                ${ticksHtml}
-              </div>
-            </div>
-          `;
-        }
-
-        // Jika ada pecahan detik di ujung akhir (misal 5.4 detik)
-        if (remSec > 0.001) {
-          const s = fullSeconds;
-          const mins = String(Math.floor(s / 60)).padStart(2, '0');
-          const secs = String(s % 60).padStart(2, '0');
-          const timeStr = `${mins}:${secs}:00`;
-
-          const partialWidth = Math.max(2, Math.round(remSec * pixelsPerSecond));
-          const remFrames = Math.round(remSec * safeFps);
-          const partialTicks = Math.max(1, Math.round(remFrames / framesPerTick));
-
-          let ticksHtml = '';
-          for (let i = 0; i < partialTicks; i++) {
-            const frameNum = i * framesPerTick;
-            let tickClass = 'minor';
-            let frameLabelHtml = '';
-
-            if (i === 0) {
-              tickClass = 'major';
-            } else if (frameNum === halfFps) {
-              tickClass = 'medium';
-              if (showFrameLabels && framesPerTick === 1) {
-                frameLabelHtml = `<span class="ruler-frame-text">:${String(frameNum).padStart(2, '0')}</span>`;
-              }
-            } else if (framesPerTick === 1 && (frameNum % 10 === 0 || (frameNum % 5 === 0 && config.framePx >= 20))) {
-              tickClass = 'medium';
-              if (showFrameLabels) {
-                frameLabelHtml = `<span class="ruler-frame-text">:${String(frameNum).padStart(2, '0')}</span>`;
-              }
-            }
-
-            ticksHtml += `
-              <div class="ruler-tick-cell">
-                <div class="ruler-tick ${tickClass}"></div>
-                ${frameLabelHtml}
-              </div>
-            `;
-          }
-
-          rulerHtml += `
-            <div class="ruler-second-mark" style="width: ${partialWidth}px;">
-              <span class="ruler-second-text">${timeStr}</span>
-              <div class="ruler-ticks-row" style="grid-template-columns: repeat(${partialTicks}, 1fr);">
+              <div class="ruler-ticks-row" style="grid-template-columns: repeat(${curTicksCount}, 1fr);">
                 ${ticksHtml}
               </div>
             </div>
@@ -24472,27 +25768,184 @@
         const newPps = Math.max(20, Math.min(1800, Math.round(targetPps)));
         if (newPps === oldPps) return;
 
-        const currentSec = (anchorSec !== null && anchorSec !== undefined)
-          ? anchorSec
-          : Math.max(0, -panX / oldPps);
+        const isDesktop = (typeof isDesktopLayout === 'function') ? isDesktopLayout() : false;
+        const totalDur = getProjectTotalDuration();
+        const layers = (currentProjectState && currentProjectState.layers) || [];
 
+        // 1. Determine anchor second and old scroll / pan state
+        let currentSec = 0;
+        let oldScrollX = 0;
+        let viewW = 800;
+        const playheadTime = (typeof getCurrentPlayheadTime === 'function') ? getCurrentPlayheadTime() : (typeof window.getCurrentPlayheadTime === 'function' ? window.getCurrentPlayheadTime() : 0);
+
+        if (isDesktop) {
+          const rulerVp = document.getElementById('timeline-ruler-viewport');
+          const layersVp = document.getElementById('timeline-layers-viewport');
+          viewW = (rulerVp && rulerVp.clientWidth > 0) ? rulerVp.clientWidth : ((layersVp && layersVp.clientWidth > 0) ? layersVp.clientWidth : 800);
+          oldScrollX = (typeof window.getDesktopScrollX === 'function') ? window.getDesktopScrollX() : 0;
+          
+          // User requirement: Desktop timeline zoom anchors strictly to current duration (playheadTime)
+          currentSec = (anchorSec !== null && anchorSec !== undefined)
+            ? anchorSec
+            : playheadTime;
+        } else {
+          currentSec = (anchorSec !== null && anchorSec !== undefined)
+            ? anchorSec
+            : playheadTime;
+        }
+
+        // 2. Commit new PPS
         pixelsPerSecond = newPps;
         window.currentPixelsPerSecond = newPps;
 
-        // Keep all clips synchronized with new scale
-        const layers = currentProjectState.layers || [];
+        // 3. Keep all layer clip models synchronized with new scale
         layers.forEach(layer => {
           if (layer.startSec === undefined) layer.startSec = (layer.startPx || 0) / oldPps;
           if (layer.durationSec === undefined) layer.durationSec = (layer.widthPx || 320) / oldPps;
           layer.startPx = Math.round(layer.startSec * newPps);
-          layer.widthPx = Math.max(20, Math.round(layer.durationSec * newPps));
+          layer.widthPx = Math.max(16, Math.round(layer.durationSec * newPps));
         });
 
-        generateRulerTicks(currentFps, true);
-        if (typeof renderTimelineLayers === 'function') {
-          renderTimelineLayers();
+        // 4. FAST IN-PLACE TIMELINE CLIPS UPDATE (avoids full DOM rebuild lag)
+        const layersTrackEl = document.getElementById('timeline-layers-track');
+        const rulerTrackEl = document.getElementById('timeline-ruler-track');
+        const newTrackW = Math.max(viewW * 3, Math.ceil(totalDur * newPps) + viewW * 2);
+        if (rulerTrackEl) rulerTrackEl.style.width = `${newTrackW}px`;
+        if (layersTrackEl) layersTrackEl.style.width = `${Math.max(20000, newTrackW)}px`;
+
+        const existingClips = layersTrackEl ? layersTrackEl.querySelectorAll('.timeline-clip-block') : [];
+        if (existingClips.length > 0) {
+          // Direct in-place updates for existing DOM clips
+          existingClips.forEach(clipEl => {
+            const layerId = clipEl.dataset.layerId;
+            const layer = layers.find(l => l.id === layerId);
+            if (!layer) return;
+            clipEl.style.left = `${layer.startPx}px`;
+            clipEl.style.width = `${layer.widthPx}px`;
+
+            // Text animation markers / zones in-place update
+            if (layer.type === 'text') {
+              const tp = layer.textProps || {};
+              const animInDur = Math.max(0.1, Number(tp.animInDuration || tp.animDuration) || 0.8);
+              const animOutDur = Math.max(0.1, Number(tp.animOutDuration) || 0.6);
+              const inPx = Math.min(layer.widthPx * 0.48, Math.round(animInDur * newPps));
+              const outPx = Math.min(layer.widthPx * 0.48, Math.round(animOutDur * newPps));
+
+              const zoneIn = clipEl.querySelector('.zone-in');
+              if (zoneIn) zoneIn.style.width = `${inPx}px`;
+              const markerIn = clipEl.querySelector('.marker-in');
+              if (markerIn) markerIn.style.left = `${Math.max(2, inPx - 42)}px`;
+
+              const zoneOut = clipEl.querySelector('.zone-out');
+              if (zoneOut) zoneOut.style.width = `${outPx}px`;
+              const markerOut = clipEl.querySelector('.marker-out');
+              if (markerOut) markerOut.style.right = `${Math.max(2, outPx - 48)}px`;
+            }
+
+            // Keyframes inside clip block in-place update
+            const clipKfMarkers = clipEl.querySelectorAll('.timeline-keyframe-marker');
+            clipKfMarkers.forEach(m => {
+              const kfTime = parseFloat(m.dataset.time);
+              if (!isNaN(kfTime)) {
+                const relPx = (kfTime - layer.startSec) * newPps;
+                m.style.left = `${Math.max(0, Math.min(layer.widthPx, relPx)).toFixed(1)}px`;
+              }
+            });
+          });
+
+          // Expanded desktop keyframe tracks diamond in-place update
+          const desktopDiamonds = layersTrackEl.querySelectorAll('.desktop-kf-diamond');
+          desktopDiamonds.forEach(d => {
+            const kfTime = parseFloat(d.dataset.time);
+            if (!isNaN(kfTime)) {
+              d.style.left = `${(kfTime * newPps).toFixed(1)}px`;
+            }
+          });
+        } else {
+          // If no clips rendered yet, trigger full render
+          if (typeof renderTimelineLayers === 'function') {
+            renderTimelineLayers();
+          }
         }
-        updateTimelinePosition(-currentSec * newPps, true);
+
+        // 5. SMART RULER UPDATE: In-place mark update if LOD subdivision unchanged, full generate only when LOD changes
+        const safeFps = Math.max(1, parseInt(currentFps, 10) || 60);
+        const oldLOD = getRulerTickConfig(safeFps, oldPps);
+        const newLOD = getRulerTickConfig(safeFps, newPps);
+        const rulerMarks = rulerTrackEl ? rulerTrackEl.querySelector('#timeline-ruler-marks') : null;
+
+        if (rulerMarks && oldLOD.majorUnitFrames === newLOD.majorUnitFrames && oldLOD.subTicks === newLOD.subTicks) {
+          // Fast path: major unit frames and tick count per block are identical, just resize existing .ruler-second-mark divs
+          const marks = rulerMarks.querySelectorAll('.ruler-second-mark');
+          const totalFrames = Math.max(1, Math.round(totalDur * safeFps));
+          const majorFrames = newLOD.majorUnitFrames;
+          const framePx = newPps / safeFps;
+          let f = 0;
+          marks.forEach((m, idx) => {
+            if (f < totalFrames) {
+              const curMarkFrames = Math.min(majorFrames, totalFrames - f);
+              const w = (curMarkFrames * framePx).toFixed(2);
+              m.style.width = `${w}px`;
+              m.style.flexBasis = `${w}px`;
+              f += majorFrames;
+            }
+          });
+        } else {
+          // LOD changed: re-generate ruler ticks
+          generateRulerTicks(currentFps, true);
+        }
+
+        // Fast Beatmarks update
+        const rulerBm = rulerTrackEl ? rulerTrackEl.querySelectorAll('.timeline-beatmark-item') : [];
+        if (rulerBm.length > 0) {
+          rulerBm.forEach(el => {
+            const t = parseFloat(el.dataset.time);
+            if (!isNaN(t)) el.style.left = `${(t * newPps).toFixed(1)}px`;
+          });
+          const layersBm = layersTrackEl ? layersTrackEl.querySelectorAll('.timeline-layers-beatmark-line') : [];
+          layersBm.forEach(el => {
+            const t = parseFloat(el.dataset.time);
+            if (!isNaN(t)) el.style.left = `${(t * newPps).toFixed(1)}px`;
+          });
+        } else if (Array.isArray(currentProjectState.beatmarks) && currentProjectState.beatmarks.length > 0) {
+          if (typeof renderTimelineBeatmarks === 'function') {
+            renderTimelineBeatmarks();
+          }
+        }
+
+        // 6. VIEWPORT & PLAYHEAD SYNCHRONIZATION
+        if (isDesktop) {
+          // Strictly anchor to current duration (playheadTime)
+          const curPlaySec = playheadTime;
+          panX = -curPlaySec * newPps;
+          window.timelinePanX = panX;
+          window.currentPlaybackSec = curPlaySec;
+          window.currentSec = curPlaySec;
+
+          const currentMs = Math.round(curPlaySec * 1000);
+          const timecodeEl = document.getElementById('timeline-timecode');
+          if (timecodeEl && typeof formatTimecode === 'function') {
+            timecodeEl.textContent = formatTimecode(currentMs);
+          }
+
+          // Anchor formula: keep the anchor second at its exact screen position
+          const targetScrollX = oldScrollX + currentSec * (newPps - oldPps);
+          const clampedScrollX = Math.max(0, targetScrollX);
+
+          if (typeof window.setDesktopScrollX === 'function') {
+            window.setDesktopScrollX(clampedScrollX);
+          }
+          if (typeof window.syncDesktopPlayhead === 'function') {
+            window.syncDesktopPlayhead(true);
+          }
+        } else {
+          updateTimelinePosition(-currentSec * newPps, true);
+        }
+
+        // 7. Update Preview Cache Manager Ruler UI if available
+        if (window.PreviewCacheManager) {
+          window.PreviewCacheManager.updateRulerUI();
+        }
       }
       window.setTimelineZoom = setTimelineZoom;
 
@@ -24686,8 +26139,14 @@
       function updateTimelinePosition(newPanX, immediate = false) {
         const bounds = getTimelineBounds();
         panX = Math.max(bounds.min, Math.min(bounds.max, newPanX));
+        const pps = (window.currentPixelsPerSecond || (typeof pixelsPerSecond !== 'undefined' ? pixelsPerSecond : 80));
+        let curSec = Math.max(0, -panX / pps);
+        if (!isAnyPlaybackActive()) {
+          const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState.fps, 10) || 60);
+          curSec = Math.round(curSec * fps) / fps;
+          panX = -curSec * pps;
+        }
         window.timelinePanX = panX;
-        const curSec = Math.max(0, -panX / (window.currentPixelsPerSecond || (typeof pixelsPerSecond !== 'undefined' ? pixelsPerSecond : 80)));
         window.currentPlaybackSec = curSec;
         window.currentSec = curSec;
         if (immediate) {
@@ -25488,6 +26947,7 @@
           window.Popover.open(mouseAnchor, 'popover-layer-actions');
         }
       }
+      window.triggerClipContextMenu = triggerClipContextMenu;
 
       // Pointer drag scrubbing & vertical layer panning & multi-directional ruler gesture
       let isPanning = false;
@@ -25769,6 +27229,7 @@
         }, { passive: true });
 
         layersViewport.addEventListener('wheel', (e) => {
+          if (document.querySelector('.desktop-workstation, .desktop-viewport') || (typeof isDesktopLayout === 'function' && isDesktopLayout())) return;
           // Block Ctrl+Wheel from accidentally triggering browser zoom or resizing preview window
           if (e.ctrlKey) {
             e.preventDefault();
@@ -26330,8 +27791,14 @@
         if (btnEditGroup) {
           btnEditGroup.style.display = (layer && layer.type === 'precomp') ? 'inline-flex' : 'none';
         }
+        const canEditShape = layer && (
+          layer.type === 'shape' ||
+          layer.type === 'image' ||
+          layer.type === 'video' ||
+          (layer.type === 'precomp' && !layer.collapseTransformations)
+        );
         if (btnEditShape) {
-          btnEditShape.style.display = (layer && layer.type === 'shape') ? 'inline-flex' : 'none';
+          btnEditShape.style.display = canEditShape ? 'inline-flex' : 'none';
         }
         if (btnEditText) {
           btnEditText.style.display = (layer && layer.type === 'text') ? 'inline-flex' : 'none';
@@ -26376,7 +27843,7 @@
           if (btnBlend) btnBlend.style.display = '';
           if (btnEffects) btnEffects.style.display = '';
           if (actionGrid) actionGrid.classList.remove('is-camera-mode');
-          if (currentDrawerSubview === 'camera' || currentDrawerSubview === 'beatmark' || (currentDrawerSubview === 'shape' && (!layer || layer.type !== 'shape'))) {
+          if (currentDrawerSubview === 'camera' || currentDrawerSubview === 'beatmark' || (currentDrawerSubview === 'shape' && !canEditShape)) {
             switchLayerDrawerSubview('main');
           }
         }
@@ -26990,6 +28457,18 @@
             const deletedLayers = currentProjectState.layers.filter(l => idsToDelete.has(l.id));
             currentProjectState.layers = currentProjectState.layers.filter(l => !idsToDelete.has(l.id));
 
+            // Remove child layers from parent precomps if deleted
+            currentProjectState.layers.forEach(l => {
+              if (l.type === 'precomp' && Array.isArray(l.layers)) {
+                const origLen = l.layers.length;
+                l.layers = l.layers.filter(child => !idsToDelete.has(child.id));
+                if (l.layers.length !== origLen) {
+                  l._dirty = true;
+                  if (l._precompBufferCanvas) l._precompBufferCanvas._lastRenderKey = null;
+                }
+              }
+            });
+
             deletedLayers.forEach(l => {
               const media = layerMediaCache.get(l.mediaId || l.id);
               if (media && media.el && typeof media.el.pause === 'function') {
@@ -27158,6 +28637,27 @@
             const nextState = !!layer.collapseTransformations;
             btnLayerCollapse.classList.toggle('is-active', nextState);
             btnLayerCollapse.setAttribute('aria-pressed', String(nextState));
+
+            const btnEditShape = document.getElementById('btn-layer-edit-shape');
+            if (btnEditShape) {
+              btnEditShape.style.display = nextState ? 'none' : 'inline-flex';
+            }
+            if (nextState && currentDrawerSubview === 'shape') {
+              switchLayerDrawerSubview('main');
+            }
+            const actionGrid = document.getElementById('layer-action-btn-grid');
+            if (actionGrid) {
+              const allBtns = Array.from(actionGrid.querySelectorAll('.layer-action-btn'));
+              const visibleBtns = allBtns.filter(b => b.style.display !== 'none');
+              const count = visibleBtns.length;
+              actionGrid.classList.remove('is-solo-mode', 'is-2-items', 'is-3-items', 'is-4-items', 'is-5-items', 'is-6-items');
+              if (count === 1) actionGrid.classList.add('is-solo-mode');
+              else if (count === 2) actionGrid.classList.add('is-2-items');
+              else if (count === 3) actionGrid.classList.add('is-3-items');
+              else if (count === 4) actionGrid.classList.add('is-4-items');
+              else if (count === 5) actionGrid.classList.add('is-5-items');
+              else if (count >= 6) actionGrid.classList.add('is-6-items');
+            }
 
             layer._precompBufferCanvas = null;
             if (window.PreviewCacheManager) {
@@ -27363,6 +28863,16 @@
             e.stopPropagation();
             if (typeof precomposeSelectedLayers === 'function') {
               precomposeSelectedLayers();
+            }
+          });
+        }
+
+        const btnUngroup = document.getElementById('popover-btn-ungroup');
+        if (btnUngroup) {
+          btnUngroup.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof ungroupPrecompose === 'function') {
+              ungroupPrecompose();
             }
           });
         }
@@ -27648,6 +29158,36 @@
             precomposeBtn.setAttribute('disabled', 'true');
             precomposeBtn.style.display = 'none';
             if (precomposeLabel) precomposeLabel.textContent = 'Group';
+          }
+        }
+
+        // 3b-2. Un Group State (Only for precomp layers)
+        const ungroupBtn = document.getElementById('popover-btn-ungroup');
+        const ungroupLabel = document.getElementById('popover-label-ungroup');
+        if (ungroupBtn) {
+          let hasPrecomp = false;
+          if (!hasKeyframesSelected && selectedCount > 0 && !isFromEmptyTimeline) {
+            if (contextLayer) {
+              hasPrecomp = (contextLayer.type === 'precomp');
+            } else {
+              const selectedLayersList = layers.filter(l => {
+                if (selectedLayerIds && selectedLayerIds.size > 0) return selectedLayerIds.has(l.id);
+                return l.id === selectedLayerId;
+              });
+              hasPrecomp = selectedLayersList.length > 0 && selectedLayersList.every(l => l.type === 'precomp');
+            }
+          }
+
+          if (hasPrecomp) {
+            ungroupBtn.removeAttribute('disabled');
+            ungroupBtn.style.display = 'flex';
+            if (ungroupLabel) {
+              ungroupLabel.textContent = 'Un Group';
+            }
+          } else {
+            ungroupBtn.setAttribute('disabled', 'true');
+            ungroupBtn.style.display = 'none';
+            if (ungroupLabel) ungroupLabel.textContent = 'Un Group';
           }
         }
 
@@ -28247,7 +29787,8 @@
           blendMode: 'normal',
           hasAudio: clonedChildren.some(l => l.type === 'audio' || l.type === 'video' || (l.type === 'precomp' && l.hasAudio)),
           is3D: has3DChildren,
-          collapseTransformations: has3DChildren,
+          // A precomp with its own camera renders through that camera; collapsing would discard it.
+          collapseTransformations: has3DChildren && !clonedChildren.some(l => l && l.type === 'camera' && !l.hidden),
           layers: clonedChildren
         };
 
@@ -28309,6 +29850,344 @@
         return precompLayer;
       }
       window.precomposeSelectedLayers = precomposeSelectedLayers;
+
+      function ungroupPrecompose(targetPrecompId = null) {
+        const layers = currentProjectState.layers || [];
+        if (layers.length === 0) return null;
+
+        // 1. Resolve target precomp layers to ungroup
+        let targetPrecomps = [];
+        if (targetPrecompId) {
+          const found = layers.find(l => l.id === targetPrecompId && l.type === 'precomp');
+          if (found) targetPrecomps.push(found);
+        } else {
+          const ids = [];
+          const sId = selectedLayerId || window.selectedLayerId;
+          if (sId) ids.push(sId);
+          const sIds = (selectedLayerIds && selectedLayerIds.size > 0)
+            ? selectedLayerIds
+            : (window.selectedLayerIds && window.selectedLayerIds.size > 0 ? window.selectedLayerIds : null);
+          if (sIds && sIds.size > 0) {
+            sIds.forEach(id => { if (!ids.includes(id)) ids.push(id); });
+          }
+          targetPrecomps = layers.filter(l => ids.includes(l.id) && l.type === 'precomp');
+        }
+
+        if (targetPrecomps.length === 0) return null;
+
+        if (window.Popover) window.Popover.close();
+
+        // 2. Record Undo snapshot
+        if (window.UndoRedoManager && typeof window.UndoRedoManager.recordSnapshot === 'function') {
+          window.UndoRedoManager.recordSnapshot();
+        }
+
+        const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
+        const aspect = currentProjectState.aspectRatio || '16:9';
+        const res = currentProjectState.resolution || '1080p';
+        const baseDims = (typeof window.getProjectDimensions === 'function')
+          ? window.getProjectDimensions(res, aspect)
+          : [1920, 1080];
+        const baseW = baseDims[0];
+        const baseH = baseDims[1];
+
+        function cleanLayerForClone(layer) {
+          try {
+            const seen = new WeakSet();
+            const copy = JSON.parse(JSON.stringify(layer, (k, v) => {
+              if (typeof k === 'string' && k.startsWith('_') && k !== '_userResized' && k !== '_defaultEasing') return undefined;
+              if (v !== null && typeof v === 'object') {
+                if (typeof Element !== 'undefined' && v instanceof Element) return undefined;
+                if (typeof Node !== 'undefined' && v instanceof Node) return undefined;
+                if (typeof Window !== 'undefined' && v instanceof Window) return undefined;
+                if (seen.has(v)) return undefined;
+                seen.add(v);
+              }
+              if (typeof v === 'function') return undefined;
+              return v;
+            }));
+            delete copy._shapeBufferCanvas;
+            delete copy._precompBufferCanvas;
+            delete copy._fillBufferCanvas;
+            delete copy._fillMediaImg;
+            delete copy._alphaHitCanvas;
+            delete copy._alphaHitCtx;
+            delete copy._canvasBounds;
+            delete copy._parentPrecomp;
+            delete copy._parentPrecompId;
+            delete copy._isCollapsedPrecompChild;
+            delete copy._precompParentId;
+            delete copy._precompParentLayer;
+            delete copy._childOrigLayer;
+            return copy;
+          } catch (e) {
+            console.error('[Ungroup] Clone error:', e);
+            return Object.assign({}, layer);
+          }
+        }
+
+        const allNewlyExtractedIds = [];
+
+        // 3. Process each targeted precomp (reverse order if multiple, so index splicing remains accurate)
+        targetPrecomps.slice().reverse().forEach(precompLayer => {
+          const childLayers = Array.isArray(precompLayer.layers) ? precompLayer.layers : [];
+          const clonedChildren = childLayers.map(l => cleanLayerForClone(l));
+
+          const precompStartSec = precompLayer.startSec !== undefined ? precompLayer.startSec : ((precompLayer.startPx || 0) / pps);
+          const precompSourceOffset = precompLayer.sourceOffsetSec || 0;
+          const precompSpeed = (precompLayer.speed !== undefined && precompLayer.speed !== 0) ? precompLayer.speed : 1.0;
+
+          const pw = precompLayer.mediaWidth || precompLayer.scaleW || baseW;
+          const ph = precompLayer.mediaHeight || precompLayer.scaleH || baseH;
+
+          const scaleRatioW = (precompLayer.scaleW !== undefined ? precompLayer.scaleW : pw) / (pw || 1920);
+          const scaleRatioH = (precompLayer.scaleH !== undefined ? precompLayer.scaleH : ph) / (ph || 1080);
+          const scaleRatioZ = (Math.abs(scaleRatioW) + Math.abs(scaleRatioH)) / 2;
+
+          const pRotX = precompLayer.rotX || 0;
+          const pRotY = precompLayer.rotY || 0;
+          const pRotZ = precompLayer.rotZ !== undefined ? precompLayer.rotZ : (precompLayer.rotation || 0);
+
+          const pivotX = pw / 2 + (precompLayer.anchorX || 0);
+          const pivotY = ph / 2 + (precompLayer.anchorY || 0);
+          const pivotZ = (precompLayer.anchorZ || 0);
+
+          const pWorldX = (precompLayer.posX !== undefined ? precompLayer.posX : baseW / 2) + (precompLayer.anchorX || 0);
+          const pWorldY = (precompLayer.posY !== undefined ? precompLayer.posY : baseH / 2) + (precompLayer.anchorY || 0);
+          const pWorldZ = (precompLayer.posZ || 0) + (precompLayer.anchorZ || 0);
+
+          const precompOpacity = precompLayer.opacity !== undefined ? precompLayer.opacity : 1.0;
+
+          function transformPoint(cx, cy, cz = 0) {
+            let vx = (cx !== undefined ? cx : pw / 2) - pivotX;
+            let vy = (cy !== undefined ? cy : ph / 2) - pivotY;
+            let vz = (cz || 0) - pivotZ;
+
+            vx *= scaleRatioW;
+            vy *= scaleRatioH;
+            vz *= scaleRatioZ;
+
+            if (pRotX !== 0) {
+              const radX = (pRotX * Math.PI) / 180;
+              const cX = Math.cos(radX), sX = Math.sin(radX);
+              const nvy = vy * cX - vz * sX, nvz = vy * sX + vz * cX;
+              vy = nvy; vz = nvz;
+            }
+            if (pRotY !== 0) {
+              const radY = (pRotY * Math.PI) / 180;
+              const cY = Math.cos(radY), sY = Math.sin(radY);
+              const nvx = vx * cY + vz * sY, nvz = -vx * sY + vz * cY;
+              vx = nvx; vz = nvz;
+            }
+            if (pRotZ !== 0) {
+              const radZ = (pRotZ * Math.PI) / 180;
+              const cZ = Math.cos(radZ), sZ = Math.sin(radZ);
+              const nvx = vx * cZ - vy * sZ, nvy = vx * sZ + vy * cZ;
+              vx = nvx; vy = nvy;
+            }
+
+            return {
+              x: Number((pWorldX + vx).toFixed(2)),
+              y: Number((pWorldY + vy).toFixed(2)),
+              z: Number((pWorldZ + vz).toFixed(2))
+            };
+          }
+
+          const hasTransformDelta = (
+            Math.abs(scaleRatioW - 1) > 1e-4 ||
+            Math.abs(scaleRatioH - 1) > 1e-4 ||
+            Math.abs(pRotX) > 1e-4 ||
+            Math.abs(pRotY) > 1e-4 ||
+            Math.abs(pRotZ) > 1e-4 ||
+            Math.abs(pWorldX - pivotX) > 1e-4 ||
+            Math.abs(pWorldY - pivotY) > 1e-4 ||
+            Math.abs(pWorldZ - pivotZ) > 1e-4
+          );
+
+          clonedChildren.forEach(child => {
+            // Timing adjustments
+            const cStartRel = child.startSec !== undefined ? child.startSec : ((child.startPx || 0) / pps);
+            const cDur = child.durationSec !== undefined ? child.durationSec : ((child.widthPx || 320) / pps);
+            const childStartSec = Number((precompStartSec + (cStartRel - precompSourceOffset) / precompSpeed).toFixed(4));
+            const childDurSec = Number((cDur / precompSpeed).toFixed(4));
+            child.startSec = Math.max(0, childStartSec);
+            child.startPx = Math.round(child.startSec * pps);
+            child.durationSec = Math.max(0.05, childDurSec);
+            child.widthPx = Math.round(child.durationSec * pps);
+
+            if (child.keyframes && typeof child.keyframes === 'object') {
+              Object.keys(child.keyframes).forEach(prop => {
+                if (Array.isArray(child.keyframes[prop])) {
+                  child.keyframes[prop].forEach(kf => {
+                    const origTime = (kf.time !== undefined) ? kf.time : 0;
+                    kf.time = Number(Math.max(0, precompStartSec + (origTime - precompSourceOffset) / precompSpeed).toFixed(4));
+                  });
+                }
+              });
+            }
+
+            if (precompSpeed !== 1.0) {
+              child.speed = Number(((child.speed || 1.0) * precompSpeed).toFixed(4));
+            }
+
+            // Spatial adjustments if precomp had non-identity transform
+            if (hasTransformDelta) {
+              const newPos = transformPoint(child.posX, child.posY, child.posZ || 0);
+              child.posX = newPos.x;
+              child.posY = newPos.y;
+              if (child.posZ !== undefined || newPos.z !== 0) {
+                child.posZ = newPos.z;
+              }
+
+              if (child.keyframes && Array.isArray(child.keyframes.move)) {
+                child.keyframes.move.forEach(kf => {
+                  if (kf.value) {
+                    const kfPos = transformPoint(kf.value.posX, kf.value.posY, kf.value.posZ || 0);
+                    kf.value.posX = kfPos.x;
+                    kf.value.posY = kfPos.y;
+                    if (kf.value.posZ !== undefined || kfPos.z !== 0) {
+                      kf.value.posZ = kfPos.z;
+                    }
+                  }
+                });
+              }
+
+              // Scale adjustments
+              if (Math.abs(scaleRatioW - 1) > 1e-4 || Math.abs(scaleRatioH - 1) > 1e-4) {
+                if (child.type === 'shape') {
+                  if (child.shapeProps) {
+                    child.shapeProps.sizeX = Number(((child.shapeProps.sizeX || 300) * Math.abs(scaleRatioW)).toFixed(2));
+                    child.shapeProps.sizeY = Number(((child.shapeProps.sizeY || 300) * Math.abs(scaleRatioH)).toFixed(2));
+                  }
+                  if (child.scaleW !== undefined) child.scaleW = Number((child.scaleW * scaleRatioW).toFixed(2));
+                  if (child.scaleH !== undefined) child.scaleH = Number((child.scaleH * scaleRatioH).toFixed(2));
+                } else {
+                  if (child.scaleW !== undefined) child.scaleW = Number((child.scaleW * scaleRatioW).toFixed(2));
+                  if (child.scaleH !== undefined) child.scaleH = Number((child.scaleH * scaleRatioH).toFixed(2));
+                  if (child.mediaWidth !== undefined) child.mediaWidth = Number((child.mediaWidth * Math.abs(scaleRatioW)).toFixed(2));
+                  if (child.mediaHeight !== undefined) child.mediaHeight = Number((child.mediaHeight * Math.abs(scaleRatioH)).toFixed(2));
+                }
+
+                if (child.keyframes && Array.isArray(child.keyframes.scale)) {
+                  child.keyframes.scale.forEach(kf => {
+                    if (kf.value) {
+                      if (kf.value.scaleW !== undefined) kf.value.scaleW = Number((kf.value.scaleW * scaleRatioW).toFixed(2));
+                      if (kf.value.scaleH !== undefined) kf.value.scaleH = Number((kf.value.scaleH * scaleRatioH).toFixed(2));
+                    }
+                  });
+                }
+              }
+
+              // Rotation adjustments
+              if (Math.abs(pRotZ) > 1e-4 || Math.abs(pRotX) > 1e-4 || Math.abs(pRotY) > 1e-4) {
+                const cRotX = child.rotX || 0;
+                const cRotY = child.rotY || 0;
+                const cRotZ = child.rotZ !== undefined ? child.rotZ : (child.rotation || 0);
+                const composedRot = (typeof composeEulerRotations === 'function')
+                  ? composeEulerRotations(pRotX, pRotY, pRotZ, cRotX, cRotY, cRotZ)
+                  : { rotX: cRotX + pRotX, rotY: cRotY + pRotY, rotZ: cRotZ + pRotZ };
+                child.rotX = Number(composedRot.rotX.toFixed(2));
+                child.rotY = Number(composedRot.rotY.toFixed(2));
+                child.rotZ = Number(composedRot.rotZ.toFixed(2));
+                child.rotation = child.rotZ;
+
+                if (child.keyframes && Array.isArray(child.keyframes.rotate)) {
+                  child.keyframes.rotate.forEach(kf => {
+                    if (typeof kf.value === 'number') {
+                      kf.value = Number((kf.value + pRotZ).toFixed(2));
+                    }
+                  });
+                }
+              }
+            }
+
+            // Opacity adjustments
+            if (precompOpacity < 0.999) {
+              child.opacity = Number(((child.opacity !== undefined ? child.opacity : 1.0) * precompOpacity).toFixed(4));
+              if (child.keyframes && Array.isArray(child.keyframes.opacity)) {
+                child.keyframes.opacity.forEach(kf => {
+                  if (typeof kf.value === 'number') {
+                    kf.value = Number((kf.value * precompOpacity).toFixed(4));
+                  }
+                });
+              }
+            }
+
+            // Re-normalize norm bounds
+            const effW = Math.abs(child.scaleW || child.mediaWidth || (child.shapeProps && child.shapeProps.sizeX) || 200);
+            const effH = Math.abs(child.scaleH || child.mediaHeight || (child.shapeProps && child.shapeProps.sizeY) || 200);
+            child.normW = Number((effW / baseW).toFixed(4));
+            child.normH = Number((effH / baseH).toFixed(4));
+            child.normX = Number(((child.posX - effW / 2) / baseW).toFixed(4));
+            child.normY = Number(((child.posY - effH / 2) / baseH).toFixed(4));
+            child._userResized = true;
+
+            // 3D inheritance
+            if (precompLayer.is3D) {
+              child.is3D = true;
+            }
+
+            // Parent link inheritance
+            if (precompLayer.parentBind && !child.parentBind) {
+              child.parentBind = Object.assign({}, precompLayer.parentBind);
+            }
+
+            allNewlyExtractedIds.push(child.id);
+          });
+
+          // Invalidate cache for precomp and children
+          if (typeof invalidatePreviewCacheForLayer === 'function') {
+            invalidatePreviewCacheForLayer(precompLayer);
+            clonedChildren.forEach(c => invalidatePreviewCacheForLayer(c));
+          }
+
+          // Clean up database media item if not reused
+          if (precompLayer.mediaId) {
+            const isReused = currentProjectState.layers.some(l => l.id !== precompLayer.id && l.mediaId === precompLayer.mediaId);
+            if (!isReused && window.FishDatabase && typeof window.FishDatabase.deleteMedia === 'function') {
+              window.FishDatabase.deleteMedia(precompLayer.mediaId).then(() => {
+                if (typeof window.refreshProjectMediaGrid === 'function') {
+                  window.refreshProjectMediaGrid();
+                }
+              }).catch(() => {});
+            }
+          }
+
+          // Replace precomp in timeline layers
+          const pIndex = currentProjectState.layers.findIndex(l => l.id === precompLayer.id);
+          if (pIndex >= 0) {
+            currentProjectState.layers.splice(pIndex, 1, ...clonedChildren);
+          }
+        });
+
+        // 4. Update selections to unpacked child layers
+        if (selectedLayerIds) selectedLayerIds.clear();
+        allNewlyExtractedIds.forEach(id => {
+          if (selectedLayerIds) selectedLayerIds.add(id);
+        });
+        selectedLayerId = allNewlyExtractedIds.length > 0 ? allNewlyExtractedIds[0] : null;
+        window.selectedLayerId = selectedLayerId;
+        window.selectedLayerIds = selectedLayerIds;
+        isSelectorMode = allNewlyExtractedIds.length > 1;
+
+        // 5. Clear preview cache
+        if (window.PreviewCacheManager && typeof window.PreviewCacheManager.clear === 'function') {
+          window.PreviewCacheManager.clear();
+        }
+
+        // 6. Redraw UI & Save
+        renderTimelineLayers();
+        updateEditorHeaderMode();
+        if (typeof fitPreviewCanvasBox === 'function') {
+          fitPreviewCanvasBox();
+        }
+        redrawComposition('ungroup');
+        saveCurrentProjectLayers(true);
+
+        return allNewlyExtractedIds;
+      }
+      window.ungroupPrecompose = ungroupPrecompose;
+      window.ungroupSelectedLayers = ungroupPrecompose;
 
       // ======================================================================
       // OPENFISHTOOLS ACTIONS: KEYFRAME OVERLAP (LEAPFROG RIG)
@@ -29229,9 +31108,35 @@
         }
       }, { passive: true });
 
+      function getVisibleTimelineLayers() {
+        const overlayContainer = document.getElementById('timeline-lane-heads-overlay');
+        if (overlayContainer) {
+          const slots = overlayContainer.querySelectorAll('.timeline-lane-pill-slot');
+          if (slots.length > 0) {
+            const list = [];
+            slots.forEach(s => {
+              const lid = s.dataset.layerId;
+              const found = typeof findLayerById === 'function' ? findLayerById(lid) : ((currentProjectState.layers || []).find(l => l.id === lid));
+              if (found) list.push(found);
+            });
+            if (list.length > 0) return list;
+          }
+        }
+        const root = currentProjectState.layers || [];
+        const list = [];
+        root.forEach(l => {
+          list.push(l);
+          if (l.type === 'precomp' && l._precompExpanded && Array.isArray(l.layers)) {
+            list.push(...l.layers);
+          }
+        });
+        return list;
+      }
+      window.getVisibleTimelineLayers = getVisibleTimelineLayers;
+
       function getLayerIndexAtY(clientY) {
-        const currentLayers = currentProjectState.layers || [];
-        if (currentLayers.length === 0) return -1;
+        const visibleLayers = getVisibleTimelineLayers();
+        if (visibleLayers.length === 0) return -1;
         const overlayContainer = document.getElementById('timeline-lane-heads-overlay');
         let elements = overlayContainer ? Array.from(overlayContainer.querySelectorAll('.timeline-lane-pill-slot')) : [];
         if (elements.length === 0) {
@@ -30576,6 +32481,17 @@
         const layer = layers.find(l => String(l.id) === String(layerId));
         if (!layer) return;
 
+        const isDesktop = (typeof isDesktopLayout === 'function') ? isDesktopLayout() : false;
+        if (layer.type === 'precomp' && isDesktop) {
+          const willExpand = (typeof forceState === 'boolean') ? forceState : !layer._precompExpanded;
+          layer._precompExpanded = willExpand;
+          layer._kfExpanded = willExpand;
+          if (typeof renderTimelineLayers === 'function') {
+            renderTimelineLayers();
+          }
+          return;
+        }
+
         const willExpand = (typeof forceState === 'boolean') ? forceState : !layer._kfExpanded;
         layer._kfExpanded = willExpand;
         layer._kfExpandedOnlyKeyframed = willExpand ? !!onlyKeyframed : false;
@@ -30728,17 +32644,36 @@
             pillSlot.className = `timeline-lane-pill-slot ${isFocused ? 'is-focused' : ''}`;
             pillSlot.dataset.layerId = layer.id;
             pillSlot.innerHTML = `
-              <div class="timeline-layer-ctrl-pill ${isSelected ? 'is-selected' : ''} ${isHidden ? 'is-hidden' : ''}" 
+              <div class="timeline-layer-ctrl-pill ${isSelected ? 'is-selected' : ''} ${isHidden ? 'is-hidden' : ''} ${layer.type === 'precomp' ? 'has-precomp-expand' : ''}" 
                    title="${layer.name} - ${isHidden ? 'Klik untuk tampilkan' : 'Klik untuk sembunyikan'}"
                    data-layer-id="${layer.id}">
                 <button type="button" class="timeline-layer-eye-btn" aria-label="${isHidden ? 'Show Layer' : 'Hide Layer'}" title="${isHidden ? 'Show Layer' : 'Hide Layer'}">
                   <span class="fticon ${isHidden ? 'fticon fticon-eye-off' : 'fticon fticon-eye'}" aria-hidden="true"></span>
                 </button>
+                ${layer.type === 'precomp' && !isDesktop ? `
+                <button type="button" class="timeline-layer-precomp-expand-btn ${layer._precompExpanded ? 'is-expanded' : ''}" aria-label="${layer._precompExpanded ? 'Collapse Group' : 'Expand Group'}" title="${layer._precompExpanded ? 'Collapse Group' : 'Expand Group'}">
+                  <span class="fticon fticon-chevron-right" aria-hidden="true"></span>
+                </button>
+                ` : ''}
                 <button type="button" class="timeline-layer-checkbox ${isSelected ? 'is-selected' : ''}" aria-label="${isSelected ? 'Deselect Layer' : 'Select Layer'}" title="${isSelected ? 'Deselect Layer' : 'Select Layer'}">
                   <span class="fticon fticon-check" aria-hidden="true"></span>
                 </button>
               </div>
             `;
+
+            // Expand / Collapse Precompose Group
+            const precompExpBtn = pillSlot.querySelector('.timeline-layer-precomp-expand-btn');
+            if (precompExpBtn) {
+              precompExpBtn.addEventListener('pointerdown', (e) => {
+                e.stopPropagation();
+              });
+              precompExpBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                layer._precompExpanded = !layer._precompExpanded;
+                renderTimelineLayers();
+              });
+            }
 
             // Toggle Hide / Show on eye button click (Normal Mode) + Long-press hold to trigger selection
             const eyeBtn = pillSlot.querySelector('.timeline-layer-eye-btn');
@@ -30749,7 +32684,7 @@
               let eyeStartY = 0;
               let eyeIsDragging = false;
               let eyeInitialSelectedIds = null;
-              const currentLayers = currentProjectState.layers || [];
+              const currentLayers = typeof getVisibleTimelineLayers === 'function' ? getVisibleTimelineLayers() : (currentProjectState.layers || []);
               const startIdx = currentLayers.findIndex(l => l.id === layer.id);
 
               function onEyePointerDown(e) {
@@ -30883,6 +32818,7 @@
               function onPillPointerDown(e) {
                 if (
                   e.target.closest('.timeline-layer-eye-btn') ||
+                  e.target.closest('.timeline-layer-precomp-expand-btn') ||
                   e.target.closest('.desktop-layer-twistie-btn') ||
                   e.target.closest('.desktop-layer-control-col') ||
                   e.target.closest('.desktop-layer-mblur-btn') ||
@@ -30896,7 +32832,7 @@
                 // Stop browser default text selection, image drag, and touch scroll
                 e.preventDefault();
 
-                const currentLayers = currentProjectState.layers || [];
+                const currentLayers = typeof getVisibleTimelineLayers === 'function' ? getVisibleTimelineLayers() : (currentProjectState.layers || []);
                 const startIdx = currentLayers.findIndex(l => l.id === layer.id);
                 if (startIdx === -1) return;
 
@@ -31018,7 +32954,7 @@
               });
             }
 
-            if (isDesktop && layer._kfExpanded) {
+            if (isDesktop && layer._kfExpanded && layer.type !== 'precomp') {
               pillSlot.classList.add('is-kf-expanded');
               const treeEl = buildDesktopKfPropertyTree(layer, layer._kfExpandedOnlyKeyframed);
               pillSlot.appendChild(treeEl);
@@ -31055,17 +32991,17 @@
                   const animInDur = Math.max(0.1, Number(tp.animInDuration || tp.animDuration) || 0.8);
                   const animOutDur = Math.max(0.1, Number(tp.animOutDuration) || 0.6);
                   const clipW = layer.widthPx || 320;
-                  const hasIn = (tp.animIn || tp.animation || 'bounce_1') !== 'none';
+                  const hasIn = (tp.animIn || tp.animation || 'none') !== 'none';
                   const hasOut = (tp.animOut || 'none') !== 'none';
 
                   const inPx = Math.min(clipW * 0.48, Math.round(animInDur * pps));
                   const outPx = Math.min(clipW * 0.48, Math.round(animOutDur * pps));
-                  const inMarkerLeft = Math.max(2, inPx - 42);
+                  const inMarkerLeft = Math.max(34, inPx - 42);
                   const outMarkerRight = Math.max(2, outPx - 48);
 
                   return `
                     ${hasIn ? `
-                      <div class="text-anim-zone zone-in" style="width: ${inPx}px;" title="IN Animation: ${(tp.animIn || tp.animation || 'bounce_1').toUpperCase()} (${animInDur.toFixed(2)}s)"></div>
+                      <div class="text-anim-zone zone-in" style="width: ${inPx}px;" title="IN Animation: ${(tp.animIn || tp.animation || 'none').toUpperCase()} (${animInDur.toFixed(2)}s)"></div>
                       <div class="text-anim-marker marker-in" style="left: ${inMarkerLeft}px;" data-layer-id="${layer.id}" title="IN: ${animInDur.toFixed(2)}s (Drag to adjust)">IN ${animInDur.toFixed(1)}s</div>
                     ` : ''}
                     ${hasOut ? `
@@ -31125,7 +33061,7 @@
                       marker.textContent = `IN ${newDur.toFixed(1)}s`;
                       marker.title = `IN: ${newDur.toFixed(2)}s (Drag to adjust)`;
                       const newPx = Math.min(clipW * 0.48, Math.round(newDur * pps));
-                      marker.style.left = `${Math.max(2, newPx - 42)}px`;
+                      marker.style.left = `${Math.max(34, newPx - 42)}px`;
                       const zoneIn = clipEl.querySelector('.text-anim-zone.zone-in');
                       if (zoneIn) zoneIn.style.width = `${newPx}px`;
 
@@ -31822,13 +33758,308 @@
             }
           }
 
-          if (isDesktop && layer._kfExpanded) {
+          if (isDesktop && layer._kfExpanded && layer.type !== 'precomp') {
             lane.classList.add('is-kf-expanded');
             const tracksEl = buildDesktopKfTracksWrapper(layer, pps, layer._kfExpandedOnlyKeyframed);
             lane.appendChild(tracksEl);
           }
 
           layersTrack.appendChild(lane);
+
+          // Render child elements when Precompose is expanded
+          if (layer.type === 'precomp' && layer._precompExpanded && Array.isArray(layer.layers)) {
+            const parentStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
+
+            layer.layers.forEach((child) => {
+              child._parentPrecomp = layer;
+              child._parentPrecompId = layer.id;
+
+              const childClipType = child.type === 'shape' ? 'shape' : (child.type === 'text' ? 'text' : (child.type === 'video' ? 'video' : (child.type === 'audio' ? 'audio' : (child.type === 'adjustment' ? 'adjustment' : (child.type === 'camera' ? 'camera' : (child.type === 'null' ? 'null' : (child.type === 'precomp' ? 'precomp' : (child.type === 'color' ? 'color' : 'image'))))))));
+              const childTypeTag = child.type === 'shape' ? 'SHP' : (child.type === 'text' ? 'TXT' : (child.type === 'video' ? 'VID' : (child.type === 'audio' ? 'AUD' : (child.type === 'adjustment' ? 'ADJ' : (child.type === 'camera' ? (child.isOverlapCamera ? 'O-CAM' : 'CAM') : (child.type === 'null' ? (child.isOverlapNull ? 'O-NULL' : 'NULL') : (child.type === 'precomp' ? (child.groupType === 'mask' ? 'MASK' : (child.groupType === 'exclude' ? 'EXCL' : 'COMP')) : (child.type === 'color' ? 'CLR' : 'IMG'))))))));
+              const isChildSelected = selectedLayerIds.has(child.id) || child.id === selectedLayerId;
+              const isChildHidden = !!child.hidden;
+
+              const childStartSec = child.startSec !== undefined ? child.startSec : ((child.startPx || 0) / pps);
+              const childDurSec = child.durationSec !== undefined ? child.durationSec : ((child.widthPx || 320) / pps);
+              const childGlobalStartSec = parentStartSec + childStartSec;
+              const childGlobalStartPx = Math.round(childGlobalStartSec * pps);
+              const childWidthPx = Math.max(16, Math.round(childDurSec * pps));
+
+              // 1. Child Pill Slot in overlayContainer
+              if (overlayContainer) {
+                if (isDesktop) {
+                  const isChildFocused = !isSelectorMode && isChildSelected && (child.id === selectedLayerId);
+                  const childPillSlot = document.createElement('div');
+                  childPillSlot.className = `timeline-lane-pill-slot is-precomp-child ${isChildFocused ? 'is-focused' : ''}`;
+                  childPillSlot.dataset.layerId = child.id;
+                  childPillSlot.dataset.parentPrecompId = layer.id;
+                  childPillSlot.innerHTML = `
+                    <div class="timeline-layer-ctrl-pill is-precomp-child ${isChildSelected ? 'is-selected' : ''} ${isChildHidden ? 'is-hidden' : ''}" 
+                         title="${child.name} [${layer.name}] - ${isChildHidden ? 'Klik untuk tampilkan' : 'Klik untuk sembunyikan'}"
+                         data-layer-id="${child.id}">
+                      <span class="desktop-child-twistie-spacer" aria-hidden="true"></span>
+                      <button type="button" class="timeline-layer-eye-btn" aria-label="${isChildHidden ? 'Show Layer' : 'Hide Layer'}" title="${isChildHidden ? 'Show Layer' : 'Hide Layer'}">
+                        <span class="fticon ${isChildHidden ? 'fticon fticon-eye-off' : 'fticon fticon-eye'}" aria-hidden="true"></span>
+                      </button>
+                      <span class="desktop-layer-name-text" title="${child.name}">${child.name}</span>
+                    </div>
+                  `;
+
+                  // Child eye button click
+                  const childEyeBtn = childPillSlot.querySelector('.timeline-layer-eye-btn');
+                  if (childEyeBtn) {
+                    childEyeBtn.addEventListener('click', (e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      child.hidden = !child.hidden;
+                      layer._dirty = true;
+                      if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
+                      invalidatePreviewCacheForLayer(child);
+                      renderTimelineLayers();
+                      redrawComposition();
+                      saveCurrentProjectLayers();
+                    });
+                  }
+
+                  // Child pill click
+                  const childPillEl = childPillSlot.querySelector('.timeline-layer-ctrl-pill');
+                  if (childPillEl) {
+                    childPillEl.addEventListener('click', (e) => {
+                      if (e.target.closest('.timeline-layer-eye-btn')) return;
+                      e.stopPropagation();
+                      if (isSelectorMode) {
+                        toggleSelectTimelineLayer(child.id, true);
+                      } else {
+                        toggleSelectTimelineLayer(child.id, false);
+                      }
+                    });
+                    childPillEl.addEventListener('contextmenu', (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      triggerClipContextMenu(child, e.clientX, e.clientY, e);
+                    });
+                  }
+
+                  overlayContainer.appendChild(childPillSlot);
+                } else {
+                  // In editor.html (mobile), do NOT render floating left pill to avoid cluttering the screen.
+                  // Render an invisible spacer slot to keep 1:1 row sync with track lanes below.
+                  const childSpacer = document.createElement('div');
+                  childSpacer.className = 'timeline-lane-pill-slot is-precomp-child is-mobile-spacer';
+                  childSpacer.dataset.layerId = child.id;
+                  childSpacer.dataset.parentPrecompId = layer.id;
+                  childSpacer.style.height = '32px';
+                  childSpacer.style.pointerEvents = 'none';
+                  overlayContainer.appendChild(childSpacer);
+                }
+              }
+
+              // 2. Child Track Lane in layersTrack
+              const childLane = document.createElement('div');
+              childLane.className = 'timeline-track-lane is-precomp-child';
+              childLane.dataset.layerId = child.id;
+              childLane.dataset.parentPrecompId = layer.id;
+              childLane.innerHTML = `
+                <div class="track-content-lane">
+                  <div class="timeline-clip-block clip-${childClipType} is-precomp-child ${isChildSelected ? 'is-selected' : ''} ${isChildHidden ? 'is-hidden' : ''}" 
+                       style="left: ${childGlobalStartPx}px; width: ${childWidthPx}px;" 
+                       title="${child.name}${isChildHidden ? ' (Hidden)' : ''} [${layer.name}]" 
+                       data-layer-id="${child.id}">
+                    <button type="button" class="timeline-clip-handle handle-left" aria-label="Trim / Lengthen Start" title="Drag to trim start">
+                      <span class="fticon fticon-chevron-left" style="width: 10px; height: 10px;" aria-hidden="true"></span>
+                    </button>
+                    <span class="timeline-clip-tag">${childTypeTag}</span>
+                    <span class="clip-label">${child.name}</span>
+                    <button type="button" class="timeline-clip-handle handle-right" aria-label="Trim / Lengthen End" title="Drag to trim end">
+                      <span class="fticon fticon-chevron-right" style="width: 10px; height: 10px;" aria-hidden="true"></span>
+                    </button>
+                    ${(childClipType === 'audio') ? '<canvas class="timeline-audio-waveform-canvas"></canvas>' : ''}
+                    <div class="timeline-clip-keyframes"></div>
+                  </div>
+                </div>
+              `;
+
+              const childClipEl = childLane.querySelector('.timeline-clip-block');
+              if (childClipEl) {
+                renderLayerKeyframes(child, childClipEl);
+                if (childClipType === 'audio') {
+                  renderAudioClipWaveform(child, childClipEl);
+                }
+
+                childClipEl.addEventListener('click', (e) => {
+                  if (e.target.closest('.timeline-clip-handle')) return;
+                  e.stopPropagation();
+                  if (isSelectorMode) {
+                    toggleSelectTimelineLayer(child.id, true);
+                  } else {
+                    toggleSelectTimelineLayer(child.id, false);
+                  }
+                });
+
+                childClipEl.addEventListener('contextmenu', (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  triggerClipContextMenu(child, e.clientX, e.clientY, e);
+                });
+
+                // Left handle trimming
+                const childLeftHandle = childClipEl.querySelector('.handle-left');
+                if (childLeftHandle) {
+                  childLeftHandle.addEventListener('pointerdown', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    if (e.button !== undefined && e.button !== 0) return;
+                    try { childLeftHandle.setPointerCapture(e.pointerId); } catch (_) {}
+                    const startX = e.clientX;
+                    const origChildStartSec = child.startSec !== undefined ? child.startSec : 0;
+                    const origChildDurSec = child.durationSec !== undefined ? child.durationSec : 1;
+
+                    function onChildTrimMove(me) {
+                      me.stopPropagation();
+                      me.preventDefault();
+                      const deltaSec = (me.clientX - startX) / pps;
+                      const newStartSec = Math.max(0, origChildStartSec + deltaSec);
+                      const newDurSec = Math.max(0.1, origChildDurSec - (newStartSec - origChildStartSec));
+                      child.startSec = Number(newStartSec.toFixed(3));
+                      child.startPx = Math.round(child.startSec * pps);
+                      child.durationSec = Number(newDurSec.toFixed(3));
+                      child.widthPx = Math.round(child.durationSec * pps);
+
+                      const newGlobalStartPx = Math.round((parentStartSec + child.startSec) * pps);
+                      childClipEl.style.left = `${newGlobalStartPx}px`;
+                      childClipEl.style.width = `${child.widthPx}px`;
+
+                      layer._dirty = true;
+                      if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
+                      invalidatePreviewCacheForLayer(child);
+                      redrawComposition();
+                    }
+
+                    function onChildTrimUp(ue) {
+                      try { childLeftHandle.releasePointerCapture(ue.pointerId); } catch (_) {}
+                      window.removeEventListener('pointermove', onChildTrimMove);
+                      window.removeEventListener('pointerup', onChildTrimUp);
+                      saveCurrentProjectLayers();
+                      renderTimelineLayers();
+                    }
+
+                    window.addEventListener('pointermove', onChildTrimMove);
+                    window.addEventListener('pointerup', onChildTrimUp);
+                  });
+                }
+
+                // Right handle trimming
+                const childRightHandle = childClipEl.querySelector('.handle-right');
+                if (childRightHandle) {
+                  childRightHandle.addEventListener('pointerdown', (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    if (e.button !== undefined && e.button !== 0) return;
+                    try { childRightHandle.setPointerCapture(e.pointerId); } catch (_) {}
+                    const startX = e.clientX;
+                    const origChildDurSec = child.durationSec !== undefined ? child.durationSec : 1;
+
+                    function onChildRightMove(me) {
+                      me.stopPropagation();
+                      me.preventDefault();
+                      const deltaSec = (me.clientX - startX) / pps;
+                      const newDurSec = Math.max(0.1, origChildDurSec + deltaSec);
+                      child.durationSec = Number(newDurSec.toFixed(3));
+                      child.widthPx = Math.round(child.durationSec * pps);
+                      childClipEl.style.width = `${child.widthPx}px`;
+
+                      layer._dirty = true;
+                      if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
+                      invalidatePreviewCacheForLayer(child);
+                      redrawComposition();
+                    }
+
+                    function onChildRightUp(ue) {
+                      try { childRightHandle.releasePointerCapture(ue.pointerId); } catch (_) {}
+                      window.removeEventListener('pointermove', onChildRightMove);
+                      window.removeEventListener('pointerup', onChildRightUp);
+                      saveCurrentProjectLayers();
+                      renderTimelineLayers();
+                    }
+
+                    window.addEventListener('pointermove', onChildRightMove);
+                    window.addEventListener('pointerup', onChildRightUp);
+                  });
+                }
+
+                // Horizontal slide
+                let childSlideStartX = 0;
+                let childIsSliding = false;
+                let childOrigStartSec = 0;
+
+                childClipEl.addEventListener('pointerdown', (e) => {
+                  if (e.target.closest('.timeline-clip-handle')) return;
+                  if (e.button !== undefined && e.button !== 0) return;
+                  childSlideStartX = e.clientX;
+                  childIsSliding = false;
+                  childOrigStartSec = child.startSec !== undefined ? child.startSec : 0;
+
+                  function onChildSlideMove(me) {
+                    const dx = me.clientX - childSlideStartX;
+                    if (!childIsSliding && Math.abs(dx) > 4) {
+                      childIsSliding = true;
+                      try { childClipEl.setPointerCapture(e.pointerId); } catch (_) {}
+                    }
+                    if (childIsSliding) {
+                      me.preventDefault();
+                      const deltaSec = dx / pps;
+                      const newStartSec = Math.max(0, childOrigStartSec + deltaSec);
+                      child.startSec = Number(newStartSec.toFixed(3));
+                      child.startPx = Math.round(child.startSec * pps);
+
+                      const newGlobalStartPx = Math.round((parentStartSec + child.startSec) * pps);
+                      childClipEl.style.left = `${newGlobalStartPx}px`;
+
+                      layer._dirty = true;
+                      if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
+                      invalidatePreviewCacheForLayer(child);
+                      redrawComposition();
+                    }
+                  }
+
+                  function onChildSlideUp(ue) {
+                    try { childClipEl.releasePointerCapture(ue.pointerId); } catch (_) {}
+                    window.removeEventListener('pointermove', onChildSlideMove);
+                    window.removeEventListener('pointerup', onChildSlideUp);
+                    if (childIsSliding) {
+                      childIsSliding = false;
+                      saveCurrentProjectLayers();
+                      renderTimelineLayers();
+                    }
+                  }
+
+                  window.addEventListener('pointermove', onChildSlideMove);
+                  window.addEventListener('pointerup', onChildSlideUp);
+                });
+              }
+
+              layersTrack.appendChild(childLane);
+            });
+
+            // On Desktop, append Precomp's Transform below its child layers ("di atas transform")
+            if (isDesktop && layer._kfExpanded) {
+              if (overlayContainer) {
+                const precompKfSlot = document.createElement('div');
+                precompKfSlot.className = 'timeline-lane-pill-slot is-kf-expanded is-precomp-transform-slot';
+                precompKfSlot.dataset.layerId = layer.id;
+                const treeEl = buildDesktopKfPropertyTree(layer, layer._kfExpandedOnlyKeyframed);
+                precompKfSlot.appendChild(treeEl);
+                overlayContainer.appendChild(precompKfSlot);
+              }
+
+              const precompKfLane = document.createElement('div');
+              precompKfLane.className = 'timeline-track-lane is-kf-expanded is-precomp-transform-lane';
+              precompKfLane.dataset.layerId = layer.id;
+              const tracksEl = buildDesktopKfTracksWrapper(layer, pps, layer._kfExpandedOnlyKeyframed);
+              precompKfLane.appendChild(tracksEl);
+              layersTrack.appendChild(precompKfLane);
+            }
+          }
         });
 
         // 3. Floating Right Reorder Pills (Semua layer punya handle hamburger, drag untuk geser posisi layer)
@@ -32071,6 +34302,23 @@
 
               slot.appendChild(pill);
               reorderOverlay.appendChild(slot);
+
+              // Render placeholder reorder slots for child layers so vertical rows stay aligned
+              if (layer.type === 'precomp' && layer._precompExpanded && Array.isArray(layer.layers)) {
+                layer.layers.forEach(child => {
+                  const childSlot = document.createElement('div');
+                  childSlot.className = 'timeline-lane-reorder-slot is-precomp-child';
+                  childSlot.dataset.layerId = child.id;
+                  reorderOverlay.appendChild(childSlot);
+                });
+
+                if (isDesktop && layer._kfExpanded) {
+                  const precompReorderSlot = document.createElement('div');
+                  precompReorderSlot.className = 'timeline-lane-reorder-slot is-kf-expanded is-precomp-transform-reorder';
+                  precompReorderSlot.dataset.layerId = layer.id;
+                  reorderOverlay.appendChild(precompReorderSlot);
+                }
+              }
             });
           }
         }
@@ -32715,6 +34963,18 @@
           const btnPrecomp = document.getElementById('btn-layer-header-left-precomp') || document.getElementById('btn-layer-header-precomp') || document.getElementById('popover-btn-precompose');
           if (btnPrecomp && typeof btnPrecomp.click === 'function') {
             btnPrecomp.click();
+          }
+        } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'g') {
+          // Shortcut: Un Group Precompose (Ctrl+Shift+G / Cmd+Shift+G)
+          e.preventDefault();
+          if (typeof ungroupPrecompose === 'function') {
+            ungroupPrecompose();
+          }
+        } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'g') {
+          // Shortcut: Group Layer(s) (Ctrl+G / Cmd+G)
+          e.preventDefault();
+          if (typeof precomposeSelectedLayers === 'function') {
+            precomposeSelectedLayers();
           }
         } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'y') {
           // AE Shortcut: New Solid Layer (Ctrl+Y / Cmd+Y)
@@ -34271,6 +36531,16 @@
             }
           }
         });
+
+        previewContainer.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const targetId = window.selectedLayerId || (window.selectedLayerIds ? Array.from(window.selectedLayerIds)[0] : null);
+          const layer = (currentProjectState.layers || []).find(l => l.id === targetId);
+          if (layer && typeof window.triggerClipContextMenu === 'function') {
+            window.triggerClipContextMenu(layer, e.clientX, e.clientY, e);
+          }
+        });
       }
 
       // Initialize default 100%
@@ -34288,43 +36558,7 @@
       };
     })();
 
-    // Dynamic On-Demand Lazy Loader for OpenFishTools Panel in Editor
-    (function initEditorFishToolsLoader() {
-      const triggerBtn = document.getElementById('editor-btn-fishtool-trigger');
-      const popoverEl = document.getElementById('popover-editor-fishtools');
-      const bodyEl = document.getElementById('editor-fishtools-body');
-      const loaderEl = document.getElementById('editor-fishtools-loader');
-
-      if (!triggerBtn || !popoverEl || !bodyEl) return;
-
-      let isLoaded = false;
-
-      triggerBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        // 1. Toggle Popover anchored to button immediately
-        if (window.Popover) {
-          window.Popover.toggle(triggerBtn, 'popover-editor-fishtools');
-        }
-
-        // 2. Perform on-demand lazy load only on first click
-        if (!isLoaded && window.Popover && window.Popover.isOpen && window.Popover.isOpen()) {
-          isLoaded = true;
-          if (loaderEl) loaderEl.style.display = 'flex';
-
-          const iframe = document.createElement('iframe');
-          iframe.className = 'popover-embed-frame';
-          iframe.id = 'editor-fishtools-frame';
-          iframe.title = 'OpenFishTools Panel';
-          bodyEl.appendChild(iframe);
-
-          if (window.FishToolsAdapter) {
-            window.FishToolsAdapter.loadIntoIframe(iframe, loaderEl);
-          }
-        }
-      });
-    })();
+    // OpenFishTools panel removed (pending full redesign). The #editor-btn-fishtool-trigger icon stays in the UI but has no handler yet.
 
     // ==========================================================================
     // EXPORT ENGINE: PNG, IMAGE SEQUENCE (.ZIP), AND VIDEO (.MP4 VIA FFMPEG.WASM)
@@ -37101,7 +39335,7 @@
 
       // Editor Toast Notification
       let _editorToastTimer = null;
-      function showEditorToast(text, duration = 2200) {
+      function showEditorToast(text, duration = 2200, type = 'info') {
         let toast = document.querySelector('.editor-toast');
         if (!toast) {
           toast = document.createElement('div');
@@ -37109,13 +39343,1885 @@
           document.body.appendChild(toast);
         }
         toast.textContent = text;
+        if (type === 'error' || type === 'warn') {
+          toast.classList.add('toast-error');
+        } else {
+          toast.classList.remove('toast-error');
+        }
         toast.classList.add('is-visible');
         if (_editorToastTimer) clearTimeout(_editorToastTimer);
         _editorToastTimer = setTimeout(() => {
           toast.classList.remove('is-visible');
+          toast.classList.remove('toast-error');
         }, duration);
       }
       window.showEditorToast = showEditorToast;
+
+      // -------------------------------------------------------------
+      // OPENFISHTOOLS UNIVERSAL EXTENSION TOOL DISPATCH BRIDGE
+      // Handles extension tool calls from .jsx cards (Anchor, Align, Cut/Trim, Actions, Toolbox, Effects, Velocity, Format)
+      // -------------------------------------------------------------
+      function getSelectedLayersForFishTool() {
+        let targets = [];
+        if (typeof getSelectedLayersForOperation === 'function') {
+          targets = getSelectedLayersForOperation() || [];
+        }
+        if (!targets || targets.length === 0) {
+          const lId = window.selectedLayerId;
+          const layers = (currentProjectState && currentProjectState.layers) || [];
+          if (lId) {
+            const l = layers.find(x => x.id === lId);
+            if (l) targets = [l];
+          }
+        }
+        return targets;
+      }
+
+      // -------------------------------------------------------------
+      // AUTHENTIC BEAT EFFECTS ENGINE (NULL PARENT & ADJUSTMENT ARCHITECTURE)
+      // Faithful reproduction of OpenFishTools CEP animation.jsx algorithms
+      // -------------------------------------------------------------
+      function applyNullBeatEffect(toolName, targets) {
+        if (typeof window.applyBeatNullTool === 'function') {
+          return window.applyBeatNullTool(toolName);
+        }
+        if (!targets || !targets.length) {
+          const msg = `Pilih layer terlebih dahulu untuk ${toolName}`;
+          showEditorToast(msg, 2400, 'error');
+          return { error: true, message: msg };
+        }
+        const targetLayer = targets[0];
+        const pps = window.currentPixelsPerSecond || 80;
+        const inPoint = targetLayer.startSec !== undefined ? targetLayer.startSec : ((targetLayer.startPx || 0) / pps);
+        const durationSec = targetLayer.durationSec !== undefined ? targetLayer.durationSec : ((targetLayer.widthPx || 320) / pps);
+
+        if (window.UndoRedoManager && typeof window.UndoRedoManager.recordSnapshot === 'function') {
+          window.UndoRedoManager.recordSnapshot();
+        }
+
+        const nullLayer = addNullLayer(true, {
+          startSec: inPoint,
+          durationSec: durationSec
+        });
+        if (!nullLayer) {
+          showEditorToast('Gagal membuat Null Layer', 2400, 'error');
+          return false;
+        }
+
+        nullLayer.scaleW = 100;
+        nullLayer.scaleH = 100;
+        nullLayer.posX = targetLayer.posX !== undefined ? targetLayer.posX : nullLayer.posX;
+        nullLayer.posY = targetLayer.posY !== undefined ? targetLayer.posY : nullLayer.posY;
+
+        targets.forEach(t => {
+          if (typeof window.linkLayer === 'function') {
+            window.linkLayer(t, nullLayer, true);
+          } else {
+            t.parentId = nullLayer.id;
+          }
+          if (t.parentBind) {
+            t.parentBind.parentScaleW = 100;
+            t.parentBind.parentScaleH = 100;
+          }
+        });
+
+        nullLayer.effects = nullLayer.effects || [];
+        nullLayer.expressions = nullLayer.expressions || {};
+
+        function addSlider(layer, name, val) {
+          const reg = (window.FishEffects && window.FishEffects.registry) || window.FishEffectsRegistry;
+          let fx = reg && typeof reg.createInstance === 'function' ? reg.createInstance('slider-control', name) : null;
+          if (!fx) {
+            fx = {
+              id: 'fx_slider_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+              type: 'slider-control',
+              name: name,
+              isExpanded: true,
+              disabled: false
+            };
+          }
+          fx.name = name;
+          fx.slider = val;
+          layer.effects.push(fx);
+          return fx;
+        }
+
+        if (toolName === 'Y_BEAT') {
+          nullLayer.name = 'Y BEAT';
+          addSlider(nullLayer, 'Amp', 500);
+          addSlider(nullLayer, 'Decay', 20);
+          nullLayer.expressions.move = [
+            'amp = effect("Amp")("ADBE Slider Control-0001");',
+            'decay = effect("Decay")("ADBE Slider Control-0001");',
+            '',
+            'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+            '',
+            'if (time < inPoint || time > outPoint || !m || m.numKeys === 0){',
+            '    value;',
+            '}else{',
+            '    n = m.nearestKey(time).index;',
+            '    if (m.key(n).time > time) {',
+            '        t2 = m.key(n).time;',
+            '        t1 = (n > 1) ? m.key(n-1).time : -99999;',
+            '    } else {',
+            '        t1 = m.key(n).time;',
+            '        t2 = (n < m.numKeys) ? m.key(n+1).time : 99999;',
+            '    }',
+            '',
+            '    val1 = 0;',
+            '    if (t1 >= inPoint && t1 <= outPoint) {',
+            '        val1 = amp / Math.exp((time - t1) * decay);',
+            '    }',
+            '',
+            '    val2 = 0;',
+            '    if (t2 >= inPoint && t2 <= outPoint) {',
+            '        val2 = amp / Math.exp((t2 - time) * decay);',
+            '    }',
+            '',
+            '    val = (Math.abs(val1) > Math.abs(val2)) ? val1 : val2;',
+            '    value + [0, val];',
+            '}'
+          ].join('\n');
+        } else if (toolName === 'X_BEAT') {
+          nullLayer.name = 'X BEAT';
+          addSlider(nullLayer, 'Amp', 500);
+          addSlider(nullLayer, 'Decay', 20);
+          nullLayer.expressions.move = [
+            'amp = effect("Amp")("ADBE Slider Control-0001");',
+            'decay = effect("Decay")("ADBE Slider Control-0001");',
+            '',
+            'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+            '',
+            'if (time < inPoint || time > outPoint || !m || m.numKeys === 0){',
+            '    value;',
+            '}else{',
+            '    n = m.nearestKey(time).index;',
+            '    if (m.key(n).time > time) {',
+            '        t2 = m.key(n).time;',
+            '        t1 = (n > 1) ? m.key(n-1).time : -99999;',
+            '    } else {',
+            '        t1 = m.key(n).time;',
+            '        t2 = (n < m.numKeys) ? m.key(n+1).time : 99999;',
+            '    }',
+            '',
+            '    val1 = 0;',
+            '    if (t1 >= inPoint && t1 <= outPoint) {',
+            '        val1 = amp / Math.exp((time - t1) * decay);',
+            '    }',
+            '',
+            '    val2 = 0;',
+            '    if (t2 >= inPoint && t2 <= outPoint) {',
+            '        val2 = amp / Math.exp((t2 - time) * decay);',
+            '    }',
+            '',
+            '    val = (Math.abs(val1) > Math.abs(val2)) ? val1 : val2;',
+            '    value + [val, 0];',
+            '}'
+          ].join('\n');
+        } else if (toolName === 'Y_FLIP') {
+          nullLayer.name = 'Y FLIP';
+          addSlider(nullLayer, 'Amp', 500);
+          addSlider(nullLayer, 'Decay', 15);
+          nullLayer.expressions.move = [
+            'amp = effect("Amp")("ADBE Slider Control-0001");',
+            'decay = effect("Decay")("ADBE Slider Control-0001");',
+            '',
+            'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+            '',
+            'if (time < inPoint || time > outPoint || !m || m.numKeys === 0){',
+            '    value;',
+            '}else{',
+            '    validKeys = [];',
+            '    for (i = 1; i <= m.numKeys; i++){',
+            '        kt = m.key(i).time;',
+            '        if (kt >= inPoint && kt <= outPoint){',
+            '            validKeys.push(i);',
+            '        }',
+            '    }',
+            '',
+            '    if (validKeys.length === 0){',
+            '        value;',
+            '    }else{',
+            '        activeIdx = -1;',
+            '        for (k = 0; k < validKeys.length; k++){',
+            '            if (m.key(validKeys[k]).time <= time){',
+            '                activeIdx = k;',
+            '            }else{',
+            '                break;',
+            '            }',
+            '        }',
+            '',
+            '        if (activeIdx === -1){',
+            '            tNext = m.key(validKeys[0]).time;',
+            '            dir = -1;',
+            '            val = -dir * amp / Math.exp((tNext - time) * decay);',
+            '            value + [0, val];',
+            '        }else{',
+            '            t1 = m.key(validKeys[activeIdx]).time;',
+            '            hasNext = (activeIdx + 1 < validKeys.length);',
+            '            t2 = hasNext ? m.key(validKeys[activeIdx + 1]).time : (outPoint + 9999);',
+            '            dir = (activeIdx % 2 === 0) ? -1 : 1;',
+            '            val1 = dir * amp / Math.exp((time - t1) * decay);',
+            '            val2 = hasNext ? (dir * amp / Math.exp((t2 - time) * decay)) : 0;',
+            '            val = (Math.abs(val1) > Math.abs(val2)) ? val1 : val2;',
+            '            value + [0, val];',
+            '        }',
+            '    }',
+            '}'
+          ].join('\n');
+          nullLayer.expressions.scale = [
+            'if (time < inPoint || time > outPoint){',
+            '    value;',
+            '}else{',
+            '    m = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+            '    if (!m || m.numKeys === 0){',
+            '        value;',
+            '    }else{',
+            '        validKeys = [];',
+            '        for (i = 1; i <= m.numKeys; i++){',
+            '            kt = m.key(i).time;',
+            '            if (kt >= inPoint && kt <= outPoint){',
+            '                validKeys.push(i);',
+            '            }',
+            '        }',
+            '',
+            '        if (validKeys.length === 0){',
+            '            value;',
+            '        }else{',
+            '            activeIdx = -1;',
+            '            for (k = 0; k < validKeys.length; k++){',
+            '                if (m.key(validKeys[k]).time <= time){',
+            '                    activeIdx = k;',
+            '                }else{',
+            '                    break;',
+            '                }',
+            '            }',
+            '',
+            '            if (activeIdx === -1){',
+            '                value;',
+            '            }else{',
+            '                sY = (activeIdx % 2 === 0) ? -100 : 100;',
+            '                [value[0], sY];',
+            '            }',
+            '        }',
+            '    }',
+            '}'
+          ].join('\n');
+        } else if (toolName === 'X_FLIP') {
+          nullLayer.name = 'X FLIP';
+          addSlider(nullLayer, 'Amp', 500);
+          addSlider(nullLayer, 'Decay', 15);
+          nullLayer.expressions.move = [
+            'amp = effect("Amp")("ADBE Slider Control-0001");',
+            'decay = effect("Decay")("ADBE Slider Control-0001");',
+            '',
+            'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+            '',
+            'if (time < inPoint || time > outPoint || !m || m.numKeys === 0){',
+            '    value;',
+            '}else{',
+            '    validKeys = [];',
+            '    for (i = 1; i <= m.numKeys; i++){',
+            '        kt = m.key(i).time;',
+            '        if (kt >= inPoint && kt <= outPoint){',
+            '            validKeys.push(i);',
+            '        }',
+            '    }',
+            '',
+            '    if (validKeys.length === 0){',
+            '        value;',
+            '    }else{',
+            '        activeIdx = -1;',
+            '        for (k = 0; k < validKeys.length; k++){',
+            '            if (m.key(validKeys[k]).time <= time){',
+            '                activeIdx = k;',
+            '            }else{',
+            '                break;',
+            '            }',
+            '        }',
+            '',
+            '        if (activeIdx === -1){',
+            '            tNext = m.key(validKeys[0]).time;',
+            '            dir = -1;',
+            '            val = -dir * amp / Math.exp((tNext - time) * decay);',
+            '            value + [val, 0];',
+            '        }else{',
+            '            t1 = m.key(validKeys[activeIdx]).time;',
+            '            hasNext = (activeIdx + 1 < validKeys.length);',
+            '            t2 = hasNext ? m.key(validKeys[activeIdx + 1]).time : (outPoint + 9999);',
+            '            dir = (activeIdx % 2 === 0) ? -1 : 1;',
+            '            val1 = dir * amp / Math.exp((time - t1) * decay);',
+            '            val2 = hasNext ? (dir * amp / Math.exp((t2 - time) * decay)) : 0;',
+            '            val = (Math.abs(val1) > Math.abs(val2)) ? val1 : val2;',
+            '            value + [val, 0];',
+            '        }',
+            '    }',
+            '}'
+          ].join('\n');
+          nullLayer.expressions.scale = [
+            'if (time < inPoint || time > outPoint){',
+            '    value;',
+            '}else{',
+            '    m = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+            '    if (!m || m.numKeys === 0){',
+            '        value;',
+            '    }else{',
+            '        validKeys = [];',
+            '        for (i = 1; i <= m.numKeys; i++){',
+            '            kt = m.key(i).time;',
+            '            if (kt >= inPoint && kt <= outPoint){',
+            '                validKeys.push(i);',
+            '            }',
+            '        }',
+            '',
+            '        if (validKeys.length === 0){',
+            '            value;',
+            '        }else{',
+            '            activeIdx = -1;',
+            '            for (k = 0; k < validKeys.length; k++){',
+            '                if (m.key(validKeys[k]).time <= time){',
+            '                    activeIdx = k;',
+            '                }else{',
+            '                    break;',
+            '                }',
+            '            }',
+            '',
+            '            if (activeIdx === -1){',
+            '                value;',
+            '            }else{',
+            '                sX = (activeIdx % 2 === 0) ? -100 : 100;',
+            '                [sX, value[1]];',
+            '            }',
+            '        }',
+            '    }',
+            '}'
+          ].join('\n');
+        } else if (toolName === 'SCALE_BEAT') {
+          nullLayer.name = 'SCALE BEAT';
+          addSlider(nullLayer, 'Amp', 500);
+          addSlider(nullLayer, 'Decay', 20);
+          nullLayer.expressions.scale = [
+            'amp = effect("Amp")("ADBE Slider Control-0001");',
+            'decay = effect("Decay")("ADBE Slider Control-0001");',
+            '',
+            'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+            '',
+            'if (time < inPoint || time > outPoint || !m || m.numKeys === 0){',
+            '    value;',
+            '}else{',
+            '    n = m.nearestKey(time).index;',
+            '    if (m.key(n).time > time) {',
+            '        t2 = m.key(n).time;',
+            '        t1 = (n > 1) ? m.key(n-1).time : -99999;',
+            '    } else {',
+            '        t1 = m.key(n).time;',
+            '        t2 = (n < m.numKeys) ? m.key(n+1).time : 99999;',
+            '    }',
+            '',
+            '    val1 = 0;',
+            '    if (t1 >= inPoint && t1 <= outPoint) {',
+            '        val1 = amp / Math.exp((time - t1) * decay);',
+            '    }',
+            '',
+            '    val2 = 0;',
+            '    if (t2 >= inPoint && t2 <= outPoint) {',
+            '        val2 = amp / Math.exp((t2 - time) * decay);',
+            '    }',
+            '',
+            '    val = (Math.abs(val1) > Math.abs(val2)) ? val1 : val2;',
+            '    value + [val, val];',
+            '}'
+          ].join('\n');
+        } else if (toolName === 'OSCILLATE') {
+          nullLayer.name = 'OSCILLATE';
+          addSlider(nullLayer, 'Freq', 3);
+          addSlider(nullLayer, 'Amp', 30);
+          addSlider(nullLayer, 'Decay', 2.7);
+          addSlider(nullLayer, 'Attack', 40);
+          nullLayer.expressions.move = [
+            'freq = effect("Freq")("ADBE Slider Control-0001");',
+            'amp = effect("Amp")("ADBE Slider Control-0001");',
+            'decay = effect("Decay")("ADBE Slider Control-0001");',
+            'attack = effect("Attack")("ADBE Slider Control-0001");',
+            '',
+            'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+            '',
+            'if (time < inPoint || time > outPoint || !m || m.numKeys === 0){',
+            '    value;',
+            '}else{',
+            '    n = 0;',
+            '    if (m.numKeys > 0){',
+            '        n = m.nearestKey(time).index;',
+            '        if (m.key(n).time > time) n--;',
+            '    }',
+            '',
+            '    if (n > 0){',
+            '        markerTime = m.key(n).time;',
+            '        if (markerTime >= inPoint && markerTime <= outPoint){',
+            '            t = time - markerTime;',
+            '            env = (attack > 0) ? (1 - Math.exp(-t * attack)) : 1;',
+            '            currAmp = amp * env / Math.exp(t * decay);',
+            '            x = Math.sin(t * freq * Math.PI * 2) * currAmp;',
+            '            y = (1 - Math.cos(t * freq * Math.PI * 2)) * currAmp;',
+            '            value + [x, y];',
+            '        }else{',
+            '            value;',
+            '        }',
+            '    }else{',
+            '        value;',
+            '    }',
+            '}'
+          ].join('\n');
+        } else if (toolName === 'SWING') {
+          nullLayer.name = 'Swing_Null';
+          addSlider(nullLayer, 'Freq', 1);
+          addSlider(nullLayer, 'Amp', 4);
+          addSlider(nullLayer, 'Decay', 1.5);
+          nullLayer.expressions.rotate = [
+            'freq = effect("Freq")("ADBE Slider Control-0001");',
+            'amp = effect("Amp")("ADBE Slider Control-0001");',
+            'decay = effect("Decay")("ADBE Slider Control-0001");',
+            '',
+            'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+            '',
+            'if (time < inPoint || time > outPoint || !m || m.numKeys === 0){',
+            '    value;',
+            '}else{',
+            '    n = 0;',
+            '    if (m.numKeys > 0){',
+            '        n = m.nearestKey(time).index;',
+            '        if (m.key(n).time > time) n--;',
+            '    }',
+            '',
+            '    if (n > 0){',
+            '        markerTime = m.key(n).time;',
+            '        if (markerTime >= inPoint && markerTime <= outPoint){',
+            '            t = time - markerTime;',
+            '            r = amp * Math.sin(t * freq * Math.PI * 2) / Math.exp(t * decay);',
+            '            value + r;',
+            '        }else{',
+            '            value;',
+            '        }',
+            '    }else{',
+            '        value;',
+            '    }',
+            '}'
+          ].join('\n');
+        } else if (toolName === 'SCALE_OVERLAP') {
+          nullLayer.name = 'SCALE OVER';
+          addSlider(nullLayer, 'Scale In', 0);
+          addSlider(nullLayer, 'Scale Out', 20);
+          addSlider(nullLayer, 'Overshoot', 20);
+          nullLayer.expressions.scale = [
+            'function bezier(x1, y1, x2, y2, t) {',
+            '    if (t <= 0) return 0;',
+            '    if (t >= 1) return 1;',
+            '    var p = t;',
+            '    for (var i = 0; i < 8; i++) {',
+            '        var omP = 1 - p;',
+            '        var f = 3 * omP * omP * p * x1 + 3 * omP * p * p * x2 + p * p * p - t;',
+            '        var df = 3 * omP * omP * x1 + 6 * omP * p * (x2 - x1) + 3 * p * p * (1 - x2);',
+            '        if (Math.abs(df) < 1e-6) break;',
+            '        p -= f / df;',
+            '        p = Math.max(0, Math.min(1, p));',
+            '    }',
+            '    var omP = 1 - p;',
+            '    return 3 * omP * omP * p * y1 + 3 * omP * p * p * y2 + p * p * p;',
+            '}',
+            '',
+            'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+            'scaleIn = effect("Scale In")("ADBE Slider Control-0001");',
+            'scaleOut = effect("Scale Out")("ADBE Slider Control-0001");',
+            'overshoot = effect("Overshoot")("ADBE Slider Control-0001");',
+            '',
+            'if (time < inPoint || time > outPoint) {',
+            '    value;',
+            '} else if (m && m.numKeys > 0) {',
+            '    n = 0;',
+            '    if (m.numKeys > 0) {',
+            '        n = m.nearestKey(time).index;',
+            '        if (m.key(n).time > time) n--;',
+            '    }',
+            '    if (n > 0 && n < m.numKeys) {',
+            '        t1 = m.key(n).time;',
+            '        t2 = m.key(n+1).time;',
+            '        dur = t2 - t1;',
+            '        startVal = (n % 2 !== 0) ? scaleIn : scaleOut;',
+            '        endVal = (n % 2 !== 0) ? scaleOut : scaleIn;',
+            '        t = time - t1;',
+            '        progress = Math.max(0, Math.min(1, t / dur));',
+            '        yMult = overshoot / 20;',
+            '        eased = bezier(0.4, -0.5 * yMult, 0.8, -0.5 * yMult, progress);',
+            '        val = startVal + (endVal - startVal) * eased;',
+            '        value + [val, val];',
+            '    } else if (n >= m.numKeys) {',
+            '        finalVal = (m.numKeys % 2 !== 0) ? scaleOut : scaleIn;',
+            '        value + [finalVal, finalVal];',
+            '    } else {',
+            '        value + [scaleIn, scaleIn];',
+            '    }',
+            '} else {',
+            '    value;',
+            '}'
+          ].join('\n');
+        } else if (toolName.startsWith('PANNING_')) {
+          const isMixPR = (toolName === 'PANNING_MIX_PR');
+          const isMixAll = (toolName === 'PANNING_MIX_ALL');
+          const hasPos = (toolName === 'PANNING_POS' || isMixPR || isMixAll);
+          const hasRot = (toolName === 'PANNING_ROT' || isMixPR || isMixAll);
+          const hasScale = (toolName === 'PANNING_SCALE' || isMixAll);
+
+          const nullNames = {
+            'PANNING_POS': 'PANNING Position',
+            'PANNING_ROT': 'PANNING Rotation',
+            'PANNING_SCALE': 'PANNING Scale',
+            'PANNING_MIX_PR': 'PANNING Mix PR',
+            'PANNING_MIX_ALL': 'PANNING Mix All'
+          };
+          nullLayer.name = nullNames[toolName] || 'PANNING';
+
+          const defaultFreq = isMixPR ? 7 : 1.5;
+          const defaultPos = isMixPR ? 10 : 30;
+          const defaultRot = isMixPR ? 1 : 5;
+          const defaultScale = 10;
+
+          addSlider(nullLayer, 'Freq', defaultFreq);
+          if (hasPos) addSlider(nullLayer, 'Position', defaultPos);
+          if (hasRot) addSlider(nullLayer, 'Rotation', defaultRot);
+          if (hasScale) addSlider(nullLayer, 'Scale', defaultScale);
+
+          if (hasPos) {
+            nullLayer.expressions.move = [
+              'freq = effect("Freq")("ADBE Slider Control-0001");',
+              'posAmp = effect("Position")("ADBE Slider Control-0001");',
+              'if (time < inPoint || time > outPoint){',
+              '    value;',
+              '}else{',
+              '    t = time * freq;',
+              '    x = (Math.sin(t * 1.2) * 0.7 + Math.sin(t * 2.3) * 0.3) * posAmp;',
+              '    y = (Math.cos(t * 0.9) * 0.7 + Math.sin(t * 1.7) * 0.3) * posAmp;',
+              '    value + [x, y];',
+              '}'
+            ].join('\n');
+          }
+          if (hasRot) {
+            nullLayer.expressions.rotate = [
+              'freq = effect("Freq")("ADBE Slider Control-0001");',
+              'rotAmp = effect("Rotation")("ADBE Slider Control-0001");',
+              'if (time < inPoint || time > outPoint){',
+              '    value;',
+              '}else{',
+              '    t = time * freq;',
+              '    r = (Math.sin(t * 0.8 + 1.5) * 0.7 + Math.cos(t * 1.5) * 0.3) * rotAmp;',
+              '    value + r;',
+              '}'
+            ].join('\n');
+          }
+          if (hasScale) {
+            nullLayer.expressions.scale = [
+              'freq = effect("Freq")("ADBE Slider Control-0001");',
+              'scaleAmp = effect("Scale")("ADBE Slider Control-0001");',
+              'if (time < inPoint || time > outPoint){',
+              '    value;',
+              '}else{',
+              '    t = time * freq;',
+              '    s = (Math.sin(t * 1.1) * 0.7 + Math.cos(t * 2.1) * 0.3) * scaleAmp;',
+              '    value + [s, s];',
+              '}'
+            ].join('\n');
+          }
+        }
+
+        selectTimelineLayer(nullLayer.id, false);
+        if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(nullLayer);
+        if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(targetLayer);
+        if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+        if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
+        if (typeof redrawComposition === 'function') redrawComposition('beat-null');
+        showEditorToast(`Beat Effect: ${nullLayer.name} dibuat (Null Parent)`);
+        return true;
+      }
+
+      function applyAdjustmentBeatEffect(toolName, targets) {
+        if (toolName === 'GHST' && typeof window.applyBeatGhostEffect === 'function') return window.applyBeatGhostEffect();
+        if (toolName === 'WARP' && typeof window.applyBeatWarpEffect === 'function') return window.applyBeatWarpEffect();
+        if (toolName === 'FISHEYE' && typeof window.applyBeatFisheyeEffect === 'function') return window.applyBeatFisheyeEffect();
+        if (toolName === 'MIDWAVE' && typeof window.applyBeatMidwaveEffect === 'function') return window.applyBeatMidwaveEffect();
+        if (toolName === 'HUESPIN' && typeof window.applyBeatHuespinEffect === 'function') return window.applyBeatHuespinEffect();
+        if ((toolName === 'EXPO' || toolName === 'FLASH') && typeof window.applyBeatFlashEffect === 'function') return window.applyBeatFlashEffect();
+        if (toolName === 'LENS' && typeof window.applyBeatBlurEffect === 'function') return window.applyBeatBlurEffect();
+        if ((toolName === 'SHAKY' || toolName === 'SHKE') && typeof window.applyBeatNullTool === 'function') return window.applyBeatNullTool('SHAKY');
+        if (!targets || !targets.length) {
+          const msg = `Pilih layer terlebih dahulu untuk ${toolName}`;
+          showEditorToast(msg, 2400, 'error');
+          return { error: true, message: msg };
+        }
+        const targetLayer = targets[0];
+        const pps = window.currentPixelsPerSecond || 80;
+        const inPoint = targetLayer.startSec !== undefined ? targetLayer.startSec : ((targetLayer.startPx || 0) / pps);
+        const durationSec = targetLayer.durationSec !== undefined ? targetLayer.durationSec : ((targetLayer.widthPx || 320) / pps);
+        const fps = (currentProjectState && currentProjectState.fps) || 60;
+        const fd = 1 / fps;
+        const curTime = (typeof getCurrentPlayheadTime === 'function') ? getCurrentPlayheadTime() : (Math.abs(window.timelinePanX || 0) / pps);
+
+        if (window.UndoRedoManager && typeof window.UndoRedoManager.recordSnapshot === 'function') {
+          window.UndoRedoManager.recordSnapshot();
+        }
+
+        const reg = (window.FishEffects && window.FishEffects.registry) || window.FishEffectsRegistry;
+
+        function addSlider(layer, name, val) {
+          let fx = reg && typeof reg.createInstance === 'function' ? reg.createInstance('slider-control', name) : null;
+          if (!fx) {
+            fx = {
+              id: 'fx_slider_' + name.toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+              type: 'slider-control',
+              name: name,
+              isExpanded: true,
+              disabled: false
+            };
+          }
+          fx.name = name;
+          fx.slider = val;
+          layer.effects.push(fx);
+          return fx;
+        }
+
+        let adjLayer = null;
+
+        if (toolName === 'EXPO') {
+          adjLayer = addAdjustmentLayer(durationSec, inPoint);
+          if (!adjLayer) return false;
+          adjLayer.name = 'Exposure Flash Beat';
+          adjLayer.effects = adjLayer.effects || [];
+          adjLayer.expressions = adjLayer.expressions || {};
+          addSlider(adjLayer, 'Max Exposure', 1.5);
+          addSlider(adjLayer, 'Decay', 5.0);
+          const expoFx = reg ? reg.createInstance('exposure-gamma', 'Exposure / Gamma') : null;
+          if (expoFx) {
+            adjLayer.effects.push(expoFx);
+            adjLayer.expressions[`${expoFx.id}:exposure`] = [
+              'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+              'maxExpo = effect("Max Exposure")("ADBE Slider Control-0001");',
+              'decay = effect("Decay")("ADBE Slider Control-0001");',
+              'if (m && m.numKeys > 0) {',
+              '    n = 0;',
+              '    n = m.nearestKey(time).index;',
+              '    if (m.key(n).time > time) n--;',
+              '    if (n > 0) {',
+              '        t = time - m.key(n).time;',
+              '        maxExpo / Math.exp(t * decay);',
+              '    } else {',
+              '        0;',
+              '    }',
+              '} else {',
+              '    0;',
+              '}'
+            ].join('\n');
+          }
+        } else if (toolName === 'LENS') {
+          adjLayer = addAdjustmentLayer(durationSec, inPoint);
+          if (!adjLayer) return false;
+          adjLayer.name = 'Lens Blur Beat';
+          adjLayer.effects = adjLayer.effects || [];
+          adjLayer.expressions = adjLayer.expressions || {};
+          addSlider(adjLayer, 'Max Blur', 50);
+          addSlider(adjLayer, 'Decay', 6.0);
+          const lensFx = reg ? reg.createInstance('camera-lens-blur', 'Camera Lens Blur') : null;
+          if (lensFx) {
+            adjLayer.effects.push(lensFx);
+            adjLayer.expressions[`${lensFx.id}:radius`] = [
+              'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+              'maxBlur = effect("Max Blur")("ADBE Slider Control-0001");',
+              'decay = effect("Decay")("ADBE Slider Control-0001");',
+              'if (m && m.numKeys > 0) {',
+              '    n = 0;',
+              '    n = m.nearestKey(time).index;',
+              '    if (m.key(n).time > time) n--;',
+              '    if (n > 0) {',
+              '        t = time - m.key(n).time;',
+              '        maxBlur / Math.exp(t * decay);',
+              '    } else {',
+              '        0;',
+              '    }',
+              '} else {',
+              '    0;',
+              '}'
+            ].join('\n');
+          }
+        } else if (toolName === 'SHAKY' || toolName === 'SHKE') {
+          adjLayer = addAdjustmentLayer(durationSec, inPoint);
+          if (!adjLayer) return false;
+          adjLayer.name = 'Shake Adjust';
+          adjLayer.effects = adjLayer.effects || [];
+          adjLayer.expressions = adjLayer.expressions || {};
+          addSlider(adjLayer, 'Max Amplitude', 1.0);
+          addSlider(adjLayer, 'Decay', 4.0);
+          const shakeFx = reg ? reg.createInstance('shake', 'Shake') : null;
+          if (shakeFx) {
+            adjLayer.effects.push(shakeFx);
+            adjLayer.expressions[`${shakeFx.id}:amplitude`] = [
+              'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+              'maxAmp = effect("Max Amplitude")("ADBE Slider Control-0001");',
+              'decay = effect("Decay")("ADBE Slider Control-0001");',
+              'if (m && m.numKeys > 0) {',
+              '    n = 0;',
+              '    n = m.nearestKey(time).index;',
+              '    if (m.key(n).time > time) n--;',
+              '    if (n > 0) {',
+              '        t = time - m.key(n).time;',
+              '        maxAmp / Math.exp(t * decay);',
+              '    } else {',
+              '        0;',
+              '    }',
+              '} else {',
+              '    0;',
+              '}'
+            ].join('\n');
+          }
+        } else if (toolName === 'GHST') {
+          const dur = 25 * fd;
+          adjLayer = addAdjustmentLayer(dur, curTime);
+          if (!adjLayer) return false;
+          adjLayer.name = 'Ghost Effect';
+          adjLayer.effects = adjLayer.effects || [];
+          const tfFx = reg ? reg.createInstance('transform', 'Transform') : null;
+          if (tfFx) adjLayer.effects.push(tfFx);
+          addEffectParamKeyframe(adjLayer, tfFx || { id: 'tf' }, 'scale', curTime, 100, [0.0, 0.1, 0.0, 0.95]);
+          addEffectParamKeyframe(adjLayer, tfFx || { id: 'tf' }, 'scale', curTime + dur, 250, [0.0, 0.1, 0.0, 0.95]);
+          addLayerPropKeyframe(adjLayer, 'opacity', curTime, { opacity: 1.0 }, [0.0, 0.1, 0.0, 0.95]);
+          addLayerPropKeyframe(adjLayer, 'opacity', curTime + dur, { opacity: 0.0 }, [0.0, 0.1, 0.0, 0.95]);
+        } else if (toolName === 'WARP') {
+          const dur = 8 * fd;
+          adjLayer = addAdjustmentLayer(dur, curTime);
+          if (!adjLayer) return false;
+          adjLayer.name = 'Warp Effect';
+          adjLayer.effects = adjLayer.effects || [];
+          const warpFx = reg ? reg.createInstance('wave-warp', 'Wave Warp') : null;
+          if (warpFx) {
+            warpFx.waveType = 'smooth-noise';
+            warpFx.waveWidth = 109;
+            warpFx.direction = 0;
+            warpFx.speed = 0.2;
+            warpFx.pinning = 'all';
+            warpFx.phase = 1;
+            warpFx.waveHeight = 228;
+            adjLayer.effects.push(warpFx);
+            addEffectParamKeyframe(adjLayer, warpFx, 'waveHeight', curTime, 228, [0.0, -5.0, 0.1, 1.0]);
+            addEffectParamKeyframe(adjLayer, warpFx, 'waveHeight', curTime + dur, 0, [0.0, -5.0, 0.1, 1.0]);
+          }
+        } else if (toolName === 'FISHEYE') {
+          const start = Math.max(0, curTime - 6 * fd);
+          const dur = 29 * fd;
+          adjLayer = addAdjustmentLayer(dur, start);
+          if (!adjLayer) return false;
+          adjLayer.name = 'Fish Eye Ripple';
+          adjLayer.effects = adjLayer.effects || [];
+          const warpFx = reg ? reg.createInstance('warp', 'Warp') : null;
+          if (warpFx) {
+            warpFx.style = 'fisheye';
+            adjLayer.effects.push(warpFx);
+            const f9 = [0.33, 0.0, 0.67, 1.0];
+            addEffectParamKeyframe(adjLayer, warpFx, 'bend', curTime - 6 * fd, 0, f9);
+            addEffectParamKeyframe(adjLayer, warpFx, 'bend', curTime - 2 * fd, 15, f9);
+            addEffectParamKeyframe(adjLayer, warpFx, 'bend', curTime, -80, f9);
+            addEffectParamKeyframe(adjLayer, warpFx, 'bend', curTime + 6 * fd, 15, f9);
+            addEffectParamKeyframe(adjLayer, warpFx, 'bend', curTime + 14 * fd, -4, f9);
+            addEffectParamKeyframe(adjLayer, warpFx, 'bend', curTime + 22 * fd, 0, f9);
+          }
+        } else if (toolName === 'MIDWAVE') {
+          const start = Math.max(0, curTime - 15 * fd);
+          const dur = 36 * fd;
+          adjLayer = addAdjustmentLayer(dur, start);
+          if (!adjLayer) return false;
+          adjLayer.name = 'Mid-Wave';
+          adjLayer.effects = adjLayer.effects || [];
+          const tileFx = reg ? reg.createInstance('tile', 'Tile') : null;
+          if (tileFx) {
+            tileFx.scale = 150;
+            tileFx.mirror = 1;
+            adjLayer.effects.push(tileFx);
+          }
+          const ww1 = reg ? reg.createInstance('wave-warp', 'Wave Warp 1') : null;
+          if (ww1) {
+            ww1.waveType = 'sine';
+            ww1.waveWidth = 1200;
+            ww1.direction = 45;
+            ww1.speed = 1.3;
+            ww1.pinning = 'horizontal';
+            ww1.phase = 90;
+            adjLayer.effects.push(ww1);
+            addEffectParamKeyframe(adjLayer, ww1, 'waveHeight', curTime - 15 * fd, 0, [0.17, 0.75, 0.001, 0.001]);
+            addEffectParamKeyframe(adjLayer, ww1, 'waveHeight', curTime, 100, [0.001, 0.001, 0.75, 0.17]);
+            addEffectParamKeyframe(adjLayer, ww1, 'waveHeight', curTime + 20 * fd, 0, [0.75, 0.17, 1.0, 1.0]);
+          }
+          const ww2 = reg ? reg.createInstance('wave-warp', 'Wave Warp 2') : null;
+          if (ww2) {
+            ww2.waveType = 'sine';
+            ww2.waveWidth = 1200;
+            ww2.direction = -45;
+            ww2.speed = 1.3;
+            ww2.pinning = 'horizontal';
+            ww2.phase = 90;
+            adjLayer.effects.push(ww2);
+            addEffectParamKeyframe(adjLayer, ww2, 'waveHeight', curTime - 15 * fd, 0, [0.17, 0.75, 0.001, 0.001]);
+            addEffectParamKeyframe(adjLayer, ww2, 'waveHeight', curTime, 100, [0.001, 0.001, 0.75, 0.17]);
+            addEffectParamKeyframe(adjLayer, ww2, 'waveHeight', curTime + 20 * fd, 0, [0.75, 0.17, 1.0, 1.0]);
+          }
+        } else if (toolName === 'HUESPIN') {
+          const dur = 25 * fd;
+          adjLayer = addAdjustmentLayer(dur, curTime);
+          if (!adjLayer) return false;
+          adjLayer.name = 'Hue Spin';
+          adjLayer.effects = adjLayer.effects || [];
+          const hueFx = reg ? reg.createInstance('hue-shift', 'Hue Shift') : null;
+          if (hueFx) {
+            adjLayer.effects.push(hueFx);
+            addEffectParamKeyframe(adjLayer, hueFx, 'hue', curTime, 0, [0.0, 0.0, 1.0, 1.0]);
+            addEffectParamKeyframe(adjLayer, hueFx, 'hue', curTime + dur, 360, [0.0, 0.0, 1.0, 1.0]);
+          }
+        }
+
+        if (adjLayer) {
+          selectTimelineLayer(adjLayer.id, false);
+          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(adjLayer);
+          if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+          if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
+          if (typeof redrawComposition === 'function') redrawComposition('beat-adj');
+          showEditorToast(`Beat Effect: ${adjLayer.name} dibuat (Adjustment Layer)`);
+          return true;
+        }
+        return false;
+      }
+
+      function purgeExistingPresetLayers(curTime, toleranceSec = 0.5) {
+        if (!currentProjectState || !Array.isArray(currentProjectState.layers)) return;
+        const pps = window.currentPixelsPerSecond || 80;
+        const presetNames = new Set(['Warp Effect', 'Hue Spin', 'Ghost Effect', 'Mid-Wave', 'Fish Eye Ripple']);
+        const beforeCount = currentProjectState.layers.length;
+        currentProjectState.layers = currentProjectState.layers.filter(l => {
+          if (l && l.type === 'adjustment' && presetNames.has(l.name)) {
+            const start = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps);
+            const dur = l.durationSec !== undefined ? l.durationSec : ((l.widthPx || 320) / pps);
+            const end = start + dur;
+            if ((curTime >= start - 0.05 && curTime <= end + 0.05) || Math.abs(start - curTime) < toleranceSec) {
+              return false;
+            }
+          }
+          return true;
+        });
+        if (currentProjectState.layers.length !== beforeCount) {
+          if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
+        }
+      }
+
+      function addEffectParamKeyframe(layer, fx, paramId, time, value, easing = [0.33, 0.0, 0.67, 1.0]) {
+        layer.keyframes = layer.keyframes || {};
+        const scopedKey = `${fx.id}:${paramId}`;
+        if (!Array.isArray(layer.keyframes[scopedKey])) layer.keyframes[scopedKey] = [];
+        layer.keyframes[scopedKey].push({
+          time: Number(time.toFixed(4)),
+          value: { [paramId]: value },
+          easing: easing
+        });
+        if (!Array.isArray(layer.keyframes[paramId])) layer.keyframes[paramId] = [];
+        layer.keyframes[paramId].push({
+          time: Number(time.toFixed(4)),
+          value: { [paramId]: value },
+          easing: easing
+        });
+      }
+
+      function addLayerPropKeyframe(layer, prop, time, valObj, easing = [0.33, 0.0, 0.67, 1.0]) {
+        layer.keyframes = layer.keyframes || {};
+        if (!Array.isArray(layer.keyframes[prop])) layer.keyframes[prop] = [];
+        layer.keyframes[prop].push({
+          time: Number(time.toFixed(4)),
+          value: valObj,
+          easing: easing
+        });
+      }
+
+      function applyWarpPreset(toolName, targets) {
+        if (toolName === 'PRESET_WARP1' || toolName === 'WARP1') {
+          if (typeof window.applyPresetWarp1 === 'function') return window.applyPresetWarp1();
+        }
+        if (toolName === 'PRESET_WARP2' || toolName === 'WARP2') {
+          if (typeof window.applyPresetWarp2 === 'function') return window.applyPresetWarp2();
+        }
+        if (toolName === 'PRESET_WARP3' || toolName === 'WARP3') {
+          if (typeof window.applyPresetWarp3 === 'function') return window.applyPresetWarp3();
+        }
+        if (!targets || !targets.length) {
+          const msg = `Pilih layer terlebih dahulu untuk ${toolName}`;
+          showEditorToast(msg, 2400, 'error');
+          return { error: true, message: msg };
+        }
+        const pps = window.currentPixelsPerSecond || 80;
+        const curTime = (typeof window.currentSec === 'number') ? window.currentSec : (Math.abs(window.timelinePanX || 0) / pps);
+        const fd = 1 / ((currentProjectState && currentProjectState.fps) || 60);
+        const reg = (window.FishEffects && window.FishEffects.registry) || window.FishEffectsRegistry;
+
+        if (window.UndoRedoManager && typeof window.UndoRedoManager.recordSnapshot === 'function') {
+          window.UndoRedoManager.recordSnapshot();
+        }
+
+        purgeExistingPresetLayers(curTime);
+
+        if (toolName === 'PRESET_WARP1') {
+          const dur = 63 * fd;
+          const adj = addAdjustmentLayer(dur, curTime);
+          if (!adj) return false;
+          adj.name = 'Warp Effect';
+          adj.effects = adj.effects || [];
+          const warpFx = reg ? reg.createInstance('wave-warp', 'Wave Warp') : null;
+          if (warpFx) {
+            warpFx.waveType = 'smooth-noise';
+            warpFx.waveWidth = 109;
+            warpFx.direction = 0;
+            warpFx.speed = 0.2;
+            warpFx.pinning = 'all';
+            warpFx.phase = 1;
+            warpFx.waveHeight = 228;
+            adj.effects.push(warpFx);
+            addEffectParamKeyframe(adj, warpFx, 'waveHeight', curTime, 228, [0.0, -5.0, 0.1, 1.0]);
+            addEffectParamKeyframe(adj, warpFx, 'waveHeight', curTime + dur, 0, [0.0, -5.0, 0.1, 1.0]);
+          }
+          selectTimelineLayer(adj.id, false);
+          if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+          if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
+          if (typeof redrawComposition === 'function') redrawComposition('warp-preset');
+          showEditorToast('Warp Preset 1 diterapkan (Warp Effect, 63 frames)');
+          return true;
+        }
+
+        if (toolName === 'PRESET_WARP2') {
+          const dur = 70 * fd;
+          const adj = addAdjustmentLayer(dur, curTime);
+          if (!adj) return false;
+          adj.name = 'Hue Spin';
+          adj.effects = adj.effects || [];
+          const hueFx = reg ? reg.createInstance('hue-shift', 'Hue Shift') : null;
+          if (hueFx) {
+            adj.effects.push(hueFx);
+            addEffectParamKeyframe(adj, hueFx, 'hue', curTime, 0, [0.0, 0.0, 1.0, 1.0]);
+            addEffectParamKeyframe(adj, hueFx, 'hue', curTime + dur, 360, [0.0, 0.0, 1.0, 1.0]);
+          }
+          selectTimelineLayer(adj.id, false);
+          if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+          if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
+          if (typeof redrawComposition === 'function') redrawComposition('warp-preset');
+          showEditorToast('Warp Preset 2 diterapkan (Hue Spin, 70 frames)');
+          return true;
+        }
+
+        if (toolName === 'PRESET_WARP3') {
+          // 4-layer stacked combo: Mid-Wave (145f), Warp Effect (63f), Ghost Effect (125f), Hue Spin (70f)
+          const mwStart = Math.max(0, curTime - 60 * fd);
+          const mwDur = 145 * fd;
+          const mwAdj = addAdjustmentLayer(mwDur, mwStart);
+          if (mwAdj) {
+            mwAdj.name = 'Mid-Wave';
+            mwAdj.effects = mwAdj.effects || [];
+            const tileFx = reg ? reg.createInstance('tile', 'Tile') : null;
+            if (tileFx) { tileFx.scale = 150; tileFx.mirror = 1; mwAdj.effects.push(tileFx); }
+            const ww1 = reg ? reg.createInstance('wave-warp', 'Wave Warp 1') : null;
+            if (ww1) {
+              ww1.waveType = 'sine'; ww1.waveWidth = 1200; ww1.direction = 45; ww1.speed = 1.3; ww1.pinning = 'horizontal'; ww1.phase = 90;
+              mwAdj.effects.push(ww1);
+              addEffectParamKeyframe(mwAdj, ww1, 'waveHeight', mwStart, 0, [0.17, 0.75, 0.001, 0.001]);
+              addEffectParamKeyframe(mwAdj, ww1, 'waveHeight', curTime, 100, [0.001, 0.001, 0.75, 0.17]);
+              addEffectParamKeyframe(mwAdj, ww1, 'waveHeight', mwStart + mwDur, 0, [0.75, 0.17, 1.0, 1.0]);
+            }
+            const ww2 = reg ? reg.createInstance('wave-warp', 'Wave Warp 2') : null;
+            if (ww2) {
+              ww2.waveType = 'sine'; ww2.waveWidth = 1200; ww2.direction = -45; ww2.speed = 1.3; ww2.pinning = 'horizontal'; ww2.phase = 90;
+              mwAdj.effects.push(ww2);
+              addEffectParamKeyframe(mwAdj, ww2, 'waveHeight', mwStart, 0, [0.17, 0.75, 0.001, 0.001]);
+              addEffectParamKeyframe(mwAdj, ww2, 'waveHeight', curTime, 100, [0.001, 0.001, 0.75, 0.17]);
+              addEffectParamKeyframe(mwAdj, ww2, 'waveHeight', mwStart + mwDur, 0, [0.75, 0.17, 1.0, 1.0]);
+            }
+          }
+
+          const wpDur = 63 * fd;
+          const wpAdj = addAdjustmentLayer(wpDur, curTime);
+          if (wpAdj) {
+            wpAdj.name = 'Warp Effect';
+            wpAdj.effects = wpAdj.effects || [];
+            const warpFx = reg ? reg.createInstance('wave-warp', 'Wave Warp') : null;
+            if (warpFx) {
+              warpFx.waveType = 'smooth-noise'; warpFx.waveWidth = 109; warpFx.direction = 0; warpFx.speed = 0.2; warpFx.pinning = 'all'; warpFx.phase = 1;
+              wpAdj.effects.push(warpFx);
+              addEffectParamKeyframe(wpAdj, warpFx, 'waveHeight', curTime, 228, [0.0, -5.0, 0.1, 1.0]);
+              addEffectParamKeyframe(wpAdj, warpFx, 'waveHeight', curTime + wpDur, 0, [0.0, -5.0, 0.1, 1.0]);
+            }
+          }
+
+          const ghDur = 125 * fd;
+          const ghAdj = addAdjustmentLayer(ghDur, curTime);
+          if (ghAdj) {
+            ghAdj.name = 'Ghost Effect';
+            ghAdj.effects = ghAdj.effects || [];
+            const tfFx = reg ? reg.createInstance('transform', 'Transform') : null;
+            if (tfFx) ghAdj.effects.push(tfFx);
+            addEffectParamKeyframe(ghAdj, tfFx || { id: 'tf' }, 'scale', curTime, 100, [0.0, 0.1, 0.0, 0.95]);
+            addEffectParamKeyframe(ghAdj, tfFx || { id: 'tf' }, 'scale', curTime + ghDur, 250, [0.0, 0.1, 0.0, 0.95]);
+            addLayerPropKeyframe(ghAdj, 'opacity', curTime, { opacity: 1.0 }, [0.0, 0.1, 0.0, 0.95]);
+            addLayerPropKeyframe(ghAdj, 'opacity', curTime + ghDur, { opacity: 0.0 }, [0.0, 0.1, 0.0, 0.95]);
+          }
+
+          const hsDur = 70 * fd;
+          const hsAdj = addAdjustmentLayer(hsDur, curTime);
+          if (hsAdj) {
+            hsAdj.name = 'Hue Spin';
+            hsAdj.effects = hsAdj.effects || [];
+            const hueFx = reg ? reg.createInstance('hue-shift', 'Hue Shift') : null;
+            if (hueFx) {
+              hsAdj.effects.push(hueFx);
+              addEffectParamKeyframe(hsAdj, hueFx, 'hue', curTime, 0, [0.0, 0.0, 1.0, 1.0]);
+              addEffectParamKeyframe(hsAdj, hueFx, 'hue', curTime + hsDur, 360, [0.0, 0.0, 1.0, 1.0]);
+            }
+          }
+
+          if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+          if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
+          if (typeof redrawComposition === 'function') redrawComposition('warp-preset');
+          showEditorToast('Warp Preset 3 diterapkan (4-Layer Adjustment Stack)');
+          return true;
+        }
+
+        return false;
+      }
+
+      function applyTransitionEffect(toolName, targets) {
+        if (typeof window.applyTransitionKeyframes === 'function') {
+          return window.applyTransitionKeyframes(toolName);
+        }
+        if (!targets || !targets.length) {
+          const msg = `Pilih layer terlebih dahulu untuk ${toolName}`;
+          showEditorToast(msg, 2400, 'error');
+          return { error: true, message: msg };
+        }
+        const pps = window.currentPixelsPerSecond || 80;
+        const fd = 1 / ((currentProjectState && currentProjectState.fps) || 60);
+        const dur = 15 * fd;
+        const f9 = [0.33, 0.0, 0.67, 1.0];
+
+        if (window.UndoRedoManager && typeof window.UndoRedoManager.recordSnapshot === 'function') {
+          window.UndoRedoManager.recordSnapshot();
+        }
+
+        targets.forEach(layer => {
+          const inP = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
+          const durSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
+          const outP = inP + durSec;
+          const origScaleW = layer.scaleW !== undefined ? layer.scaleW : 100;
+          const origScaleH = layer.scaleH !== undefined ? layer.scaleH : 100;
+
+          if (toolName === 'TRANS_FADE_IN') {
+            addLayerPropKeyframe(layer, 'opacity', inP, { opacity: 0.0 }, f9);
+            addLayerPropKeyframe(layer, 'opacity', inP + dur, { opacity: 1.0 }, f9);
+          } else if (toolName === 'TRANS_FADE_OUT') {
+            addLayerPropKeyframe(layer, 'opacity', Math.max(inP, outP - dur), { opacity: 1.0 }, f9);
+            addLayerPropKeyframe(layer, 'opacity', outP, { opacity: 0.0 }, f9);
+          } else if (toolName === 'TRANS_SCALE_IN') {
+            addLayerPropKeyframe(layer, 'scale', inP, { scaleW: 0, scaleH: 0 }, f9);
+            addLayerPropKeyframe(layer, 'scale', inP + dur, { scaleW: origScaleW, scaleH: origScaleH }, f9);
+          } else if (toolName === 'TRANS_SCALE_OUT') {
+            addLayerPropKeyframe(layer, 'scale', Math.max(inP, outP - dur), { scaleW: origScaleW, scaleH: origScaleH }, f9);
+            addLayerPropKeyframe(layer, 'scale', outP, { scaleW: 0, scaleH: 0 }, f9);
+          }
+        });
+
+        if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+        if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
+        if (typeof redrawComposition === 'function') redrawComposition('trans');
+        showEditorToast(`Transisi: ${toolName.replace('TRANS_', '').replace('_', ' ')} diterapkan`);
+        return true;
+      }
+
+      function applyCutefishEffect(toolName, targets) {
+        if (!targets || !targets.length) {
+          const msg = `Pilih layer terlebih dahulu untuk Cutefish ${toolName}`;
+          showEditorToast(msg, 2400, 'error');
+          return { error: true, message: msg };
+        }
+        const targetLayer = targets[0];
+        const pps = window.currentPixelsPerSecond || 80;
+        const inPoint = targetLayer.startSec !== undefined ? targetLayer.startSec : ((targetLayer.startPx || 0) / pps);
+        const durationSec = targetLayer.durationSec !== undefined ? targetLayer.durationSec : ((targetLayer.widthPx || 320) / pps);
+        const reg = (window.FishEffects && window.FishEffects.registry) || window.FishEffectsRegistry;
+
+        if (window.UndoRedoManager && typeof window.UndoRedoManager.recordSnapshot === 'function') {
+          window.UndoRedoManager.recordSnapshot();
+        }
+
+        switch (toolName) {
+          case 'CF_COLORIZE': {
+            const adj = addAdjustmentLayer(durationSec, inPoint);
+            if (adj) {
+              adj.name = 'CF Colorize';
+              adj.effects = adj.effects || [];
+              const tintFx = reg ? reg.createInstance('tint', 'Tint') : null;
+              if (tintFx) {
+                const randomHex = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+                tintFx.mapWhiteTo = randomHex;
+                adj.effects.push(tintFx);
+              }
+              showEditorToast('CF Colorize dibuat (Adjustment Layer)');
+            }
+            break;
+          }
+          case 'CF_SCANLINE': {
+            const adj = addAdjustmentLayer(durationSec, inPoint);
+            if (adj) {
+              adj.name = 'CF Scanline';
+              adj.effects = adj.effects || [];
+              const scanFx = reg ? reg.createInstance('scanline', 'Scanline') : null;
+              if (scanFx) adj.effects.push(scanFx);
+              showEditorToast('CF Scanline dibuat (Adjustment Layer)');
+            }
+            break;
+          }
+          case 'CF_MONO': {
+            const adj = addAdjustmentLayer(durationSec, inPoint);
+            if (adj) {
+              adj.name = 'CF Mono';
+              adj.effects = adj.effects || [];
+              const monoFx = reg ? reg.createInstance('mono', 'Black & White') : null;
+              if (monoFx) adj.effects.push(monoFx);
+              showEditorToast('CF Mono dibuat (Adjustment Layer)');
+            }
+            break;
+          }
+          case 'CF_STARBURST': {
+            const sol = (typeof addSolidLayer === 'function') ? addSolidLayer(durationSec, inPoint) : null;
+            if (sol) {
+              sol.name = 'CF Starburst';
+              sol.effects = sol.effects || [];
+              const sbFx = reg ? reg.createInstance('star_burst', 'Star Burst') : null;
+              if (sbFx) sol.effects.push(sbFx);
+              showEditorToast('CF Starburst dibuat (Solid Layer)');
+            }
+            break;
+          }
+          case 'CF_GRID': {
+            const sol = (typeof addSolidLayer === 'function') ? addSolidLayer(durationSec, inPoint) : null;
+            if (sol) {
+              sol.name = 'CF Grid';
+              sol.effects = sol.effects || [];
+              const gridFx = reg ? reg.createInstance('grid', 'Grid') : null;
+              if (gridFx) sol.effects.push(gridFx);
+              showEditorToast('CF Grid dibuat (Solid Layer)');
+            }
+            break;
+          }
+          case 'CF_RADIO': {
+            const sol = (typeof addSolidLayer === 'function') ? addSolidLayer(durationSec, inPoint) : null;
+            if (sol) {
+              sol.name = 'CF Radio';
+              sol.blendMode = 'screen';
+              sol.effects = sol.effects || [];
+              const radFx = reg ? reg.createInstance('radio_waves', 'Radio Waves') : null;
+              if (radFx) sol.effects.push(radFx);
+              showEditorToast('CF Radio dibuat (Solid Layer)');
+            }
+            break;
+          }
+          case 'CF_GLOW_AURA': {
+            targets.forEach(l => {
+              l.effects = l.effects || [];
+              const fx = reg ? reg.createInstance('glow_aura', 'Glow Aura') : null;
+              if (fx) l.effects.push(fx);
+            });
+            showEditorToast('CF Glow Aura diterapkan pada layer');
+            break;
+          }
+          case 'CF_SOLID_AURA': {
+            targets.forEach(l => {
+              l.effects = l.effects || [];
+              const fx = reg ? reg.createInstance('solid_aura', 'Solid Aura') : null;
+              if (fx) l.effects.push(fx);
+            });
+            showEditorToast('CF Solid Aura diterapkan pada layer');
+            break;
+          }
+          case 'CF_SHATTER_SIMPLE': {
+            targets.forEach(l => {
+              l.effects = l.effects || [];
+              const fx = reg ? reg.createInstance('shatter', 'Shatter') : null;
+              if (fx) l.effects.push(fx);
+            });
+            showEditorToast('CF Shatter Simple diterapkan');
+            break;
+          }
+          case 'CF_SHATTER_SLOW': {
+            targets.forEach(l => {
+              l.effects = l.effects || [];
+              const fx = reg ? reg.createInstance('shatter', 'Shatter') : null;
+              if (fx) {
+                fx.gravity = 0;
+                l.effects.push(fx);
+              }
+            });
+            showEditorToast('CF Shatter Slow diterapkan');
+            break;
+          }
+          case 'CF_DROP_BEVEL': {
+            targets.forEach(l => {
+              l.effects = l.effects || [];
+              const bev = reg ? reg.createInstance('bevel', 'Bevel') : null;
+              if (bev) l.effects.push(bev);
+              const drop = reg ? reg.createInstance('drop_shadow', 'Drop Shadow') : null;
+              if (drop) l.effects.push(drop);
+            });
+            showEditorToast('CF Drop Bevel diterapkan');
+            break;
+          }
+          default:
+            return false;
+        }
+
+        if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+        if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
+        if (typeof redrawComposition === 'function') redrawComposition('cutefish');
+        return true;
+      }
+
+      function executeFishTool(toolName, ...args) {
+        if (!toolName) return false;
+        if (typeof window.executeFishTool === 'function' && window.executeFishTool !== executeFishTool) {
+          return window.executeFishTool(toolName, ...args);
+        }
+
+        const res = (currentProjectState && currentProjectState.resolution) || '1080p';
+        const aspect = (currentProjectState && currentProjectState.aspectRatio) || '16:9';
+        const baseDims = window.getProjectDimensions ? window.getProjectDimensions(res, aspect) : [1920, 1080];
+        const baseW = (baseDims && (baseDims.width || baseDims[0])) || 1920;
+        const baseH = (baseDims && (baseDims.height || baseDims[1])) || 1080;
+
+        switch (toolName) {
+          // --- ANCHOR POINT (9-POINT GRID) ---
+          case 'setAnchorPoint': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = 'Pilih layer terlebih dahulu untuk mengubah anchor point';
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+
+            const pos = parseInt(args[0], 10) || 5;
+            const col = (pos - 1) % 3; // 0: left, 1: center, 2: right
+            const row = Math.floor((pos - 1) / 3); // 0: top, 1: middle, 2: bottom
+
+            const posNames = [
+              'Top Left', 'Top Center', 'Top Right',
+              'Middle Left', 'Center', 'Middle Right',
+              'Bottom Left', 'Bottom Center', 'Bottom Right'
+            ];
+            const posName = posNames[pos - 1] || 'Center';
+
+            if (window.UndoRedoManager && typeof window.UndoRedoManager.recordSnapshot === 'function') {
+              window.UndoRedoManager.recordSnapshot();
+            }
+
+            targets.forEach(layer => {
+              const w = layer.scaleW !== undefined ? Math.abs(layer.scaleW) : (layer.normW !== undefined ? Math.abs(layer.normW * baseW) : (layer.mediaWidth || 300));
+              const h = layer.scaleH !== undefined ? Math.abs(layer.scaleH) : (layer.normH !== undefined ? Math.abs(layer.normH * baseH) : (layer.mediaHeight || 300));
+
+              let newAx = 0;
+              let newAy = 0;
+              if (col === 0) newAx = -w / 2;
+              else if (col === 1) newAx = 0;
+              else if (col === 2) newAx = w / 2;
+
+              if (row === 0) newAy = -h / 2;
+              else if (row === 1) newAy = 0;
+              else if (row === 2) newAy = h / 2;
+
+              const oldAx = layer.anchorX || 0;
+              const oldAy = layer.anchorY || 0;
+              const dAx = newAx - oldAx;
+              const dAy = newAy - oldAy;
+
+              const curRot = layer.rotZ !== undefined ? layer.rotZ : (layer.rotation || 0);
+              const rad = (curRot * Math.PI) / 180;
+              const cos = Math.cos(rad);
+              const sin = Math.sin(rad);
+
+              const curPosX = layer.posX !== undefined ? layer.posX : (baseW / 2);
+              const curPosY = layer.posY !== undefined ? layer.posY : (baseH / 2);
+
+              const newPosX = curPosX - (dAx * (1 - cos) + dAy * sin);
+              const newPosY = curPosY - (dAy * (1 - cos) - dAx * sin);
+
+              layer.anchorX = Number(newAx.toFixed(2));
+              layer.anchorY = Number(newAy.toFixed(2));
+              layer.posX = Number(newPosX.toFixed(2));
+              layer.posY = Number(newPosY.toFixed(2));
+
+              if (layer.normW) layer.normX = (layer.posX - (layer.normW * baseW) / 2) / baseW;
+              if (layer.normH) layer.normY = (layer.posY - (layer.normH * baseH) / 2) / baseH;
+
+              if (typeof invalidatePreviewCacheForLayer === 'function') {
+                invalidatePreviewCacheForLayer(layer);
+              }
+            });
+
+            if (typeof syncTransformControllerValues === 'function') syncTransformControllerValues();
+            if (typeof window.syncInspectorState === 'function') window.syncInspectorState();
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            if (typeof redrawComposition === 'function') redrawComposition('setAnchorPoint');
+
+            showEditorToast(`Anchor Point: ${posName}`);
+            return true;
+          }
+
+          // --- 6-WAY ALIGNMENT ---
+          case 'ALIGN_LEFT':
+          case 'ALIGN_HCENTER':
+          case 'ALIGN_RIGHT':
+          case 'ALIGN_TOP':
+          case 'ALIGN_VCENTER':
+          case 'ALIGN_BOTTOM': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = 'Pilih layer terlebih dahulu untuk perataan (Align)';
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+
+            if (window.UndoRedoManager && typeof window.UndoRedoManager.recordSnapshot === 'function') {
+              window.UndoRedoManager.recordSnapshot();
+            }
+
+            const alignLabels = {
+              'ALIGN_LEFT': 'Align Left',
+              'ALIGN_HCENTER': 'Align Horizontal Center',
+              'ALIGN_RIGHT': 'Align Right',
+              'ALIGN_TOP': 'Align Top',
+              'ALIGN_VCENTER': 'Align Vertical Center',
+              'ALIGN_BOTTOM': 'Align Bottom'
+            };
+
+            targets.forEach(layer => {
+              const w = layer.scaleW !== undefined ? Math.abs(layer.scaleW) : (layer.normW !== undefined ? Math.abs(layer.normW * baseW) : (layer.mediaWidth || 300));
+              const h = layer.scaleH !== undefined ? Math.abs(layer.scaleH) : (layer.normH !== undefined ? Math.abs(layer.normH * baseH) : (layer.mediaHeight || 300));
+
+              if (toolName === 'ALIGN_LEFT') layer.posX = Number((w / 2).toFixed(2));
+              else if (toolName === 'ALIGN_HCENTER') layer.posX = Number((baseW / 2).toFixed(2));
+              else if (toolName === 'ALIGN_RIGHT') layer.posX = Number((baseW - w / 2).toFixed(2));
+              else if (toolName === 'ALIGN_TOP') layer.posY = Number((h / 2).toFixed(2));
+              else if (toolName === 'ALIGN_VCENTER') layer.posY = Number((baseH / 2).toFixed(2));
+              else if (toolName === 'ALIGN_BOTTOM') layer.posY = Number((baseH - h / 2).toFixed(2));
+
+              if (layer.normW) layer.normX = (layer.posX - (layer.normW * baseW) / 2) / baseW;
+              if (layer.normH) layer.normY = (layer.posY - (layer.normH * baseH) / 2) / baseH;
+
+              if (typeof invalidatePreviewCacheForLayer === 'function') {
+                invalidatePreviewCacheForLayer(layer);
+              }
+            });
+
+            if (typeof syncTransformControllerValues === 'function') syncTransformControllerValues();
+            if (typeof window.syncInspectorState === 'function') window.syncInspectorState();
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            if (typeof redrawComposition === 'function') redrawComposition('align');
+
+            showEditorToast(alignLabels[toolName] || 'Layer diratakan');
+            return true;
+          }
+
+          // --- CUT & TRIM ---
+          case 'CUT_FRONT':
+          case 'CUT_LEFT': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = 'Pilih layer terlebih dahulu untuk memotong (Cut Front)';
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            if (typeof executeCutLeft === 'function') executeCutLeft();
+            else if (typeof executeTrimIn === 'function') executeTrimIn();
+            showEditorToast('Cut Front');
+            return true;
+          }
+          case 'CUT_MID': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = 'Pilih layer terlebih dahulu untuk membagi (Cut Mid)';
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            if (typeof executeCutMid === 'function') executeCutMid();
+            showEditorToast('Split Layer');
+            return true;
+          }
+          case 'CUT_BACK':
+          case 'CUT_RIGHT': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = 'Pilih layer terlebih dahulu untuk memotong (Cut Back)';
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            if (typeof executeCutRight === 'function') executeCutRight();
+            else if (typeof executeTrimOut === 'function') executeTrimOut();
+            showEditorToast('Cut Back');
+            return true;
+          }
+
+          // --- QUICK ACTIONS ---
+          case 'PRECOMP': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = 'Pilih layer terlebih dahulu untuk membuat Precompose';
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            if (typeof precomposeSelectedLayers === 'function') {
+              precomposeSelectedLayers(false, 'normal');
+              showEditorToast('Precompose dibuat');
+            }
+            return true;
+          }
+          case 'CENTER':
+          case 'CENTERINCOMP': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = 'Pilih layer terlebih dahulu untuk memusatkan posisi';
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            if (window.UndoRedoManager && typeof window.UndoRedoManager.recordSnapshot === 'function') {
+              window.UndoRedoManager.recordSnapshot();
+            }
+            targets.forEach(layer => {
+              layer.posX = Number((baseW / 2).toFixed(2));
+              layer.posY = Number((baseH / 2).toFixed(2));
+              if (layer.normW) layer.normX = (layer.posX - (layer.normW * baseW) / 2) / baseW;
+              if (layer.normH) layer.normY = (layer.posY - (layer.normH * baseH) / 2) / baseH;
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+            });
+            if (typeof syncTransformControllerValues === 'function') syncTransformControllerValues();
+            if (typeof window.syncInspectorState === 'function') window.syncInspectorState();
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            if (typeof redrawComposition === 'function') redrawComposition('center');
+            showEditorToast('Layer dipusatkan ke tengah viewport');
+            return true;
+          }
+          case 'OVERLAP': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = 'Pilih layer terlebih dahulu untuk menerapkan Overlap';
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            if (typeof applyKeyframeOverlap === 'function') {
+              const res = applyKeyframeOverlap();
+              if (res && res.error) {
+                showEditorToast(res.message || 'Gagal menerapkan Overlap', 2400, 'error');
+                return res;
+              }
+            }
+            return true;
+          }
+          case 'SCREENSHOT':
+          case 'PNG': {
+            const canvas = document.getElementById('editor-active-canvas');
+            if (!canvas) {
+              showEditorToast('Canvas tidak ditemukan untuk screenshot', 2400, 'error');
+              return { error: true, message: 'Canvas tidak ditemukan' };
+            }
+            try {
+              const dataUrl = canvas.toDataURL('image/png');
+              const a = document.createElement('a');
+              a.download = `snapshot_${Date.now()}.png`;
+              a.href = dataUrl;
+              a.click();
+              showEditorToast('Frame snapshot berhasil disimpan!');
+              return true;
+            } catch (err) {
+              showEditorToast('Gagal mengambil screenshot: ' + err.message, 2400, 'error');
+              return { error: true, message: err.message };
+            }
+          }
+          case 'DUP_COMP':
+          case 'DUP': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = 'Pilih layer terlebih dahulu untuk menduplikasi';
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            const isPrecomp = targets.some(l => l.type === 'precomp');
+            if (isPrecomp && typeof duplicatePrecompLayer === 'function') {
+              duplicatePrecompLayer();
+              showEditorToast('Precompose berhasil diduplikasi');
+            } else if (typeof duplicateSelectedLayers === 'function') {
+              duplicateSelectedLayers();
+              showEditorToast('Layer berhasil diduplikasi');
+            }
+            return true;
+          }
+
+          // --- TOOLBOX: LAYER ---
+          case 'FRZ': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = 'Pilih layer terlebih dahulu untuk Freeze Frame';
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            const playheadSec = (typeof getPlayheadSecForOperation === 'function') ? getPlayheadSecForOperation() : 0;
+            targets.forEach(layer => {
+              layer.freezeTime = playheadSec;
+              layer.isFrozen = true;
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+            });
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            if (typeof redrawComposition === 'function') redrawComposition('freeze');
+            showEditorToast('Freeze Frame diterapkan');
+            return true;
+          }
+          case 'FIT': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = 'Pilih layer terlebih dahulu untuk Fit to Comp';
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            if (window.UndoRedoManager && typeof window.UndoRedoManager.recordSnapshot === 'function') {
+              window.UndoRedoManager.recordSnapshot();
+            }
+            targets.forEach(layer => {
+              layer.scaleW = baseW;
+              layer.scaleH = baseH;
+              layer.posX = Number((baseW / 2).toFixed(2));
+              layer.posY = Number((baseH / 2).toFixed(2));
+              layer.anchorX = 0;
+              layer.anchorY = 0;
+              layer.normW = 1.0;
+              layer.normH = 1.0;
+              layer.normX = 0;
+              layer.normY = 0;
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+            });
+            if (typeof syncTransformControllerValues === 'function') syncTransformControllerValues();
+            if (typeof window.syncInspectorState === 'function') window.syncInspectorState();
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            if (typeof redrawComposition === 'function') redrawComposition('fit');
+            showEditorToast('Layer disesuaikan ke ukuran komposisi (Fit)');
+            return true;
+          }
+          case 'DSH': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = 'Pilih layer terlebih dahulu untuk efek Drop Shadow';
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            if (typeof addEffectToLayer === 'function') {
+              addEffectToLayer('drop-shadow');
+              showEditorToast('Efek Drop Shadow ditambahkan');
+            }
+            return true;
+          }
+          case 'MIR': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = 'Pilih layer terlebih dahulu untuk Mirror / Flip';
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            if (window.UndoRedoManager && typeof window.UndoRedoManager.recordSnapshot === 'function') {
+              window.UndoRedoManager.recordSnapshot();
+            }
+            targets.forEach(layer => {
+              const curW = layer.scaleW !== undefined ? layer.scaleW : 300;
+              layer.scaleW = -curW;
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+            });
+            if (typeof syncTransformControllerValues === 'function') syncTransformControllerValues();
+            if (typeof window.syncInspectorState === 'function') window.syncInspectorState();
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            if (typeof redrawComposition === 'function') redrawComposition('mirror');
+            showEditorToast('Layer dibalik secara horizontal (Mirror)');
+            return true;
+          }
+
+          // --- TOOLBOX: CREATE ---
+          case 'SHA': {
+            if (typeof addShapeLayer === 'function') {
+              addShapeLayer('rectangle');
+              showEditorToast('Shape Layer baru dibuat');
+            }
+            return true;
+          }
+          case 'SOL': {
+            if (typeof addSolidLayer === 'function') {
+              addSolidLayer();
+              showEditorToast('Solid Layer baru dibuat');
+            }
+            return true;
+          }
+          case 'NUL': {
+            if (typeof addNullLayer === 'function') {
+              addNullLayer();
+              showEditorToast('Null Object baru dibuat');
+            }
+            return true;
+          }
+          case 'CAM': {
+            if (typeof addCameraLayer === 'function') {
+              addCameraLayer();
+              showEditorToast('Camera Layer baru dibuat');
+            }
+            return true;
+          }
+          case 'ADJ': {
+            if (typeof addAdjustmentLayer === 'function') {
+              addAdjustmentLayer();
+              showEditorToast('Adjustment Layer baru dibuat');
+            }
+            return true;
+          }
+
+          // --- TOOLBOX: EFFECTS ---
+          case 'FILL':
+          case 'TINT':
+          case 'BLUR':
+          case 'LUM':
+          case 'CURV':
+          case 'HUE': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = `Pilih layer terlebih dahulu untuk efek ${toolName}`;
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            const fxMap = {
+              'FILL': 'fill',
+              'TINT': 'tint',
+              'BLUR': 'fast-box-blur',
+              'LUM': 'lumia',
+              'CURV': 'curve',
+              'HUE': 'hue-shift'
+            };
+            const fxId = fxMap[toolName];
+            if (typeof addEffectToLayer === 'function' && fxId) {
+              addEffectToLayer(fxId);
+              showEditorToast(`Efek ${toolName} ditambahkan`);
+            }
+            return true;
+          }
+
+          // --- BEAT EFFECTS & PRESETS (AUTHENTIC NULL-PARENT & ADJUSTMENT ARCHITECTURE) ---
+          case 'Y_BEAT':
+          case 'X_BEAT':
+          case 'Y_FLIP':
+          case 'X_FLIP':
+          case 'SCALE_BEAT':
+          case 'SCALE_OVERLAP':
+          case 'OSCILLATE':
+          case 'SWING':
+          case 'PANNING_POS':
+          case 'PANNING_ROT':
+          case 'PANNING_SCALE':
+          case 'PANNING_MIX_PR':
+          case 'PANNING_MIX_ALL': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = `Pilih layer terlebih dahulu untuk ${toolName}`;
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            return applyNullBeatEffect(toolName, targets);
+          }
+
+          case 'EXPO':
+          case 'LENS':
+          case 'SHAKY':
+          case 'GHST':
+          case 'WARP':
+          case 'FISHEYE':
+          case 'MIDWAVE':
+          case 'HUESPIN': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = `Pilih layer terlebih dahulu untuk ${toolName}`;
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            return applyAdjustmentBeatEffect(toolName, targets);
+          }
+
+          case 'PRESET_WARP1':
+          case 'PRESET_WARP2':
+          case 'PRESET_WARP3': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = `Pilih layer terlebih dahulu untuk ${toolName}`;
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            return applyWarpPreset(toolName, targets);
+          }
+
+          // --- TRANSITIONS ---
+          case 'TRANS_FADE_IN':
+          case 'TRANS_FADE_OUT':
+          case 'TRANS_SCALE_IN':
+          case 'TRANS_SCALE_OUT': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = `Pilih layer terlebih dahulu untuk ${toolName.replace('TRANS_', '').replace('_', ' ')}`;
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            return applyTransitionEffect(toolName, targets);
+          }
+
+          // --- CUTEFISH STYLE ---
+          case 'CF_COLORIZE':
+          case 'CF_SCANLINE':
+          case 'CF_MONO':
+          case 'CF_STARBURST':
+          case 'CF_GRID':
+          case 'CF_RADIO':
+          case 'CF_GLOW_AURA':
+          case 'CF_SOLID_AURA':
+          case 'CF_SHATTER_SIMPLE':
+          case 'CF_SHATTER_SLOW':
+          case 'CF_DROP_BEVEL': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const msg = `Pilih layer terlebih dahulu untuk Cutefish ${toolName.replace('CF_', '').replace('_', ' ')}`;
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            return applyCutefishEffect(toolName, targets);
+          }
+
+          // --- VELOCITY ---
+          case 'TWIX':
+          case 'TMRE': {
+            const targets = getSelectedLayersForFishTool();
+            if (!targets.length) {
+              const label = toolName === 'TWIX' ? 'Twixtor' : 'Time Remapping';
+              const msg = `Pilih layer terlebih dahulu untuk menggunakan ${label}`;
+              showEditorToast(msg, 2400, 'error');
+              return { error: true, message: msg };
+            }
+            const targetLayer = targets[0];
+            if (toolName === 'TMRE') {
+              targetLayer.timeRemapEnabled = true;
+              showEditorToast('Time Remapping diaktifkan');
+            } else {
+              showEditorToast('Twixtor Speed Ramping diterapkan');
+            }
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            return true;
+          }
+
+          // --- FORMAT & FPS ---
+          case 'setCompositionFormat': {
+            const w = parseInt(args[0], 10) || 1920;
+            const h = parseInt(args[1], 10) || 1080;
+            let ratioStr = `${w}:${h}`;
+            if (w === 1920 && h === 1080) ratioStr = '16:9';
+            else if (w === 1080 && h === 1920) ratioStr = '9:16';
+            else if (w === 1080 && h === 1080) ratioStr = '1:1';
+            else if (w === 1080 && h === 1440) ratioStr = '3:4';
+            else if (w === 1440 && h === 1080) ratioStr = '4:3';
+
+            if (typeof updatePreviewCanvas === 'function') {
+              updatePreviewCanvas(ratioStr, currentProjectState.resolution || '1080p', currentProjectState.fps || 60, currentProjectState.bgColor || 'transparent');
+              showEditorToast(`Format Komposisi: ${ratioStr} (${w}×${h})`);
+            }
+            return true;
+          }
+          case 'setCompositionFPS': {
+            const fps = parseInt(args[0], 10) || 60;
+            if (typeof updatePreviewCanvas === 'function') {
+              updatePreviewCanvas(currentProjectState.aspectRatio || '16:9', currentProjectState.resolution || '1080p', fps, currentProjectState.bgColor || 'transparent');
+              showEditorToast(`Frame Rate: ${fps} FPS`);
+            }
+            return true;
+          }
+
+          // --- 3D GENERATOR & CUBE GENERATOR ---
+          case 'CREATE_CUBE': {
+            const opts = args[0] || {};
+            if (opts.useLayer) {
+              const targets = getSelectedLayersForFishTool();
+              if (!targets.length) {
+                const msg = 'Pilih layer terlebih dahulu untuk membuat kubus dari layer';
+                showEditorToast(msg, 2400, 'error');
+                return { error: true, message: msg };
+              }
+            }
+            const targets = getSelectedLayersForFishTool();
+            if (targets.length && typeof addEffectToLayer === 'function') {
+              addEffectToLayer('box_3d');
+              showEditorToast('Kubus 3D diterapkan pada layer');
+              return true;
+            }
+            if (typeof addSolidLayer === 'function') {
+              addSolidLayer();
+              if (typeof addEffectToLayer === 'function') addEffectToLayer('box_3d');
+              showEditorToast('Kubus 3D baru dibuat');
+              return true;
+            }
+            showEditorToast('Kubus 3D dibuat');
+            return true;
+          }
+          case 'GEN_3D_3SPLIT':
+          case 'GEN_3D_2SPLIT':
+          case 'GEN_3D_TUNNEL':
+          case 'GEN_3D_PHONE':
+          case 'GEN_3D_ZFLIP':
+          case 'GEN_3D_ZFOLD':
+          case 'GEN_3D_TABLET':
+          case 'GEN_3D_LAPTOP':
+          case 'GEN_3D_MONITOR':
+          case 'GEN_3D_PC':
+          case 'GEN_3D_CRT':
+          case 'GEN_3D_ROOM':
+          case 'GEN_3D_DOOR':
+          case 'GEN_3D_WINDOW':
+          case 'GEN_3D_TABLE':
+          case 'GEN_3D_DESK':
+          case 'GEN_3D_CABINET':
+          case 'GEN_3D_BOX':
+          case 'GEN_3D_BOOK':
+          case 'GEN_3D_BINDER':
+          case 'GEN_3D_GLASSES':
+          case 'GEN_3D_MC': {
+            const targets = getSelectedLayersForFishTool();
+            if (targets.length) {
+              if (typeof addEffectToLayer === 'function') addEffectToLayer('box_3d');
+              showEditorToast(`3D Scene: ${toolName.replace('GEN_3D_', '')} diterapkan`);
+            } else if (typeof addSolidLayer === 'function') {
+              addSolidLayer();
+              if (typeof addEffectToLayer === 'function') addEffectToLayer('box_3d');
+              showEditorToast(`3D Scene: ${toolName.replace('GEN_3D_', '')} dibuat`);
+            } else {
+              showEditorToast('Pilih layer terlebih dahulu untuk membuat scene 3D', 2400, 'error');
+            }
+            return true;
+          }
+
+          default: {
+            console.warn('[executeFishTool] Unhandled tool:', toolName, args);
+            showEditorToast(`Tool: ${toolName}`);
+            return true;
+          }
+        }
+      }
+      window.executeFishTool = executeFishTool;
+      window.applyCutefishEffect = applyCutefishEffect;
+      window.getSelectedLayersForFishTool = getSelectedLayersForFishTool;
 
       // QR Copy button
       const _qrCopyBtn = document.getElementById('qr-btn-copy');

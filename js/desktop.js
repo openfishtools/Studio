@@ -27,8 +27,6 @@
     const savedRightW = localStorage.getItem('oft_desktop_right_width');
     if (savedRightW) viewport.style.setProperty('--desktop-right-width', savedRightW);
 
-    const savedExtW = localStorage.getItem('oft_desktop_extension_width');
-    if (savedExtW) viewport.style.setProperty('--desktop-extension-width', savedExtW);
   } catch (_) {}
 
   // Helper to sync preview canvas & timeline after layout changes
@@ -147,51 +145,6 @@
 
     splitLeft.addEventListener('pointerup', stopLeft);
     splitLeft.addEventListener('pointercancel', stopLeft);
-  }
-
-  // C. Extension Vertical Splitter (Preview vs FishTools CEP Extension Panel)
-  const splitExt = document.getElementById('desktop-split-extension');
-  if (splitExt) {
-    let isDraggingExt = false;
-
-    splitExt.addEventListener('pointerdown', (e) => {
-      isDraggingExt = true;
-      splitExt.classList.add('is-dragging');
-      viewport.classList.add('is-resizing');
-      splitExt.setPointerCapture(e.pointerId);
-      document.body.style.cursor = 'col-resize';
-      e.preventDefault();
-    });
-
-    splitExt.addEventListener('pointermove', (e) => {
-      if (!isDraggingExt) return;
-      const rect = viewport.getBoundingClientRect();
-      const inspectorEl = document.getElementById('desktop-panel-inspector');
-      const inspectorW = inspectorEl ? inspectorEl.getBoundingClientRect().width : 320;
-      let px = (rect.right - e.clientX) - inspectorW - 5;
-
-      // Clamp between 220px and 600px
-      px = Math.max(220, Math.min(600, px));
-      const val = Math.round(px) + 'px';
-      viewport.style.setProperty('--desktop-extension-width', val);
-      try {
-        localStorage.setItem('oft_desktop_extension_width', val);
-      } catch (_) {}
-      syncLayout();
-    });
-
-    function stopExt(e) {
-      if (!isDraggingExt) return;
-      isDraggingExt = false;
-      splitExt.classList.remove('is-dragging');
-      viewport.classList.remove('is-resizing');
-      try { splitExt.releasePointerCapture(e.pointerId); } catch (_) {}
-      document.body.style.cursor = '';
-      syncLayout();
-    }
-
-    splitExt.addEventListener('pointerup', stopExt);
-    splitExt.addEventListener('pointercancel', stopExt);
   }
 
   // D. Right Vertical Splitter (Preview/Extension vs Right Inspector Panel)
@@ -566,120 +519,6 @@
       syncInspectorState();
     }
   }, 200);
-
-  // --- 5. FishTools CEP Extension Panel Controller ---
-  let isExtensionInited = false;
-  function initDesktopFishToolsExtension() {
-    if (isExtensionInited) return;
-    const triggerBtn = document.getElementById('editor-btn-fishtool-trigger');
-    const extensionPanel = document.getElementById('desktop-panel-fishtool');
-    const extensionSplitter = document.getElementById('desktop-split-extension');
-    const bodyEl = document.getElementById('desktop-fishtools-body');
-    const loaderEl = document.getElementById('desktop-fishtools-loader');
-    const closeBtn = document.getElementById('desktop-fishtool-btn-close');
-    const reloadBtn = document.getElementById('desktop-fishtool-btn-reload');
-
-    if (!triggerBtn || !extensionPanel || !bodyEl) return;
-    isExtensionInited = true;
-
-    let isLoaded = false;
-    let iframe = null;
-
-    function openExtension() {
-      extensionPanel.style.display = 'flex';
-      if (extensionSplitter) extensionSplitter.style.display = 'flex';
-      triggerBtn.classList.add('is-active');
-      triggerBtn.setAttribute('aria-expanded', 'true');
-
-      if (!isLoaded) {
-        isLoaded = true;
-        loadIframe();
-      }
-
-      syncLayout();
-    }
-
-    function closeExtension() {
-      extensionPanel.style.display = 'none';
-      if (extensionSplitter) extensionSplitter.style.display = 'none';
-      triggerBtn.classList.remove('is-active');
-      triggerBtn.setAttribute('aria-expanded', 'false');
-      syncLayout();
-    }
-
-    function toggleExtension() {
-      const isOpen = extensionPanel.style.display !== 'none' && extensionPanel.style.display !== '';
-      if (isOpen) {
-        closeExtension();
-      } else {
-        openExtension();
-      }
-    }
-    window.toggleDesktopFishTools = toggleExtension;
-
-    function loadIframe() {
-      if (loaderEl) loaderEl.style.display = 'flex';
-      if (!iframe) {
-        iframe = document.createElement('iframe');
-        iframe.className = 'desktop-extension-frame';
-        iframe.id = 'desktop-fishtools-frame';
-        iframe.title = 'FishTools Extension';
-        bodyEl.appendChild(iframe);
-      }
-
-      function mount() {
-        if (window.FishToolsAdapter && typeof window.FishToolsAdapter.loadIntoIframe === 'function') {
-          window.FishToolsAdapter.loadIntoIframe(iframe, loaderEl);
-        }
-      }
-
-      if (window.FishToolsAdapter) {
-        mount();
-      } else {
-        const checkAdapter = setInterval(() => {
-          if (window.FishToolsAdapter) {
-            clearInterval(checkAdapter);
-            mount();
-          }
-        }, 100);
-        setTimeout(() => clearInterval(checkAdapter), 5000);
-      }
-    }
-
-    // Intercept click on FishTool trigger button in timeline toolbar
-    triggerBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      toggleExtension();
-    });
-
-    if (closeBtn) {
-      closeBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        closeExtension();
-      });
-    }
-
-    if (reloadBtn) {
-      reloadBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (iframe && window.FishToolsAdapter) {
-          if (loaderEl) loaderEl.style.display = 'flex';
-          window.FishToolsAdapter.loadIntoIframe(iframe, loaderEl, true);
-        }
-      });
-    }
-
-    // Auto-open if query param ?fishtools=open is provided
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('fishtools') === 'open') {
-        openExtension();
-      }
-    } catch (_) {}
-  }
 
   // --- 6. Desktop Pro NLE Timeline Controller ---
   function initDesktopTimeline() {
@@ -1063,14 +902,17 @@
         if (!pill) return;
 
         const layerId = slot.dataset.layerId || pill.dataset.layerId;
-        const layer = layers.find(l => String(l.id) === String(layerId)) || layers[slotIdx];
+        const isChildSlot = slot.classList.contains('is-precomp-child') || pill.classList.contains('is-precomp-child');
+        const layer = (typeof window.findLayerById === 'function' ? window.findLayerById(layerId) : null) || layers.find(l => String(l.id) === String(layerId)) || (isChildSlot ? null : layers[slotIdx]);
 
-        const layerType = layer ? layer.type : 'video';
+        const layerType = layer ? layer.type : (isChildSlot ? 'shape' : 'video');
         const layerName = layer ? layer.name : (pill.title ? pill.title.split(' - ')[0] : 'Layer');
 
         // Keyframe Expansion Twistie Button
         let twistie = pill.querySelector('.desktop-layer-twistie-btn');
-        if (!twistie) {
+        if (isChildSlot) {
+          if (twistie) twistie.remove();
+        } else if (!twistie) {
           twistie = document.createElement('button');
           twistie.type = 'button';
           twistie.className = `desktop-layer-twistie-btn ${layer && layer._kfExpanded ? 'is-expanded' : ''}`;
@@ -1101,6 +943,7 @@
             }
           });
         } else {
+          twistie.style.display = '';
           twistie.className = `desktop-layer-twistie-btn ${layer && layer._kfExpanded ? 'is-expanded' : ''}`;
           twistie.title = layer && layer._kfExpanded ? 'Collapse Keyframes (U)' : 'Expand Keyframes (U)';
         }
@@ -1108,22 +951,42 @@
         // Clean up any stale layer-type-dot elements
         pill.querySelectorAll('.desktop-layer-type-dot').forEach(d => d.remove());
 
+        // Precompose: on desktop, do NOT add a second dropdown next to the eye button.
+        // Clean up any stale timeline-layer-precomp-expand-btn elements on desktop.
+        pill.querySelectorAll('.timeline-layer-precomp-expand-btn').forEach(b => b.remove());
+
+        const eyeBtn = pill.querySelector('.timeline-layer-eye-btn');
+
         // 1. Layer Index Number or Null Icon
-        let idxEl = pill.querySelector('.desktop-layer-index, .desktop-layer-null-icon');
+        let idxEl = pill.querySelector('.desktop-layer-index, .desktop-layer-null-icon, .desktop-layer-index-spacer');
         const isNullType = layerType === 'null';
-        if (isNullType) {
+        if (isChildSlot) {
+          if (!idxEl || !idxEl.classList.contains('desktop-layer-index-spacer')) {
+            if (idxEl) idxEl.remove();
+            idxEl = document.createElement('span');
+            idxEl.className = 'desktop-layer-index-spacer';
+            const refNode = eyeBtn ? eyeBtn.nextSibling : null;
+            if (refNode) {
+              pill.insertBefore(idxEl, refNode);
+            } else {
+              pill.appendChild(idxEl);
+            }
+          }
+        } else if (isNullType) {
           if (!idxEl || !idxEl.classList.contains('desktop-layer-null-icon')) {
             if (idxEl) idxEl.remove();
             idxEl = document.createElement('span');
             idxEl.className = 'desktop-layer-null-icon';
             idxEl.title = 'Null Object (Drag to link)';
             idxEl.innerHTML = '<span class="fticon fticon-layer-null" aria-hidden="true"></span>';
-            const eyeBtn = pill.querySelector('.timeline-layer-eye-btn');
-            if (eyeBtn && eyeBtn.nextSibling) {
-              pill.insertBefore(idxEl, eyeBtn.nextSibling);
+            const refNode = eyeBtn ? eyeBtn.nextSibling : null;
+            if (refNode) {
+              pill.insertBefore(idxEl, refNode);
             } else {
               pill.appendChild(idxEl);
             }
+          } else {
+            idxEl.style.display = '';
           }
           initPickwhipDrag(idxEl, layerId);
         } else {
@@ -1132,28 +995,30 @@
             idxEl = document.createElement('span');
             idxEl.className = 'desktop-layer-index';
             idxEl.textContent = String(slotIdx + 1);
-            const eyeBtn = pill.querySelector('.timeline-layer-eye-btn');
-            if (eyeBtn && eyeBtn.nextSibling) {
-              pill.insertBefore(idxEl, eyeBtn.nextSibling);
+            const refNode = eyeBtn ? eyeBtn.nextSibling : null;
+            if (refNode) {
+              pill.insertBefore(idxEl, refNode);
             } else {
               pill.appendChild(idxEl);
             }
           } else {
+            idxEl.style.display = '';
             idxEl.textContent = String(slotIdx + 1);
           }
         }
 
         // 2. Layer Name Label
-        let nameEl = pill.querySelector('.desktop-layer-name-text');
-        if (!nameEl) {
+        let nameEl = pill.querySelector('.desktop-layer-name-text') || pill.querySelector('.timeline-child-pill-label');
+        if (nameEl) {
+          nameEl.classList.add('desktop-layer-name-text');
+          nameEl.textContent = layerName;
+          nameEl.title = layerName;
+        } else {
           nameEl = document.createElement('span');
           nameEl.className = 'desktop-layer-name-text';
           nameEl.textContent = layerName;
           nameEl.title = layerName;
           pill.appendChild(nameEl);
-        } else if (nameEl.textContent !== layerName) {
-          nameEl.textContent = layerName;
-          nameEl.title = layerName;
         }
 
         // 3. Control Column (Switches & Options: Motion Blur, etc.)
@@ -1288,6 +1153,13 @@
               btnCollapse.classList.toggle('is-active', nextState);
               btnCollapse.title = nextState ? 'Collapse Transformations: Enabled' : 'Collapse Transformations: Disabled';
               btnCollapse.setAttribute('aria-label', btnCollapse.title);
+              const btnEditShape = document.getElementById('btn-layer-edit-shape');
+              if (btnEditShape && window.selectedLayerId && targetIds.has(String(window.selectedLayerId))) {
+                btnEditShape.style.display = nextState ? 'none' : 'inline-flex';
+                if (nextState && window.currentDrawerSubview === 'shape' && typeof window.switchLayerDrawerSubview === 'function') {
+                  window.switchLayerDrawerSubview('main');
+                }
+              }
               if (typeof window.saveCurrentProjectLayers === 'function') window.saveCurrentProjectLayers(true);
               if (typeof window.redrawComposition === 'function') window.redrawComposition();
             });
@@ -1375,7 +1247,17 @@
 
         // 4. Parent & Link Column (Pickwhip + Parent Badge)
         if (!parentCol) parentCol = pill.querySelector('.desktop-layer-parent-col');
-        if (!parentCol) {
+        if (isChildSlot) {
+          if (!parentCol) {
+            parentCol = document.createElement('div');
+            parentCol.className = 'desktop-layer-parent-col is-child-spacer';
+            parentCol.style.visibility = 'hidden';
+            pill.appendChild(parentCol);
+          } else {
+            parentCol.style.display = '';
+            parentCol.style.visibility = 'hidden';
+          }
+        } else if (!parentCol) {
           parentCol = document.createElement('div');
           parentCol.className = 'desktop-layer-parent-col';
           parentCol.innerHTML = `
@@ -1458,7 +1340,7 @@
         }
 
         // Attach desktop drag reorder to pill if not attached
-        if (!pill._desktopDragBound) {
+        if (!isChildSlot && !pill._desktopDragBound) {
           pill._desktopDragBound = true;
 
           let startX = 0;
@@ -1751,6 +1633,7 @@
           pill.addEventListener('pointerdown', (e) => {
             if (
               e.target.closest('.timeline-layer-eye-btn') ||
+              e.target.closest('.timeline-layer-precomp-expand-btn') ||
               e.target.closest('.desktop-layer-twistie-btn') ||
               e.target.closest('.desktop-layer-control-col') ||
               e.target.closest('.desktop-layer-mblur-btn') ||
@@ -1825,6 +1708,7 @@
   // --- 7. AE-Style Left-Anchored Timeline Engine ---
   let isLeftTimelineInited = false;
   let desktopScrollX = 0;
+  let _cachedViewW = 800;
   function patchDesktopLeftTimeline() {
     if (isLeftTimelineInited) return;
     const rulerTrack = document.getElementById('timeline-ruler-track');
@@ -1838,7 +1722,7 @@
     desktopScrollX = 0;
 
     // Cache ruler viewport width to eliminate forced synchronous layout (layout thrashing) per frame
-    let _cachedViewW = rulerViewport ? rulerViewport.clientWidth : 800;
+    _cachedViewW = rulerViewport ? rulerViewport.clientWidth : 800;
     updateCachedDesktopPanelW();
     window.addEventListener('resize', () => {
       if (rulerViewport) _cachedViewW = rulerViewport.clientWidth;
@@ -1857,7 +1741,8 @@
       const playheadX = curSec * pps;
 
       // Auto-follow playhead during playback using cached viewport width (zero layout reads)
-      if (_cachedViewW > 0) {
+      const isPlayback = (typeof window.isAnyPlaybackActive === 'function') ? window.isAnyPlaybackActive() : !!window.isTimelinePlaying;
+      if (isPlayback && _cachedViewW > 0) {
         if (playheadX - desktopScrollX > _cachedViewW - 30) {
           desktopScrollX = Math.max(0, playheadX - 60);
         } else if (playheadX < desktopScrollX) {
@@ -1876,6 +1761,17 @@
       _lastSyncPanelW = panelW;
 
       // 1. Direct GPU transform on playhead needle (ZERO :root recalc, ZERO full-page style thrashing)
+      const needlePosInTrack = playheadX - desktopScrollX;
+      // Strictly clip / hide needle if it scrolls behind the left panel (negative track space) or past right edge
+      if (needlePosInTrack < 0 || (_cachedViewW > 0 && needlePosInTrack > _cachedViewW + 10)) {
+        needle.style.display = 'none';
+        needle.style.opacity = '0';
+        needle.style.pointerEvents = 'none';
+      } else {
+        needle.style.display = '';
+        needle.style.opacity = '1';
+        needle.style.pointerEvents = '';
+      }
       needle.style.transform = `translate3d(${(panelW + playheadX - desktopScrollX).toFixed(2)}px, 0, 0)`;
 
       // 2. Only update track transforms when horizontal scroll actually changed
@@ -1884,10 +1780,17 @@
         layersTrack.style.transform = scrollTransform;
         rulerTrack.style.transform = scrollTransform;
       }
+      if (typeof window.syncDesktopTimelineScrollbar === 'function') {
+        window.syncDesktopTimelineScrollbar();
+      }
     }
     window.syncDesktopPlayhead = syncDesktopPlayhead;
     window.getDesktopScrollX = function() {
       return desktopScrollX;
+    };
+    window.setDesktopScrollX = function(val) {
+      desktopScrollX = Math.max(0, val);
+      syncDesktopPlayhead(true);
     };
 
     // Dedicated AE-style playhead position is driven synchronously by updateTimelinePosition
@@ -1898,9 +1801,7 @@
       window._desktopUpdatePosPatched = true;
       window.updateTimelinePosition = function(newPanX, immediate) {
         originalUpdatePos(newPanX, immediate);
-        if (!immediate) {
-          syncDesktopPlayhead();
-        }
+        syncDesktopPlayhead();
       };
     }
 
@@ -1912,7 +1813,11 @@
       const rect = rulerViewport.getBoundingClientRect();
       const clickX = clientX - rect.left;
       const pps = window.currentPixelsPerSecond || 80;
+      const fps = window.currentTimelineFps || (window.currentProjectState && window.currentProjectState.fps) || 60;
       let targetSec = Math.max(0, (clickX + desktopScrollX) / pps);
+
+      // Quantize to project frame boundary (respects 24fps / 30fps / 60fps)
+      targetSec = Math.round(targetSec * fps) / fps;
 
       // Magnet snap to beatmarks when enabled
       if (window.isTimelineSnapEnabled !== false) {
@@ -1961,7 +1866,47 @@
       rulerViewport.addEventListener('pointerup', stopRulerSeek, true);
       rulerViewport.addEventListener('pointercancel', stopRulerSeek, true);
 
+      let _wheelZoomRaf = null;
+      let _pendingWheelPps = null;
+      let _pendingWheelAnchor = null;
+
+      const handleWheelZoom = (e) => {
+        const isZoom = e.altKey || e.ctrlKey || e.metaKey;
+        if (!isZoom) return false;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const delta = e.deltaY;
+        if (Math.abs(delta) < 0.1) return true;
+
+        const curPps = _pendingWheelPps || window.currentPixelsPerSecond || 80;
+        const factor = Math.pow(1.0025, -delta);
+        const targetPps = Math.max(20, Math.min(1800, Math.round(curPps * factor)));
+        if (targetPps === curPps) return true;
+
+        const rect = rulerViewport ? rulerViewport.getBoundingClientRect() : { left: 0 };
+        const mouseX = Math.max(0, e.clientX - rect.left);
+        const scrollX = (typeof window.getDesktopScrollX === 'function') ? window.getDesktopScrollX() : desktopScrollX;
+        const anchorSec = Math.max(0, (mouseX + scrollX) / curPps);
+
+        _pendingWheelPps = targetPps;
+        _pendingWheelAnchor = anchorSec;
+
+        if (!_wheelZoomRaf) {
+          _wheelZoomRaf = requestAnimationFrame(() => {
+            _wheelZoomRaf = null;
+            if (_pendingWheelPps !== null && typeof window.setTimelineZoom === 'function') {
+              window.setTimelineZoom(_pendingWheelPps, _pendingWheelAnchor);
+              _pendingWheelPps = null;
+              _pendingWheelAnchor = null;
+            }
+          });
+        }
+        return true;
+      };
+
       const handleWheelScroll = (e) => {
+        if (handleWheelZoom(e)) return;
         if (e.ctrlKey) return;
         const dx = e.deltaX !== 0 ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
         if (dx !== 0) {
@@ -1981,6 +1926,7 @@
 
       if (layersViewport) {
         layersViewport.addEventListener('wheel', (e) => {
+          if (handleWheelZoom(e)) return;
           if (e.ctrlKey) return;
 
           // 1. Horizontal trackpad scroll or Shift+Wheel: AE horizontal timeline panning
@@ -3888,17 +3834,22 @@
     const curPps = window.currentPixelsPerSecond || 80;
     updateZoomUI(curPps);
 
+    let _sliderRaf = null;
     slider.addEventListener('input', () => {
       const pps = parseInt(slider.value, 10) || 80;
-      if (typeof window.setTimelineZoom === 'function') {
-        window.setTimelineZoom(pps);
-      }
       updateZoomUI(pps);
+      if (_sliderRaf) cancelAnimationFrame(_sliderRaf);
+      _sliderRaf = requestAnimationFrame(() => {
+        _sliderRaf = null;
+        if (typeof window.setTimelineZoom === 'function') {
+          window.setTimelineZoom(pps);
+        }
+      });
     });
 
     if (btnMinus) {
       btnMinus.addEventListener('click', () => {
-        const pps = Math.max(20, (window.currentPixelsPerSecond || 80) - 15);
+        const pps = Math.max(20, (window.currentPixelsPerSecond || 80) - 20);
         if (typeof window.setTimelineZoom === 'function') {
           window.setTimelineZoom(pps);
         }
@@ -3908,7 +3859,7 @@
 
     if (btnPlus) {
       btnPlus.addEventListener('click', () => {
-        const pps = Math.min(400, (window.currentPixelsPerSecond || 80) + 15);
+        const pps = Math.min(400, (window.currentPixelsPerSecond || 80) + 20);
         if (typeof window.setTimelineZoom === 'function') {
           window.setTimelineZoom(pps);
         }
@@ -3925,6 +3876,43 @@
       });
     }
 
+    // Keyboard shortcuts for timeline zoom: = / + (zoom in), - / _ (zoom out), Ctrl/Cmd + 0 (reset to 100%)
+    window.addEventListener('keydown', (e) => {
+      if (e.target && typeof e.target.closest === 'function' && e.target.closest('input, textarea, select, [contenteditable="true"]')) {
+        return;
+      }
+      const openModal = document.querySelector('.modal-backdrop.is-active, .modal-backdrop[style*="display: flex"], .modal-backdrop[style*="display: block"]');
+      if (openModal) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof window.setTimelineZoom === 'function') {
+          window.setTimelineZoom(80);
+        }
+        updateZoomUI(80);
+        return;
+      }
+
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        e.stopPropagation();
+        const pps = Math.min(400, (window.currentPixelsPerSecond || 80) + 20);
+        if (typeof window.setTimelineZoom === 'function') {
+          window.setTimelineZoom(pps);
+        }
+        updateZoomUI(pps);
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        e.stopPropagation();
+        const pps = Math.max(20, (window.currentPixelsPerSecond || 80) - 20);
+        if (typeof window.setTimelineZoom === 'function') {
+          window.setTimelineZoom(pps);
+        }
+        updateZoomUI(pps);
+      }
+    });
+
     // Sync when timeline zoom changes from elsewhere
     if (window.setTimelineZoom && !window.setTimelineZoom._zoomSliderPatched) {
       const origZoom = window.setTimelineZoom;
@@ -3936,11 +3924,109 @@
     }
   }
 
+  // --- 9. Desktop Horizontal Timeline Scrollbar Engine ---
+  function initDesktopTimelineScrollbar() {
+    const track = document.getElementById('desktop-scrollbar-track');
+    const thumb = document.getElementById('desktop-scrollbar-thumb');
+    const gutterFill = document.querySelector('.desktop-scrollbar-gutter-fill');
+    if (!track || !thumb) return;
+
+    function syncScrollbar() {
+      if (gutterFill) {
+        const panelW = getDesktopPanelW();
+        gutterFill.style.width = `${panelW}px`;
+        gutterFill.style.minWidth = `${panelW}px`;
+      }
+      const pps = window.currentPixelsPerSecond || 80;
+      const totalDur = (typeof window.getProjectTotalDuration === 'function') ? window.getProjectTotalDuration() : 30;
+      const totalContentW = Math.max(1, totalDur * pps);
+      const viewW = _cachedViewW > 0 ? _cachedViewW : (track.clientWidth || 800);
+      const trackW = track.clientWidth;
+      if (trackW <= 0) return;
+
+      const visibleRatio = Math.min(1, viewW / Math.max(viewW, totalContentW));
+      const thumbW = Math.max(28, Math.round(trackW * visibleRatio));
+      const maxScroll = Math.max(0, totalContentW - viewW);
+      const scrollX = (typeof window.getDesktopScrollX === 'function') ? window.getDesktopScrollX() : 0;
+      const scrollRatio = maxScroll > 0 ? Math.min(1, Math.max(0, scrollX / maxScroll)) : 0;
+      const maxThumbLeft = Math.max(1, trackW - thumbW);
+      const thumbLeft = Math.round(scrollRatio * maxThumbLeft);
+
+      thumb.style.width = `${thumbW}px`;
+      thumb.style.transform = `translate3d(${thumbLeft}px, 0, 0)`;
+    }
+    window.syncDesktopTimelineScrollbar = syncScrollbar;
+
+    let isDraggingThumb = false;
+    let startThumbX = 0;
+    let startScrollX = 0;
+
+    thumb.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      isDraggingThumb = true;
+      thumb.classList.add('is-dragging');
+      startThumbX = e.clientX;
+      startScrollX = (typeof window.getDesktopScrollX === 'function') ? window.getDesktopScrollX() : 0;
+      try { thumb.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+
+    window.addEventListener('pointermove', (e) => {
+      if (!isDraggingThumb) return;
+      const dx = e.clientX - startThumbX;
+      const trackW = track.clientWidth;
+      const thumbW = thumb.offsetWidth;
+      const maxThumbLeft = Math.max(1, trackW - thumbW);
+
+      const pps = window.currentPixelsPerSecond || 80;
+      const totalDur = (typeof window.getProjectTotalDuration === 'function') ? window.getProjectTotalDuration() : 30;
+      const totalContentW = Math.max(1, totalDur * pps);
+      const viewW = _cachedViewW > 0 ? _cachedViewW : (track.clientWidth || 800);
+      const maxScroll = Math.max(0, totalContentW - viewW);
+
+      const targetScroll = startScrollX + (dx / maxThumbLeft) * maxScroll;
+      window.setDesktopScrollX(Math.max(0, Math.min(maxScroll, targetScroll)));
+      syncScrollbar();
+    });
+
+    const stopThumbDrag = (e) => {
+      if (!isDraggingThumb) return;
+      isDraggingThumb = false;
+      thumb.classList.remove('is-dragging');
+      try { thumb.releasePointerCapture(e.pointerId); } catch (_) {}
+    };
+
+    window.addEventListener('pointerup', stopThumbDrag);
+    window.addEventListener('pointercancel', stopThumbDrag);
+
+    track.addEventListener('pointerdown', (e) => {
+      if (e.target === thumb || thumb.contains(e.target)) return;
+      const rect = track.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const trackW = track.clientWidth;
+      const thumbW = thumb.offsetWidth;
+      const targetThumbLeft = Math.max(0, Math.min(trackW - thumbW, clickX - thumbW / 2));
+      const maxThumbLeft = Math.max(1, trackW - thumbW);
+
+      const pps = window.currentPixelsPerSecond || 80;
+      const totalDur = (typeof window.getProjectTotalDuration === 'function') ? window.getProjectTotalDuration() : 30;
+      const totalContentW = Math.max(1, totalDur * pps);
+      const viewW = _cachedViewW > 0 ? _cachedViewW : (track.clientWidth || 800);
+      const maxScroll = Math.max(0, totalContentW - viewW);
+
+      const targetScroll = (targetThumbLeft / maxThumbLeft) * maxScroll;
+      window.setDesktopScrollX(Math.max(0, Math.min(maxScroll, targetScroll)));
+      syncScrollbar();
+    });
+
+    syncScrollbar();
+  }
+
   // Initial sync after DOM and engines load
   window.addEventListener('DOMContentLoaded', () => {
     initLeftPanelTabs();
     syncInspectorState();
-    initDesktopFishToolsExtension();
     initDesktopTimeline();
     patchDesktopLeftTimeline();
     initDesktopClipDragEngine();
@@ -3950,6 +4036,7 @@
     initDesktopHeaderBatchActions();
     initDesktopBeatmarkEngine();
     initDesktopFloatingZoom();
+    initDesktopTimelineScrollbar();
     syncLayout();
     checkUrlTestParams();
     checkAndPromptMobileSwitch();
@@ -3960,7 +4047,6 @@
   setTimeout(() => {
     initLeftPanelTabs();
     syncInspectorState();
-    initDesktopFishToolsExtension();
     initDesktopTimeline();
     patchDesktopLeftTimeline();
     initDesktopClipDragEngine();
@@ -3970,6 +4056,7 @@
     initDesktopHeaderBatchActions();
     initDesktopBeatmarkEngine();
     initDesktopFloatingZoom();
+    initDesktopTimelineScrollbar();
     syncLayout();
     checkUrlTestParams();
     checkAndPromptMobileSwitch();

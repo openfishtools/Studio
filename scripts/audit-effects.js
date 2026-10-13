@@ -23,7 +23,7 @@ const { scanEffectsDetailed, listEffectFiles, ROOT } = require('./sync-effects.j
 
 const QUIET = process.argv.includes('--quiet');
 
-const KNOWN_PARAM_TYPES = new Set(['number', 'angle', 'select', 'color', 'switch', 'boolean', 'button', 'action', 'curve']);
+const KNOWN_PARAM_TYPES = new Set(['number', 'angle', 'select', 'color', 'switch', 'boolean', 'button', 'action', 'curve', 'layer']);
 const BEHAVIOUR_FREE_CATEGORIES = new Set(['expression', 'extension']);
 const HTML_PAGES = ['editor.html', 'desktop.html'];
 

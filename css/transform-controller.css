@@ -81,7 +81,8 @@
 }
 
 /* 2. Transform Controller Main Layout (3-Column Layout) */
-.transform-controller {
+.transform-controller,
+.text-controller-layout {
   display: grid;
   grid-template-columns: 48px 1fr 48px;
   width: 100%;
@@ -113,6 +114,7 @@
 }
 
 .transform-controller .transform-nav-col,
+.text-controller-layout .transform-nav-col,
 .volume-controller-layout .transform-nav-col,
 .speed-controller-layout .transform-nav-col,
 .beatmark-controller-layout .transform-nav-col {
@@ -266,6 +268,10 @@
 .transform-tool-btn.is-active {
   background-color: var(--bg-canvas);
   color: var(--color-primary);
+}
+
+.transform-tool-label {
+  display: none;
 }
 
 /* Button Divider Lines (Pembatas Antar Tombol - Full Width & Ending Border) across all drawer subviews */
@@ -915,7 +921,7 @@
   left: 0;
   right: 0;
   background-image: 
-    linear-gradient(to right, var(--text-secondary) 0px, var(--text-secondary) 1.5px, transparent 1.5px),
+    linear-gradient(to right, var(--color-primary) 0px, var(--color-primary) 1.5px, transparent 1.5px),
     linear-gradient(to right, var(--border-subtle) 0px, var(--border-subtle) 1px, transparent 1px);
   background-size: 48px 100%, 12px 50%;
   background-position-y: bottom, bottom !important;
@@ -956,11 +962,12 @@
   height: auto !important;
   left: 50% !important;
   right: auto !important;
-  width: var(--tape-width, 480px);
+  width: calc(var(--tape-width, 480px) + 2px);
   transform: translateX(var(--tape-offset, 0px));
   background-color: var(--bg-panel-inner);
-  border-left: 2px solid var(--text-secondary);
-  border-right: 2px solid var(--text-secondary);
+  border-left: none !important;
+  border-right: none !important;
+  border: none !important;
   box-sizing: border-box;
   background-origin: border-box;
   background-position-x: 0px, 0px !important;
@@ -980,7 +987,7 @@
   width: 12px;
   height: 100%;
   background-image: 
-    linear-gradient(to bottom, var(--text-secondary) 0px, var(--text-secondary) 1.5px, transparent 1.5px),
+    linear-gradient(to bottom, var(--color-primary) 0px, var(--color-primary) 1.5px, transparent 1.5px),
     linear-gradient(to bottom, var(--border-subtle) 0px, var(--border-subtle) 1px, transparent 1px);
   background-size: 12px 48px, 6px 12px;
   background-position-x: right, right !important;
@@ -989,18 +996,22 @@
   mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.08) 8px, rgba(0, 0, 0, 0.35) 18px, rgba(0, 0, 0, 0.75) 30px, black 42px, black calc(100% - 42px), rgba(0, 0, 0, 0.75) calc(100% - 30px), rgba(0, 0, 0, 0.35) calc(100% - 18px), rgba(0, 0, 0, 0.08) calc(100% - 8px), transparent 100%);
 }
 
-/* Pill-shaped Center Indicator Needle */
+/* Pill-shaped Center Indicator Needle: 3px vivid core + 1px canvas edge so it
+   reads as one bold line against the same-hue tick field (all themes reuse the
+   primary green token for ticks). Flat tokens only, no shadow. */
 .jog-wheel-needle {
   position: absolute;
   top: 2px;
   bottom: 2px;
   left: 50%;
-  width: 2px;
+  width: 3px;
   transform: translateX(-50%);
-  background-color: var(--color-primary);
-  border-radius: 1px;
+  background-color: var(--color-accent);
+  border: 1px solid var(--bg-canvas);
+  border-radius: 3px;
   pointer-events: none;
   z-index: 2;
+  box-sizing: content-box;
 }
 
 .jog-wheel-needle.is-vertical {
@@ -1009,7 +1020,7 @@
   left: 4px;
   right: 4px;
   width: auto;
-  height: 3px;
+  height: 4px;
   transform: translateY(-50%);
 }
 
@@ -1030,7 +1041,7 @@
 /* Scale & Skew Pane Uniform Ruler Ticks */
 #pane-transform-scale .jog-wheel-ticks,
 #pane-transform-skew .jog-wheel-ticks {
-  background-image: linear-gradient(to right, var(--text-secondary) 0px, var(--text-secondary) 1px, transparent 1px);
+  background-image: linear-gradient(to right, var(--color-primary) 0px, var(--color-primary) 1px, transparent 1px);
   background-size: 16px 100%;
   background-position-y: top !important;
   opacity: 0.65;
@@ -1576,7 +1587,8 @@
 }
 
 @media (max-width: 600px) {
-  .transform-controller {
+  .transform-controller,
+  .text-controller-layout {
     grid-template-columns: 48px 1fr 48px;
     height: 240px;
   }

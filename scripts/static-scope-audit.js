@@ -57,7 +57,8 @@ const KNOWN_GLOBALS = new Set([
   'drawSolidLayer', 'drawNullLayer', 'drawCameraLayer', 'drawAdjustmentLayer',
   'processLayerEffects', 'activeModal', 'closeModal', 'openModal', 'module', 'exports',
   'require', '__dirname', '__filename', 'process', 'electronAPI', 'electronBridge',
-  'tauri', '__TAURI__', '__TAURI_INTERNALS__', 'global', 'define', 'Buffer', 'setImmediate'
+  'tauri', '__TAURI__', '__TAURI_INTERNALS__', 'global', 'define', 'Buffer', 'setImmediate',
+  'FishElements'
 ]);
 
 class Scope {

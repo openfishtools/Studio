@@ -11,10 +11,17 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="OpenFishTools">
   <link rel="apple-touch-icon" href="assets/icon-192.png">
-  
+  <!-- Early Theme Bootstrap to prevent flash of wrong accent color -->
+  <script>
+    try {
+      var _t = localStorage.getItem('oft_theme');
+      if (_t && _t !== 'default') document.documentElement.setAttribute('data-theme', _t);
+    } catch (_) {}
+  </script>
+
   <!-- CSS: Theme (Colors & Variables, Cal Sans Font), Editor Layout, and Modular Modal / Popover / Drawer / Switch -->
   <link rel="stylesheet" href="css/theme.css">
-  <link rel="stylesheet" href="fticons/fticons.css?v=1">
+  <link rel="stylesheet" href="fticons/fticons.css?v=3">
   <link rel="stylesheet" href="css/editor.css">
   <link rel="stylesheet" href="css/modal.css">
   <link rel="stylesheet" href="css/popover.css">
@@ -28,6 +35,7 @@
   <link rel="stylesheet" href="css/color-picker.css">
   <link rel="stylesheet" href="css/template-editor.css">
   <link rel="stylesheet" href="css/safari.css">
+  <link rel="stylesheet" href="css/extensions.css">
   <script src="js/sync-height.js"></script>
   <script>
     window.DEBUG = true;
@@ -69,7 +77,7 @@
       <img src="assets/icon.svg" alt="OpenFishTools" class="editor-loading-logo" width="52" height="52">
       <div class="editor-loading-spinner" aria-hidden="true"></div>
       <div class="editor-loading-title" id="editor-loading-title">Loading Project...</div>
-      <div class="editor-loading-sub">Preparing composition & assets</div>
+      <div class="editor-loading-sub" id="editor-loading-sub">Preparing composition & assets</div>
     </div>
   </div>
 
@@ -287,9 +295,11 @@
               <span class="fticon fticon-more"></span>
             </button>
 
-            <!-- 7. Fish Icon (OpenFishTools Lazy-Loaded Popover) -->
+            <!-- 7. Extension Panel Trigger -->
             <button type="button" class="ctrl-btn ctrl-btn-fish" id="editor-btn-fishtool-trigger" title="OpenFishTools Panel" aria-label="OpenFishTools Panel">
-              <img src="assets/icon.svg" alt="FishTool" width="22" height="22">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5s-1.12-2.5-2.5-2.5z"/>
+              </svg>
             </button>
           </div>
         </section>
@@ -799,8 +809,15 @@
                             <span class="transform-val-label" id="lbl-scale-w">Width</span>
                           </div>
                           <button type="button" class="transform-link-btn" id="btn-scale-link" title="Toggle Aspect Ratio Link" aria-label="Link Aspect Ratio">
-                            <i class='fticon fticon-link-parent-layer svg-link-on' aria-hidden='true'></i>
-                            <i class='fticon fticon-link-aspect-ratio svg-link-off' style='display: none;' aria-hidden='true'></i>
+                            <svg class="shape-link-svg svg-link-on" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                            </svg>
+                            <svg class="shape-link-svg svg-link-off" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display: none;">
+                              <path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                              <path d="m5.16 11.75-1.72 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                              <line x1="2" y1="2" x2="22" y2="22"/>
+                            </svg>
                           </button>
                           <div class="transform-val-card">
                             <span class="transform-val-num" id="val-scale-h">1920.0</span>
@@ -1002,18 +1019,23 @@
 
                     <!-- Work Area: Opacity Slider & Blend Modes -->
                     <main class="blend-work-area">
-                      <!-- 1. Opacity Slider Row (filling from left to right) -->
-                      <div class="blend-opacity-row">
-                        <div class="blend-opacity-icon-box" title="Opacity">
-                          <i class='fticon fticon-track-adjustment blend-opacity-icon' aria-hidden='true'></i>
+                      <!-- 1. Opacity Slider Row (Slider Fill Format) -->
+                      <div class="effects-control-row" id="blend-opacity-row">
+                        <div class="effects-param-label-col">
+                          <button type="button" class="effects-param-label" id="btn-blend-opacity-label" title="Opacity">
+                            <i class='fticon fticon-track-adjustment' aria-hidden='true'></i>
+                            <span class="fx-param-name">Opacity</span>
+                          </button>
                         </div>
-                        <div class="blend-slider-container" id="blend-slider-container" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-label="Opacity Slider">
-                          <div class="blend-slider-track">
-                            <div class="blend-slider-fill" id="blend-slider-fill" style="width: 100%;"></div>
-                            <div class="blend-slider-thumb" id="blend-slider-thumb" style="left: 100%;"></div>
+                        <div class="effects-param-val-col">
+                          <div class="blend-slider-container" id="blend-slider-container" role="slider" aria-label="Opacity Slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" tabindex="0">
+                            <div class="blend-slider-track">
+                              <div class="blend-slider-fill" id="blend-slider-fill" style="width: 100%;"></div>
+                              <div class="blend-slider-thumb" id="blend-slider-thumb" style="left: 100%;"></div>
+                            </div>
                           </div>
+                          <span class="blend-opacity-badge" id="blend-opacity-badge" title="Click to edit Opacity">100%</span>
                         </div>
-                        <div class="blend-opacity-badge" id="blend-opacity-badge">100%</div>
                       </div>
 
                       <!-- 2. Blend Mode Accordion List -->
@@ -1256,117 +1278,144 @@
                     <!-- Camera Settings Work Area -->
                     <main class="camera-work-area">
                       <!-- 1. Lens Focal Length (Slider Ruler) -->
-                      <div class="camera-control-row">
-                        <div class="camera-control-header">
-                          <span class="camera-control-label">LENS FOCAL LENGTH</span>
-                          <span class="camera-val-badge" id="val-camera-lens">50 mm</span>
+                      <div class="effects-control-row">
+                        <div class="effects-param-label-col">
+                          <span class="effects-param-label">Focal Length</span>
                         </div>
-                        <div class="jog-wheel-container is-horizontal" id="jog-camera-lens" title="Slide horizontally to adjust Camera Lens Focal Length" aria-label="Camera Lens Ruler">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
+                        <div class="effects-param-val-col">
+                          <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-camera-lens" title="Slide horizontally to adjust Camera Lens Focal Length" role="slider" aria-label="Camera Lens Ruler">
+                            <div class="jog-wheel-track-viewport">
+                              <div class="jog-wheel-ticks"></div>
+                            </div>
+                            <div class="jog-wheel-needle"></div>
+                            <span class="effects-param-pill-val" id="val-camera-lens" title="Click to edit Focal Length">50 mm</span>
+                          </div>
                         </div>
                       </div>
 
                       <!-- 2. Zoom (Slider Ruler) -->
-                      <div class="camera-control-row">
-                        <div class="camera-control-header">
-                          <span class="camera-control-label">ZOOM</span>
-                          <span class="camera-val-badge" id="val-camera-zoom">100%</span>
+                      <div class="effects-control-row">
+                        <div class="effects-param-label-col">
+                          <span class="effects-param-label">Zoom</span>
                         </div>
-                        <div class="jog-wheel-container is-horizontal" id="jog-camera-zoom" title="Slide horizontally to adjust Camera Zoom" aria-label="Camera Zoom Ruler">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
+                        <div class="effects-param-val-col">
+                          <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-camera-zoom" title="Slide horizontally to adjust Camera Zoom" role="slider" aria-label="Camera Zoom Ruler">
+                            <div class="jog-wheel-track-viewport">
+                              <div class="jog-wheel-ticks"></div>
+                            </div>
+                            <div class="jog-wheel-needle"></div>
+                            <span class="effects-param-pill-val" id="val-camera-zoom" title="Click to edit Zoom">100%</span>
+                          </div>
                         </div>
                       </div>
 
                       <!-- 3. Depth of Field Blur Toggle -->
-                      <div class="camera-control-row camera-toggle-row">
-                        <div class="camera-toggle-label-wrap">
-                          <span class="camera-control-label">DEPTH OF FIELD BLUR</span>
-                          <span class="camera-toggle-subtext">Defocus layers based on distance</span>
+                      <div class="effects-control-row">
+                        <div class="effects-param-label-col">
+                          <span class="effects-param-label">Depth of Field</span>
                         </div>
-                        <div class="segmented-switch is-compact camera-blur-switch" id="camera-blur-switch" role="tablist" aria-label="Toggle Depth of Field Blur">
-                          <button type="button" class="segmented-switch-item is-active is-selected" data-blur="off" role="tab" aria-selected="true">OFF</button>
-                          <button type="button" class="segmented-switch-item" data-blur="on" role="tab" aria-selected="false">ON</button>
+                        <div class="effects-param-val-col" style="justify-content: flex-end;">
+                          <div class="segmented-switch is-compact camera-blur-switch" id="camera-blur-switch" role="tablist" aria-label="Toggle Depth of Field Blur">
+                            <button type="button" class="segmented-switch-item is-active is-selected" data-blur="off" role="tab" aria-selected="true">OFF</button>
+                            <button type="button" class="segmented-switch-item" data-blur="on" role="tab" aria-selected="false">ON</button>
+                          </div>
                         </div>
                       </div>
 
                       <!-- Blur Controls Group (Visible when Blur is ON) -->
-                      <div class="camera-dof-group" id="camera-dof-group" style="display: none;">
+                      <div class="camera-dof-group" id="camera-dof-group" style="display: none; width: 100%;">
                         <!-- Focus Target Mode (Value / Focus to Layer) -->
-                        <div class="camera-control-row camera-toggle-row camera-focus-mode-row">
-                          <div class="camera-toggle-label-wrap">
-                            <span class="camera-control-label">FOCUS TARGET</span>
-                            <span class="camera-toggle-subtext">Target plane or track layer depth</span>
+                        <div class="effects-control-row">
+                          <div class="effects-param-label-col">
+                            <span class="effects-param-label">Focus Target</span>
                           </div>
-                          <div class="segmented-switch is-compact camera-focus-mode-switch" id="camera-focus-mode-switch" role="tablist" aria-label="Focus Target Mode">
-                            <button type="button" class="segmented-switch-item is-active is-selected" data-focus-mode="manual" role="tab" aria-selected="true">VALUE</button>
-                            <button type="button" class="segmented-switch-item" data-focus-mode="layer" role="tab" aria-selected="false">TO LAYER</button>
+                          <div class="effects-param-val-col" style="justify-content: flex-end;">
+                            <div class="segmented-switch is-compact camera-focus-mode-switch" id="camera-focus-mode-switch" role="tablist" aria-label="Focus Target Mode">
+                              <button type="button" class="segmented-switch-item is-active is-selected" data-focus-mode="manual" role="tab" aria-selected="true">VALUE</button>
+                              <button type="button" class="segmented-switch-item" data-focus-mode="layer" role="tab" aria-selected="false">TO LAYER</button>
+                            </div>
                           </div>
                         </div>
 
                         <!-- 4a. Manual Focus Distance Scrubber (Visible when focus-mode is 'manual') -->
-                        <div class="camera-control-row" id="row-camera-focus-manual">
-                          <div class="camera-control-header">
-                            <span class="camera-control-label">FOCUS DISTANCE (DEKAT/JAUH)</span>
-                            <span class="camera-val-badge" id="val-camera-focus-dist">0 px</span>
+                        <div class="effects-control-row" id="row-camera-focus-manual">
+                          <div class="effects-param-label-col">
+                            <span class="effects-param-label">Focus Distance</span>
                           </div>
-                          <div class="jog-wheel-container is-horizontal" id="jog-camera-focus-dist" title="Slide horizontally to adjust Focus Plane Distance" aria-label="Focus Distance Ruler">
-                            <div class="jog-wheel-ticks"></div>
-                            <div class="jog-wheel-needle"></div>
+                          <div class="effects-param-val-col">
+                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-camera-focus-dist" title="Slide horizontally to adjust Focus Plane Distance" role="slider" aria-label="Focus Distance Ruler">
+                              <div class="jog-wheel-track-viewport">
+                                <div class="jog-wheel-ticks"></div>
+                              </div>
+                              <div class="jog-wheel-needle"></div>
+                              <span class="effects-param-pill-val" id="val-camera-focus-dist" title="Click to edit Focus Distance">0 px</span>
+                            </div>
                           </div>
                         </div>
 
                         <!-- 4b. Dynamic Focus to Layer (Visible when focus-mode is 'layer') -->
-                        <div class="camera-control-row" id="row-camera-focus-layer" style="display: none;">
-                          <div class="camera-control-header">
-                            <span class="camera-control-label">FOCUS TARGET LAYER</span>
-                            <span class="camera-val-badge is-accent" id="val-camera-focus-layer-dist">Z: 0 px</span>
+                        <div class="effects-control-row" id="row-camera-focus-layer" style="display: none;">
+                          <div class="effects-param-label-col">
+                            <span class="effects-param-label">Target Layer</span>
                           </div>
-                          <div class="camera-layer-selector-wrap">
-                            <button type="button" class="camera-layer-dropdown-trigger" id="btn-camera-focus-layer-dropdown" aria-haspopup="listbox" aria-expanded="false">
-                              <span class="camera-layer-dropdown-label" id="label-camera-focus-layer">Select Layer...</span>
-                              <i class='fticon fticon-label-camera-focus-layer camera-dropdown-chevron' style='width:12px;height:12px;font-size:12px;line-height:1;' aria-hidden='true'></i>
-                            </button>
-                            <div class="camera-layer-dropdown-menu" id="menu-camera-focus-layer" role="listbox" style="display: none;">
-                              <!-- Populated dynamically with layers -->
+                          <div class="effects-param-val-col">
+                            <div class="camera-layer-selector-wrap" style="width: 100%;">
+                              <button type="button" class="camera-layer-dropdown-trigger" id="btn-camera-focus-layer-dropdown" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="camera-layer-dropdown-label" id="label-camera-focus-layer">Select Layer...</span>
+                                <i class='fticon fticon-label-camera-focus-layer camera-dropdown-chevron' style='width:12px;height:12px;font-size:12px;line-height:1;' aria-hidden='true'></i>
+                              </button>
+                              <div class="camera-layer-dropdown-menu" id="menu-camera-focus-layer" role="listbox" style="display: none;">
+                                <!-- Populated dynamically with layers -->
+                              </div>
                             </div>
                           </div>
                         </div>
 
                         <!-- 5. Focus Falloff / Blur Range -->
-                        <div class="camera-control-row">
-                          <div class="camera-control-header">
-                            <span class="camera-control-label">BLUR RANGE / FALLOFF</span>
-                            <span class="camera-val-badge" id="val-camera-focus-range">600 px</span>
+                        <div class="effects-control-row">
+                          <div class="effects-param-label-col">
+                            <span class="effects-param-label">Blur Range</span>
                           </div>
-                          <div class="jog-wheel-container is-horizontal" id="jog-camera-focus-range" title="Slide horizontally to adjust Blur Depth Falloff" aria-label="Blur Falloff Ruler">
-                            <div class="jog-wheel-ticks"></div>
-                            <div class="jog-wheel-needle"></div>
+                          <div class="effects-param-val-col">
+                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-camera-focus-range" title="Slide horizontally to adjust Blur Depth Falloff" role="slider" aria-label="Blur Falloff Ruler">
+                              <div class="jog-wheel-track-viewport">
+                                <div class="jog-wheel-ticks"></div>
+                              </div>
+                              <div class="jog-wheel-needle"></div>
+                              <span class="effects-param-pill-val" id="val-camera-focus-range" title="Click to edit Blur Range">600 px</span>
+                            </div>
                           </div>
                         </div>
 
                         <!-- 6. Value Blur (Blur Amount / Intensity) -->
-                        <div class="camera-control-row">
-                          <div class="camera-control-header">
-                            <span class="camera-control-label">VALUE BLUR (INTENSITY)</span>
-                            <span class="camera-val-badge" id="val-camera-blur-amount">20 px</span>
+                        <div class="effects-control-row">
+                          <div class="effects-param-label-col">
+                            <span class="effects-param-label">Blur Amount</span>
                           </div>
-                          <div class="jog-wheel-container is-horizontal" id="jog-camera-blur-amount" title="Slide horizontally to adjust Blur Intensity" aria-label="Blur Amount Ruler">
-                            <div class="jog-wheel-ticks"></div>
-                            <div class="jog-wheel-needle"></div>
+                          <div class="effects-param-val-col">
+                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-camera-blur-amount" title="Slide horizontally to adjust Blur Intensity" role="slider" aria-label="Blur Amount Ruler">
+                              <div class="jog-wheel-track-viewport">
+                                <div class="jog-wheel-ticks"></div>
+                              </div>
+                              <div class="jog-wheel-needle"></div>
+                              <span class="effects-param-pill-val" id="val-camera-blur-amount" title="Click to edit Blur Amount">20 px</span>
+                            </div>
                           </div>
                         </div>
 
                         <!-- 7. Blur Balance (Foreground vs Background Weight) -->
-                        <div class="camera-control-row">
-                          <div class="camera-control-header">
-                            <span class="camera-control-label">BLUR BALANCE</span>
-                            <span class="camera-val-badge" id="val-camera-blur-balance">0 (Balanced)</span>
+                        <div class="effects-control-row">
+                          <div class="effects-param-label-col">
+                            <span class="effects-param-label">Blur Balance</span>
                           </div>
-                          <div class="jog-wheel-container is-horizontal" id="jog-camera-blur-balance" title="Slide horizontally to adjust Foreground vs Background blur balance" aria-label="Blur Balance Ruler">
-                            <div class="jog-wheel-ticks"></div>
-                            <div class="jog-wheel-needle"></div>
+                          <div class="effects-param-val-col">
+                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-camera-blur-balance" title="Slide horizontally to adjust Foreground vs Background blur balance" role="slider" aria-label="Blur Balance Ruler">
+                              <div class="jog-wheel-track-viewport">
+                                <div class="jog-wheel-ticks"></div>
+                              </div>
+                              <div class="jog-wheel-needle"></div>
+                              <span class="effects-param-pill-val" id="val-camera-blur-balance" title="Click to edit Blur Balance">0 (Balanced)</span>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1582,17 +1631,22 @@
 
                     <!-- Work Area: Volume Slider & Audio Effects Rack -->
                     <main class="volume-work-area">
-                      <div class="volume-slider-row">
-                        <div class="volume-icon-box" title="Volume">
-                          <i class='fticon fticon-volume-2 volume-icon' aria-hidden='true'></i>
+                      <div class="effects-control-row" id="volume-slider-row">
+                        <div class="effects-param-label-col">
+                          <button type="button" class="effects-param-label" id="btn-volume-label" title="Volume">
+                            <i class='fticon fticon-volume-high' aria-hidden='true'></i>
+                            <span class="fx-param-name">Volume</span>
+                          </button>
                         </div>
-                        <div class="volume-slider-container" id="volume-slider-container" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" aria-label="Volume Slider">
-                          <div class="volume-slider-track">
-                            <div class="volume-slider-fill" id="volume-slider-fill" style="width: 100%;"></div>
-                            <div class="volume-slider-thumb" id="volume-slider-thumb" style="left: 100%;"></div>
+                        <div class="effects-param-val-col">
+                          <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-layer-volume" title="Drag to adjust Volume" role="slider" aria-label="Volume Scrubber" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+                            <div class="jog-wheel-track-viewport">
+                              <div class="jog-wheel-ticks"></div>
+                            </div>
+                            <div class="jog-wheel-needle"></div>
+                            <span class="effects-param-pill-val" id="volume-slider-badge" title="Click to edit Volume">100%</span>
                           </div>
                         </div>
-                        <div class="volume-slider-badge" id="volume-slider-badge">100%</div>
                       </div>
 
                       <div class="audio-fx-section">
@@ -1641,33 +1695,43 @@
 
                       <!-- Mode Panel 1: Speed Multiplier Mode -->
                       <div class="speed-mode-panel" id="panel-speed-multiplier">
-                        <div class="speed-slider-row">
-                          <div class="speed-icon-box" title="Playback Speed">
-                            <i class='fticon fticon-speed speed-icon' aria-hidden='true'></i>
+                        <div class="effects-control-row" id="speed-slider-row">
+                          <div class="effects-param-label-col">
+                            <button type="button" class="effects-param-label" id="btn-speed-label" title="Playback Speed">
+                              <i class='fticon fticon-speed' aria-hidden='true'></i>
+                              <span class="fx-param-name">Speed</span>
+                            </button>
                           </div>
-                          <div class="speed-slider-container" id="speed-slider-container" role="slider" aria-valuemin="0.1" aria-valuemax="8.0" aria-valuenow="1.0" aria-label="Speed Slider">
-                            <div class="speed-slider-track">
-                              <div class="speed-slider-fill" id="speed-slider-fill" style="width: 50%;"></div>
-                              <div class="speed-slider-thumb" id="speed-slider-thumb" style="left: 50%;"></div>
+                          <div class="effects-param-val-col">
+                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-layer-speed" title="Drag to adjust Playback Speed" role="slider" aria-label="Speed Scrubber" aria-valuemin="0.1" aria-valuemax="8.0" aria-valuenow="1.0">
+                              <div class="jog-wheel-track-viewport">
+                                <div class="jog-wheel-ticks"></div>
+                              </div>
+                              <div class="jog-wheel-needle"></div>
+                              <span class="effects-param-pill-val" id="speed-slider-badge" title="Click to edit Speed">1.0x</span>
                             </div>
                           </div>
-                          <div class="speed-slider-badge" id="speed-slider-badge" title="Speed (Click to edit)">1.0x</div>
                         </div>
                       </div>
 
                       <!-- Mode Panel 2: Time Remap Mode (AE-Style) -->
                       <div class="speed-mode-panel" id="panel-time-remap" style="display: none;">
-                        <div class="speed-slider-row">
-                          <div class="speed-icon-box" title="Source Time">
-                            <i class='fticon fticon-source-time speed-icon' aria-hidden='true'></i>
+                        <div class="effects-control-row" id="timeremap-slider-row">
+                          <div class="effects-param-label-col">
+                            <button type="button" class="effects-param-label" id="btn-timeremap-label" title="Source Time">
+                              <i class='fticon fticon-source-time' aria-hidden='true'></i>
+                              <span class="fx-param-name">Source Time</span>
+                            </button>
                           </div>
-                          <div class="speed-slider-container" id="timeremap-slider-container" role="slider" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0" aria-label="Time Remap Slider">
-                            <div class="speed-slider-track">
-                              <div class="speed-slider-fill" id="timeremap-slider-fill" style="width: 0%;"></div>
-                              <div class="speed-slider-thumb" id="timeremap-slider-thumb" style="left: 0%;"></div>
+                          <div class="effects-param-val-col">
+                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-layer-timeremap" title="Drag to adjust Source Time" role="slider" aria-label="Time Remap Scrubber" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0">
+                              <div class="jog-wheel-track-viewport">
+                                <div class="jog-wheel-ticks"></div>
+                              </div>
+                              <div class="jog-wheel-needle"></div>
+                              <span class="effects-param-pill-val" id="timeremap-slider-badge" title="Click to edit Source Time">00:00:00</span>
                             </div>
                           </div>
-                          <div class="speed-slider-badge" id="timeremap-slider-badge" title="Source Time (Click to edit)">00:00:00</div>
                         </div>
                         <div class="timeremap-actions-row">
                           <button type="button" class="timeremap-action-btn" id="btn-timeremap-freeze" title="Freeze frame from current playhead to clip end">
@@ -1720,84 +1784,109 @@
 
                     <!-- Work Area: Dynamic Shape Parameters -->
                     <main class="shape-work-area">
-                      <!-- Header Bar: Shape Name & Badge -->
-                      <div class="shape-header-bar">
-                        <span class="shape-section-title" id="lbl-shape-title">Kotak</span>
-                        <span class="shape-type-badge" id="lbl-shape-type">Shape</span>
-                      </div>
 
                       <!-- 1. Size X & Size Y (Universal for all shapes) -->
-                      <div class="shape-control-row" id="shape-section-size">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Size</span>
-                          <div class="shape-control-values">
-                            <span class="shape-val-badge" id="val-shape-size-x">300</span>
-                            <button type="button" class="shape-link-btn is-active" id="btn-shape-size-link" title="Toggle Aspect Ratio Link" aria-label="Link Size">
-                              <i class='fticon fticon-link-parent-layer svg-link-on' aria-hidden='true'></i>
-                              <i class='fticon fticon-link-aspect-ratio svg-link-off' style='display: none;' aria-hidden='true'></i>
-                            </button>
-                            <span class="shape-val-badge" id="val-shape-size-y">300</span>
-                          </div>
+                      <div class="effects-control-row" id="shape-section-size">
+                        <div class="effects-param-label-col">
+                          <span class="effects-param-label">Size</span>
+                          <button type="button" class="shape-link-btn is-active" id="btn-shape-size-link" title="Proportions Linked (Click to Unlink)" aria-label="Link Size">
+                            <svg class="shape-link-svg svg-link-on" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                            </svg>
+                            <svg class="shape-link-svg svg-link-off" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display: none;">
+                              <path d="m18.84 12.25 1.72-1.71a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                              <path d="m5.16 11.75-1.72 1.71a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                              <line x1="2" y1="2" x2="22" y2="22"/>
+                            </svg>
+                          </button>
                         </div>
-                        <!-- Linked Mode: Single Jog Wheel -->
-                        <div class="jog-wheel-container is-horizontal" id="jog-shape-size-linked" title="Drag to adjust Size">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                        <!-- Unlinked Mode: Dual Jog Wheels (Size X & Size Y) -->
-                        <div class="shape-dual-rulers" id="jog-shape-size-unlinked" style="display: none;">
-                          <div class="jog-wheel-container is-horizontal" id="jog-shape-size-x" title="Drag to adjust Size X">
-                            <div class="jog-wheel-ticks"></div>
+                        <div class="effects-param-val-col">
+                          <!-- Linked Mode: Single Jog Wheel -->
+                          <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-shape-size-linked" title="Drag to adjust Size" role="slider" aria-label="Size Scrubber">
+                            <div class="jog-wheel-track-viewport">
+                              <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 3840px; --tape-offset: 0px;" data-tape-width="3840"></div>
+                            </div>
                             <div class="jog-wheel-needle"></div>
+                            <span class="effects-param-pill-val" id="val-shape-size-linked" title="Click to edit Size">300</span>
                           </div>
-                          <div class="jog-wheel-container is-horizontal" id="jog-shape-size-y" title="Drag to adjust Size Y">
-                            <div class="jog-wheel-ticks"></div>
-                            <div class="jog-wheel-needle is-white"></div>
+                          <!-- Unlinked Mode: Dual Jog Wheels (Size X & Size Y) -->
+                          <div class="effects-param-pair" id="jog-shape-size-unlinked" style="display: none;">
+                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-shape-size-x" title="Drag to adjust Size X" role="slider" aria-label="Size X Scrubber">
+                              <div class="jog-wheel-track-viewport">
+                                <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 3840px; --tape-offset: 0px;" data-tape-width="3840"></div>
+                              </div>
+                              <div class="jog-wheel-needle"></div>
+                              <span class="effects-axis-badge">X</span>
+                              <span class="effects-param-pill-val" id="val-shape-size-x" title="Click to edit Size X">300</span>
+                            </div>
+                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-shape-size-y" title="Drag to adjust Size Y" role="slider" aria-label="Size Y Scrubber">
+                              <div class="jog-wheel-track-viewport">
+                                <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 3840px; --tape-offset: 0px;" data-tape-width="3840"></div>
+                              </div>
+                              <div class="jog-wheel-needle"></div>
+                              <span class="effects-axis-badge">Y</span>
+                              <span class="effects-param-pill-val" id="val-shape-size-y" title="Click to edit Size Y">300</span>
+                            </div>
                           </div>
                         </div>
                       </div>
 
-                      <!-- 2. Roundness (For Rectangle, Triangle, Polygon) -->
-                      <div class="shape-control-row" id="shape-section-roundness" style="display: none;">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Roundness</span>
-                          <span class="shape-val-badge" id="val-shape-roundness">24</span>
+                      <!-- 2. Roundness (For Rectangle, Triangle) -->
+                      <div class="effects-control-row is-hidden" id="shape-section-roundness" style="display: none;" hidden>
+                        <div class="effects-param-label-col">
+                          <span class="effects-param-label">Roundness</span>
                         </div>
-                        <div class="jog-wheel-container is-horizontal" id="jog-shape-roundness" title="Drag to adjust Roundness">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
+                        <div class="effects-param-val-col">
+                          <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-shape-roundness" title="Drag to adjust Roundness" role="slider" aria-label="Roundness Scrubber">
+                            <div class="jog-wheel-track-viewport">
+                              <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
+                            </div>
+                            <div class="jog-wheel-needle"></div>
+                            <span class="effects-param-pill-val" id="val-shape-roundness" title="Click to edit Roundness">24</span>
+                          </div>
                         </div>
                       </div>
 
                       <!-- 3. Step / Sides (For Triangle & Polygon) -->
-                      <div class="shape-control-row" id="shape-section-step" style="display: none;">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label" id="lbl-shape-step">Step</span>
-                          <span class="shape-val-badge" id="val-shape-step">3</span>
+                      <div class="effects-control-row is-hidden" id="shape-section-step" style="display: none;" hidden>
+                        <div class="effects-param-label-col">
+                          <span class="effects-param-label" id="lbl-shape-step">Step</span>
                         </div>
-                        <div class="jog-wheel-container is-horizontal" id="jog-shape-step" title="Drag to adjust Step / Sides">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
+                        <div class="effects-param-val-col">
+                          <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-shape-step" title="Drag to adjust Step / Sides" role="slider" aria-label="Step Scrubber">
+                            <div class="jog-wheel-track-viewport">
+                              <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
+                            </div>
+                            <div class="jog-wheel-needle"></div>
+                            <span class="effects-param-pill-val" id="val-shape-step" title="Click to edit Step">3</span>
+                          </div>
                         </div>
                       </div>
 
                       <!-- 4. Star Points & Inner Radius (For Star) -->
-                      <div class="shape-control-row" id="shape-section-star" style="display: none;">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Star Points &amp; Depth</span>
-                          <div class="shape-control-values">
-                            <span class="shape-val-badge" id="val-shape-points">5</span>
-                            <span class="shape-val-badge" id="val-shape-inner-radius">40%</span>
-                          </div>
+                      <div class="effects-control-row is-hidden" id="shape-section-star" style="display: none;" hidden>
+                        <div class="effects-param-label-col">
+                          <span class="effects-param-label">Star</span>
                         </div>
-                        <div class="shape-dual-rulers">
-                          <div class="jog-wheel-container is-horizontal" id="jog-shape-points" title="Drag to adjust Star Points">
-                            <div class="jog-wheel-ticks"></div>
-                            <div class="jog-wheel-needle"></div>
-                          </div>
-                          <div class="jog-wheel-container is-horizontal" id="jog-shape-inner-radius" title="Drag to adjust Inner Depth">
-                            <div class="jog-wheel-ticks"></div>
-                            <div class="jog-wheel-needle is-white"></div>
+                        <div class="effects-param-val-col">
+                          <div class="effects-param-pair">
+                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-shape-points" title="Drag to adjust Star Points" role="slider" aria-label="Points Scrubber">
+                              <div class="jog-wheel-track-viewport">
+                                <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
+                              </div>
+                              <div class="jog-wheel-needle"></div>
+                              <span class="effects-axis-badge">PTS</span>
+                              <span class="effects-param-pill-val" id="val-shape-points" title="Click to edit Star Points">5</span>
+                            </div>
+                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-shape-inner-radius" title="Drag to adjust Inner Depth" role="slider" aria-label="Depth Scrubber">
+                              <div class="jog-wheel-track-viewport">
+                                <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
+                              </div>
+                              <div class="jog-wheel-needle"></div>
+                              <span class="effects-axis-badge">IN</span>
+                              <span class="effects-param-pill-val" id="val-shape-inner-radius" title="Click to edit Inner Depth">40%</span>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1808,7 +1897,7 @@
 
                 <!-- Subview 12: Edit Text Controller UI -->
                 <div class="drawer-subview" id="layer-drawer-text-view">
-                  <div class="shape-controller-layout" id="text-controller">
+                  <div class="text-controller-layout" id="text-controller">
                     <!-- Left Navigation Column -->
                     <aside class="transform-nav-col">
                       <div class="transform-nav-group-top">
@@ -1820,37 +1909,16 @@
 
                     <!-- Work Area: Text Parameters -->
                     <main class="shape-work-area" style="overflow-y: auto; max-height: 290px; padding-bottom: 150px;">
-                      <!-- Header Bar: Title & Preset Badge -->
-                      <div class="shape-header-bar">
-                        <span class="shape-section-title">Edit Text</span>
-                        <span class="shape-type-badge" id="lbl-text-preset-name">FishText</span>
-                      </div>
-
-                      <!-- Text Panel Tabs (Text / Style / Animate) -->
-                      <div class="segmented-switch is-compact text-panel-tabs" role="tablist" aria-label="Text panel sections">
-                        <button type="button" class="segmented-switch-item is-active" data-text-tab="text" aria-selected="true">Text</button>
-                        <button type="button" class="segmented-switch-item" data-text-tab="style" aria-selected="false">Style</button>
-                        <button type="button" class="segmented-switch-item" data-text-tab="animate" aria-selected="false">Animate</button>
-                      </div>
 
                       <!-- Text Panel Pane: text -->
                       <div class="text-tab-pane is-active" data-text-pane="text">
                       <!-- 1. Text Input -->
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Text Content</span>
-                        </div>
-                        <textarea id="input-text-content" class="text-content-textarea" rows="2" placeholder="Enter text... (Enter = new line)" autocomplete="off" spellcheck="false"></textarea>
-                      </div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Text</span></div><div class="effects-param-val-col"><textarea id="input-text-content" class="text-content-textarea" rows="2" placeholder="Enter text..." autocomplete="off" spellcheck="false"></textarea></div></div>
 
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Font Family</span>
-                        </div>
-                        <div class="custom-dropdown" data-text-select="fontFamily" style="width: 100%;">
-                          <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select Font Family" style="width: 100%; height: 38px; padding: 0 12px; font-size: 13px;">
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Font</span></div><div class="effects-param-val-col"><div class="custom-dropdown" data-text-select="fontFamily" style="width: 100%;">
+                          <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Font">
                             <span class="custom-dropdown-label">Cal Sans</span>
-                            <i class='fticon fticon-select-font-family custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
+                            <i class='fticon fticon-select-font-family custom-dropdown-arrow' aria-hidden='true'></i>
                           </button>
                           <div class="custom-dropdown-menu" role="listbox" style="max-height: 220px; overflow-y: auto; scrollbar-width: thin; z-index: 1050;">
                             <div class="custom-dropdown-item" role="option" data-val="Cal Sans, Inter, sans-serif" style="font-family: 'Cal Sans', sans-serif;">Cal Sans</div>
@@ -1866,16 +1934,11 @@
                             <div class="custom-dropdown-item" role="option" data-val="'Courier New', monospace" style="font-family: 'Courier New', monospace;">Courier New</div>
                             <div class="custom-dropdown-item" role="option" data-val="'Comic Sans MS', cursive" style="font-family: 'Comic Sans MS', cursive;">Comic Sans MS</div>
                           </div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Font Weight</span>
-                        </div>
-                        <div class="custom-dropdown" data-text-select="fontWeight" style="width: 100%;">
-                          <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select Font Weight" style="width: 100%; height: 38px; padding: 0 12px; font-size: 13px;">
+                        </div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Weight</span></div><div class="effects-param-val-col"><div class="custom-dropdown" data-text-select="fontWeight" style="width: 100%;">
+                          <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Weight">
                             <span class="custom-dropdown-label">Light</span>
-                            <i class='fticon fticon-select-font-family custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
+                            <i class='fticon fticon-select-font-family custom-dropdown-arrow' aria-hidden='true'></i>
                           </button>
                           <div class="custom-dropdown-menu" role="listbox" style="max-height: 200px; overflow-y: auto; scrollbar-width: thin; z-index: 1050;">
                             <div class="custom-dropdown-item" role="option" data-val="300">Light</div>
@@ -1884,97 +1947,44 @@
                             <div class="custom-dropdown-item" role="option" data-val="700">Bold</div>
                             <div class="custom-dropdown-item" role="option" data-val="900">Black</div>
                           </div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Font Style</span>
-                        </div>
-                        <div class="segmented-switch is-compact" data-text-switch="fontStyle" data-type="str" role="tablist">
+                        </div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Style</span></div><div class="effects-param-val-col"><div class="segmented-switch is-compact" data-text-switch="fontStyle" data-type="str" role="tablist">
                           <button type="button" class="segmented-switch-item" data-val="normal">Normal</button>
                           <button type="button" class="segmented-switch-item" data-val="italic">Italic</button>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Alignment</span>
-                        </div>
-                        <div class="segmented-switch is-compact" data-text-switch="textAlign" data-type="str" role="tablist">
+                        </div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Align</span></div><div class="effects-param-val-col"><div class="segmented-switch is-compact" data-text-switch="textAlign" data-type="str" role="tablist">
                           <button type="button" class="segmented-switch-item" data-val="left">Left</button>
                           <button type="button" class="segmented-switch-item" data-val="center">Center</button>
                           <button type="button" class="segmented-switch-item" data-val="right">Right</button>
-                        </div>
-                      </div>
+                        </div></div></div>
                       <!-- 2. Font Size -->
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Font Size</span>
-                          <span class="shape-val-badge" id="val-text-font-size">64px</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" id="jog-text-font-size" title="Drag to adjust Font Size">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Font Size</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="fontSize" data-min="12" data-max="240" data-step="1" data-unit="px" data-decimals="0" title="Font Size"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="fontSize">-</span></div></div></div>
 
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Letter Spacing</span>
-                          <span class="shape-val-badge" data-text-badge="letterSpacing">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="letterSpacing" data-min="-20" data-max="80" data-step="0.2" data-unit="px" data-decimals="1" title="Drag to adjust Letter Spacing">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Line Height</span>
-                          <span class="shape-val-badge" data-text-badge="lineHeight">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="lineHeight" data-min="0.6" data-max="3" data-step="0.01" data-unit="" data-decimals="2" title="Drag to adjust Line Height">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Text Color</span>
-                          <button type="button" class="color-swatch-trigger" data-text-color="fillColor" title="Pick Text Color" aria-label="Pick Text Color">
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Letter Spacing</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="letterSpacing" data-min="-20" data-max="80" data-step="0.2" data-unit="px" data-decimals="1" title="Letter Spacing"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="letterSpacing">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Line Height</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="lineHeight" data-min="0.6" data-max="3" data-step="0.01" data-unit="" data-decimals="2" title="Line Height"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="lineHeight">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Color</span></div><div class="effects-param-val-col"><button type="button" class="color-swatch-trigger" data-text-color="fillColor" title="Color" aria-label="Color">
                             <span class="color-swatch-chip"></span>
                             <span class="color-swatch-hex">-</span>
-                          </button>
-                        </div>
-                      </div>
+                          </button></div></div>
                       </div>
 
                       <!-- Text Panel Pane: style -->
                       <div class="text-tab-pane" data-text-pane="style">
                       <div class="text-section-head">
                         <span class="text-section-title">Outline</span>
+                        <div class="segmented-switch is-compact text-toggle-switch" data-text-switch="strokeEnabled" data-type="bool" role="tablist">
+                          <button type="button" class="segmented-switch-item" data-val="false">Off</button>
+                          <button type="button" class="segmented-switch-item" data-val="true">On</button>
+                        </div>
                       </div>
-                      <div class="text-section-body">
+                      <div class="text-section-body" data-text-depends="strokeEnabled">
                       <!-- 3. Outline / Stroke Width -->
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Outline Width</span>
-                          <span class="shape-val-badge" id="val-text-stroke-width">0px</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" id="jog-text-stroke-width" title="Drag to adjust Outline Width">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Width</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="strokeWidth" data-min="0" data-max="40" data-step="1" data-unit="px" data-decimals="0" title="Width"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="strokeWidth">-</span></div></div></div>
 
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Outline Color</span>
-                          <button type="button" class="color-swatch-trigger" data-text-color="strokeColor" title="Pick Outline Color" aria-label="Pick Outline Color">
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Color</span></div><div class="effects-param-val-col"><button type="button" class="color-swatch-trigger" data-text-color="strokeColor" title="Color" aria-label="Color">
                             <span class="color-swatch-chip"></span>
                             <span class="color-swatch-hex">-</span>
-                          </button>
-                        </div>
-                      </div>
+                          </button></div></div>
                       </div>
                       <div class="text-section-head">
                         <span class="text-section-title">Background</span>
@@ -1984,45 +1994,13 @@
                         </div>
                       </div>
                       <div class="text-section-body" data-text-depends="badgeEnabled">
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Background Color</span>
-                          <button type="button" class="color-swatch-trigger" data-text-color="badgeColor" title="Pick Background Color" aria-label="Pick Background Color">
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Color</span></div><div class="effects-param-val-col"><button type="button" class="color-swatch-trigger" data-text-color="badgeColor" title="Color" aria-label="Color">
                             <span class="color-swatch-chip"></span>
                             <span class="color-swatch-hex">-</span>
-                          </button>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Padding X</span>
-                          <span class="shape-val-badge" data-text-badge="badgePaddingX">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="badgePaddingX" data-min="0" data-max="160" data-step="0.5" data-unit="px" data-decimals="0" title="Drag to adjust Padding X">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Padding Y</span>
-                          <span class="shape-val-badge" data-text-badge="badgePaddingY">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="badgePaddingY" data-min="0" data-max="120" data-step="0.5" data-unit="px" data-decimals="0" title="Drag to adjust Padding Y">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Corner Radius</span>
-                          <span class="shape-val-badge" data-text-badge="badgeRadius">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="badgeRadius" data-min="0" data-max="120" data-step="0.5" data-unit="px" data-decimals="0" title="Drag to adjust Corner Radius">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
+                          </button></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Padding X</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="badgePaddingX" data-min="0" data-max="160" data-step="0.5" data-unit="px" data-decimals="0" title="Padding X"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="badgePaddingX">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Padding Y</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="badgePaddingY" data-min="0" data-max="120" data-step="0.5" data-unit="px" data-decimals="0" title="Padding Y"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="badgePaddingY">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Corner Radius</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="badgeRadius" data-min="0" data-max="120" data-step="0.5" data-unit="px" data-decimals="0" title="Corner Radius"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="badgeRadius">-</span></div></div></div>
                       </div>
                       <div class="text-section-head">
                         <span class="text-section-title">Drop Shadow</span>
@@ -2032,45 +2010,13 @@
                         </div>
                       </div>
                       <div class="text-section-body" data-text-depends="shadowEnabled">
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Shadow Color</span>
-                          <button type="button" class="color-swatch-trigger" data-text-color="shadowColor" title="Pick Shadow Color" aria-label="Pick Shadow Color">
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Color</span></div><div class="effects-param-val-col"><button type="button" class="color-swatch-trigger" data-text-color="shadowColor" title="Color" aria-label="Color">
                             <span class="color-swatch-chip"></span>
                             <span class="color-swatch-hex">-</span>
-                          </button>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Shadow Blur</span>
-                          <span class="shape-val-badge" data-text-badge="shadowBlur">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="shadowBlur" data-min="0" data-max="60" data-step="0.3" data-unit="px" data-decimals="0" title="Drag to adjust Shadow Blur">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Offset X</span>
-                          <span class="shape-val-badge" data-text-badge="shadowOffsetX">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="shadowOffsetX" data-min="-60" data-max="60" data-step="0.3" data-unit="px" data-decimals="0" title="Drag to adjust Offset X">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Offset Y</span>
-                          <span class="shape-val-badge" data-text-badge="shadowOffsetY">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="shadowOffsetY" data-min="-60" data-max="60" data-step="0.3" data-unit="px" data-decimals="0" title="Drag to adjust Offset Y">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
+                          </button></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Blur</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="shadowBlur" data-min="0" data-max="60" data-step="0.3" data-unit="px" data-decimals="0" title="Blur"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="shadowBlur">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Offset X</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="shadowOffsetX" data-min="-60" data-max="60" data-step="0.3" data-unit="px" data-decimals="0" title="Offset X"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="shadowOffsetX">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Offset Y</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="shadowOffsetY" data-min="-60" data-max="60" data-step="0.3" data-unit="px" data-decimals="0" title="Offset Y"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="shadowOffsetY">-</span></div></div></div>
                       </div>
                       <div class="text-section-head">
                         <span class="text-section-title">Glow</span>
@@ -2080,25 +2026,11 @@
                         </div>
                       </div>
                       <div class="text-section-body" data-text-depends="neonGlow">
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Glow Color</span>
-                          <button type="button" class="color-swatch-trigger" data-text-color="neonGlowColor" title="Pick Glow Color" aria-label="Pick Glow Color">
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Color</span></div><div class="effects-param-val-col"><button type="button" class="color-swatch-trigger" data-text-color="neonGlowColor" title="Color" aria-label="Color">
                             <span class="color-swatch-chip"></span>
                             <span class="color-swatch-hex">-</span>
-                          </button>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Glow Size</span>
-                          <span class="shape-val-badge" data-text-badge="neonGlowBlur">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="neonGlowBlur" data-min="0" data-max="80" data-step="0.3" data-unit="px" data-decimals="0" title="Drag to adjust Glow Size">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
+                          </button></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Size</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="neonGlowBlur" data-min="0" data-max="80" data-step="0.3" data-unit="px" data-decimals="0" title="Size"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="neonGlowBlur">-</span></div></div></div>
                       </div>
                       <div class="text-section-head">
                         <span class="text-section-title">Long Shadow</span>
@@ -2108,247 +2040,63 @@
                         </div>
                       </div>
                       <div class="text-section-body" data-text-depends="longShadow">
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Long Shadow Color</span>
-                          <button type="button" class="color-swatch-trigger" data-text-color="longShadowColor" title="Pick Long Shadow Color" aria-label="Pick Long Shadow Color">
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Color</span></div><div class="effects-param-val-col"><button type="button" class="color-swatch-trigger" data-text-color="longShadowColor" title="Color" aria-label="Color">
                             <span class="color-swatch-chip"></span>
                             <span class="color-swatch-hex">-</span>
-                          </button>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Length</span>
-                          <span class="shape-val-badge" data-text-badge="longShadowLength">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="longShadowLength" data-min="0" data-max="120" data-step="0.4" data-unit="px" data-decimals="0" title="Drag to adjust Length">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Angle</span>
-                          <span class="shape-val-badge" data-text-badge="longShadowAngle">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="longShadowAngle" data-min="0" data-max="360" data-step="1" data-unit="°" data-decimals="0" title="Drag to adjust Angle">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
+                          </button></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Length</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="longShadowLength" data-min="0" data-max="120" data-step="0.4" data-unit="px" data-decimals="0" title="Length"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="longShadowLength">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Angle</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="longShadowAngle" data-min="0" data-max="360" data-step="1" data-unit="°" data-decimals="0" title="Angle"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="longShadowAngle">-</span></div></div></div>
                       </div>
                       </div>
 
                       <!-- Text Panel Pane: animate -->
                       <div class="text-tab-pane" data-text-pane="animate">
-                      <div class="text-section-head">
-                        <span class="text-section-title">Presets</span>
-                      </div>
-                      <!-- Animate By -->
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Animate By</span>
-                        </div>
-                        <div class="custom-dropdown" id="dropdown-text-anim-target" data-value="character" style="width: 100%;">
-                          <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select animation target" style="width: 100%; height: 38px; padding: 0 12px; font-size: 13px;">
+                      <!-- Target -->
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Target</span></div><div class="effects-param-val-col"><div class="custom-dropdown" id="dropdown-text-anim-target" data-value="character" style="width: 100%;">
+                          <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Target">
                             <span class="custom-dropdown-label">Character</span>
-                            <i class='fticon fticon-select-animation-target custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
+                            <i class='fticon fticon-select-animation-target custom-dropdown-arrow' aria-hidden='true'></i>
                           </button>
                           <div class="custom-dropdown-menu" role="listbox" style="max-height: 160px; overflow-y: auto; scrollbar-width: thin; z-index: 1050;">
                             <div class="custom-dropdown-item is-selected" role="option" data-val="character">Character</div>
                             <div class="custom-dropdown-item" role="option" data-val="word">Word</div>
                             <div class="custom-dropdown-item" role="option" data-val="line">Line</div>
                           </div>
-                        </div>
-                      </div>
+                        </div></div></div>
 
-                      <!-- 4. Text IN Animation Selector (Dropdown) -->
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">IN Animation (Intro)</span>
-                          <span class="shape-val-badge" id="val-text-anim-in-duration">0.80s</span>
-                        </div>
-                        <div class="custom-dropdown" id="dropdown-text-anim-in" data-value="bounce_1" style="width: 100%;">
-                          <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select IN Animation" style="width: 100%; height: 38px; padding: 0 12px; font-size: 13px;">
-                            <span class="custom-dropdown-label">Bounce Drop (Y Position)</span>
-                            <i class='fticon fticon-select-animation-target custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
+                      <div class="text-anim-section" id="text-anim-in-section">
+                      <div class="text-anim-head"><span class="text-section-title">In</span></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Animation</span></div><div class="effects-param-val-col"><div class="custom-dropdown" id="dropdown-text-anim-in" data-value="none" style="width: 100%;">
+                          <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Animation">
+                            <span class="custom-dropdown-label">None</span>
+                            <i class='fticon fticon-select-animation-target custom-dropdown-arrow' aria-hidden='true'></i>
                           </button>
                           <div class="custom-dropdown-menu" role="listbox" style="max-height: 200px; overflow-y: auto; scrollbar-width: thin; z-index: 1050;">
-                            <div class="custom-dropdown-item is-selected" role="option" data-val="bounce_1">Bounce Drop (Y Position)</div>
-                            <div class="custom-dropdown-item" role="option" data-val="bounce_2">Bounce Pop (Scale)</div>
-                            <div class="custom-dropdown-item" role="option" data-val="bounce_3">Wave Drop (Y Position)</div>
-                            <div class="custom-dropdown-item" role="option" data-val="bounce_4">Wave Pop (Scale)</div>
-                            <div class="custom-dropdown-item" role="option" data-val="wave">Kinetic Wave</div>
-                            <div class="custom-dropdown-item" role="option" data-val="typewriter">Typewriter</div>
-                            <div class="custom-dropdown-item" role="option" data-val="fade_up">Fade Up</div>
-                            <div class="custom-dropdown-item" role="option" data-val="glitch">Digital Glitch</div>
-                            <div class="custom-dropdown-item" role="option" data-val="custom">Custom (Animator)</div>
-                            <div class="custom-dropdown-item" role="option" data-val="none">None</div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <!-- 4b. IN Duration Jog Wheel -->
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">IN Duration</span>
-                          <span class="shape-val-badge" id="badge-text-anim-in-dur">0.80s</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" id="jog-text-anim-in-duration" title="Drag to adjust IN Animation Duration">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-
-                      <!-- Spring Decay -->
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Decay</span>
-                          <span class="shape-val-badge" id="badge-text-anim-decay">7.0</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" id="jog-text-anim-decay" title="Spring decay — higher = faster settle, lower = more bouncy">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-
-                      <!-- Spring Frequency -->
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Frequency</span>
-                          <span class="shape-val-badge" id="badge-text-anim-freq">3.0</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" id="jog-text-anim-freq" title="Spring oscillation frequency — higher = faster bounce">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-
-                      <!-- Amplitude -->
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Amplitude</span>
-                          <span class="shape-val-badge" id="badge-text-anim-amplitude">0.60</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" id="jog-text-anim-amplitude" title="Displacement amplitude as fraction of font size">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-
-                      <!-- Stagger -->
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Stagger</span>
-                          <span class="shape-val-badge" id="badge-text-anim-stagger">0.50</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" id="jog-text-anim-stagger" title="Stagger — 0=all at once, 1=cascade over full IN Duration">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-
-                      <!-- 4c. Text OUT Animation Selector (Dropdown) -->
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">OUT Animation (Outro)</span>
-                          <span class="shape-val-badge" id="val-text-anim-out-duration">0.60s</span>
-                        </div>
-                        <div class="custom-dropdown" id="dropdown-text-anim-out" data-value="none" style="width: 100%;">
-                          <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select OUT Animation" style="width: 100%; height: 38px; padding: 0 12px; font-size: 13px;">
-                            <span class="custom-dropdown-label">None</span>
-                            <i class='fticon fticon-select-animation-target custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
-                          </button>
-                          <div class="custom-dropdown-menu" role="listbox" style="max-height: 180px; overflow-y: auto; scrollbar-width: thin; z-index: 1050;">
                             <div class="custom-dropdown-item is-selected" role="option" data-val="none">None</div>
-                            <div class="custom-dropdown-item" role="option" data-val="bounce_1">Bounce Drop (Y Position)</div>
-                            <div class="custom-dropdown-item" role="option" data-val="bounce_2">Bounce Pop (Scale)</div>
-                            <div class="custom-dropdown-item" role="option" data-val="bounce_3">Wave Drop (Y Position)</div>
-                            <div class="custom-dropdown-item" role="option" data-val="bounce_4">Wave Pop (Scale)</div>
-                            <div class="custom-dropdown-item" role="option" data-val="slide_out">Slide Out</div>
-                            <div class="custom-dropdown-item" role="option" data-val="wave">Kinetic Wave</div>
-                            <div class="custom-dropdown-item" role="option" data-val="fade_up">Fade Down</div>
-                            <div class="custom-dropdown-item" role="option" data-val="glitch">Digital Glitch</div>
+                            <div class="custom-dropdown-item" role="option" data-val="bounce">Bounce</div>
+                            <div class="custom-dropdown-item" role="option" data-val="overshoot">Overshoot</div>
+                            <div class="custom-dropdown-item" role="option" data-val="fade">Fade</div>
                             <div class="custom-dropdown-item" role="option" data-val="typewriter">Typewriter</div>
-                            <div class="custom-dropdown-item" role="option" data-val="custom">Custom (Animator)</div>
+                            <div class="custom-dropdown-item" role="option" data-val="glitch">Glitch</div>
                           </div>
-                        </div>
-                      </div>
-
-                      <!-- 4d. OUT Duration Jog Wheel -->
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">OUT Duration</span>
-                          <span class="shape-val-badge" id="badge-text-anim-out-dur">0.60s</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" id="jog-text-anim-out-duration" title="Drag to adjust OUT Animation Duration">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-                      <div class="text-section-head">
-                        <span class="text-section-title">Animator (Animate From)</span>
-                      </div>
-                      <div class="text-section-body">
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Position X</span>
-                          <span class="shape-val-badge" data-text-badge="animPosX">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="animPosX" data-min="-600" data-max="600" data-step="1" data-unit="px" data-decimals="0" title="Glyph X offset at start of IN / end of OUT">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Position Y</span>
-                          <span class="shape-val-badge" data-text-badge="animPosY">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="animPosY" data-min="-600" data-max="600" data-step="1" data-unit="px" data-decimals="0" title="Glyph Y offset at start of IN / end of OUT">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Rotation</span>
-                          <span class="shape-val-badge" data-text-badge="animRotation">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="animRotation" data-min="-720" data-max="720" data-step="1" data-unit="°" data-decimals="0" title="Glyph rotation at start of IN / end of OUT">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Scale</span>
-                          <span class="shape-val-badge" data-text-badge="animScale">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="animScale" data-min="0" data-max="400" data-step="0.5" data-unit="%" data-decimals="0" title="Glyph scale at start of IN / end of OUT">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Opacity</span>
-                          <span class="shape-val-badge" data-text-badge="animOpacity">-</span>
-                        </div>
-                        <div class="jog-wheel-container is-horizontal" data-text-jog="animOpacity" data-min="0" data-max="100" data-step="0.5" data-unit="%" data-decimals="0" title="Glyph opacity at start of IN / end of OUT">
-                          <div class="jog-wheel-ticks"></div>
-                          <div class="jog-wheel-needle"></div>
-                        </div>
-                      </div>
-                      <div class="shape-control-row">
-                        <div class="shape-control-header">
-                          <span class="shape-control-label">Ease</span>
-                        </div>
-                        <div class="custom-dropdown" data-text-select="animEase" style="width: 100%;">
-                          <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select Ease" style="width: 100%; height: 38px; padding: 0 12px; font-size: 13px;">
+                        </div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Duration</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animInDuration" data-min="0.1" data-max="5" data-step="0.05" data-unit="s" data-decimals="2" title="Duration"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animInDuration">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Stagger</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animStagger" data-min="0" data-max="1" data-step="0.01" data-unit="" data-decimals="2" title="Stagger"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animStagger">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Order</span></div><div class="effects-param-val-col"><div class="segmented-switch is-compact" data-text-switch="animInOrder" data-type="str" role="tablist"><button type="button" class="segmented-switch-item" data-val="rtl" title="Order" aria-label="Order"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg></button><button type="button" class="segmented-switch-item" data-val="ltr" title="Order" aria-label="Order"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button></div></div></div>
+                      <div class="text-anim-sub">Spring</div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Decay</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animDecay" data-min="0.5" data-max="20" data-step="0.1" data-unit="" data-decimals="1" title="Decay"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animDecay">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Frequency</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animFreq" data-min="0.5" data-max="8" data-step="0.1" data-unit="" data-decimals="1" title="Frequency"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animFreq">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Amplitude</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animAmplitude" data-min="0.05" data-max="2" data-step="0.01" data-unit="" data-decimals="2" title="Amplitude"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animAmplitude">-</span></div></div></div>
+                      <div class="text-anim-sub">From</div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Position X</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animPosX" data-min="-600" data-max="600" data-step="1" data-unit="px" data-decimals="0" title="Position X"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animPosX">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Position Y</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animPosY" data-min="-600" data-max="600" data-step="1" data-unit="px" data-decimals="0" title="Position Y"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animPosY">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Rotation</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animRotation" data-min="-720" data-max="720" data-step="1" data-unit="°" data-decimals="0" title="Rotation"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animRotation">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Scale</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animScale" data-min="0" data-max="400" data-step="0.5" data-unit="%" data-decimals="0" title="Scale"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animScale">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Opacity</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animOpacity" data-min="0" data-max="100" data-step="0.5" data-unit="%" data-decimals="0" title="Opacity"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animOpacity">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Ease</span></div><div class="effects-param-val-col"><div class="custom-dropdown" data-text-select="animEase" style="width: 100%;">
+                          <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Ease">
                             <span class="custom-dropdown-label">Ease Out (Expo)</span>
-                            <i class='fticon fticon-select-font-family custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
+                            <i class='fticon fticon-select-font-family custom-dropdown-arrow' aria-hidden='true'></i>
                           </button>
                           <div class="custom-dropdown-menu" role="listbox" style="max-height: 200px; overflow-y: auto; scrollbar-width: thin; z-index: 1050;">
                             <div class="custom-dropdown-item" role="option" data-val="ease_out">Ease Out (Expo)</div>
@@ -2357,12 +2105,65 @@
                             <div class="custom-dropdown-item" role="option" data-val="elastic">Elastic</div>
                             <div class="custom-dropdown-item" role="option" data-val="linear">Linear</div>
                           </div>
-                        </div>
+                        </div></div></div>
                       </div>
+                      <div class="text-anim-section" id="text-anim-out-section">
+                      <div class="text-anim-head"><span class="text-section-title">Out</span></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Animation</span></div><div class="effects-param-val-col"><div class="custom-dropdown" id="dropdown-text-anim-out" data-value="none" style="width: 100%;">
+                          <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Animation">
+                            <span class="custom-dropdown-label">None</span>
+                            <i class='fticon fticon-select-animation-target custom-dropdown-arrow' aria-hidden='true'></i>
+                          </button>
+                          <div class="custom-dropdown-menu" role="listbox" style="max-height: 180px; overflow-y: auto; scrollbar-width: thin; z-index: 1050;">
+                            <div class="custom-dropdown-item is-selected" role="option" data-val="none">None</div>
+                            <div class="custom-dropdown-item" role="option" data-val="bounce">Bounce</div>
+                            <div class="custom-dropdown-item" role="option" data-val="overshoot">Overshoot</div>
+                            <div class="custom-dropdown-item" role="option" data-val="fade">Fade</div>
+                            <div class="custom-dropdown-item" role="option" data-val="typewriter">Typewriter</div>
+                            <div class="custom-dropdown-item" role="option" data-val="glitch">Glitch</div>
+                          </div>
+                        </div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Duration</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animOutDuration" data-min="0.1" data-max="5" data-step="0.05" data-unit="s" data-decimals="2" title="Duration"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animOutDuration">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Order</span></div><div class="effects-param-val-col"><div class="segmented-switch is-compact" data-text-switch="animOutOrder" data-type="str" role="tablist"><button type="button" class="segmented-switch-item" data-val="rtl" title="Order" aria-label="Order"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3 5 8l5 5"/></svg></button><button type="button" class="segmented-switch-item" data-val="ltr" title="Order" aria-label="Order"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3l5 5-5 5"/></svg></button></div></div></div>
+                      <div class="text-anim-sub">To</div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Position X</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animOutPosX" data-min="-600" data-max="600" data-step="1" data-unit="px" data-decimals="0" title="Position X"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animOutPosX">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Position Y</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animOutPosY" data-min="-600" data-max="600" data-step="1" data-unit="px" data-decimals="0" title="Position Y"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animOutPosY">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Rotation</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animOutRotation" data-min="-720" data-max="720" data-step="1" data-unit="°" data-decimals="0" title="Rotation"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animOutRotation">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Scale</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animOutScale" data-min="0" data-max="400" data-step="0.5" data-unit="%" data-decimals="0" title="Scale"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animOutScale">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Opacity</span></div><div class="effects-param-val-col"><div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" data-text-jog="animOutOpacity" data-min="0" data-max="100" data-step="0.5" data-unit="%" data-decimals="0" title="Opacity"><div class="jog-wheel-track-viewport"><div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div></div><div class="jog-wheel-needle"></div><span class="effects-param-pill-val" data-text-badge="animOutOpacity">-</span></div></div></div>
+                      <div class="effects-control-row"><div class="effects-param-label-col"><span class="effects-param-label-static">Ease</span></div><div class="effects-param-val-col"><div class="custom-dropdown" data-text-select="animOutEase" style="width: 100%;">
+                          <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Ease">
+                            <span class="custom-dropdown-label">Ease Out (Expo)</span>
+                            <i class='fticon fticon-select-font-family custom-dropdown-arrow' aria-hidden='true'></i>
+                          </button>
+                          <div class="custom-dropdown-menu" role="listbox" style="max-height: 200px; overflow-y: auto; scrollbar-width: thin; z-index: 1050;">
+                            <div class="custom-dropdown-item" role="option" data-val="ease_out">Ease Out (Expo)</div>
+                            <div class="custom-dropdown-item" role="option" data-val="ease_in_out">Easy Ease (In-Out)</div>
+                            <div class="custom-dropdown-item" role="option" data-val="back">Back (Overshoot)</div>
+                            <div class="custom-dropdown-item" role="option" data-val="elastic">Elastic</div>
+                            <div class="custom-dropdown-item" role="option" data-val="linear">Linear</div>
+                          </div>
+                        </div></div></div>
                       </div>
                       </div>
 
                     </main>
+
+                    <!-- Right Tools Column -->
+                    <nav class="transform-tools-col text-tools-col" role="tablist" aria-label="Text Categories">
+                      <button type="button" class="transform-tool-btn is-active" data-text-tab="text" title="Text" aria-label="Text" role="tab" aria-selected="true">
+                        <i class="fticon fticon-text" aria-hidden="true"></i>
+                        <span class="transform-tool-label">Text</span>
+                      </button>
+                      <button type="button" class="transform-tool-btn" data-text-tab="style" title="Style" aria-label="Style" role="tab" aria-selected="false">
+                        <i class="fticon fticon-style" aria-hidden="true"></i>
+                        <span class="transform-tool-label">Style</span>
+                      </button>
+                      <button type="button" class="transform-tool-btn" data-text-tab="animate" title="Animate" aria-label="Animate" role="tab" aria-selected="false">
+                        <i class="fticon fticon-animate" aria-hidden="true"></i>
+                        <span class="transform-tool-label">Animate</span>
+                      </button>
+                    </nav>
                   </div>
                 </div>
 
@@ -2772,6 +2573,25 @@
             </div>
           </div>
         </section>
+
+        <!-- CATEGORY 4: APPEARANCE & THEME (Unexpanded / Collapsed by default) -->
+        <section class="settings-category is-collapsed" id="cat-settings-theme" aria-label="Appearance and Theme Settings">
+          <button type="button" class="settings-category-header" aria-expanded="false" aria-controls="body-settings-theme">
+            <div class="settings-category-title-wrap">
+              <span class="settings-category-title">Appearance &amp; Accent</span>
+            </div>
+            <div class="settings-category-meta">
+              <span class="settings-category-summary" id="summary-settings-theme">Matcha Tea</span>
+              <i class='fticon fticon-format-and-canvas-settings settings-category-chevron' aria-hidden='true'></i>
+            </div>
+          </button>
+
+          <div class="settings-category-body" id="body-settings-theme">
+            <div class="settings-theme-grid" id="editor-settings-theme-grid">
+              <!-- Swatches populated dynamically -->
+            </div>
+          </div>
+        </section>
       </div>
 
       <!-- 5. Save & Export Buttons (Compact Square Icon for OFTS + Save Settings) -->
@@ -2783,6 +2603,35 @@
           <span>Save Settings</span>
         </button>
       </footer>
+    </div>
+  </div>
+
+  <!-- ==========================================================================
+       MODULAR EXTENSIONS POPOVER (MOBILE / TABLET CARDS VIEW)
+       ========================================================================== -->
+  <div class="popover-card is-extensions-popover" id="popover-extensions" role="dialog" aria-hidden="true" data-popover-placement="top" aria-label="Extensions">
+    <div class="popover-tail" aria-hidden="true"></div>
+    <div class="popover-header">
+      <div class="popover-header-title-box">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true">
+          <path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5s-1.12-2.5-2.5-2.5z"/>
+        </svg>
+        <span class="popover-title">Extensions</span>
+      </div>
+    </div>
+    <div class="popover-body extension-popover-body" id="popover-extension-body">
+      <div class="extension-empty-state" id="mobile-extension-empty">
+        <div class="extension-empty-icon-box">
+          <svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor" opacity="0.4">
+            <path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5s-1.12-2.5-2.5-2.5z"/>
+          </svg>
+        </div>
+        <span class="extension-empty-title">Extensions</span>
+        <span class="extension-empty-desc">No extensions loaded yet. Installed cards and tools will appear here.</span>
+      </div>
+      <div class="extension-card-list" id="mobile-extension-card-list">
+        <!-- Dynamically populated cards -->
+      </div>
     </div>
   </div>
 
@@ -2884,6 +2733,12 @@
         <span class="context-menu-shortcut">Ctrl+G</span>
       </button>
 
+      <!-- 4b. Un Group (Precompose only) -->
+      <button type="button" class="popover-menu-item" id="popover-btn-ungroup" title="Un Group Layer(s)" style="display: none;">
+        <span id="popover-label-ungroup">Un Group</span>
+        <span class="context-menu-shortcut">Ctrl+Shift+G</span>
+      </button>
+
       <!-- 5. Save as Element -->
       <button type="button" class="popover-menu-item" id="popover-btn-save-element" title="Save Layer as Element Template">
         <span id="popover-label-save-element">Save as Element</span>
@@ -2910,21 +2765,6 @@
     </div>
     <div class="layer-link-list" id="layer-link-popover-list">
       <!-- Dynamically generated layer items -->
-    </div>
-  </div>
-
-  <!-- ==========================================================================
-       MODULAR OPENFISHTOOLS EMBEDDED POPOVER (.is-embed-panel)
-       ========================================================================== -->
-  <div class="popover-card is-embed-panel" id="popover-editor-fishtools" role="dialog" aria-hidden="true">
-    <div class="popover-tail" aria-hidden="true"></div>
-    
-    <div class="popover-embed-body" id="editor-fishtools-body">
-      <!-- Minimalist Flat Loading State -->
-      <div class="popover-loader-box" id="editor-fishtools-loader">
-        <div class="popover-flat-spinner"></div>
-        <span>Loading OpenFishTools...</span>
-      </div>
     </div>
   </div>
 
@@ -3740,11 +3580,12 @@
        MODULAR POP-UP: WELCOME / PRE-ALPHA NOTICE MODAL
        ========================================================================== -->
   <div class="modal-backdrop" id="modal-welcome" role="dialog" aria-modal="true" aria-label="Welcome Notice Dialog">
+    <template id="template-modal-welcome">
     <div class="modal-card welcome-modal-card" onclick="event.stopPropagation()">
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.5.132</span>
+          <span class="welcome-badge">v0.6.0</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3774,11 +3615,48 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.0 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.0</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Oct 13, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Un Group Precompose Layers (`editor.html`, `desktop.html`, `js/editor.js`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Edit Shape &amp; Corner Roundness for Media &amp; Precompose (`editor.html`, `desktop.html`, `js/editor.js`, `css/drawer.css`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Version 0.5.133 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.5.133</span>
+                <span class="welcome-version-date">Oct 11, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-changed">Changed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">License changed to CC BY-NC-SA 4.0 (`LICENSE`, `README.md`)</span>
+                  <span class="changelog-item-desc">From this version, FishTools Studio is licensed under CC BY-NC-SA 4.0 instead of MIT. Noncommercial use, modification and sharing are allowed with credit; selling it and removing the credit are not allowed. Modified versions must use the same license.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.5.132 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.5.132</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Oct 8, 2026</span>
               </div>
               <div class="welcome-changelog-item">
@@ -5758,6 +5636,7 @@
         </div>
       </footer>
     </div>
+    </template>
   </div>
 
   <!-- ==========================================================================
@@ -5902,86 +5781,34 @@
   <script src="shapes/polygon.js"></script>
   <script src="shapes/capsule.js"></script>
   <script src="shapes/heart.js"></script>
+  <script src="element/number-input.js"></script>
+  <script src="element/slider.js"></script>
+  <script src="element/dropdown.js"></script>
+  <script src="element/segmented.js"></script>
+  <script src="element/color-input.js"></script>
+  <script src="element/index.js"></script>
   <script src="js/effects.js?v=4"></script>
-  <script src="effects/anamorphic_flare.js?v=patch"></script>
-  <script src="effects/angle_control.js?v=patch"></script>
-  <script src="effects/bevel.js?v=patch"></script>
-  <script src="effects/box_3d.js?v=patch"></script>
-  <script src="effects/brightness_contrast.js?v=patch"></script>
-  <script src="effects/camera_lens_blur.js?v=patch"></script>
-  <script src="effects/checkbox_control.js?v=patch"></script>
-  <script src="effects/chromatic_aberration.js?v=patch"></script>
-  <script src="effects/color_balance.js?v=patch"></script>
-  <script src="effects/color_control.js?v=patch"></script>
-  <script src="effects/color_temperature.js?v=patch"></script>
-  <script src="effects/colorize.js?v=patch"></script>
-  <script src="effects/curve.js?v=patch"></script>
-  <script src="effects/deep_glow.js?v=patch"></script>
-  <script src="effects/diffusion.js?v=patch"></script>
-  <script src="effects/drop_shadow.js?v=patch"></script>
-  <script src="effects/dropdown_control.js?v=patch"></script>
-  <script src="effects/exposure_gamma.js?v=patch"></script>
-  <script src="effects/expression_controls.js?v=patch"></script>
-  <script src="effects/extrude_3d.js?v=patch"></script>
-  <script src="effects/fast_box_blur.js?v=patch"></script>
-  <script src="effects/fill.js?v=patch"></script>
-  <script src="effects/flicker.js?v=patch"></script>
-  <script src="effects/fsmb.js?v=patch"></script>
-  <script src="effects/glow_aura.js?v=patch"></script>
-  <script src="effects/grad_exposure.js?v=patch"></script>
-  <script src="effects/gradient_overlay.js?v=patch"></script>
-  <script src="effects/grid.js?v=patch"></script>
-  <script src="effects/haze_flare.js?v=patch"></script>
-  <script src="effects/highlight_shadow.js?v=patch"></script>
-  <script src="effects/hue_shift.js?v=patch"></script>
-  <script src="effects/invert.js?v=patch"></script>
-  <script src="effects/linear_wipe.js?v=patch"></script>
-  <script src="effects/wipe_jaws.js?v=patch"></script>
-  <script src="effects/lumia.js?v=patch"></script>
-  <script src="effects/mono.js?v=patch"></script>
-  <script src="effects/optic_compensation.js?v=patch"></script>
-  <script src="effects/oscillate.js?v=patch"></script>
-  <script src="effects/particle_engine.js?v=patch"></script>
-  <script src="effects/point_control.js?v=patch"></script>
-  <script src="effects/pyramid_3d.js?v=patch"></script>
-  <script src="effects/radio_waves.js?v=patch"></script>
-  <script src="effects/rays.js?v=patch"></script>
-  <script src="effects/remove_bg.js?v=patch"></script>
-  <script src="effects/rgb_split.js?v=patch"></script>
-  <script src="effects/saturation_vibrant.js?v=patch"></script>
-  <script src="effects/scanline.js?v=patch"></script>
-  <script src="effects/shake.js?v=patch"></script>
-  <script src="effects/sharpen.js?v=patch"></script>
-  <script src="effects/shatter.js?v=patch"></script>
-  <script src="effects/slider_control.js?v=patch"></script>
-  <script src="effects/solid_aura.js?v=patch"></script>
-  <script src="effects/sphere_3d.js?v=patch"></script>
-  <script src="effects/star_burst.js?v=patch"></script>
-  <script src="effects/swing.js?v=patch"></script>
-  <script src="effects/tile.js?v=patch"></script>
-  <script src="effects/tint.js?v=patch"></script>
-  <script src="effects/transform.js?v=patch"></script>
-  <script src="effects/turbulent_displace.js?v=patch"></script>
-  <script src="effects/unsharp_mask.js?v=patch"></script>
-  <script src="effects/vignette.js?v=patch"></script>
-  <script src="effects/warp.js?v=patch"></script>
-  <script src="effects/wave_warp.js?v=patch"></script>
+  <!-- All Modular Effects compiled in WASM binary core (Studio/effects/effects.wasm) -->
+  <script src="effects/loader.js?v=wasm"></script>
   <script src="js/color-picker.js"></script>
   <script src="js/fishtool-engine.js?v=8"></script>
-  <script src="js/fishtools-adapter.js?v=patch"></script>
   <script src="js/fish-audio-engine.js"></script>
   <script src="js/frame-extractor.js"></script>
   <script src="js/preview-cache.js"></script>
   <script src="js/bg-removal-engine.js?v=patch"></script>
   <script src="js/template-editor.js"></script>
-  <script src="js/text-engine.js"></script>
-  <script src="text/default.js"></script>
+  <script src="js/text-engine.js?v=scale-font-sync"></script>
+  <script src="text/default.js?v=unlimited-text-pad"></script>
   <script src="js/motion-blur-engine.js"></script>
 
   <script src="js/FishExport-Enggine.js?v=patch"></script>
-  <script src="js/editor.js?v=patch2"></script>
+  <script src="js/editor.js?v=unlink-pro-v2"></script>
   <script src="js/attributes-clipboard.js"></script>
+  <script src="js/extensions.js?v=card-ext"></script>
+  <script src="element/card-builder.js"></script>
+  <script src="js/extension-manager.js"></script>
   <script src="js/openfishtools-generators3d.js?v=patch"></script>
   <script src="js/openfishtools-controller.js?v=patch"></script>
+  <script src="js/JSX-Translator.js?v=patch"></script>
 </body>
 </html>

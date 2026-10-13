@@ -12,7 +12,7 @@ function getJsFiles(dir) {
     .map(f => path.join(dir, f));
 }
 
-const targetDirs = ['js', 'effects', 'scripts'];
+const targetDirs = ['js', 'effects', 'scripts', 'element'];
 let allJsFiles = [];
 targetDirs.forEach(d => {
   allJsFiles.push(...getJsFiles(d));

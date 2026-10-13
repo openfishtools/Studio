@@ -5,6 +5,73 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.6.0] - 2026-10-13
+
+### Added
+- **Un Group Precompose Layers (`editor.html`, `desktop.html`, `js/editor.js`)**:
+  - Added new "Un Group" contextual action accessible via the 3-dots header options popover and timeline right-click context menu when selecting a precompose layer.
+  - Implemented `ungroupPrecompose()` engine: unpacks constituent child layers, accurately shifts timeline timing (`startSec`, `durationSec`, and keyframe times) relative to precomp position and source offset, and maps spatial transformations (world positions, scaling, 3D rotations, and opacities) back into the parent composition.
+  - Full inheritance of 3D layer switches, motion blur states, and parenting links (`parentBind`), automatic cleanup of orphaned media pool entries, and immediate selection of unpacked layers.
+  - Added native keyboard shortcuts: `Ctrl+Shift+G` (Cmd+Shift+G on macOS) for Un Group and mapped `Ctrl+G` for Group.
+  - Full undo/redo integration with `UndoRedoManager`.
+- **Edit Shape & Corner Roundness for Media & Precompose (`editor.html`, `desktop.html`, `js/editor.js`, `css/drawer.css`)**:
+  - Added "Edit Shape" drawer controls for Video, Image/Photo, and Precompose layers, allowing users to round corners with an interactive scrubber and numeric field.
+  - Real-time canvas path clipping with rounded rectangle contours.
+  - Smart contextual gating: roundness controls automatically hide when "For Comp Layer" (collapse transformations) is active.
+- **Fluid Fish Simulation Effect (`effects/fluid_fish.js`, `effects/manifest.json`, `effects/loader.js`)**:
+  - Added fluid dynamics and liquid distortion simulation with configurable viscosity, turbulence, wave amplitude, and damping.
+  - Native integration with the OpenFishTools effects registry, multi-pass GPU shaders, and real-time canvas preview.
+- **After Effects Extension Bridge & Modular JSX Suite (`Extension/`, `js/extension-manager.js`, `js/extensions.js`, `js/JSX-Translator.js`)**:
+  - Built-in CEP extension architecture enabling full interoperability with After Effects scripts and workflows.
+  - Ported 13 specialized JSX modules: Actions, Align, Anchor Point, Beat Effects, Cube Generator, Cut/Trim, Format, 3D Generator, Sticky Note, Stopwatch, Todo List, Toolbox, and Velocity.
+- **Element Template Architecture (`element/`, `editor.html`, `desktop.html`)**:
+  - Added "Save as Element" template workflow to package layers and effects into reusable element components.
+  - Modular UI builder elements: Card Builder, Color Input, Dropdown, Number Input, Segmented Control, and Slider.
+
+### Improved
+- **Timeline Ruler & Playhead Needle Polish (`css/editor.css`, `css/desktop.css`)**:
+  - Added symmetrical 2px top outline (`border-top: 2px solid var(--border-subtle)`) to the mobile and desktop timeline ruler to prevent visual bleed into the controller bar.
+  - Added a closed top border to `.timeline-current-time-badge` (`00:00:00:00`) playhead indicator, eliminating open-prong visual artifacts.
+  - Added `border-top: 1px solid var(--border-panel)` to the desktop workstation timeline ruler.
+- **Desktop Workstation & Dual-Tier Ruler Layout (`desktop.html`, `css/desktop.css`, `js/desktop.js`)**:
+  - After Effects-style compact NLE interface with dedicated 20px Time Ruler and 16px Composition Marker bar.
+  - Enhanced inspector layout with text-only segmented transform controls, improved parameter spacing, and streamlined right-click context menus.
+- **Iconography & Custom Font Rendering (`fticons/`, `assets/icon.svg`)**:
+  - Unified OpenFishTools vector icon set (`fticons.woff2` and `fticons.css`) with pixel-aligned glyphs.
+  - High-resolution SVG branding assets and responsive vector shape previews.
+
+### Fixed
+- **Precompose Canvas Bounds & Wireframe Hit-Testing (`js/editor.js`, `js/wireframe.js`)**:
+  - Fixed selection wireframe and interactive transform gizmos for nested precomposes with collapsed transformations.
+  - Resolved transparent pixel hit-testing and drag-selection marquee accuracy on mobile and desktop viewports.
+- **Timeline Context Menu Pointer Event Discrimination (`js/editor.js`)**:
+  - Fixed right-click context menu triggering on touch devices and track scrub gestures.
+  - Unified context menu handling between timeline clips, layer pills, and preview container right-clicks.
+
+## [0.5.133] - 2026-10-11
+
+### Changed
+- **License**: FishTools Studio is now licensed under **CC BY-NC-SA 4.0** instead of MIT (`LICENSE`, `README.md`, `package.json`). Noncommercial use, modification and sharing are allowed with credit; selling it and removing the credit are not allowed, and modified versions must use the same license. Earlier versions stay under MIT.
+
+### Improved
+- **Motion Blur Preview Performance (`js/motion-blur-engine.js`, `js/text-engine.js`)**:
+  - Re-enabled the dirty rect: per-sample clear/render/accumulate/blit now only touch the area the layer sweeps (padded for shadows/glows), not the whole canvas. Unbounded effects (shake, particles, tile, camera-driven) still use the full canvas. `window.OFT_MB_FULL_CANVAS = true` forces the old path for debugging.
+  - Preview treats Samples as an upper limit (AE adaptive sample limit) instead of a minimum; short or slow moves use 3+ samples. Export sampling is unchanged.
+  - Per-glyph text motion blur in preview uses the quality-tier cap (16 / draft 6 / mobile 8) instead of 2× that. Export is unchanged.
+- **Warp Effects Performance (`js/effects.js`, `effects/warp.js`, `effects/wave_warp.js`, `effects/turbulent_displace.js`, `effects/optic_compensation.js`, `js/motion-blur-engine.js`)**:
+  - Shared GPU helpers on `FishEffects`: source texture cache (skips `texImage2D` when the IMG, ImageBitmap or `canvas._contentVersion` is unchanged), output cache (identical source, size, params and phase reuse the last result instead of re-running the shader), and a grow-only GL canvas with headroom (no drawing-buffer reallocation when the layer scales per sample). `window.OFT_FX_CACHE_OFF = true` disables the caches.
+  - Under motion blur, Warp and Optic Compensation run the shader once per distinct size instead of once per sample. Wave Warp and Turbulent Displace evaluate their own animation at 4 sub-frame times per shutter in preview (2 in draft/mobile). Export stays exact.
+  - Warp layers with motion blur now use the dirty rect, padded by wave height, turbulence amount or half the layer size. Mirror/tile mode still uses the full canvas.
+  - Wave Warp travel is computed from height × speed × exposure, so a slow or static wave no longer forces the maximum sample count in preview.
+  - Disabled MSAA on the Warp and Optic Compensation contexts (it only resolved the edges of a full-viewport quad, with no visible effect).
+  - **GPU effect chain** (stacked warps, e.g. in adjustment layers): consecutive Warp / Wave Warp / Turbulent Displace / Optic Compensation effects now run in one WebGL context (1 upload → N shader passes in FBOs → 1 readback) instead of an upload, readback and clear per effect. Each effect exposes a `gpu` descriptor, and the parameter math is shared with its normal render path. Falls back to the per-effect path on any error. `window.OFT_FX_CHAIN_OFF = true` disables it.
+  - Draft quality renders warp effects at half resolution (never in export).
+  - **Warp › Fisheye is now a true radial lens** (equidistant fisheye projection, aspect-corrected, centred) instead of a polynomial pinned to the four edges. Bulge = fisheye projection, pinch = its inverse. Areas outside the source are transparent rather than edge-smeared. The 2D fallback uses the same formula. Look of existing Fisheye warps changes.
+  - Adjustment layers with motion blur and only Wave/Turbulent effects (static layer) use at most 4 samples in preview (2 in draft/mobile), since effect time only takes that many distinct values. Export unchanged.
+  - Fixed regressions from the first warp pass: removed the per-frame `gl.isTexture` GPU stall (cache is now cleared on `webglcontextlost`), canvas headroom only for small buffers, and output caching needs a second hit outside motion blur so scrubbing and playback don't copy every frame.
+
 ## [0.5.132] - 2026-10-08
 
 ### Fixed

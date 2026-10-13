@@ -1,0 +1,726 @@
+/* ==========================================================================
+   EXTENSIONS.CSS - Modular Extension Cards, Grid, Buttons & Controls
+   Strict Flat & 100% Theme Token Binding (Zero Blurs, Zero Shadows, Zero Gradients)
+   ========================================================================== */
+
+/* --- Material Icons Font Definition --- */
+@font-face {
+  font-family: 'Material Icons';
+  font-style: normal;
+  font-weight: 400;
+  src: url('../assets/fonts/MaterialIcons-Regular.woff2') format('woff2'),
+       url('../assets/fonts/MaterialIcons-Regular.woff') format('woff'),
+       url('../assets/fonts/MaterialIcons-Regular.ttf') format('truetype');
+  font-display: block;
+}
+
+.material-icons {
+  font-family: 'Material Icons';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 18px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* --- Extension Card List Container --- */
+.extension-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  width: 100%;
+  flex: 1 1 auto;
+}
+
+/* --- Extension Card (Crucial: flex-shrink 0 prevents collapsed/squished cards) --- */
+.extension-card {
+  flex-shrink: 0 !important;
+  width: 100%;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--desktop-radius, 6px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+}
+
+.extension-card:hover {
+  border-color: var(--border-subtle);
+}
+
+/* --- Card Header --- */
+.extension-card-header {
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--bg-panel-inner);
+  border-bottom: 1px solid var(--border-panel);
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.extension-card-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.extension-card-title-group .material-icons,
+.extension-card-title-group i,
+.extension-card-title-group .fticon {
+  font-size: 15px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.extension-card-title {
+  font-family: var(--font-brand);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.3px;
+}
+
+/* --- Card Body --- */
+.extension-card-body {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  background-color: var(--bg-panel);
+}
+
+/* --- Section Dividers & Subheadings inside Cards --- */
+.extension-section-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 6px 0 2px 0;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.extension-section-header:first-child {
+  margin-top: 0;
+}
+
+.extension-section-label {
+  font-family: var(--font-brand);
+  font-size: 9.5px;
+  font-weight: 800;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.extension-section-sub {
+  font-family: var(--font-brand);
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+/* --- Responsive Toolbox Grid --- */
+.toolbox-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.toolbox-grid.col-1 { grid-template-columns: 1fr !important; }
+.toolbox-grid.col-2 { grid-template-columns: repeat(2, 1fr) !important; }
+.toolbox-grid.col-3 { grid-template-columns: repeat(3, 1fr) !important; }
+.toolbox-grid.col-4 { grid-template-columns: repeat(4, 1fr) !important; }
+.toolbox-grid.col-5 { grid-template-columns: repeat(5, 1fr) !important; }
+.toolbox-grid.col-6 { grid-template-columns: repeat(6, 1fr) !important; }
+
+/* --- Modular Tool & Action Buttons (Icon on Top, Label on Bottom) --- */
+.tool-btn,
+.extension-tool-btn {
+  position: relative;
+  min-height: 48px;
+  padding: 6px 4px 5px 4px;
+  border-radius: var(--desktop-radius-sm, 4px);
+  background-color: var(--bg-panel-inner);
+  border: 1px solid var(--border-panel);
+  color: var(--text-secondary);
+  font-family: var(--font-brand);
+  font-size: 10px;
+  font-weight: 600;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  box-sizing: border-box;
+  width: 100%;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease, transform 0.08s ease;
+}
+
+.tool-btn .material-icons,
+.extension-tool-btn .material-icons {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--color-primary);
+  transition: color 0.12s ease;
+}
+
+.tool-btn:hover,
+.extension-tool-btn:hover {
+  background-color: var(--bg-panel-hover);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.tool-btn:hover .material-icons,
+.extension-tool-btn:hover .material-icons {
+  color: var(--color-primary-hover);
+}
+
+.tool-btn:active,
+.extension-tool-btn:active,
+.tool-btn--active {
+  background-color: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+  color: var(--bg-canvas) !important;
+  transform: scale(0.96);
+}
+
+.tool-btn:active .material-icons,
+.extension-tool-btn:active .material-icons,
+.tool-btn--active .material-icons {
+  color: var(--bg-canvas) !important;
+}
+
+/* Dual-function button indicator (dot in top-right corner) */
+.has-context {
+  position: relative;
+}
+
+.has-context::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 4px;
+  height: 4px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow: none;
+  transition: background-color 0.12s ease;
+}
+
+.tool-btn:active.has-context::after,
+.tool-btn--active.has-context::after,
+.extension-tool-btn:active.has-context::after,
+.extension-tool-btn--active.has-context::after {
+  background: var(--bg-canvas) !important;
+}
+
+.tool-btn-primary {
+  background-color: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+  color: var(--bg-canvas) !important;
+  font-weight: 700;
+}
+
+.tool-btn-primary .material-icons {
+  color: var(--bg-canvas) !important;
+}
+
+.tool-btn-primary:hover {
+  background-color: var(--color-primary-hover) !important;
+  border-color: var(--color-primary-hover) !important;
+  color: var(--bg-canvas) !important;
+}
+
+.tool-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1.15;
+  width: 100%;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.2px;
+  color: var(--text-secondary);
+  padding: 0 1px;
+  box-sizing: border-box;
+}
+
+.tool-btn:hover .tool-label {
+  color: var(--color-primary);
+}
+
+.tool-btn:active .tool-label,
+.tool-btn--active .tool-label,
+.tool-btn-primary .tool-label {
+  color: var(--bg-canvas) !important;
+}
+
+/* Full-width primary action banner button */
+.tool-btn.w-full,
+.extension-tool-btn.w-full,
+.tool-btn-primary.w-full {
+  width: 100% !important;
+  min-height: 36px !important;
+  height: 36px;
+  flex-direction: row !important;
+  gap: 8px;
+  padding: 6px 14px;
+  justify-content: center;
+  align-items: center;
+}
+
+.tool-btn.w-full .material-icons,
+.extension-tool-btn.w-full .material-icons,
+.tool-btn-primary.w-full .material-icons {
+  font-size: 18px;
+}
+
+.tool-btn.w-full .tool-label,
+.extension-tool-btn.w-full .tool-label,
+.tool-btn-primary.w-full .tool-label {
+  width: auto;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* Col 4 adjustments */
+.toolbox-grid.col-4 .tool-btn {
+  min-height: 46px;
+  padding: 5px 2px 4px 2px;
+  gap: 2px;
+}
+
+.toolbox-grid.col-4 .tool-btn .material-icons {
+  font-size: 17px;
+}
+
+.toolbox-grid.col-4 .tool-label {
+  font-size: 8.5px;
+  letter-spacing: 0.1px;
+}
+
+/* Col 5 & 6 compact adjustments */
+.toolbox-grid.col-5 .tool-btn,
+.toolbox-grid.col-6 .tool-btn {
+  min-height: 44px;
+  padding: 4px 1px 4px 1px;
+  gap: 2px;
+}
+
+.toolbox-grid.col-5 .tool-btn .material-icons,
+.toolbox-grid.col-6 .tool-btn .material-icons {
+  font-size: 16px;
+}
+
+.toolbox-grid.col-5 .tool-label,
+.toolbox-grid.col-6 .tool-label {
+  font-size: 8px;
+  letter-spacing: -0.1px;
+}
+
+.tool-hint-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  height: 20px;
+  color: var(--color-primary);
+}
+
+.tool-btn:hover .tool-hint-box {
+  color: var(--color-primary-hover);
+}
+
+.tool-btn:active .tool-hint-box,
+.tool-btn--active .tool-hint-box {
+  color: var(--bg-canvas) !important;
+}
+
+.tool-icon-svg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+
+.tool-icon-svg svg {
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+/* --- Anchor Point (9-Point Interactive Grid) --- */
+.anchor-grid-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0;
+  width: 100%;
+}
+
+.anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 24px);
+  grid-template-rows: repeat(3, 24px);
+  gap: 6px;
+}
+
+.anchor-cell {
+  background-color: var(--bg-panel-inner);
+  border: 1px solid var(--border-panel);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.anchor-cell:hover {
+  border-color: var(--color-primary);
+  background-color: var(--bg-panel-hover);
+}
+
+.anchor-cell.anchor-active {
+  background-color: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+}
+
+.anchor-cell.anchor-active::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  background-color: var(--bg-canvas);
+  border-radius: 50%;
+}
+
+/* --- Timer & Digital Displays --- */
+.timer-display,
+.extension-text--display {
+  font-family: var(--font-mono);
+  font-size: 26px;
+  font-weight: 700;
+  text-align: center;
+  padding: 10px 0;
+  color: var(--color-primary);
+  letter-spacing: 2px;
+  line-height: 1;
+}
+
+/* --- Form Rows & Grouped Controls (Side-by-Side Dimension Inputs) --- */
+.form-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+}
+
+.form-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.status-label,
+.form-group label {
+  display: block;
+  font-family: var(--font-brand);
+  font-size: 8.5px;
+  font-weight: 700;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+/* --- Inputs & Textareas --- */
+.form-group input,
+.form-group .extension-input,
+.extension-input {
+  width: 100%;
+  height: 30px;
+  box-sizing: border-box;
+  background-color: var(--bg-panel-inner);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--desktop-radius-sm, 4px);
+  color: var(--text-primary);
+  font-family: var(--font-brand);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.form-group input:focus,
+.extension-input:focus {
+  border-color: var(--color-primary);
+  background-color: var(--bg-panel-hover);
+}
+
+/* Remove number spinner arrows for sharp flat design */
+.form-group input[type="number"]::-webkit-outer-spin-button,
+.form-group input[type="number"]::-webkit-inner-spin-button,
+.extension-input[type="number"]::-webkit-outer-spin-button,
+.extension-input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.form-group input[type="number"],
+.extension-input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.extension-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background-color: var(--bg-panel-inner);
+  border: 1px solid var(--border-panel);
+  border-radius: var(--desktop-radius-sm, 4px);
+  color: var(--text-primary);
+  font-family: var(--font-brand);
+  font-size: 11px;
+  padding: 6px 8px;
+  outline: none;
+  resize: vertical;
+}
+
+.extension-textarea:focus {
+  border-color: var(--border-focus);
+}
+
+/* --- Toggle Switch Container & Animated Slider --- */
+.switch-container {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  margin: 6px 0;
+  gap: 10px;
+  user-select: none;
+}
+
+.switch-container .switch {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+  position: absolute;
+  pointer-events: none;
+}
+
+.slider {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background-color: var(--bg-panel-inner);
+  border: 1px solid var(--border-panel);
+  border-radius: 18px;
+  transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+}
+
+.slider::before {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  left: 2px;
+  bottom: 2px;
+  background-color: var(--text-dim);
+  border-radius: 50%;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.switch:hover .slider {
+  border-color: var(--color-primary);
+}
+
+.switch input:checked + .slider {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.switch input:checked + .slider::before {
+  transform: translateX(16px);
+  background-color: var(--bg-canvas);
+}
+
+.switch-label {
+  font-family: var(--font-brand);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* --- To-Do List Card Styling --- */
+.todo-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.todo-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  background-color: var(--bg-panel-inner);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--desktop-radius-sm, 4px);
+  font-size: 11px;
+}
+
+.todo-item.is-done .todo-text {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.todo-text {
+  flex: 1;
+  color: var(--text-secondary);
+  font-family: var(--font-brand);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.todo-del-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  outline: none;
+}
+
+.todo-del-btn:hover {
+  color: var(--color-danger);
+}
+
+.todo-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  width: 100%;
+}
+
+.todo-input-field {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left !important;
+  padding: 4px 10px !important;
+}
+
+.todo-add-btn {
+  width: 30px !important;
+  height: 30px !important;
+  min-width: 30px !important;
+  max-width: 30px !important;
+  flex: 0 0 30px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background-color: var(--color-primary) !important;
+  color: var(--bg-canvas) !important;
+  border: 1px solid var(--color-primary) !important;
+  border-radius: var(--desktop-radius-sm, 4px) !important;
+  cursor: pointer;
+  outline: none;
+  box-sizing: border-box !important;
+}
+
+.todo-add-btn .material-icons {
+  color: var(--bg-canvas) !important;
+  font-size: 18px !important;
+  line-height: 1 !important;
+}
+
+.todo-add-btn:hover {
+  background-color: var(--color-primary-hover) !important;
+  border-color: var(--color-primary-hover) !important;
+}
+
+/* --- Slider & Scrubber Row --- */
+.extension-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.extension-range-input {
+  flex: 1;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.extension-slider-val {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 32px;
+  text-align: right;
+}

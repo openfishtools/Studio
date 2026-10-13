@@ -725,6 +725,9 @@ i.fticon.effects-card-caret::before {
 }
 
 .effects-param-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-brand);
   font-size: 11px;
   font-weight: 600;
@@ -831,7 +834,7 @@ i.fticon.effects-card-caret::before {
 }
 
 .effects-control-row.is-selected .jog-wheel-needle {
-  background-color: var(--color-primary) !important;
+  background-color: var(--color-accent) !important;
 }
 
 .effects-control-row.is-selected .jog-wheel-ticks.is-bounded-tape {
@@ -902,6 +905,14 @@ i.fticon.effects-card-caret::before {
 
 .effects-ruler-scrubber {
   touch-action: none;
+}
+
+/* Ruler scale stays dim so the 3px primary needle reads as the bold center line
+   (major ticks share the primary green token in every theme) */
+.effects-ruler-scrubber .jog-wheel-ticks {
+  background-image:
+    linear-gradient(to right, var(--color-primary) 0px, var(--color-primary) 1.5px, transparent 1.5px),
+    linear-gradient(to right, var(--border-subtle) 0px, var(--border-subtle) 1px, transparent 1px);
 }
 
 .effects-param-pill:hover {
@@ -1077,6 +1088,16 @@ i.fticon.effects-card-caret::before {
   font-weight: 700;
 }
 
+@media (pointer: coarse) {
+  .effects-switch-group {
+    height: 44px;
+  }
+
+  .effects-switch-group .effects-segmented-btn {
+    font-size: 12px;
+  }
+}
+
 /* Custom Dropdown Control Row (e.g. Wave Type, Warp Style) */
 .effects-control-row .custom-dropdown,
 .effects-custom-dropdown {
@@ -1143,28 +1164,35 @@ i.fticon.effects-card-caret::before {
 .effects-control-row .custom-dropdown-menu {
   position: absolute;
   top: calc(100% + 4px);
-  left: 0;
   right: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: 320px;
   background-color: var(--bg-panel);
   border: 1px solid var(--border-panel);
   border-radius: 8px;
   padding: 4px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   z-index: 1050;
   opacity: 0;
   pointer-events: none;
   transform: translateY(-4px);
   transition: opacity 0.14s ease, transform 0.14s ease;
   box-sizing: border-box;
-  max-height: 220px;
+  max-height: 260px;
   overflow-y: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
 }
 
 .effects-control-row .custom-dropdown-menu::-webkit-scrollbar {
-  display: none;
+  width: 4px;
+}
+
+.effects-control-row .custom-dropdown-menu::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 4px;
 }
 
 .effects-control-row .custom-dropdown.is-open .custom-dropdown-menu {
@@ -1174,9 +1202,13 @@ i.fticon.effects-card-caret::before {
 }
 
 .effects-control-row .custom-dropdown-item {
-  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 10px;
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
   color: var(--text-primary);
   border-radius: 4px;
@@ -1187,6 +1219,9 @@ i.fticon.effects-card-caret::before {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  line-height: 28px;
 }
 
 .effects-control-row .custom-dropdown-item:hover {
@@ -1214,15 +1249,17 @@ i.fticon.effects-card-caret::before {
 /* Color Picker Control Row */
 .effects-color-picker-wrap {
   flex: 1;
-  height: 32px;
+  min-width: 0;
+  width: 100%;
+  height: 26px;
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
 .effects-color-swatch-btn {
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   flex-shrink: 0;
   cursor: pointer;
   border-radius: 4px;
@@ -1250,19 +1287,17 @@ i.fticon.effects-card-caret::before {
 
 .effects-color-hex-input {
   flex: 1;
-  height: 32px;
+  min-width: 0;
+  width: 0;
+  height: 26px;
   background-color: var(--bg-canvas);
   border: 1px solid var(--border-panel);
   border-radius: 4px;
+  color: var(--text-primary);
   font-family: var(--font-brand);
   font-size: 11px;
   font-weight: 700;
-  padding: 0 6px;
-  color: var(--text-primary);
-  font-family: var(--font-brand);
-  font-size: 12px;
-  font-weight: 700;
-  padding: 0 10px;
+  padding: 0 8px;
   outline: none;
   text-transform: uppercase;
   box-sizing: border-box;
@@ -2142,11 +2177,16 @@ i.fticon.effects-card-caret::before {
 /* Force consistent 32px height for all effect controls overriding desktop.css & transform-controller.css */
 body .effects-rack-main .effects-control-row .effects-param-pill.jog-wheel-container,
 body .effects-rack-main .effects-control-row .effects-segmented-group,
-body .effects-rack-main .effects-control-row .effects-custom-dropdown,
 body .effects-rack-main .effects-control-row .custom-dropdown-trigger {
   height: 32px !important;
   min-height: 32px !important;
   max-height: 32px !important;
+  margin: 0 !important;
+}
+
+body .effects-rack-main .effects-control-row .effects-custom-dropdown {
+  height: 32px !important;
+  min-height: 32px !important;
   margin: 0 !important;
 }
 

@@ -11,7 +11,7 @@
     "id": "angle-control",
     "name": "Angle Control",
     "category": "expression",
-    "icon": "assets/FXPH.svg"
+    "icon": "assets/effects/thumbs/angle-control.png"
   },
   {
     "file": "bevel.js",
@@ -46,7 +46,7 @@
     "id": "checkbox-control",
     "name": "Checkbox Control",
     "category": "expression",
-    "icon": "assets/FXPH.svg"
+    "icon": "assets/effects/thumbs/checkbox-control.png"
   },
   {
     "file": "chromatic_aberration.js",
@@ -67,7 +67,7 @@
     "id": "color-control",
     "name": "Color Control",
     "category": "expression",
-    "icon": "assets/FXPH.svg"
+    "icon": "assets/effects/thumbs/color-control.png"
   },
   {
     "file": "color_temperature.js",
@@ -116,7 +116,7 @@
     "id": "dropdown-control",
     "name": "Dropdown Menu Control",
     "category": "expression",
-    "icon": "assets/FXPH.svg"
+    "icon": "assets/effects/thumbs/dropdown-control.png"
   },
   {
     "file": "exposure_gamma.js",
@@ -130,7 +130,7 @@
     "id": "expression-controls",
     "name": "Expression Controls",
     "category": "expression",
-    "icon": "assets/FXPH.svg"
+    "icon": "assets/effects/thumbs/expression-controls.png"
   },
   {
     "file": "extrude_3d.js",
@@ -159,6 +159,13 @@
     "name": "Flicker",
     "category": "lightning",
     "icon": "assets/FXPH.svg"
+  },
+  {
+    "file": "fluid_fish.js",
+    "id": "fluid-fish",
+    "name": "Fluid Fish",
+    "category": "warp",
+    "icon": "assets/effects/thumbs/fluid-fish.png"
   },
   {
     "file": "fsmb.js",
@@ -270,7 +277,7 @@
     "id": "point-control",
     "name": "Point Control",
     "category": "expression",
-    "icon": "assets/FXPH.svg"
+    "icon": "assets/effects/thumbs/point-control.png"
   },
   {
     "file": "pyramid_3d.js",
@@ -347,7 +354,7 @@
     "id": "slider-control",
     "name": "Slider Control",
     "category": "expression",
-    "icon": "assets/FXPH.svg"
+    "icon": "assets/effects/thumbs/slider-control.png"
   },
   {
     "file": "solid_aura.js",
@@ -438,6 +445,6 @@
     "id": "wipe_jaws",
     "name": "Wipe Jaws",
     "category": "Wipe",
-    "icon": "assets/FXWipeJaws.webp"
+    "icon": "assets/effects/thumbs/wipe_jaws.png"
   }
 ]

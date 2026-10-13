@@ -153,6 +153,9 @@
       if (bounds.corners && Array.isArray(bounds.corners) && bounds.corners.length === 4) {
         ctx.lineWidth = lineWidth;
         ctx.strokeStyle = primaryColor;
+        if (options.hidden || options.isDashed) {
+          ctx.setLineDash([5 * dprScale, 4 * dprScale]);
+        }
 
         // A. 3D Volumetric Box / Extrude Wireframe Cage
         if (bounds.backCorners && Array.isArray(bounds.backCorners) && bounds.backCorners.length === 4) {
@@ -247,6 +250,7 @@
 
         // 2. Center Anchor Point
         if (showAnchor) {
+          if (options.hidden || options.isDashed) ctx.setLineDash([]);
           const anchor = bounds.anchor || {
             x: (bounds.cx !== undefined ? bounds.cx + (bounds.anchorX || 0) : ((bounds.corners[0].x + bounds.corners[1].x + bounds.corners[2].x + bounds.corners[3].x) / 4)),
             y: (bounds.cy !== undefined ? bounds.cy + (bounds.anchorY || 0) : ((bounds.corners[0].y + bounds.corners[1].y + bounds.corners[2].y + bounds.corners[3].y) / 4))
@@ -331,6 +335,9 @@
         // 1. Crisp bounding box or adaptive shape contour stroke
         ctx.lineWidth = lineWidth;
         ctx.strokeStyle = primaryColor;
+        if (options.hidden || options.isDashed) {
+          ctx.setLineDash([5 * dprScale, 4 * dprScale]);
+        }
         if (bounds.shapeContourLocal && Array.isArray(bounds.shapeContourLocal) && bounds.shapeContourLocal.length >= 3) {
           ctx.beginPath();
           ctx.moveTo(bounds.shapeContourLocal[0].x, bounds.shapeContourLocal[0].y);
@@ -345,6 +352,7 @@
 
         // 2. Center Anchor Point
         if (showAnchor) {
+          if (options.hidden || options.isDashed) ctx.setLineDash([]);
           const isAnchorMode = !!options.isAnchorMode;
           const anchorRadius = Math.max(3.5, Math.round((isAnchorMode ? 6 : 5) * dprScale));
           const anchorDot = Math.max(1.5, Math.round((isAnchorMode ? 2.5 : 1.75) * dprScale));

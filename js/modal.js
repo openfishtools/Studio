@@ -59,6 +59,13 @@ class ModalManager {
     const el = typeof modalTarget === 'string' ? document.getElementById(modalTarget) : modalTarget;
     if (!el) return;
 
+    // Instantiate template if modal content is lazy-templated
+    const tmpl = el.querySelector('template');
+    if (tmpl && tmpl.content) {
+      el.appendChild(tmpl.content.cloneNode(true));
+      tmpl.remove();
+    }
+
     // Close existing modal if open
     if (this.activeModal && this.activeModal !== el) {
       this.close(false);

@@ -8,10 +8,15 @@
 const FALLBACK_PROJECTS = [];
 
 document.addEventListener('DOMContentLoaded', () => {
+  initTheme();
+  initSettingsModal();
   initUIProtections();
   initVersionFetcher();
   initProjectsFetcher();
   initWelcomeModal();
+  if (window.FolderAnim && typeof window.FolderAnim.initDesktopFolders === 'function') {
+    window.FolderAnim.initDesktopFolders();
+  }
 
   // Purge all non-essential caches when opening index.html (preserves projects and media)
   if (typeof window.cleanupAllStudioCaches === 'function') {
@@ -1240,7 +1245,7 @@ let dashboardToastTimer = null;
 /**
  * Displays a non-intrusive dashboard toast notification
  */
-function showDashboardToast(text, duration = 2400) {
+function showDashboardToast(text, duration = 2400, type = 'info') {
   let toast = document.getElementById('dashboard-toast');
   if (!toast) {
     toast = document.createElement('div');
@@ -1250,6 +1255,11 @@ function showDashboardToast(text, duration = 2400) {
   }
 
   toast.textContent = text;
+  if (type === 'error' || type === 'warn') {
+    toast.classList.add('toast-error');
+  } else {
+    toast.classList.remove('toast-error');
+  }
   toast.classList.add('is-visible');
 
   if (dashboardToastTimer) {
@@ -1258,6 +1268,7 @@ function showDashboardToast(text, duration = 2400) {
 
   dashboardToastTimer = setTimeout(() => {
     toast.classList.remove('is-visible');
+    toast.classList.remove('toast-error');
   }, duration);
 }
 
@@ -2367,6 +2378,120 @@ window.createNewProjectAction = createNewProjectAction;
 window.closeWelcomeModal = closeWelcomeModal;
 window.openDonateFromWelcome = openDonateFromWelcome;
 window.toggleQrisDisplay = toggleQrisDisplay;
+window.openAppSettingsModal = openAppSettingsModal;
+window.setStudioTheme = setStudioTheme;
+window.getStudioTheme = getStudioTheme;
+window.initSettingsModal = initSettingsModal;
+window.initTheme = initTheme;
+
+// ==========================================================================
+// APP THEME & ACCENT COLOR MANAGER
+// ==========================================================================
+const STUDIO_THEMES = [
+  { id: 'default', name: 'Matcha Tea', desc: 'Default Brand', color: '#aef380', checkFill: '#12170e' },
+  { id: 'after-effects', name: 'After Effects', desc: 'Motion Indigo', color: '#9999ff', checkFill: '#12111a' },
+  { id: 'cyber-cyan', name: 'Cyber Cyan', desc: 'Electric Blue', color: '#38f2ff', checkFill: '#081017' },
+  { id: 'amber-terminal', name: 'Amber Gold', desc: 'Retro Terminal', color: '#ffbe2e', checkFill: '#181105' },
+  { id: 'amethyst', name: 'Amethyst', desc: 'Neon Purple', color: '#d8b4fe', checkFill: '#130c1d' },
+  { id: 'rose', name: 'Rose Red', desc: 'Vibrant Crimson', color: '#fda4af', checkFill: '#1a0a10' },
+  { id: 'ocean', name: 'Ocean Blue', desc: 'Deep Sea Azure', color: '#7dd3fc', checkFill: '#08121c' }
+];
+
+function getStudioTheme() {
+  try {
+    return localStorage.getItem('oft_theme') || 'default';
+  } catch (_) {
+    return 'default';
+  }
+}
+
+function setStudioTheme(themeId) {
+  try {
+    localStorage.setItem('oft_theme', themeId);
+  } catch (_) {}
+
+  if (themeId && themeId !== 'default') {
+    document.documentElement.setAttribute('data-theme', themeId);
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+
+  // Sync UI state in modal-settings
+  const labelEl = document.getElementById('settings-current-theme-label');
+  const found = STUDIO_THEMES.find(t => t.id === themeId) || STUDIO_THEMES[0];
+  if (labelEl) {
+    labelEl.textContent = found.name;
+  }
+
+  const grid = document.getElementById('settings-theme-grid');
+  if (grid) {
+    grid.querySelectorAll('.theme-card-item').forEach(card => {
+      const cid = card.getAttribute('data-theme-val');
+      if (cid === themeId) {
+        card.classList.add('is-selected');
+        card.setAttribute('aria-selected', 'true');
+      } else {
+        card.classList.remove('is-selected');
+        card.setAttribute('aria-selected', 'false');
+      }
+    });
+  }
+
+  window.dispatchEvent(new CustomEvent('theme-changed', { detail: { theme: themeId } }));
+}
+
+function initTheme() {
+  const current = getStudioTheme();
+  if (current && current !== 'default') {
+    document.documentElement.setAttribute('data-theme', current);
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+}
+
+function initSettingsModal() {
+  const grid = document.getElementById('settings-theme-grid');
+  if (!grid) return;
+
+  const currentTheme = getStudioTheme();
+  const found = STUDIO_THEMES.find(t => t.id === currentTheme) || STUDIO_THEMES[0];
+
+  const labelEl = document.getElementById('settings-current-theme-label');
+  if (labelEl) {
+    labelEl.textContent = found.name;
+  }
+
+  grid.innerHTML = STUDIO_THEMES.map(t => {
+    const isSelected = t.id === currentTheme;
+    return `
+      <button type="button" class="theme-card-item ${isSelected ? 'is-selected' : ''}" data-theme-val="${t.id}" title="${escapeHtml(t.name)}" aria-selected="${isSelected ? 'true' : 'false'}">
+        <div class="theme-card-color-dot" style="background-color: ${t.color};">
+          <svg class="theme-card-check" viewBox="0 0 24 24" width="14" height="14" fill="${t.checkFill}">
+            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+          </svg>
+        </div>
+        <div class="theme-card-meta">
+          <span class="theme-card-name">${escapeHtml(t.name)}</span>
+          <span class="theme-card-desc">${escapeHtml(t.desc)}</span>
+        </div>
+      </button>
+    `;
+  }).join('');
+
+  grid.querySelectorAll('.theme-card-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const val = btn.getAttribute('data-theme-val');
+      if (val) setStudioTheme(val);
+    });
+  });
+}
+
+function openAppSettingsModal() {
+  initSettingsModal();
+  if (window.Modal && typeof window.Modal.open === 'function') {
+    window.Modal.open('modal-settings');
+  }
+}
 
 
 // UI Helper for Custom Resolution / Aspect Ratio Toggle

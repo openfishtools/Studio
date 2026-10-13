@@ -115,14 +115,14 @@ if (!process.env.VERCEL) {
       }
 
       // Automatically sync effects/loader.js when files in effects/ change
-      if (normalized.startsWith('effects/') && normalized.endsWith('.js') && !normalized.endsWith('loader.js')) {
-        if (typeof syncEffects === 'function') {
-          try {
-            console.log('[DevServer] effects/ changed -> Auto-syncing effects/loader.js and manifest.json...');
-            syncEffects();
-          } catch (e) {
-            console.error('[DevServer] Auto-sync effects failed:', e);
-          }
+      if ((normalized.startsWith('effects/') || normalized.startsWith('effects/backup/')) && normalized.endsWith('.js') && !normalized.endsWith('loader.js')) {
+        try {
+          console.log('[DevServer] effects/ changed -> Auto-syncing effects/loader.js and manifest.json...');
+          delete require.cache[require.resolve('./scripts/sync-effects.js')];
+          const freshMod = require('./scripts/sync-effects.js');
+          if (typeof freshMod.syncEffects === 'function') freshMod.syncEffects();
+        } catch (e) {
+          console.error('[DevServer] Auto-sync effects failed:', e);
         }
       }
 
