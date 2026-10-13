@@ -517,52 +517,54 @@ html, body {
 }
 
 /* Hover - Elevated Surface with Interactive Peeking Folder & Luminous Title */
-.action-btn:hover {
-  background-color: var(--bg-panel-hover);
-}
+@media (hover: hover) and (pointer: fine) {
+  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover {
+    background-color: var(--bg-panel-hover);
+  }
 
-.action-btn:not(.is-open):hover .btn-bg-icon.desktop-folder-graphic {
-  transform: translateY(-2px) rotate(-3deg) scale(1.05);
-}
+  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .btn-bg-icon.desktop-folder-graphic {
+    transform: translateY(-2px) rotate(-3deg) scale(1.05);
+  }
 
-.action-btn:not(.is-open):hover .btn-bg-icon.desktop-folder-graphic .folder-svg-insert {
-  transform: translateY(-5px);
-}
+  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .btn-bg-icon.desktop-folder-graphic .folder-svg-insert {
+    transform: translateY(-5px);
+  }
 
-.action-btn:not(.is-open):hover .btn-bg-icon.desktop-folder-graphic .folder-svg-front-group {
-  transform: scaleY(0.80);
-}
+  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .btn-bg-icon.desktop-folder-graphic .folder-svg-front-group {
+    transform: scaleY(0.80);
+  }
 
-.action-btn:not(.is-open):hover .btn-bg-icon:not(.desktop-folder-graphic) {
-  transform: rotate(-3deg) scale(1.06);
-}
+  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .btn-bg-icon:not(.desktop-folder-graphic) {
+    transform: rotate(-3deg) scale(1.06);
+  }
 
-.action-btn:not(.is-open):hover .btn-bg-icon:not(.desktop-folder-graphic) .folder-svg-insert {
-  transform: translateY(-5px);
-}
+  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .btn-bg-icon:not(.desktop-folder-graphic) .folder-svg-insert {
+    transform: translateY(-5px);
+  }
 
-.action-btn:not(.is-open):hover .btn-bg-icon:not(.desktop-folder-graphic) .folder-svg-front-group {
-  transform: scaleY(0.82);
-}
+  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .btn-bg-icon:not(.desktop-folder-graphic) .folder-svg-front-group {
+    transform: scaleY(0.82);
+  }
 
-.action-btn:hover .action-btn-title {
-  color: var(--color-primary);
+  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .action-btn-title {
+    color: var(--color-primary);
+  }
 }
 
 /* Press (Active) Feedback */
-.action-btn:active {
+.action-btn:not(.is-open):not(.is-animating):not(.no-hover):active {
   background-color: var(--bg-panel-active);
 }
 
-.action-btn:not(.is-open):active .btn-bg-icon.desktop-folder-graphic {
+.action-btn:not(.is-open):not(.is-animating):not(.no-hover):active .btn-bg-icon.desktop-folder-graphic {
   transform: translateY(0px) rotate(-10deg) scale(0.97);
 }
 
-.action-btn:not(.is-open):active .btn-bg-icon:not(.desktop-folder-graphic) {
+.action-btn:not(.is-open):not(.is-animating):not(.no-hover):active .btn-bg-icon:not(.desktop-folder-graphic) {
   transform: rotate(-10deg) scale(0.96);
 }
 
-.action-btn:active .action-btn-title {
+.action-btn:not(.is-open):not(.is-animating):not(.no-hover):active .action-btn-title {
   color: var(--color-primary-active);
 }
 
@@ -1451,11 +1453,13 @@ html, body {
   transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.desktop-folder-item:hover .desktop-folder-graphic {
-  transform: translateY(-4px) scale(1.04);
+@media (hover: hover) and (pointer: fine) {
+  .desktop-folder-item:not(.is-open):not(.is-animating):not(.no-hover):hover .desktop-folder-graphic {
+    transform: translateY(-4px) scale(1.04);
+  }
 }
 
-.desktop-folder-item:active .desktop-folder-graphic {
+.desktop-folder-item:not(.is-open):not(.is-animating):not(.no-hover):active .desktop-folder-graphic {
   transform: translateY(-1px) scale(0.97);
 }
 
@@ -1818,7 +1822,7 @@ html, body {
     justify-content: center;
     align-items: center;
     background: transparent;
-    cursor: pointer;
+    cursor: default;
   }
 
   /* Mobile popup: tanpa text title & tombol x */
@@ -1835,7 +1839,18 @@ html, body {
     border-radius: 3px;
     background-color: var(--color-primary) !important;
     margin: 0 auto;
-    pointer-events: none;
+    pointer-events: auto;
+    cursor: pointer;
+    position: relative;
+  }
+
+  .folder-modal-handle::before {
+    content: '';
+    position: absolute;
+    top: -10px;
+    bottom: -10px;
+    left: -12px;
+    right: -12px;
   }
 
   .folder-modal-body {

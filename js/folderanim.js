@@ -346,6 +346,10 @@
               graphic.style.removeProperty('transform-origin');
             }
           }
+          // Setelah animasi tiba dan memantul benar-benar selesai, baru izinkan hover aktif jika kursor mouse sedang berada di atas tombol
+          setTimeout(() => {
+            folderEl.classList.remove('no-hover');
+          }, 80);
           return;
         }
 
@@ -503,15 +507,22 @@
                              folderEl.classList.contains('action-btn');
 
       // Fast neutral measurement:
-      // Strip active transform from win and graphic so getBoundingClientRect reflects neutral resting layout
+      // Strip active transform and hover state from folderEl, win, graphic, and sheet so getBoundingClientRect reflects pure neutral resting layout
+      folderEl.classList.add('no-hover');
+      if (typeof folderEl.blur === 'function') folderEl.blur();
+
       const prevWinTransform = win.style.transform;
       const prevGraphicTransform = graphic ? graphic.style.transform : '';
+      const prevSheetTransform = sheet ? sheet.style.transform : '';
 
       if (prevWinTransform && prevWinTransform !== 'none') {
         win.style.setProperty('transform', 'none', 'important');
       }
-      if (prevGraphicTransform && prevGraphicTransform !== 'none') {
-        graphic.style.setProperty('transform', 'none', 'important');
+      if (graphic) {
+        graphic.style.setProperty('transform', isActionFolder ? 'rotate(-8deg)' : 'none', 'important');
+      }
+      if (sheet) {
+        sheet.style.setProperty('transform', 'none', 'important');
       }
 
       // Batch rect reads together
@@ -529,6 +540,14 @@
         graphic.style.transform = prevGraphicTransform;
       } else if (graphic) {
         graphic.style.removeProperty('transform');
+      }
+      if (prevSheetTransform && prevSheetTransform !== 'none') {
+        sheet.style.transform = prevSheetTransform;
+      } else if (sheet) {
+        sheet.style.removeProperty('transform');
+      }
+      if (!modal._isClosingWithMorph && !folderEl.classList.contains('is-animating')) {
+        folderEl.classList.remove('no-hover');
       }
 
       const gw = svgRect.width || 60;
@@ -620,7 +639,8 @@
           srcFolder._folderTickerCancel = null;
         }
         srcFolder._arrivalBounceRunning = false;
-        srcFolder.classList.remove('is-open', 'is-animating');
+        srcFolder.classList.remove('is-open', 'is-animating', 'no-hover');
+        if (typeof srcFolder.blur === 'function') srcFolder.blur();
         const insert = srcFolder.querySelector('.folder-svg-insert') || srcFolder.querySelector('.folder-insert-sheet');
         if (insert) {
           insert.style.opacity = '1';
@@ -721,7 +741,7 @@
       folderEl._currentRot = flapDeg;
 
       if (!win._bgSet) {
-        const solidCardBg = geom.targetBg || (isFullScreen ? 'var(--bg-dashboard)' : 'var(--bg-dashboard)');
+        const solidCardBg = geom.targetBg || (isFullScreen ? 'var(--bg-dashboard)' : 'var(--bg-panel)');
         win.style.backgroundColor = solidCardBg;
         win.style.opacity = '1';
         win._bgSet = true;
@@ -738,7 +758,14 @@
       const jumpProg = Math.min(1, u / 0.45);
       const slotJump = (isMobile ? -10 : -32) * Math.sin(jumpProg * Math.PI);
       const flightLift = (isMobile ? -6 : -16) * Math.sin(u * Math.PI);
-      const curDy = dy * (1 - eased) + flightLift + slotJump;
+      let curDy = dy * (1 - eased) + flightLift + slotJump;
+
+      // Downward overshoot for action modals (New Project & Import Project)
+      const isActionModal = (geom && geom.isActionFolder) || (modal && (modal.id === 'modal-new-project' || modal.id === 'modal-import-project'));
+      if (isActionModal && isOpening && p > 1.0) {
+        const overshootFactor = isMobile ? 160 : 220;
+        curDy += (p - 1.0) * overshootFactor;
+      }
 
       const curSx = sx + (1 - sx) * eased;
       const curSy = sy + (1 - sy) * eased;
@@ -916,8 +943,10 @@
       win.style.setProperty('transition', 'none', 'important');
       win.style.setProperty('transform-origin', 'center center', 'important');
       win.style.willChange = 'transform';
-      win.style.setProperty('pointer-events', 'none', 'important');
-      win.querySelectorAll('button, a, input, [role="button"]').forEach(el => el.style.setProperty('pointer-events', 'none', 'important'));
+      // Container UI interaktif langsung saat animasi masuk berlangsung
+      win.style.setProperty('pointer-events', 'auto', 'important');
+      modal.style.removeProperty('pointer-events');
+      win.querySelectorAll('button, a, input, [role="button"]').forEach(el => el.style.removeProperty('pointer-events'));
 
       // Ukur geometri murni saat modal sudah aktif (dimensi nyata 100% akurat)
       const geom = this._measureMorphGeometry(folderEl, win, modal);
@@ -957,21 +986,17 @@
         insert.style.opacity = '0';
         win.style.opacity = '1';
 
-        if (!isMobile) {
-          this._mountMorphSvg(skeleton, insert);
-        } else if (skeleton) {
-          skeleton.style.opacity = '0';
-          skeleton.innerHTML = '';
-        }
+        this._mountMorphSvg(skeleton, insert);
 
         this._applyMorphFrame(folderEl, modal, win, startP, geom, true);
 
-        // Critically damped spring untuk kartu pop-up (gerakan mulus, tanpa goyang/overshoot di window)
+        // Critically damped spring untuk folder drawer biasa; underdamped spring dengan overshoot ke bawah untuk action modals (New Project & Import Project)
+        const isActionModal = (geom && geom.isActionFolder) || modal.id === 'modal-new-project' || modal.id === 'modal-import-project';
         win._morphCancel = this.spring({
           from: startP,
           to: 1.0,
-          stiffness: isMobile ? 310 : 260,
-          damping: isMobile ? 31 : 32,
+          stiffness: isActionModal ? (isMobile ? 280 : 240) : (isMobile ? 310 : 260),
+          damping: isActionModal ? (isMobile ? 21 : 19) : (isMobile ? 31 : 32),
           mass: 1.0,
           onUpdate: (p) => {
             this._applyMorphFrame(folderEl, modal, win, p, geom, true);
@@ -1028,7 +1053,8 @@
       }
 
       modal._isClosingWithMorph = true;
-      folderEl.classList.add('is-animating');
+      folderEl.classList.add('is-animating', 'no-hover');
+      if (typeof folderEl.blur === 'function') folderEl.blur();
 
       if (win && win._kickLaunchTimer) {
         clearTimeout(win._kickLaunchTimer);
@@ -1066,12 +1092,7 @@
       const footer = win.querySelector('.folder-modal-footer, .modal-footer');
       const skeleton = win.querySelector('.folder-morph-skeleton');
 
-      if (!isMobile) {
-        this._mountMorphSvg(skeleton, insert);
-      } else if (skeleton) {
-        skeleton.style.opacity = '0';
-        skeleton.innerHTML = '';
-      }
+      this._mountMorphSvg(skeleton, insert);
 
       let arrivalBounceTriggered = false;
       const triggerArrivalBounce = () => {
@@ -1095,6 +1116,8 @@
         modal._isClosingWithMorph = false;
         modal._activeSourceFolder = null;
         folderEl._activeTargetModal = null;
+        folderEl.classList.remove('is-open');
+        if (typeof folderEl.blur === 'function') folderEl.blur();
 
         if (insert) {
           insert.style.opacity = '1';
@@ -1103,6 +1126,13 @@
         if (sheet) sheet.style.opacity = '1';
         this._removeFlapOverlay(modal, folderEl);
         document.querySelectorAll('.folder-flap-overlay').forEach(el => el.remove());
+
+        if (!folderEl._arrivalBounceRunning) {
+          folderEl.classList.remove('is-animating');
+          setTimeout(() => {
+            folderEl.classList.remove('no-hover');
+          }, 80);
+        }
 
         // Nonaktifkan backdrop seketika tanpa memicu CSS transition fade-out dari background gelap
         modal.style.setProperty('transition', 'none', 'important');
@@ -1205,24 +1235,12 @@
       // Synchronize with ModalManager so when modal closes, morph back and spring shut!
       this._hookModalIfNeeded();
 
-      // Add mobile titlebar tap to dismiss drawer
-      document.querySelectorAll('.finder-titlebar').forEach((tb) => {
-        if (!tb._tapDismissInit) {
-          tb._tapDismissInit = true;
-          tb.addEventListener('click', (e) => {
-            if (window.innerWidth <= 600) {
-              if (window.Modal) window.Modal.close();
-            }
-          });
-        }
-      });
-
-      // Add mobile header / handle bar tap to dismiss drawer
-      document.querySelectorAll('.folder-modal-header').forEach((h) => {
+      // Add mobile handle bar pill tap to dismiss drawer
+      document.querySelectorAll('.folder-modal-handle').forEach((h) => {
         if (!h._tapDismissInit) {
           h._tapDismissInit = true;
           h.addEventListener('click', (e) => {
-            if (window.innerWidth <= 600 && !e.target.closest('button, a, input, select, textarea')) {
+            if (window.innerWidth <= 600) {
               if (window.Modal) window.Modal.close();
             }
           });
