@@ -32,7 +32,7 @@ class ModalManager {
 
     // 3. Native / Browser Back Button Interception (History popstate)
     window.addEventListener('popstate', (e) => {
-      if (window._popoverClosingHistoryBack || window._contextMenuClosingHistoryBack) {
+      if (window._modalClosingHistoryBack || window._popoverClosingHistoryBack || window._contextMenuClosingHistoryBack) {
         return;
       }
       if (window.Popover && typeof window.Popover.getAwaitedPopstate === 'function' && window.Popover.getAwaitedPopstate() > 0) {
@@ -125,7 +125,11 @@ class ModalManager {
 
     if (shouldTriggerHistory && this.historyPushed && window.history.state && window.history.state.modalOpen) {
       this.historyPushed = false;
+      window._modalClosingHistoryBack = true;
       window.history.back();
+      setTimeout(() => {
+        window._modalClosingHistoryBack = false;
+      }, 350);
     } else {
       this.historyPushed = false;
     }

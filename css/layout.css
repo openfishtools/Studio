@@ -499,14 +499,46 @@ html, body {
   transform: rotate(0deg);
 }
 
-/* Matikan transition pada elemen graphic, SVG flap & insert yang diatur JS spring */
+/* Matikan transition pada elemen graphic, SVG flap & insert yang diatur JS spring / closing */
 .action-btn.is-animating .btn-bg-icon.desktop-folder-graphic,
 .action-btn.is-animating .folder-svg-front-group,
 .action-btn.is-animating .folder-svg-insert,
+.action-btn.is-closing .btn-bg-icon.desktop-folder-graphic,
+.action-btn.is-closing .folder-svg-front-group,
+.action-btn.is-closing .folder-svg-insert,
+.action-btn.no-hover .btn-bg-icon.desktop-folder-graphic,
+.action-btn.no-hover .folder-svg-front-group,
+.action-btn.no-hover .folder-svg-insert,
 .action-btn.is-open .btn-bg-icon.desktop-folder-graphic,
 .action-btn.is-open .folder-svg-front-group,
 .action-btn.is-open .folder-svg-insert {
   transition: none !important;
+}
+
+/* Posisi Neutral Non-Hover Terkunci saat no-hover atau is-closing (mencegah kebesaran & stuck peeking saat diam / closing) */
+.action-btn.no-hover .btn-bg-icon.desktop-folder-graphic,
+.action-btn.is-closing .btn-bg-icon.desktop-folder-graphic {
+  transform: rotate(-8deg) scale(1) translateY(0);
+}
+
+.action-btn.no-hover .folder-svg-insert,
+.action-btn.is-closing .folder-svg-insert {
+  transform: none;
+}
+
+.action-btn.no-hover .folder-svg-front-group,
+.action-btn.is-closing .folder-svg-front-group {
+  transform: none;
+}
+
+.action-btn.no-hover,
+.action-btn.is-closing {
+  background-color: var(--bg-panel);
+}
+
+.action-btn.no-hover .action-btn-title,
+.action-btn.is-closing .action-btn-title {
+  color: var(--text-secondary);
 }
 
 .btn-bg-icon svg {
@@ -517,54 +549,54 @@ html, body {
 }
 
 /* Hover - Elevated Surface with Interactive Peeking Folder & Luminous Title */
-@media (hover: hover) and (pointer: fine) {
-  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover {
+@media (hover: hover) {
+  .action-btn:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover {
     background-color: var(--bg-panel-hover);
   }
 
-  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .btn-bg-icon.desktop-folder-graphic {
+  .action-btn:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover .btn-bg-icon.desktop-folder-graphic {
     transform: translateY(-2px) rotate(-3deg) scale(1.05);
   }
 
-  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .btn-bg-icon.desktop-folder-graphic .folder-svg-insert {
+  .action-btn:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover .btn-bg-icon.desktop-folder-graphic .folder-svg-insert {
     transform: translateY(-5px);
   }
 
-  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .btn-bg-icon.desktop-folder-graphic .folder-svg-front-group {
+  .action-btn:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover .btn-bg-icon.desktop-folder-graphic .folder-svg-front-group {
     transform: scaleY(0.80);
   }
 
-  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .btn-bg-icon:not(.desktop-folder-graphic) {
+  .action-btn:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover .btn-bg-icon:not(.desktop-folder-graphic) {
     transform: rotate(-3deg) scale(1.06);
   }
 
-  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .btn-bg-icon:not(.desktop-folder-graphic) .folder-svg-insert {
+  .action-btn:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover .btn-bg-icon:not(.desktop-folder-graphic) .folder-svg-insert {
     transform: translateY(-5px);
   }
 
-  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .btn-bg-icon:not(.desktop-folder-graphic) .folder-svg-front-group {
+  .action-btn:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover .btn-bg-icon:not(.desktop-folder-graphic) .folder-svg-front-group {
     transform: scaleY(0.82);
   }
 
-  .action-btn:not(.is-open):not(.is-animating):not(.no-hover):hover .action-btn-title {
+  .action-btn:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover .action-btn-title {
     color: var(--color-primary);
   }
 }
 
 /* Press (Active) Feedback */
-.action-btn:not(.is-open):not(.is-animating):not(.no-hover):active {
+.action-btn:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):active {
   background-color: var(--bg-panel-active);
 }
 
-.action-btn:not(.is-open):not(.is-animating):not(.no-hover):active .btn-bg-icon.desktop-folder-graphic {
+.action-btn:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):active .btn-bg-icon.desktop-folder-graphic {
   transform: translateY(0px) rotate(-10deg) scale(0.97);
 }
 
-.action-btn:not(.is-open):not(.is-animating):not(.no-hover):active .btn-bg-icon:not(.desktop-folder-graphic) {
+.action-btn:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):active .btn-bg-icon:not(.desktop-folder-graphic) {
   transform: rotate(-10deg) scale(0.96);
 }
 
-.action-btn:not(.is-open):not(.is-animating):not(.no-hover):active .action-btn-title {
+.action-btn:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):active .action-btn-title {
   color: var(--color-primary-active);
 }
 
@@ -1453,13 +1485,45 @@ html, body {
   transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .desktop-folder-item:not(.is-open):not(.is-animating):not(.no-hover):hover .desktop-folder-graphic {
+/* Posisi Neutral Non-Hover Terkunci saat no-hover atau is-closing untuk desktop folders (saat diam / closing) */
+.desktop-folder-item.no-hover .desktop-folder-graphic,
+.desktop-folder-item.is-closing .desktop-folder-graphic {
+  transform: none;
+}
+
+.desktop-folder-item.no-hover .folder-svg-insert,
+.desktop-folder-item.is-closing .folder-svg-insert {
+  transform: none;
+}
+
+.desktop-folder-item.no-hover .folder-svg-front-group,
+.desktop-folder-item.is-closing .folder-svg-front-group {
+  transform: none;
+}
+
+@media (hover: hover) {
+  .desktop-folder-item:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover .desktop-folder-graphic {
     transform: translateY(-4px) scale(1.04);
+  }
+
+  .desktop-folder-item:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover .folder-svg-insert {
+    transform: translateY(-6px);
+  }
+
+  .desktop-folder-item:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover .folder-svg-front-group {
+    transform: scaleY(0.80);
+  }
+
+  .desktop-folder-item:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover .folder-svg-front {
+    fill: var(--color-primary-hover, #abdd90);
+  }
+
+  .desktop-folder-item:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover .folder-svg-emblem {
+    opacity: 1;
   }
 }
 
-.desktop-folder-item:not(.is-open):not(.is-animating):not(.no-hover):active .desktop-folder-graphic {
+.desktop-folder-item:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):active .desktop-folder-graphic {
   transform: translateY(-1px) scale(0.97);
 }
 
@@ -1479,11 +1543,6 @@ html, body {
   transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Saat hover dan belum dibuka, isi dokumen menyembul naik (peeking out) */
-.desktop-folder-item:not(.is-open):hover .folder-svg-insert {
-  transform: translateY(-6px);
-}
-
 .folder-insert-sheet {
   fill: var(--track-color, #d4f8a8);
 }
@@ -1499,11 +1558,6 @@ html, body {
   transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Saat hover dan belum dibuka, tutup depan berayun membuka sedikit ke depan */
-.desktop-folder-item:not(.is-open):hover .folder-svg-front-group {
-  transform: scaleY(0.80);
-}
-
 .folder-svg-front {
   fill: var(--color-primary, #98ce7b);
   transition: fill 0.15s ease;
@@ -1511,10 +1565,6 @@ html, body {
 
 .folder-svg-line {
   fill: #ffffff;
-}
-
-.desktop-folder-item:hover .folder-svg-front {
-  fill: var(--color-primary-hover, #abdd90);
 }
 
 .desktop-folder-item:active .folder-svg-front {
@@ -1528,10 +1578,6 @@ html, body {
   transition: opacity 0.2s ease, fill 0.15s ease;
 }
 
-.desktop-folder-item:hover .folder-svg-emblem {
-  opacity: 1;
-}
-
 .desktop-folder-item:active .folder-svg-emblem {
   opacity: 0.85;
 }
@@ -1540,6 +1586,12 @@ html, body {
 .desktop-folder-item.is-animating .desktop-folder-graphic,
 .desktop-folder-item.is-animating .folder-svg-front-group,
 .desktop-folder-item.is-animating .folder-svg-insert,
+.desktop-folder-item.is-closing .desktop-folder-graphic,
+.desktop-folder-item.is-closing .folder-svg-front-group,
+.desktop-folder-item.is-closing .folder-svg-insert,
+.desktop-folder-item.no-hover .desktop-folder-graphic,
+.desktop-folder-item.no-hover .folder-svg-front-group,
+.desktop-folder-item.no-hover .folder-svg-insert,
 .desktop-folder-item.is-open .desktop-folder-graphic,
 .desktop-folder-item.is-open .folder-svg-front-group,
 .desktop-folder-item.is-open .folder-svg-insert {
@@ -1582,10 +1634,12 @@ html, body {
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.desktop-folder-item:hover .desktop-folder-text {
-  background-color: var(--color-primary);
-  color: var(--bg-canvas);
-  text-shadow: none;
+@media (hover: hover) {
+  .desktop-folder-item:not(.is-open):not(.is-animating):not(.is-closing):not(.no-hover):hover .desktop-folder-text {
+    background-color: var(--color-primary);
+    color: var(--bg-canvas);
+    text-shadow: none;
+  }
 }
 
 /* ==========================================================================
