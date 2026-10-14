@@ -27713,10 +27713,10 @@
           const layers = (window.currentProjectState && window.currentProjectState.layers) || [];
           const idx = layers.findIndex(l => l.id === layerId);
           if (idx < 0) return;
-          const isMobileVp = window.innerWidth <= 600;
-          const topPad = isMobileVp ? 8 : 12;
-          const rowPitch = isMobileVp ? 40 : 54;
-          const halfLane = isMobileVp ? 17 : 22;
+          const isCompactVp = !window.isDesktop && !document.querySelector('.desktop-viewport');
+          const topPad = isCompactVp ? 8 : 12;
+          const rowPitch = isCompactVp ? 40 : 54;
+          const halfLane = isCompactVp ? 17 : 22;
           const layerCenterInContent = topPad + (idx * rowPitch) + halfLane;
           const targetCenterInVp = targetCenterY - visibleTop;
           targetScrollTop = Math.max(0, Math.min(maxScrollY, Math.round(layerCenterInContent - targetCenterInVp)));
@@ -34224,10 +34224,10 @@
                   const scrollDelta = layersViewport ? (layersViewport.scrollTop - startScrollTop) : 0;
                   let rawDeltaY = (lastPointerClientY - startY) + scrollDelta;
 
-                  const isMobileVp = window.innerWidth <= 600;
+                  const isCompactVp = !window.isDesktop && !document.querySelector('.desktop-viewport');
                   const rowPitch = (allLanes.length >= 2)
                     ? Math.max(24, Math.round(allLanes[1].offsetTop - allLanes[0].offsetTop))
-                    : (isMobileVp ? 40 : 54);
+                    : (isCompactVp ? 40 : 54);
 
                   // Constrain deltaY strictly within existing layer boundaries:
                   const minMovingIdx = movingIndices.length > 0 ? movingIndices[0] : originalIndex;
@@ -34495,8 +34495,8 @@
           if (lanes && lanes[r]) {
             return lanes[r].offsetTop + lanes[r].offsetHeight / 2;
           }
-          const isMobileVp = window.innerWidth <= 600;
-          return r * (isMobileVp ? 40 : 54) + (isMobileVp ? 17 : 22);
+          const isCompactVp = !window.isDesktop && !document.querySelector('.desktop-viewport');
+          return r * (isCompactVp ? 40 : 54) + (isCompactVp ? 17 : 22);
         }
 
         // 1. Group child layers by parentId

@@ -399,56 +399,55 @@
   display: block;
   font-size: 18px;}
 
-@media (max-width: 600px) {
-  .color-picker-popover-card,
-  .color-picker-standalone {
-    width: min(300px, calc(100vw - 24px));
-    max-width: min(300px, calc(100vw - 24px));
-  }
+/* Mobile & Tablet Compact Proportions for Color Picker Popovers */
+.color-picker-popover-card,
+.color-picker-standalone {
+  width: min(300px, calc(100vw - 24px));
+  max-width: min(300px, calc(100vw - 24px));
+}
 
-  .color-picker-header {
-    height: 30px;
-    padding: 0 8px;
-  }
+.color-picker-header {
+  height: 30px;
+  padding: 0 8px;
+}
 
-  .color-picker-header-label {
-    font-size: 11.5px;
-  }
+.color-picker-header-label {
+  font-size: 11.5px;
+}
 
-  .color-picker-body {
-    padding: 8px;
-    min-height: 100px;
-  }
+.color-picker-body {
+  padding: 8px;
+  min-height: 100px;
+}
 
-  .color-picker-sv-box,
-  .color-picker-alpha-box {
-    height: 100px;
-  }
+.color-picker-sv-box,
+.color-picker-alpha-box {
+  height: 100px;
+}
 
-  .color-picker-wheel-box {
-    width: 100px;
-    height: 100px;
-  }
+.color-picker-wheel-box {
+  width: 100px;
+  height: 100px;
+}
 
-  .color-picker-wheel-ring {
-    width: 96px;
-    height: 96px;
-  }
+.color-picker-wheel-ring {
+  width: 96px;
+  height: 96px;
+}
 
-  .color-picker-wheel-ring-mask {
-    inset: 15px;
-  }
+.color-picker-wheel-ring-mask {
+  inset: 15px;
+}
 
-  .color-picker-wheel-center {
-    width: 58px;
-    height: 58px;
-  }
+.color-picker-wheel-center {
+  width: 58px;
+  height: 58px;
+}
 
-  .color-picker-sidebar {
-    width: 42px;
-  }
+.color-picker-sidebar {
+  width: 42px;
+}
 
-  .color-picker-tab-btn {
-    min-height: 42px;
-  }
+.color-picker-tab-btn {
+  min-height: 42px;
 }

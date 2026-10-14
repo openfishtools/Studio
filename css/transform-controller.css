@@ -3183,379 +3183,377 @@
 }
 
 /* ==========================================================================
-   MOBILE COMPACT OVERRIDES (<= 600px) - Alight Motion Balanced Subview Proportions
+   MOBILE & TABLET COMPACT OVERRIDES (editor.html) - Alight Motion Balanced Subview Proportions
    ========================================================================== */
-@media (max-width: 600px) {
-  .transform-controller,
-  .text-controller-layout,
-  .graph-editor-container,
-  .graph-controller {
-    grid-template-columns: 44px 1fr 44px;
-    height: 224px;
-    min-height: 220px;
-  }
+.transform-controller,
+.text-controller-layout,
+.graph-editor-container,
+.graph-controller {
+  grid-template-columns: 44px 1fr 44px;
+  height: 224px;
+  min-height: 220px;
+}
 
-  .camera-controller-layout,
-  .beatmark-controller-layout {
-    grid-template-columns: 44px 1fr;
-    height: 224px;
-    min-height: 220px;
-  }
+.camera-controller-layout,
+.beatmark-controller-layout {
+  grid-template-columns: 44px 1fr;
+  height: 224px;
+  min-height: 220px;
+}
 
-  .fill-controller-layout {
-    height: 224px;
-    min-height: 220px;
-    padding: 6px 10px 8px;
-    gap: 6px;
-  }
+.fill-controller-layout {
+  height: 224px;
+  min-height: 220px;
+  padding: 6px 10px 8px;
+  gap: 6px;
+}
 
-  .transform-nav-col,
-  .transform-tools-col {
-    gap: 6px;
-    padding: 6px 0;
-  }
+.transform-nav-col,
+.transform-tools-col {
+  gap: 6px;
+  padding: 6px 0;
+}
 
-  .transform-nav-group-top,
-  .transform-nav-group-bottom {
-    gap: 6px;
-  }
+.transform-nav-group-top,
+.transform-nav-group-bottom {
+  gap: 6px;
+}
 
-  .transform-nav-btn,
-  .transform-tool-btn {
-    width: 34px;
-    height: 34px;
-    min-width: 34px;
-    min-height: 34px;
-    max-width: 34px;
-    max-height: 34px;
-    border-radius: 7px;
-  }
+.transform-nav-btn,
+.transform-tool-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  max-width: 34px;
+  max-height: 34px;
+  border-radius: 7px;
+}
 
-  .transform-nav-btn .fticon,
-  .transform-nav-btn svg,
-  .transform-nav-btn i.fticon,
-  .transform-tool-btn svg,
-  .transform-tool-btn i.fticon,
-  .transform-tool-btn .fticon {
-    width: 19px;
-    height: 19px;
-    font-size: 19px;
-  }
+.transform-nav-btn .fticon,
+.transform-nav-btn svg,
+.transform-nav-btn i.fticon,
+.transform-tool-btn svg,
+.transform-tool-btn i.fticon,
+.transform-tool-btn .fticon {
+  width: 19px;
+  height: 19px;
+  font-size: 19px;
+}
 
-  #timeline-layer-drawer .drawer-subview .transform-nav-group-top > .transform-nav-btn:not(:last-child)::before,
-  #timeline-layer-drawer .drawer-subview .transform-tools-col > .transform-tool-btn:not(:last-child)::before,
-  #timeline-layer-drawer .drawer-subview .transform-nav-group-bottom > .transform-nav-btn:not(:first-child)::before {
-    width: 44px;
-  }
+#timeline-layer-drawer .drawer-subview .transform-nav-group-top > .transform-nav-btn:not(:last-child)::before,
+#timeline-layer-drawer .drawer-subview .transform-tools-col > .transform-tool-btn:not(:last-child)::before,
+#timeline-layer-drawer .drawer-subview .transform-nav-group-bottom > .transform-nav-btn:not(:first-child)::before {
+  width: 44px;
+}
 
-  /* 1. Transform Subview Inner UI (Move, Rotate, Scale, Skew) */
-  .transform-work-area {
-    padding: 6px 8px;
-  }
+/* 1. Transform Subview Inner UI (Move, Rotate, Scale, Skew) */
+.transform-work-area {
+  padding: 6px 8px;
+}
 
-  .transform-swipe-pad {
-    padding: 8px 10px;
-    border-radius: 8px;
-  }
+.transform-swipe-pad {
+  padding: 8px 10px;
+  border-radius: 8px;
+}
 
-  .transform-swipe-pad .transform-values-header {
-    margin-bottom: 6px;
-  }
+.transform-swipe-pad .transform-values-header {
+  margin-bottom: 6px;
+}
 
-  #dial-transform-rotate .rotate-center-badge {
-    min-width: 84px;
-    max-width: 108px;
-    height: 46px;
-    min-height: 46px;
-    max-height: 46px;
-    padding: 3px 8px;
-    border-radius: 8px;
-  }
+#dial-transform-rotate .rotate-center-badge {
+  min-width: 84px;
+  max-width: 108px;
+  height: 46px;
+  min-height: 46px;
+  max-height: 46px;
+  padding: 3px 8px;
+  border-radius: 8px;
+}
 
-  #dial-transform-rotate .rotate-turns-count {
-    font-size: 13px;
-  }
+#dial-transform-rotate .rotate-turns-count {
+  font-size: 13px;
+}
 
-  #dial-transform-rotate .rotate-deg-val {
-    font-size: 20px;
-  }
+#dial-transform-rotate .rotate-deg-val {
+  font-size: 20px;
+}
 
-  #dial-transform-rotate #rotate-axis-switch,
-  #pane-transform-rotate #rotate-axis-switch {
-    bottom: 22px;
-    left: 24px;
-    width: 98px !important;
-    min-width: 98px !important;
-    max-width: 98px !important;
-    height: 30px !important;
-    min-height: 30px !important;
-    max-height: 30px !important;
-    border-radius: 15px;
-  }
+#dial-transform-rotate #rotate-axis-switch,
+#pane-transform-rotate #rotate-axis-switch {
+  bottom: 22px;
+  left: 24px;
+  width: 98px !important;
+  min-width: 98px !important;
+  max-width: 98px !important;
+  height: 30px !important;
+  min-height: 30px !important;
+  max-height: 30px !important;
+  border-radius: 15px;
+}
 
-  #dial-transform-rotate #rotate-axis-switch .segmented-switch-item,
-  #pane-transform-rotate #rotate-axis-switch .segmented-switch-item,
-  #dial-transform-rotate #rotate-axis-switch .segmented-switch-item span,
-  #pane-transform-rotate #rotate-axis-switch .segmented-switch-item span {
-    font-size: 11.5px;
-  }
+#dial-transform-rotate #rotate-axis-switch .segmented-switch-item,
+#pane-transform-rotate #rotate-axis-switch .segmented-switch-item,
+#dial-transform-rotate #rotate-axis-switch .segmented-switch-item span,
+#pane-transform-rotate #rotate-axis-switch .segmented-switch-item span {
+  font-size: 11.5px;
+}
 
-  #dial-transform-rotate .rotate-knob {
-    width: 24px;
-    height: 24px;
-    border-width: 3px;
-  }
+#dial-transform-rotate .rotate-knob {
+  width: 24px;
+  height: 24px;
+  border-width: 3px;
+}
 
-  .transform-link-btn {
-    width: 28px;
-    height: 28px;
-  }
+.transform-link-btn {
+  width: 28px;
+  height: 28px;
+}
 
-  .transform-dual-rulers {
-    gap: 5px;
-  }
+.transform-dual-rulers {
+  gap: 5px;
+}
 
-  /* 2. Graph Editor Subview Inner UI */
-  .graph-editor-work-area {
-    padding: 6px;
-  }
+/* 2. Graph Editor Subview Inner UI */
+.graph-editor-work-area {
+  padding: 6px;
+}
 
-  .graph-presets-col {
-    padding: 6px 0;
-    gap: 5px;
-  }
+.graph-presets-col {
+  padding: 6px 0;
+  gap: 5px;
+}
 
-  .graph-preset-btn,
-  .graph-preset-save-btn {
-    width: 34px;
-    height: 34px;
-    min-width: 34px;
-    min-height: 34px;
-    max-width: 34px;
-    max-height: 34px;
-    flex: 0 0 34px;
-    border-radius: 6px;
-  }
+.graph-preset-btn,
+.graph-preset-save-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  max-width: 34px;
+  max-height: 34px;
+  flex: 0 0 34px;
+  border-radius: 6px;
+}
 
-  /* 3. Camera Settings Subview Inner UI */
-  .camera-work-area {
-    padding: 6px 10px 8px 8px;
-    gap: 6px;
-  }
+/* 3. Camera Settings Subview Inner UI */
+.camera-work-area {
+  padding: 6px 10px 8px 8px;
+  gap: 6px;
+}
 
-  .camera-work-area .effects-control-row {
-    min-height: 28px;
-    gap: 6px;
-  }
+.camera-work-area .effects-control-row {
+  min-height: 28px;
+  gap: 6px;
+}
 
-  .camera-work-area .effects-param-pill.jog-wheel-container {
-    height: 28px;
-    min-height: 28px;
-    margin-top: 0;
-  }
+.camera-work-area .effects-param-pill.jog-wheel-container {
+  height: 28px;
+  min-height: 28px;
+  margin-top: 0;
+}
 
-  .camera-blur-switch {
-    width: 88px;
-    height: 26px;
-  }
+.camera-blur-switch {
+  width: 88px;
+  height: 26px;
+}
 
-  .camera-focus-mode-switch {
-    width: 118px;
-    height: 26px;
-  }
+.camera-focus-mode-switch {
+  width: 118px;
+  height: 26px;
+}
 
-  .camera-blur-switch .segmented-switch-item,
-  .camera-focus-mode-switch .segmented-switch-item {
-    height: 26px;
-    font-size: 10.5px;
-    padding: 0 6px;
-  }
+.camera-blur-switch .segmented-switch-item,
+.camera-focus-mode-switch .segmented-switch-item {
+  height: 26px;
+  font-size: 10.5px;
+  padding: 0 6px;
+}
 
-  .camera-layer-dropdown-trigger {
-    height: 28px;
-    font-size: 11px;
-  }
+.camera-layer-dropdown-trigger {
+  height: 28px;
+  font-size: 11px;
+}
 
-  /* 4. Fill Subview Inner UI (None, Color, Gradient, Media) */
-  .fill-top-header {
-    gap: 6px;
-  }
+/* 4. Fill Subview Inner UI (None, Color, Gradient, Media) */
+.fill-top-header {
+  gap: 6px;
+}
 
-  .fill-back-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 7px;
-  }
+.fill-back-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+}
 
-  .fill-back-btn svg,
-  .fill-back-btn i.fticon {
-    width: 17px;
-    height: 17px;
-    font-size: 17px;
-  }
+.fill-back-btn svg,
+.fill-back-btn i.fticon {
+  width: 17px;
+  height: 17px;
+  font-size: 17px;
+}
 
-  .fill-category-bar {
-    height: 32px;
-    border-radius: 7px;
-  }
+.fill-category-bar {
+  height: 32px;
+  border-radius: 7px;
+}
 
-  .fill-tab-btn svg,
-  .fill-tab-btn i.fticon {
-    width: 18px;
-    height: 18px;
-    font-size: 18px;
-  }
+.fill-tab-btn svg,
+.fill-tab-btn i.fticon {
+  width: 18px;
+  height: 18px;
+  font-size: 18px;
+}
 
-  .fill-grad-tab-swatch {
-    width: 20px;
-    height: 12px;
-  }
+.fill-grad-tab-swatch {
+  width: 20px;
+  height: 12px;
+}
 
-  .fill-none-card {
-    min-height: 140px;
-  }
+.fill-none-card {
+  min-height: 140px;
+}
 
-  #fill-view-color .color-picker-header {
-    height: 30px;
-    padding: 0 10px;
-  }
+#fill-view-color .color-picker-header {
+  height: 30px;
+  padding: 0 10px;
+}
 
-  #fill-view-color .color-picker-header-label {
-    font-size: 12px;
-  }
+#fill-view-color .color-picker-header-label {
+  font-size: 12px;
+}
 
-  #fill-view-color .color-picker-add-btn {
-    width: 19px;
-    height: 19px;
-    font-size: 12px;
-  }
+#fill-view-color .color-picker-add-btn {
+  width: 19px;
+  height: 19px;
+  font-size: 12px;
+}
 
-  #fill-view-color .color-picker-body {
-    padding: 6px 10px;
-  }
+#fill-view-color .color-picker-body {
+  padding: 6px 10px;
+}
 
-  #fill-view-color .color-picker-swatch-grid,
-  #fill-view-color .color-picker-saved-grid {
-    gap: 6px;
-  }
+#fill-view-color .color-picker-swatch-grid,
+#fill-view-color .color-picker-saved-grid {
+  gap: 6px;
+}
 
-  #fill-view-color .color-picker-sv-box,
-  #fill-view-color .color-picker-alpha-box {
-    height: 112px;
-  }
+#fill-view-color .color-picker-sv-box,
+#fill-view-color .color-picker-alpha-box {
+  height: 112px;
+}
 
-  #fill-view-color .color-picker-wheel-box {
-    width: 114px;
-    height: 114px;
-  }
+#fill-view-color .color-picker-wheel-box {
+  width: 114px;
+  height: 114px;
+}
 
-  #fill-view-color .color-picker-wheel-ring {
-    width: 110px;
-    height: 110px;
-    border-radius: 24px;
-  }
+#fill-view-color .color-picker-wheel-ring {
+  width: 110px;
+  height: 110px;
+  border-radius: 24px;
+}
 
-  #fill-view-color .color-picker-wheel-ring-mask {
-    inset: 17px;
-    border-radius: 17px;
-  }
+#fill-view-color .color-picker-wheel-ring-mask {
+  inset: 17px;
+  border-radius: 17px;
+}
 
-  #fill-view-color .color-picker-wheel-center {
-    width: 64px;
-    height: 64px;
-    border-radius: 8px;
-  }
+#fill-view-color .color-picker-wheel-center {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+}
 
-  #fill-view-color .color-picker-wheel-center-hex {
-    font-size: 10px;
-  }
+#fill-view-color .color-picker-wheel-center-hex {
+  font-size: 10px;
+}
 
-  #fill-view-color .color-picker-sidebar {
-    width: 44px;
-  }
+#fill-view-color .color-picker-sidebar {
+  width: 44px;
+}
 
-  #fill-view-color .color-picker-tab-icon {
-    width: 18px;
-    height: 18px;
-    font-size: 18px;
-  }
+#fill-view-color .color-picker-tab-icon {
+  width: 18px;
+  height: 18px;
+  font-size: 18px;
+}
 
-  .fill-grad-card {
-    padding: 10px 14px;
-  }
+.fill-grad-card {
+  padding: 10px 14px;
+}
 
-  .fill-grad-types-bar {
-    height: 32px;
-    max-width: 200px;
-  }
+.fill-grad-types-bar {
+  height: 32px;
+  max-width: 200px;
+}
 
-  .fill-grad-type-btn svg,
-  .fill-grad-type-btn img,
-  .fill-grad-type-btn i.fticon {
-    width: 28px;
-    height: 18px;
-    font-size: 18px;
-  }
+.fill-grad-type-btn svg,
+.fill-grad-type-btn img,
+.fill-grad-type-btn i.fticon {
+  width: 28px;
+  height: 18px;
+  font-size: 18px;
+}
 
-  .fill-grad-slider-row {
-    padding: 0 8px;
-    gap: 8px;
-  }
+.fill-grad-slider-row {
+  padding: 0 8px;
+  gap: 8px;
+}
 
-  .fill-media-pool-grid {
-    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
-    gap: 6px;
-    padding: 8px;
-  }
+.fill-media-pool-grid {
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 6px;
+  padding: 8px;
+}
 
-  /* 5. Audio Beatmark Subview Inner UI */
-  .beatmark-work-area {
-    padding: 8px 10px 10px 8px;
-    gap: 8px;
-  }
+/* 5. Audio Beatmark Subview Inner UI */
+.beatmark-work-area {
+  padding: 8px 10px 10px 8px;
+  gap: 8px;
+}
 
-  .beatmark-waveform-card {
-    padding: 8px 10px;
-    gap: 6px;
-  }
+.beatmark-waveform-card {
+  padding: 8px 10px;
+  gap: 6px;
+}
 
-  .beatmark-waveform-wrapper {
-    height: 40px;
-  }
+.beatmark-waveform-wrapper {
+  height: 40px;
+}
 
-  .beatmark-giant-btn {
-    min-height: 60px;
-    gap: 2px;
-  }
+.beatmark-giant-btn {
+  min-height: 60px;
+  gap: 2px;
+}
 
-  .beatmark-giant-icon-wrap {
-    width: 20px;
-    height: 20px;
-    font-size: 20px;
-  }
+.beatmark-giant-icon-wrap {
+  width: 20px;
+  height: 20px;
+  font-size: 20px;
+}
 
-  .beatmark-giant-svg {
-    width: 19px;
-    height: 19px;
-  }
+.beatmark-giant-svg {
+  width: 19px;
+  height: 19px;
+}
 
-  .beatmark-giant-label {
-    font-size: 12px;
-  }
+.beatmark-giant-label {
+  font-size: 12px;
+}
 
-  .beatmark-giant-hint {
-    font-size: 9.5px;
-  }
+.beatmark-giant-hint {
+  font-size: 9.5px;
+}
 
-  .beatmark-step-btn {
-    width: clamp(38px, 10cqi, 48px);
-    min-width: 38px;
-  }
+.beatmark-step-btn {
+  width: clamp(38px, 10cqi, 48px);
+  min-width: 38px;
+}
 
-  .beatmark-step-btn .fticon,
-  .beatmark-step-btn i.fticon {
-    width: 20px;
-    height: 20px;
-    font-size: 20px;
-  }
+.beatmark-step-btn .fticon,
+.beatmark-step-btn i.fticon {
+  width: 20px;
+  height: 20px;
+  font-size: 20px;
 }
