@@ -25426,7 +25426,7 @@
         let startY = 0;
         let startH = 0;
         let mainBodyH = 0;
-        let currentPercent = 48;
+        let currentPercent = 55;
         let mobileRAF = null;
 
         function onMobilePointerDown(e) {
@@ -25436,7 +25436,7 @@
           const bodyRect = mainBody.getBoundingClientRect();
           mainBodyH = bodyRect.height || 1;
           const currentRect = leftPane ? leftPane.getBoundingClientRect() : null;
-          startH = currentRect ? currentRect.height : (mainBodyH * 0.48);
+          startH = currentRect ? currentRect.height : (mainBodyH * 0.55);
           mobileHandle.classList.add('is-dragging');
           mobileHandle.setPointerCapture(e.pointerId);
           document.body.style.cursor = 'row-resize';
@@ -25492,7 +25492,7 @@
         mobileHandle.addEventListener('keydown', (e) => {
           if (window.innerWidth > 600) return;
           const currentStyle = getComputedStyle(mainBody).getPropertyValue('--mobile-preview-height').trim();
-          let currentPercent = parseFloat(currentStyle) || 48;
+          let currentPercent = parseFloat(currentStyle) || 55;
 
           if (e.key === 'ArrowDown') {
             currentPercent = Math.min(78, currentPercent + 5);
@@ -25630,6 +25630,33 @@
         };
       }
 
+      // Format waktu singkat untuk Ruler: 0s, 1s, 2s, 1m, 1m 30s, atau ms saat zoom sub-detik
+      function formatCompactRulerTime(frames, safeFps) {
+        if (frames <= 0) return '0s';
+        if (frames % safeFps === 0) {
+          const totalSec = Math.floor(frames / safeFps);
+          if (totalSec < 60) {
+            return `${totalSec}s`;
+          }
+          const mins = Math.floor(totalSec / 60);
+          const secs = totalSec % 60;
+          return secs === 0 ? `${mins}m` : `${mins}m ${secs}s`;
+        }
+        const totalSec = Math.floor(frames / safeFps);
+        const remFrames = frames % safeFps;
+        const ms = Math.round((remFrames / safeFps) * 1000);
+        if (totalSec === 0) {
+          return `${ms}ms`;
+        }
+        if (totalSec < 60) {
+          const decSec = (frames / safeFps).toFixed(2).replace(/\.?0+$/, '');
+          return (ms % 100 === 0 || ms === 250 || ms === 750) ? `${decSec}s` : `${totalSec}s ${ms}ms`;
+        }
+        const mins = Math.floor(totalSec / 60);
+        const secs = totalSec % 60;
+        return `${mins}m ${secs}s`;
+      }
+
       function generateRulerTicks(fps, force = false) {
         const totalDur = getProjectTotalDuration();
         const safeFps = Math.max(1, parseInt(fps, 10) || 60);
@@ -25666,7 +25693,7 @@
         if (totalDur <= 0) {
           rulerMarks.innerHTML = `
             <div class="ruler-second-mark" style="width: 0px; flex-basis: 0px;">
-              <span class="ruler-second-text">00:00:00</span>
+              <span class="ruler-second-text">0s</span>
               <div class="ruler-ticks-row" style="width: 0px; grid-template-columns: 1fr;">
                 <div class="ruler-tick-cell"><div class="ruler-tick major"></div></div>
               </div>
@@ -25685,16 +25712,7 @@
           const curMarkFrames = Math.min(majorUnitFrames, totalFrames - f);
           const markWidth = curMarkFrames * framePx;
 
-          let timeStr = '';
-          if (f % safeFps === 0) {
-            const s = Math.floor(f / safeFps);
-            const mins = String(Math.floor(s / 60)).padStart(2, '0');
-            const secs = String(s % 60).padStart(2, '0');
-            timeStr = `${mins}:${secs}:00`;
-          } else {
-            // Adaptive frame subdivision label (After Effects standard: 05f, 10f, 15f...)
-            timeStr = `${String(f % safeFps).padStart(2, '0')}f`;
-          }
+          const timeStr = formatCompactRulerTime(f, safeFps);
 
           const curTicksCount = Math.max(1, Math.round((curMarkFrames / majorUnitFrames) * subTicks));
           let ticksHtml = '';
@@ -25723,12 +25741,7 @@
         }
 
         // Tanda akhir tepat di ujung durasi layer (width: 0px, tidak ada ruler tambahan lagi setelahnya)
-        const endTotalSec = Math.floor(totalDur);
-        const endFrames = Math.round((totalDur - endTotalSec) * safeFps);
-        const endMins = String(Math.floor(endTotalSec / 60)).padStart(2, '0');
-        const endSecs = String(endTotalSec % 60).padStart(2, '0');
-        const endFf = String(endFrames).padStart(2, '0');
-        const endTimeStr = `${endMins}:${endSecs}:${endFf}`;
+        const endTimeStr = formatCompactRulerTime(totalFrames, safeFps);
 
         rulerHtml += `
           <div class="ruler-second-mark" style="width: 0px; flex-basis: 0px;">
@@ -27700,7 +27713,11 @@
           const layers = (window.currentProjectState && window.currentProjectState.layers) || [];
           const idx = layers.findIndex(l => l.id === layerId);
           if (idx < 0) return;
-          const layerCenterInContent = 12 + (idx * 54) + 22;
+          const isMobileVp = window.innerWidth <= 600;
+          const topPad = isMobileVp ? 8 : 12;
+          const rowPitch = isMobileVp ? 40 : 54;
+          const halfLane = isMobileVp ? 17 : 22;
+          const layerCenterInContent = topPad + (idx * rowPitch) + halfLane;
           const targetCenterInVp = targetCenterY - visibleTop;
           targetScrollTop = Math.max(0, Math.min(maxScrollY, Math.round(layerCenterInContent - targetCenterInVp)));
         }
@@ -33635,6 +33652,9 @@
 
                   clipEl.style.left = `${layer.startPx}px`;
                   clipEl.style.width = `${layer.widthPx}px`;
+                  if (!isDesktop || !layer._kfExpanded) {
+                    renderLayerKeyframes(layer, clipEl);
+                  }
                   if (layer.type === 'audio') renderAudioClipWaveform(layer, clipEl);
                   if (typeof renderTimelineLinkConnectors === 'function') renderTimelineLinkConnectors();
                   redrawComposition();
@@ -33658,7 +33678,13 @@
                   layer.widthPx = Math.max(minWidth, Math.round(layer.durationSec * pps));
                   clipEl.style.left = `${layer.startPx}px`;
                   clipEl.style.width = `${layer.widthPx}px`;
+                  if (typeof syncLayerKeyframeMarkersInPlace === 'function') {
+                    syncLayerKeyframeMarkersInPlace(layer);
+                  } else {
+                    renderLayerKeyframes(layer, clipEl);
+                  }
                   if (layer.type === 'audio') renderAudioClipWaveform(layer, clipEl);
+                  if (typeof updateCutBarRowState === 'function') updateCutBarRowState();
 
                   invalidatePreviewCacheForLayer(layer, initialStartSec, initialEndSec);
                   redrawComposition();
@@ -33730,6 +33756,9 @@
                   layer.isDurationExplicit = true;
 
                   clipEl.style.width = `${layer.widthPx}px`;
+                  if (!isDesktop || !layer._kfExpanded) {
+                    renderLayerKeyframes(layer, clipEl);
+                  }
                   if (layer.type === 'audio') renderAudioClipWaveform(layer, clipEl);
                   const curTrimEndSec = (layer.startSec !== undefined ? layer.startSec : (layer.startPx / activePps)) + (layer.durationSec || 0);
                   if (curTrimEndSec > lastGeneratedDuration) {
@@ -33754,7 +33783,13 @@
                   layer.durationSec = Math.max(1 / fps, Math.round(layer.durationSec * fps) / fps);
                   layer.widthPx = Math.max(minWidth, Math.round(layer.durationSec * pps));
                   clipEl.style.width = `${layer.widthPx}px`;
+                  if (typeof syncLayerKeyframeMarkersInPlace === 'function') {
+                    syncLayerKeyframeMarkersInPlace(layer);
+                  } else {
+                    renderLayerKeyframes(layer, clipEl);
+                  }
                   if (layer.type === 'audio') renderAudioClipWaveform(layer, clipEl);
+                  if (typeof updateCutBarRowState === 'function') updateCutBarRowState();
 
                   invalidatePreviewCacheForLayer(layer, initialStartSec, initialEndSec);
                   redrawComposition();
@@ -33942,6 +33977,7 @@
                       const newGlobalStartPx = Math.round((parentStartSec + child.startSec) * pps);
                       childClipEl.style.left = `${newGlobalStartPx}px`;
                       childClipEl.style.width = `${child.widthPx}px`;
+                      renderLayerKeyframes(child, childClipEl);
 
                       layer._dirty = true;
                       if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
@@ -33981,6 +34017,7 @@
                       child.durationSec = Number(newDurSec.toFixed(3));
                       child.widthPx = Math.round(child.durationSec * pps);
                       childClipEl.style.width = `${child.widthPx}px`;
+                      renderLayerKeyframes(child, childClipEl);
 
                       layer._dirty = true;
                       if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
@@ -34187,11 +34224,16 @@
                   const scrollDelta = layersViewport ? (layersViewport.scrollTop - startScrollTop) : 0;
                   let rawDeltaY = (lastPointerClientY - startY) + scrollDelta;
 
+                  const isMobileVp = window.innerWidth <= 600;
+                  const rowPitch = (allLanes.length >= 2)
+                    ? Math.max(24, Math.round(allLanes[1].offsetTop - allLanes[0].offsetTop))
+                    : (isMobileVp ? 40 : 54);
+
                   // Constrain deltaY strictly within existing layer boundaries:
                   const minMovingIdx = movingIndices.length > 0 ? movingIndices[0] : originalIndex;
                   const maxMovingIdx = movingIndices.length > 0 ? movingIndices[movingIndices.length - 1] : originalIndex;
-                  const minDeltaY = -minMovingIdx * 54;
-                  const maxDeltaY = (layers.length - 1 - maxMovingIdx) * 54;
+                  const minDeltaY = -minMovingIdx * rowPitch;
+                  const maxDeltaY = (layers.length - 1 - maxMovingIdx) * rowPitch;
                   const clampedDeltaY = Math.max(minDeltaY - 10, Math.min(maxDeltaY + 10, rawDeltaY));
 
                   // 1. Visually translate all moving pills, track lanes, and left pill slots simultaneously
@@ -34202,7 +34244,7 @@
                   // 2. Calculate targeted drop position:
                   const vpRect = layersViewport ? layersViewport.getBoundingClientRect() : { top: 0 };
                   const vpY = lastPointerClientY - vpRect.top + (layersViewport ? layersViewport.scrollTop : 0);
-                  const dropIdx = Math.max(0, Math.min(layers.length, Math.round(vpY / 54)));
+                  const dropIdx = Math.max(0, Math.min(layers.length, Math.round(vpY / rowPitch)));
                   currentDropIdx = dropIdx;
 
                   // 3. Animate other lanes sliding up or down to make room
@@ -34224,7 +34266,7 @@
                     const movingAbove = movingIndices.filter(mIdx => mIdx < idx).length;
                     const remIdx = idx - movingAbove;
                     const shiftRows = (remIdx < insertIdx) ? -movingAbove : (movingCount - movingAbove);
-                    const shift = shiftRows * 54;
+                    const shift = shiftRows * rowPitch;
 
                     otherLane.style.transform = shift ? `translateY(${shift}px)` : '';
                     if (allLeftSlots[idx]) allLeftSlots[idx].style.transform = shift ? `translateY(${shift}px)` : '';
@@ -34453,7 +34495,8 @@
           if (lanes && lanes[r]) {
             return lanes[r].offsetTop + lanes[r].offsetHeight / 2;
           }
-          return r * 54 + 22;
+          const isMobileVp = window.innerWidth <= 600;
+          return r * (isMobileVp ? 40 : 54) + (isMobileVp ? 17 : 22);
         }
 
         // 1. Group child layers by parentId
@@ -40304,6 +40347,7 @@
             addEffectParamKeyframe(adj, warpFx, 'waveHeight', curTime, 228, [0.0, -5.0, 0.1, 1.0]);
             addEffectParamKeyframe(adj, warpFx, 'waveHeight', curTime + dur, 0, [0.0, -5.0, 0.1, 1.0]);
           }
+          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(adj);
           selectTimelineLayer(adj.id, false);
           if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
           if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
@@ -40324,6 +40368,7 @@
             addEffectParamKeyframe(adj, hueFx, 'hue', curTime, 0, [0.0, 0.0, 1.0, 1.0]);
             addEffectParamKeyframe(adj, hueFx, 'hue', curTime + dur, 360, [0.0, 0.0, 1.0, 1.0]);
           }
+          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(adj);
           selectTimelineLayer(adj.id, false);
           if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
           if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
@@ -40358,6 +40403,7 @@
               addEffectParamKeyframe(mwAdj, ww2, 'waveHeight', curTime, 100, [0.001, 0.001, 0.75, 0.17]);
               addEffectParamKeyframe(mwAdj, ww2, 'waveHeight', mwStart + mwDur, 0, [0.75, 0.17, 1.0, 1.0]);
             }
+            if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(mwAdj);
           }
 
           const wpDur = 63 * fd;
@@ -40372,6 +40418,7 @@
               addEffectParamKeyframe(wpAdj, warpFx, 'waveHeight', curTime, 228, [0.0, -5.0, 0.1, 1.0]);
               addEffectParamKeyframe(wpAdj, warpFx, 'waveHeight', curTime + wpDur, 0, [0.0, -5.0, 0.1, 1.0]);
             }
+            if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(wpAdj);
           }
 
           const ghDur = 125 * fd;
@@ -40385,6 +40432,7 @@
             addEffectParamKeyframe(ghAdj, tfFx || { id: 'tf' }, 'scale', curTime + ghDur, 250, [0.0, 0.1, 0.0, 0.95]);
             addLayerPropKeyframe(ghAdj, 'opacity', curTime, { opacity: 1.0 }, [0.0, 0.1, 0.0, 0.95]);
             addLayerPropKeyframe(ghAdj, 'opacity', curTime + ghDur, { opacity: 0.0 }, [0.0, 0.1, 0.0, 0.95]);
+            if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(ghAdj);
           }
 
           const hsDur = 70 * fd;
@@ -40398,6 +40446,7 @@
               addEffectParamKeyframe(hsAdj, hueFx, 'hue', curTime, 0, [0.0, 0.0, 1.0, 1.0]);
               addEffectParamKeyframe(hsAdj, hueFx, 'hue', curTime + hsDur, 360, [0.0, 0.0, 1.0, 1.0]);
             }
+            if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(hsAdj);
           }
 
           if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
@@ -40448,6 +40497,7 @@
             addLayerPropKeyframe(layer, 'scale', Math.max(inP, outP - dur), { scaleW: origScaleW, scaleH: origScaleH }, f9);
             addLayerPropKeyframe(layer, 'scale', outP, { scaleW: 0, scaleH: 0 }, f9);
           }
+          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
         });
 
         if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
@@ -40485,6 +40535,7 @@
                 tintFx.mapWhiteTo = randomHex;
                 adj.effects.push(tintFx);
               }
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(adj);
               showEditorToast('CF Colorize dibuat (Adjustment Layer)');
             }
             break;
@@ -40496,6 +40547,7 @@
               adj.effects = adj.effects || [];
               const scanFx = reg ? reg.createInstance('scanline', 'Scanline') : null;
               if (scanFx) adj.effects.push(scanFx);
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(adj);
               showEditorToast('CF Scanline dibuat (Adjustment Layer)');
             }
             break;
@@ -40507,6 +40559,7 @@
               adj.effects = adj.effects || [];
               const monoFx = reg ? reg.createInstance('mono', 'Black & White') : null;
               if (monoFx) adj.effects.push(monoFx);
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(adj);
               showEditorToast('CF Mono dibuat (Adjustment Layer)');
             }
             break;
@@ -40518,6 +40571,7 @@
               sol.effects = sol.effects || [];
               const sbFx = reg ? reg.createInstance('star_burst', 'Star Burst') : null;
               if (sbFx) sol.effects.push(sbFx);
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(sol);
               showEditorToast('CF Starburst dibuat (Solid Layer)');
             }
             break;
@@ -40529,6 +40583,7 @@
               sol.effects = sol.effects || [];
               const gridFx = reg ? reg.createInstance('grid', 'Grid') : null;
               if (gridFx) sol.effects.push(gridFx);
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(sol);
               showEditorToast('CF Grid dibuat (Solid Layer)');
             }
             break;
@@ -40541,6 +40596,7 @@
               sol.effects = sol.effects || [];
               const radFx = reg ? reg.createInstance('radio_waves', 'Radio Waves') : null;
               if (radFx) sol.effects.push(radFx);
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(sol);
               showEditorToast('CF Radio dibuat (Solid Layer)');
             }
             break;
@@ -40550,6 +40606,7 @@
               l.effects = l.effects || [];
               const fx = reg ? reg.createInstance('glow_aura', 'Glow Aura') : null;
               if (fx) l.effects.push(fx);
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(l);
             });
             showEditorToast('CF Glow Aura diterapkan pada layer');
             break;
@@ -40559,6 +40616,7 @@
               l.effects = l.effects || [];
               const fx = reg ? reg.createInstance('solid_aura', 'Solid Aura') : null;
               if (fx) l.effects.push(fx);
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(l);
             });
             showEditorToast('CF Solid Aura diterapkan pada layer');
             break;
@@ -40568,6 +40626,7 @@
               l.effects = l.effects || [];
               const fx = reg ? reg.createInstance('shatter', 'Shatter') : null;
               if (fx) l.effects.push(fx);
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(l);
             });
             showEditorToast('CF Shatter Simple diterapkan');
             break;
@@ -40580,6 +40639,7 @@
                 fx.gravity = 0;
                 l.effects.push(fx);
               }
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(l);
             });
             showEditorToast('CF Shatter Slow diterapkan');
             break;
@@ -40591,6 +40651,7 @@
               if (bev) l.effects.push(bev);
               const drop = reg ? reg.createInstance('drop_shadow', 'Drop Shadow') : null;
               if (drop) l.effects.push(drop);
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(l);
             });
             showEditorToast('CF Drop Bevel diterapkan');
             break;
@@ -40605,11 +40666,8 @@
         return true;
       }
 
-      function executeFishTool(toolName, ...args) {
+      function _editorExecuteFishToolInternal(toolName, ...args) {
         if (!toolName) return false;
-        if (typeof window.executeFishTool === 'function' && window.executeFishTool !== executeFishTool) {
-          return window.executeFishTool(toolName, ...args);
-        }
 
         const res = (currentProjectState && currentProjectState.resolution) || '1080p';
         const aspect = (currentProjectState && currentProjectState.aspectRatio) || '16:9';
@@ -41123,6 +41181,12 @@
           // --- VELOCITY ---
           case 'TWIX':
           case 'TMRE': {
+            if (toolName === 'TWIX' && typeof window.applyTwixtorVelocity === 'function') {
+              return window.applyTwixtorVelocity();
+            }
+            if (toolName === 'TMRE' && typeof window.applyTimeRemapVelocity === 'function') {
+              return window.applyTimeRemapVelocity();
+            }
             const targets = getSelectedLayersForFishTool();
             if (!targets.length) {
               const label = toolName === 'TWIX' ? 'Twixtor' : 'Time Remapping';
@@ -41137,7 +41201,9 @@
             } else {
               showEditorToast('Twixtor Speed Ramping diterapkan');
             }
+            if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(targetLayer);
             if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+            if (typeof redrawComposition === 'function') redrawComposition('velocity');
             return true;
           }
 
@@ -41168,7 +41234,11 @@
           }
 
           // --- 3D GENERATOR & CUBE GENERATOR ---
+          case 'CUBE':
           case 'CREATE_CUBE': {
+            if (typeof window.createProceduralCube === 'function') {
+              return window.createProceduralCube(args[0], args[1], args[2], args[3]);
+            }
             const opts = args[0] || {};
             if (opts.useLayer) {
               const targets = getSelectedLayersForFishTool();
@@ -41215,6 +41285,21 @@
           case 'GEN_3D_BINDER':
           case 'GEN_3D_GLASSES':
           case 'GEN_3D_MC': {
+            if (toolName === 'GEN_3D_2SPLIT' && typeof window.createProcedural2Split === 'function') {
+              return window.createProcedural2Split();
+            }
+            if (toolName === 'GEN_3D_3SPLIT' && typeof window.createProcedural3Split === 'function') {
+              return window.createProcedural3Split();
+            }
+            if (toolName === 'GEN_3D_TUNNEL' && typeof window.createProceduralTunnel === 'function') {
+              return window.createProceduralTunnel();
+            }
+            if (toolName === 'GEN_3D_MC' && typeof window.createProceduralMC === 'function') {
+              return window.createProceduralMC();
+            }
+            if (typeof window.createProcedural3D === 'function') {
+              return window.createProcedural3D(toolName.replace('GEN_3D_', ''));
+            }
             const targets = getSelectedLayersForFishTool();
             if (targets.length) {
               if (typeof addEffectToLayer === 'function') addEffectToLayer('box_3d');
@@ -41235,6 +41320,21 @@
             return true;
           }
         }
+      }
+
+      function executeFishTool(toolName, ...args) {
+        if (!toolName) return false;
+        const pcm = window.PreviewCacheManager;
+        const beforeSnap = (pcm && typeof pcm.captureStateSnapshot === 'function') ? pcm.captureStateSnapshot() : null;
+        const result = _editorExecuteFishToolInternal(toolName, ...args);
+        if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
+          const changed = pcm.invalidateSmartDiff(beforeSnap);
+          if (changed) {
+            if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
+            if (typeof redrawComposition === 'function') redrawComposition('smartCache:' + String(toolName));
+          }
+        }
+        return result;
       }
       window.executeFishTool = executeFishTool;
       window.applyCutefishEffect = applyCutefishEffect;

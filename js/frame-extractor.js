@@ -55,15 +55,321 @@
     });
   }
 
+  /**
+   * Detect Safari major version (0 if not Safari). WebCodecs in Safari < 17 has worker/decoder bugs.
+   */
+  function getSafariMajorVersion() {
+    if (typeof navigator === 'undefined' || !navigator.userAgent) return 0;
+    const ua = navigator.userAgent;
+    if (!/Safari\//.test(ua) || /Chrome\/|Chromium\/|EdgA\/|FxiOS\//.test(ua)) return 0;
+    const m = ua.match(/Version\/(\d+)\./);
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  /**
+   * Fast ISO-BMFF / MP4 / MOV Demuxer for WebCodecs Hardware Batch Extraction
+   * Supports moov at start or end of file, 64-bit box sizes, stts (DTS), ctts (B-frame PTS offsets), and stss (keyframes).
+   */
+  class FastMP4Demuxer {
+    constructor(arrayBuffer) {
+      this.buffer = arrayBuffer;
+      this.view = new DataView(arrayBuffer);
+      this.videoTrack = null;
+      this._parse();
+    }
+
+    _parse() {
+      let offset = 0;
+      const len = this.buffer.byteLength;
+      while (offset + 8 <= len) {
+        const size = this.view.getUint32(offset);
+        const type = this._readString(offset + 4, 4);
+        let boxSize = size;
+        let headerSize = 8;
+        if (size === 1) {
+          if (offset + 16 > len) break;
+          boxSize = Number(this.view.getBigUint64(offset + 8));
+          headerSize = 16;
+        } else if (size === 0) {
+          boxSize = len - offset;
+        }
+        if (boxSize < headerSize || offset + boxSize > len) break;
+
+        if (type === 'moov') {
+          this._parseMoov(offset + headerSize, offset + boxSize);
+          if (this.videoTrack) break;
+        }
+        offset += boxSize;
+      }
+    }
+
+    _parseMoov(start, end) {
+      for (const box of this._findSubBoxes(start, end)) {
+        if (box.type === 'trak') {
+          const track = this._parseTrak(box.start, box.end);
+          if (track && track.isVideo && track.samples && track.samples.length > 0) {
+            this.videoTrack = track;
+            break;
+          }
+        }
+      }
+    }
+
+    _parseTrak(start, end) {
+      const trakBoxes = this._findSubBoxes(start, end);
+      const mdiaBox = trakBoxes.find(b => b.type === 'mdia');
+      if (!mdiaBox) return null;
+
+      let timescale = 1000;
+      let isVideo = false;
+      let stblBox = null;
+
+      for (const box of this._findSubBoxes(mdiaBox.start, mdiaBox.end)) {
+        if (box.type === 'mdhd' && box.start + 16 <= box.end) {
+          const version = this.view.getUint8(box.start);
+          timescale = (version === 1 && box.start + 24 <= box.end)
+            ? this.view.getUint32(box.start + 20)
+            : this.view.getUint32(box.start + 12);
+        } else if (box.type === 'hdlr' && box.start + 12 <= box.end) {
+          const handlerType = this._readString(box.start + 8, 4);
+          if (handlerType === 'vide') isVideo = true;
+        } else if (box.type === 'minf') {
+          const minfBoxes = this._findSubBoxes(box.start, box.end);
+          stblBox = minfBoxes.find(b => b.type === 'stbl');
+        }
+      }
+
+      if (!isVideo || !stblBox || !timescale) return null;
+      return this._parseStbl(stblBox.start, stblBox.end, timescale);
+    }
+
+    _parseStbl(start, end, timescale) {
+      const boxes = this._findSubBoxes(start, end);
+      let codec = null;
+      let width = 0, height = 0;
+      let description = null;
+      const sampleDurations = [];
+      const compositionOffsets = [];
+      let hasCtts = false;
+      let keyframeIndexes = null;
+      const sampleSizes = [];
+      const chunkOffsets = [];
+      const sampleToChunk = [];
+
+      for (const box of boxes) {
+        const p = box.start;
+        if (box.type === 'stsd' && p + 8 <= box.end) {
+          const entryCount = this.view.getUint32(p + 4);
+          if (entryCount > 0 && p + 16 <= box.end) {
+            const entryStart = p + 8;
+            const entrySize = this.view.getUint32(entryStart);
+            const format = this._readString(entryStart + 4, 4);
+            if (entryStart + 36 <= box.end) {
+              width = this.view.getUint16(entryStart + 32);
+              height = this.view.getUint16(entryStart + 34);
+            }
+            const subBoxStart = entryStart + 86;
+            const subBoxEnd = Math.min(box.end, entryStart + entrySize);
+            if (subBoxStart + 8 <= subBoxEnd) {
+              const subBoxes = this._findSubBoxes(subBoxStart, subBoxEnd);
+              const codecBox = subBoxes.find(b => b.type === 'avcC' || b.type === 'hvcC' || b.type === 'vpcC' || b.type === 'av1C');
+              if (codecBox && codecBox.end > codecBox.start) {
+                description = new Uint8Array(this.buffer.slice(codecBox.start, codecBox.end));
+                if (codecBox.type === 'avcC' && (codecBox.end - codecBox.start) >= 4) {
+                  const profile = this.view.getUint8(codecBox.start + 1).toString(16).padStart(2, '0');
+                  const compat = this.view.getUint8(codecBox.start + 2).toString(16).padStart(2, '0');
+                  const level = this.view.getUint8(codecBox.start + 3).toString(16).padStart(2, '0');
+                  codec = `avc1.${profile}${compat}${level}`;
+                } else if (codecBox.type === 'hvcC') {
+                  codec = format === 'hev1' ? 'hev1.1.6.L93.B0' : 'hvc1.1.6.L93.B0';
+                } else if (codecBox.type === 'vpcC') {
+                  codec = 'vp09.00.10.08';
+                } else if (codecBox.type === 'av1C') {
+                  codec = 'av01.0.04M.08';
+                }
+              }
+            }
+          }
+        } else if (box.type === 'stts' && p + 8 <= box.end) {
+          const count = this.view.getUint32(p + 4);
+          let ptr = p + 8;
+          for (let i = 0; i < count && ptr + 8 <= box.end; i++) {
+            const sCount = this.view.getUint32(ptr);
+            const sDelta = this.view.getUint32(ptr + 4);
+            ptr += 8;
+            for (let j = 0; j < sCount; j++) {
+              sampleDurations.push(sDelta);
+            }
+          }
+        } else if (box.type === 'ctts' && p + 8 <= box.end) {
+          hasCtts = true;
+          const version = this.view.getUint8(p);
+          const count = this.view.getUint32(p + 4);
+          let ptr = p + 8;
+          for (let i = 0; i < count && ptr + 8 <= box.end; i++) {
+            const sCount = this.view.getUint32(ptr);
+            const sOffset = version === 1 ? this.view.getInt32(ptr + 4) : this.view.getUint32(ptr + 4);
+            ptr += 8;
+            for (let j = 0; j < sCount; j++) {
+              compositionOffsets.push(sOffset);
+            }
+          }
+        } else if (box.type === 'stss' && p + 8 <= box.end) {
+          const count = this.view.getUint32(p + 4);
+          keyframeIndexes = new Set();
+          let ptr = p + 8;
+          for (let i = 0; i < count && ptr + 4 <= box.end; i++) {
+            keyframeIndexes.add(this.view.getUint32(ptr) - 1);
+            ptr += 4;
+          }
+        } else if (box.type === 'stsz' && p + 12 <= box.end) {
+          const uniformSize = this.view.getUint32(p + 4);
+          const count = this.view.getUint32(p + 8);
+          let ptr = p + 12;
+          for (let i = 0; i < count; i++) {
+            sampleSizes.push(uniformSize || (ptr + 4 <= box.end ? this.view.getUint32(ptr) : 0));
+            if (!uniformSize) ptr += 4;
+          }
+        } else if (box.type === 'stsc' && p + 8 <= box.end) {
+          const count = this.view.getUint32(p + 4);
+          let ptr = p + 8;
+          for (let i = 0; i < count && ptr + 12 <= box.end; i++) {
+            sampleToChunk.push({
+              firstChunk: this.view.getUint32(ptr),
+              samplesPerChunk: this.view.getUint32(ptr + 4),
+              sampleDescIdx: this.view.getUint32(ptr + 8)
+            });
+            ptr += 12;
+          }
+        } else if (box.type === 'stco' && p + 8 <= box.end) {
+          const count = this.view.getUint32(p + 4);
+          let ptr = p + 8;
+          for (let i = 0; i < count && ptr + 4 <= box.end; i++) {
+            chunkOffsets.push(this.view.getUint32(ptr));
+            ptr += 4;
+          }
+        } else if (box.type === 'co64' && p + 8 <= box.end) {
+          const count = this.view.getUint32(p + 4);
+          let ptr = p + 8;
+          for (let i = 0; i < count && ptr + 8 <= box.end; i++) {
+            chunkOffsets.push(Number(this.view.getBigUint64(ptr)));
+            ptr += 8;
+          }
+        }
+      }
+
+      if (!codec || sampleSizes.length === 0 || chunkOffsets.length === 0) return null;
+
+      let curDts = 0;
+      let minCts = Infinity;
+      const rawCtsList = new Float64Array(sampleSizes.length);
+      for (let i = 0; i < sampleSizes.length; i++) {
+        const dur = sampleDurations[i] !== undefined ? sampleDurations[i] : (sampleDurations[0] || 1);
+        const ctsOffset = hasCtts && compositionOffsets[i] !== undefined ? compositionOffsets[i] : 0;
+        const cts = curDts + ctsOffset;
+        rawCtsList[i] = cts;
+        if (cts < minCts) minCts = cts;
+        curDts += dur;
+      }
+      if (!isFinite(minCts)) minCts = 0;
+
+      const samples = [];
+      let chunkIdx = 0;
+      let sampleInChunk = 0;
+      let curChunkOffset = chunkOffsets[0] || 0;
+      let stscIdx = 0;
+      curDts = 0;
+
+      for (let i = 0; i < sampleSizes.length; i++) {
+        const isKey = keyframeIndexes ? keyframeIndexes.has(i) : (i === 0);
+        const size = sampleSizes[i];
+        const dur = sampleDurations[i] !== undefined ? sampleDurations[i] : (sampleDurations[0] || 1);
+        const ptsSec = Math.max(0, (rawCtsList[i] - minCts) / timescale);
+        const dtsSec = curDts / timescale;
+
+        while (stscIdx + 1 < sampleToChunk.length && (chunkIdx + 1) >= sampleToChunk[stscIdx + 1].firstChunk) {
+          stscIdx++;
+        }
+        const samplesPerChunk = sampleToChunk[stscIdx] ? sampleToChunk[stscIdx].samplesPerChunk : 1;
+
+        if (curChunkOffset + size <= this.buffer.byteLength && size > 0) {
+          samples.push({
+            index: i,
+            offset: curChunkOffset,
+            size: size,
+            pts: ptsSec,
+            dts: dtsSec,
+            duration: dur / timescale,
+            isKey: isKey
+          });
+        }
+
+        curChunkOffset += size;
+        sampleInChunk++;
+        if (sampleInChunk >= samplesPerChunk) {
+          chunkIdx++;
+          sampleInChunk = 0;
+          curChunkOffset = chunkOffsets[chunkIdx] || 0;
+        }
+        curDts += dur;
+      }
+
+      return {
+        isVideo: true,
+        codec: codec,
+        width: width || 1920,
+        height: height || 1080,
+        description: description,
+        timescale: timescale,
+        duration: curDts / timescale,
+        samples: samples
+      };
+    }
+
+    _findSubBoxes(start, end) {
+      const boxes = [];
+      let offset = start;
+      while (offset + 8 <= end) {
+        const size = this.view.getUint32(offset);
+        const type = this._readString(offset + 4, 4);
+        let boxSize = size;
+        let headerSize = 8;
+        if (size === 1) {
+          if (offset + 16 > end) break;
+          boxSize = Number(this.view.getBigUint64(offset + 8));
+          headerSize = 16;
+        } else if (size === 0) {
+          boxSize = end - offset;
+        }
+        if (boxSize < headerSize || offset + boxSize > end) break;
+        boxes.push({ type, start: offset + headerSize, end: offset + boxSize });
+        offset += boxSize;
+      }
+      return boxes;
+    }
+
+    _readString(offset, length) {
+      let str = '';
+      for (let i = 0; i < length; i++) {
+        str += String.fromCharCode(this.view.getUint8(offset + i));
+      }
+      return str;
+    }
+  }
+
   class VideoFrameExtractor {
     constructor() {
-      // sourceKey -> { sourceKey, dataUrl, frames: Map<frameIdx, ImageBitmap>, cachedFrameIndices: Set<number>, fps, width, height, duration, isExtracting, isDbLoaded, dbLoadPromise, activeVideo, pendingFrames: Set<frameIdx>, _fetchingFrames: Set<number> }
+      // sourceKey -> { sourceKey, dataUrl, frames: Map<frameIdx, ImageBitmap>, cachedFrameIndices: Set<number>, fps, width, height, duration, isExtracting, isDbLoaded, dbLoadPromise, activeVideo, activeVideos, activeDecoder, pendingFrames: Set<frameIdx>, _fetchingFrames: Set<number> }
       this.sources = new Map();
       this._targetFps = 60;
       this.maxRamFrames = 600; // 10 seconds of 60 FPS lookahead frames in RAM
       this._db = null;
       this._dbPromise = null;
       this._saveQueue = [];
+      this._blobEncodeQueue = [];
+      this._isDrainingBlobQueue = false;
+      this._dbEncodeCanvas = null;
+      this._dbEncodeCtx = null;
       this._flushTimer = null;
       this._rafProgressBarScheduled = false;
 
@@ -98,7 +404,7 @@
       if (window.isTimelinePlaying) return true;
       if (window.isTimelineScrubbing || window.isTimelinePanning) return true;
       if (window.isUserInteracting) return true;
-      if (window._lastUserInteractionTime && (Date.now() - window._lastUserInteractionTime < 300)) {
+      if (window._lastUserInteractionTime && (Date.now() - window._lastUserInteractionTime < 180)) {
         return true;
       }
       return false;
@@ -149,11 +455,14 @@
 
       let worstIdx = -1;
       let worstScore = -1;
+      const hardOverflow = source.frames.size > (this.maxRamFrames + 150);
 
-      for (const fIdx of source.frames.keys()) {
+      for (const [fIdx, bmp] of source.frames.entries()) {
         if (fIdx === protectIdx) continue;
         // Never evict frame 0: it is the primary opening anchor for the layer
         if (fIdx === 0 && source.frames.size > 1) continue;
+        // Protect frames still awaiting background IndexedDB WebP encoding unless far above hard limit
+        if (bmp && bmp._pendingDbEncode && !hardOverflow) continue;
 
         let score;
         if (fIdx < curFIdx) {
@@ -174,10 +483,36 @@
       if (worstIdx !== -1) {
         const bmp = source.frames.get(worstIdx);
         source.frames.delete(worstIdx);
-        if (bmp && typeof bmp.close === 'function') {
+        if (bmp && !bmp._pendingDbEncode && typeof bmp.close === 'function') {
           try { bmp.close(); } catch (_) {}
         }
       }
+    }
+
+    _cleanupSourceDecoders(source) {
+      if (!source) return;
+      if (source.activeDecoder) {
+        try {
+          if (source.activeDecoder.state !== 'closed') source.activeDecoder.close();
+        } catch (_) {}
+        source.activeDecoder = null;
+      }
+      const videosToClean = [];
+      if (source.activeVideo) videosToClean.push(source.activeVideo);
+      if (Array.isArray(source.activeVideos)) {
+        for (const v of source.activeVideos) {
+          if (v && !videosToClean.includes(v)) videosToClean.push(v);
+        }
+      }
+      for (const v of videosToClean) {
+        try {
+          v.removeAttribute('src');
+          v.load();
+          if (v.parentNode) v.parentNode.removeChild(v);
+        } catch (_) {}
+      }
+      source.activeVideo = null;
+      source.activeVideos = null;
     }
 
     isAnySourceExtracting() {
@@ -233,22 +568,14 @@
         this._flushTimer = null;
       }
       this._saveQueue = [];
+      this._blobEncodeQueue = [];
       for (const source of this.sources.values()) {
-        if (source.activeVideo) {
-          try {
-            source.activeVideo.removeAttribute('src');
-            source.activeVideo.load();
-            if (source.activeVideo.parentNode) {
-              source.activeVideo.parentNode.removeChild(source.activeVideo);
-            }
-          } catch (_) {}
-          source.activeVideo = null;
-        }
         source.isExtracting = false;
+        this._cleanupSourceDecoders(source);
         if (source.frames) {
           for (const bmp of source.frames.values()) {
             if (bmp && typeof bmp.close === 'function') {
-              bmp.close();
+              try { bmp.close(); } catch (_) {}
             }
           }
           source.frames.clear();
@@ -278,6 +605,93 @@
       return this._dbPromise;
     }
 
+    /**
+     * Queue an extracted ImageBitmap for non-blocking background WebP encoding and IndexedDB storage.
+     * Decouples CPU-heavy WebP compression from the real-time frame extraction pipeline.
+     */
+    _queueBitmapForDB(sourceKey, frameIdx, bmp, fps = this.targetFps) {
+      if (!sourceKey || !bmp) return;
+      bmp._pendingDbEncode = true;
+      this._blobEncodeQueue.push({
+        sourceKey,
+        frameIdx,
+        bmp,
+        fps: fps || this.targetFps
+      });
+      this._scheduleBlobEncodeDrain();
+    }
+
+    _scheduleBlobEncodeDrain() {
+      if (this._isDrainingBlobQueue || this._blobEncodeQueue.length === 0) return;
+      this._isDrainingBlobQueue = true;
+
+      const processNextBatch = async () => {
+        try {
+          while (this._blobEncodeQueue.length > 0) {
+            if (this._isUserInteracting() && this._blobEncodeQueue.length < 240) {
+              await new Promise(r => setTimeout(r, 40));
+            }
+            const batch = this._blobEncodeQueue.splice(0, 6);
+            for (const item of batch) {
+              const { sourceKey, frameIdx, bmp, fps } = item;
+              if (!bmp) continue;
+              const source = this.sources.get(sourceKey);
+              if (!source) {
+                bmp._pendingDbEncode = false;
+                continue;
+              }
+              try {
+                const w = bmp.width || source.width || 640;
+                const h = bmp.height || source.height || 360;
+                if (!this._dbEncodeCanvas) {
+                  if (typeof OffscreenCanvas !== 'undefined') {
+                    this._dbEncodeCanvas = new OffscreenCanvas(w, h);
+                  } else {
+                    this._dbEncodeCanvas = document.createElement('canvas');
+                  }
+                  this._dbEncodeCtx = this._dbEncodeCanvas.getContext('2d', { alpha: false });
+                }
+                if (this._dbEncodeCanvas.width !== w || this._dbEncodeCanvas.height !== h) {
+                  this._dbEncodeCanvas.width = w;
+                  this._dbEncodeCanvas.height = h;
+                }
+                if (this._dbEncodeCtx) {
+                  this._dbEncodeCtx.drawImage(bmp, 0, 0, w, h);
+                  let blob = null;
+                  if (typeof this._dbEncodeCanvas.convertToBlob === 'function') {
+                    blob = await this._dbEncodeCanvas.convertToBlob({ type: 'image/webp', quality: 0.72 });
+                  } else if (typeof this._dbEncodeCanvas.toBlob === 'function') {
+                    blob = await new Promise(res => this._dbEncodeCanvas.toBlob(res, 'image/webp', 0.72));
+                  }
+                  if (blob && this.sources.has(sourceKey)) {
+                    this._queueFrameSave(sourceKey, frameIdx, blob, fps);
+                  }
+                }
+              } catch (_) {
+              } finally {
+                bmp._pendingDbEncode = false;
+                if (source && source.frames && !source.frames.has(frameIdx) && typeof bmp.close === 'function') {
+                  try { bmp.close(); } catch (_) {}
+                } else if (source && source.frames && source.frames.size > this.maxRamFrames) {
+                  this._evictOldestFrame(source);
+                }
+              }
+            }
+            await yieldToUI();
+          }
+        } finally {
+          this._isDrainingBlobQueue = false;
+          this._flushSaveQueue();
+        }
+      };
+
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(() => processNextBatch(), { timeout: 120 });
+      } else {
+        setTimeout(processNextBatch, 16);
+      }
+    }
+
     _queueFrameSave(sourceKey, frameIdx, blob, fps = this.targetFps) {
       if (!sourceKey || blob == null) return;
       const effectiveFps = fps || this.targetFps;
@@ -289,7 +703,7 @@
         blob: blob
       });
 
-      if (this._saveQueue.length >= 10) {
+      if (this._saveQueue.length >= 16) {
         this._flushSaveQueue();
       } else if (!this._flushTimer) {
         this._flushTimer = setTimeout(() => {
@@ -1420,7 +1834,7 @@
             cleanup();
             resolve(false);
           }
-        }, 700);
+        }, 320);
 
         const onSeek = () => {
           if (resolved) return;
@@ -1452,6 +1866,579 @@
           }
         }
       });
+    }
+
+    /**
+     * Sync discovered video duration back to matching timeline layers
+     */
+    _syncSourceDurationToLayers(source) {
+      if (!source || !(source.duration > 0) || !window.currentProjectState || !Array.isArray(window.currentProjectState.layers)) {
+        return;
+      }
+      let layerChanged = false;
+      window.currentProjectState.layers.forEach(l => {
+        if (l.type === 'video') {
+          const matches = (this._getSourceKey(l) === source.sourceKey || l.mediaId === source.sourceKey || l.id === source.sourceKey || (l.name && source.name && l.name === source.name));
+          if (matches) {
+            l.mediaDuration = source.duration;
+            if (!l._userResized && (!l.durationSec || l.durationSec < source.duration)) {
+              l.durationSec = source.duration;
+              const pps = window.currentPixelsPerSecond || 80;
+              l.widthPx = Math.round(source.duration * pps);
+              l.isDurationExplicit = true;
+              layerChanged = true;
+            }
+          }
+        }
+      });
+      if (layerChanged) {
+        if (typeof window.renderTimelineLayers === 'function') window.renderTimelineLayers();
+        if (typeof window.updateTimelineDuration === 'function') window.updateTimelineDuration(true);
+        if (typeof window.saveCurrentProjectLayers === 'function') window.saveCurrentProjectLayers();
+      }
+    }
+
+    /**
+     * Compute Playhead-Proximity tier (1 = highest priority) for a given frame index
+     */
+    _getFramePriorityTier(source, idx, anchorFrame, lookahead, lookbehind) {
+      if (source._forceExtraction) return 1;
+      if (idx >= anchorFrame && idx <= anchorFrame + lookahead) return 1;
+      if (idx >= anchorFrame - lookbehind && idx < anchorFrame) return 2;
+      if (idx > anchorFrame + lookahead) return 3;
+      return 4;
+    }
+
+    /**
+     * Claim a contiguous ascending batch of pending frame indices for a parallel video decoder worker
+     */
+    _claimContiguousFrameBatch(source, maxBatchSize = 18) {
+      if (!source.pendingFrames || source.pendingFrames.size === 0) return [];
+
+      // First purge any already-cached frames from pendingFrames
+      for (const idx of source.pendingFrames) {
+        if (source.frames && source.frames.has(idx)) {
+          source.pendingFrames.delete(idx);
+          this._notifyLayersForSource(source.sourceKey, false, idx);
+        }
+      }
+      if (source.pendingFrames.size === 0) return [];
+
+      let seedIdx = -1;
+      if (source._forceExtraction) {
+        for (const idx of source.pendingFrames) {
+          if (seedIdx === -1 || idx < seedIdx) seedIdx = idx;
+        }
+      } else {
+        const anchorFrame = this._getVideoFrameForPlayhead(source);
+        const fps = source.fps || 60;
+        const lookahead = Math.round(fps * 1.5);
+        const lookbehind = Math.round(fps * 0.75);
+        let bestTier = 99;
+        for (const idx of source.pendingFrames) {
+          const tier = this._getFramePriorityTier(source, idx, anchorFrame, lookahead, lookbehind);
+          if (tier < bestTier || (tier === bestTier && (seedIdx === -1 || idx < seedIdx))) {
+            bestTier = tier;
+            seedIdx = idx;
+          }
+        }
+      }
+
+      if (seedIdx === -1) return [];
+
+      // Collect ascending frames starting from seedIdx within a contiguous window
+      const candidates = [];
+      for (const idx of source.pendingFrames) {
+        if (idx >= seedIdx && idx <= seedIdx + maxBatchSize * 2) {
+          candidates.push(idx);
+        }
+      }
+      candidates.sort((a, b) => a - b);
+      const batch = candidates.slice(0, maxBatchSize);
+      for (const idx of batch) {
+        source.pendingFrames.delete(idx);
+      }
+      return batch;
+    }
+
+    /**
+     * Hardware-Accelerated WebCodecs Batch Stream Extractor (MP4 / MOV)
+     * Decodes GOPs in a continuous hardware pass without DOM <video> seek latency.
+     * Returns true if extraction ran via WebCodecs, false if fallback is needed.
+     */
+    async _tryWebCodecsBatchExtract(source) {
+      const safariVer = getSafariMajorVersion();
+      if (safariVer > 0 && safariVer < 17) return false;
+      if (typeof VideoDecoder === 'undefined' || typeof EncodedVideoChunk === 'undefined') return false;
+      if (!source || !source.dataUrl) return false;
+
+      let arrayBuffer = source._cachedArrayBuffer || null;
+      if (!arrayBuffer) {
+        try {
+          const res = await fetch(source.dataUrl);
+          if (!res.ok) return false;
+          arrayBuffer = await res.arrayBuffer();
+        } catch (_) {
+          return false;
+        }
+      }
+      if (!arrayBuffer || arrayBuffer.byteLength < 64) return false;
+
+      let demuxer;
+      try {
+        demuxer = new FastMP4Demuxer(arrayBuffer);
+      } catch (_) {
+        return false;
+      }
+
+      const track = demuxer.videoTrack;
+      if (!track || !track.samples || track.samples.length === 0) return false;
+
+      const config = {
+        codec: track.codec,
+        codedWidth: track.width,
+        codedHeight: track.height,
+        optimizeForLatency: true
+      };
+      if (track.description) {
+        config.description = track.description;
+      }
+
+      try {
+        const support = await VideoDecoder.isConfigSupported(config);
+        if (!support || !support.supported) {
+          return false;
+        }
+      } catch (_) {
+        return false;
+      }
+
+      // Cache buffer on source during active session to avoid re-fetching on range expansion
+      source._cachedArrayBuffer = arrayBuffer;
+
+      if (track.duration > 0 && (!source.duration || source.duration <= 0)) {
+        source.duration = track.duration;
+        this._syncSourceDurationToLayers(source);
+      }
+
+      const vw = track.width || 640;
+      const vh = track.height || 360;
+      const maxDim = 960;
+      const scale = Math.min(1, maxDim / Math.max(vw, vh));
+      const targetW = Math.max(160, Math.round(vw * scale));
+      const targetH = Math.max(90, Math.round(vh * scale));
+      source.width = targetW;
+      source.height = targetH;
+
+      let offCanvas;
+      if (typeof OffscreenCanvas !== 'undefined') {
+        offCanvas = new OffscreenCanvas(targetW, targetH);
+      } else {
+        offCanvas = document.createElement('canvas');
+        offCanvas.width = targetW;
+        offCanvas.height = targetH;
+      }
+      const offCtx = offCanvas.getContext('2d', { alpha: false });
+      if (!offCtx) return false;
+
+      const samples = track.samples;
+      // Sort samples by presentation timestamp (PTS) for accurate timeline frame -> sample lookup
+      const ptsSorted = samples.slice().sort((a, b) => a.pts - b.pts);
+      const totalSamples = samples.length;
+
+      // Pre-compute GOP boundaries in decode order: each GOP starts at a keyframe
+      const gops = [];
+      let curGop = null;
+      for (let i = 0; i < totalSamples; i++) {
+        if (samples[i].isKey || !curGop) {
+          curGop = { startIdx: i, endIdx: i };
+          gops.push(curGop);
+        } else {
+          curGop.endIdx = i;
+        }
+      }
+
+      // Binary search helper: find sample in ptsSorted active at targetTime
+      const findSampleForTime = (targetTime) => {
+        let lo = 0;
+        let hi = ptsSorted.length - 1;
+        let best = ptsSorted[0];
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          const s = ptsSorted[mid];
+          if (s.pts <= targetTime + 0.002) {
+            best = s;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        return best;
+      };
+
+      let extractedAny = false;
+
+      // Process pending frames in GOP passes until pendingFrames is empty
+      while (source.pendingFrames && source.pendingFrames.size > 0) {
+        if (!this.sources.has(source.sourceKey) || !source.isExtracting) break;
+
+        if (window.isExporting && !source._forceExtraction) {
+          await new Promise(r => setTimeout(r, 100));
+          continue;
+        }
+
+        const fps = source.fps || 60;
+        const maxDur = Math.max(0.01, (source.duration || track.duration || 3600) - 0.005);
+        const anchorFrame = this._getVideoFrameForPlayhead(source);
+        const lookahead = Math.round(fps * 1.5);
+        const lookbehind = Math.round(fps * 0.75);
+
+        // Map sampleIndex -> Array<targetIdx>
+        const sampleTargets = new Map();
+        // Map timestampUs -> sampleIndex for instant lookup in VideoDecoder output
+        const ptsUsToSampleIdx = new Map();
+
+        for (const tIdx of Array.from(source.pendingFrames)) {
+          if (source.frames && source.frames.has(tIdx)) {
+            source.pendingFrames.delete(tIdx);
+            this._notifyLayersForSource(source.sourceKey, false, tIdx);
+            continue;
+          }
+          const tSec = Math.min(maxDur, Math.max(0, tIdx / fps));
+          const sample = findSampleForTime(tSec);
+          if (!sample) continue;
+          let list = sampleTargets.get(sample.index);
+          if (!list) {
+            list = [];
+            sampleTargets.set(sample.index, list);
+            ptsUsToSampleIdx.set(Math.round(sample.pts * 1000000), sample.index);
+          }
+          list.push(tIdx);
+        }
+
+        if (sampleTargets.size === 0) break;
+
+        // Identify which GOPs contain needed samples and prioritize by Playhead-Proximity Tier
+        const activeGops = [];
+        for (const gop of gops) {
+          let maxNeededDecodeIdx = -1;
+          let bestTier = 99;
+          let minTargetIdx = Infinity;
+
+          for (let sIdx = gop.startIdx; sIdx <= gop.endIdx; sIdx++) {
+            const targets = sampleTargets.get(sIdx);
+            if (targets && targets.length > 0) {
+              if (sIdx > maxNeededDecodeIdx) maxNeededDecodeIdx = sIdx;
+              for (const tIdx of targets) {
+                const tier = this._getFramePriorityTier(source, tIdx, anchorFrame, lookahead, lookbehind);
+                if (tier < bestTier) bestTier = tier;
+                if (tIdx < minTargetIdx) minTargetIdx = tIdx;
+              }
+            }
+          }
+
+          if (maxNeededDecodeIdx !== -1) {
+            // Include up to 4 extra decode samples after maxNeededDecodeIdx within GOP to satisfy B-frame reordering refs
+            const decodeEndIdx = Math.min(gop.endIdx, maxNeededDecodeIdx + 4);
+            activeGops.push({
+              startIdx: gop.startIdx,
+              decodeEndIdx,
+              bestTier,
+              minTargetIdx
+            });
+          }
+        }
+
+        if (activeGops.length === 0) break;
+
+        activeGops.sort((a, b) => {
+          if (a.bestTier !== b.bestTier) return a.bestTier - b.bestTier;
+          return a.minTargetIdx - b.minTargetIdx;
+        });
+
+        let decoderFailed = false;
+        let outputChain = Promise.resolve();
+
+        const handleVideoFrame = (videoFrame) => {
+          outputChain = outputChain.then(async () => {
+            try {
+              if (!this.sources.has(source.sourceKey) || !source.isExtracting) {
+                videoFrame.close();
+                return;
+              }
+              const ts = videoFrame.timestamp;
+              let sIdx = ptsUsToSampleIdx.get(ts);
+              if (sIdx === undefined) {
+                // Fuzzy match within 2500us in case of rounding
+                for (const [kTs, valIdx] of ptsUsToSampleIdx.entries()) {
+                  if (Math.abs(kTs - ts) <= 2500) {
+                    sIdx = valIdx;
+                    break;
+                  }
+                }
+              }
+
+              const targets = sIdx !== undefined ? sampleTargets.get(sIdx) : null;
+              if (!targets || targets.length === 0) {
+                videoFrame.close();
+                return;
+              }
+              sampleTargets.delete(sIdx);
+
+              // Draw hardware VideoFrame once onto offCanvas, then close VideoFrame immediately
+              offCtx.drawImage(videoFrame, 0, 0, targetW, targetH);
+              videoFrame.close();
+
+              for (const tIdx of targets) {
+                if (!this.sources.has(source.sourceKey) || !source.isExtracting) break;
+                source.pendingFrames.delete(tIdx);
+                if (source.frames.has(tIdx)) continue;
+
+                const bmp = await createImageBitmap(offCanvas);
+                if (bmp) {
+                  source.frames.set(tIdx, bmp);
+                  if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
+                  source.cachedFrameIndices.add(tIdx);
+                  source._hasNewExtractedFrames = true;
+                  extractedAny = true;
+                  this._queueBitmapForDB(source.sourceKey, tIdx, bmp, source.fps);
+                  this._evictOldestFrame(source, tIdx);
+                  this._notifyLayersForSource(source.sourceKey, false, tIdx);
+                }
+              }
+            } catch (_) {
+              try { videoFrame.close(); } catch (__) {}
+            }
+          });
+        };
+
+        const decoder = new VideoDecoder({
+          output: handleVideoFrame,
+          error: () => {
+            decoderFailed = true;
+          }
+        });
+        source.activeDecoder = decoder;
+
+        try {
+          decoder.configure(config);
+        } catch (_) {
+          try { decoder.close(); } catch (__) {}
+          source.activeDecoder = null;
+          return extractedAny;
+        }
+
+        let lastEndSampleIdx = -1;
+        for (const gopSeg of activeGops) {
+          if (!this.sources.has(source.sourceKey) || !source.isExtracting || decoderFailed) break;
+
+          // If jumping non-sequentially to a different GOP, flush & re-configure cleanly
+          if (lastEndSampleIdx !== -1 && gopSeg.startIdx !== lastEndSampleIdx + 1) {
+            try {
+              await decoder.flush();
+              await outputChain;
+            } catch (_) {
+              decoderFailed = true;
+              break;
+            }
+          }
+
+          for (let sIdx = gopSeg.startIdx; sIdx <= gopSeg.decodeEndIdx; sIdx++) {
+            if (!this.sources.has(source.sourceKey) || !source.isExtracting || decoderFailed) break;
+            const s = samples[sIdx];
+            const chunkData = new Uint8Array(arrayBuffer, s.offset, s.size);
+            const chunk = new EncodedVideoChunk({
+              type: s.isKey ? 'key' : 'delta',
+              timestamp: Math.round(s.pts * 1000000),
+              duration: Math.round(s.duration * 1000000),
+              data: chunkData
+            });
+            decoder.decode(chunk);
+
+            // Respect hardware decode queue backpressure & yield smoothly to UI
+            if (decoder.decodeQueueSize > 14) {
+              while (decoder.decodeQueueSize > 6 && !decoderFailed && source.isExtracting) {
+                await yieldToUI();
+              }
+              await outputChain;
+            } else if ((sIdx - gopSeg.startIdx) % 24 === 23) {
+              await yieldToUI();
+            }
+          }
+          lastEndSampleIdx = gopSeg.decodeEndIdx;
+        }
+
+        try {
+          if (!decoderFailed && decoder.state === 'configured') {
+            await decoder.flush();
+          }
+        } catch (_) {
+          decoderFailed = true;
+        }
+        await outputChain;
+
+        try {
+          if (decoder.state !== 'closed') decoder.close();
+        } catch (_) {}
+        source.activeDecoder = null;
+
+        if (decoderFailed) {
+          break;
+        }
+      }
+
+      return extractedAny && (!source.pendingFrames || source.pendingFrames.size === 0);
+    }
+
+    /**
+     * Parallel Multi-Video Decoder Pool Fallback
+     * Uses up to 3 concurrent <video> decoders stepping through contiguous frame batches
+     * with native frame deduplication and non-blocking IndexedDB WebP persistence.
+     */
+    async _extractWithVideoPool(source, primaryVideo, targetW, targetH) {
+      const mountPool = document.getElementById('editor-video-mount-pool') || document.body;
+      const totalPending = source.pendingFrames ? source.pendingFrames.size : 0;
+      const poolSize = Math.min(3, Math.max(1, Math.ceil(totalPending / 24)));
+
+      const videos = [primaryVideo];
+      source.activeVideos = videos;
+
+      const createHelperVideo = () => new Promise(resolve => {
+        const v = document.createElement('video');
+        v.muted = true;
+        v.playsInline = true;
+        v.preload = 'auto';
+        v.style.cssText = 'position:fixed;bottom:0;right:0;width:32px;height:32px;opacity:0.01;pointer-events:none;z-index:-9999;';
+        mountPool.appendChild(v);
+        let ready = false;
+        const onReady = () => {
+          if (ready) return;
+          ready = true;
+          v.removeEventListener('loadedmetadata', onReady);
+          v.removeEventListener('canplay', onReady);
+          resolve(v);
+        };
+        v.addEventListener('loadedmetadata', onReady, { once: true });
+        v.addEventListener('canplay', onReady, { once: true });
+        v.onerror = () => onReady();
+        v.src = source.dataUrl;
+        v.load();
+        if (v.readyState >= 1) onReady();
+        setTimeout(onReady, 300);
+      });
+
+      if (poolSize > 1) {
+        const extraPromises = [];
+        for (let i = 1; i < poolSize; i++) {
+          extraPromises.push(createHelperVideo());
+        }
+        const extraVideos = await Promise.all(extraPromises);
+        for (const ev of extraVideos) {
+          if (ev && ev.videoWidth > 0) {
+            videos.push(ev);
+          } else if (ev && ev.parentNode) {
+            try { ev.parentNode.removeChild(ev); } catch (_) {}
+          }
+        }
+      }
+
+      const failedAttempts = new Map();
+
+      const runWorker = async (workerVideo) => {
+        let offCanvas = null;
+        let offCtx = null;
+        let lastDrawnVideoTime = -1;
+        let hasCanvasContent = false;
+
+        while (source.pendingFrames && source.pendingFrames.size > 0) {
+          if (!this.sources.has(source.sourceKey) || !source.isExtracting) break;
+
+          if (window.isExporting && !source._forceExtraction) {
+            await new Promise(r => setTimeout(r, 100));
+            continue;
+          }
+
+          const batch = this._claimContiguousFrameBatch(source, 18);
+          if (batch.length === 0) break;
+
+          for (const targetIdx of batch) {
+            if (!this.sources.has(source.sourceKey) || !source.isExtracting) break;
+
+            if (source.frames.has(targetIdx)) {
+              this._notifyLayersForSource(source.sourceKey, false, targetIdx);
+              continue;
+            }
+
+            if (!source._forceExtraction && this._isUserInteracting()) {
+              await yieldToUI();
+            }
+
+            const targetTime = Math.min(Math.max(0, (source.duration || 3600) - 0.01), Math.max(0, targetIdx / source.fps));
+            const seekOk = await this._seekVideo(workerVideo, targetTime);
+            const timeDiff = Math.abs(workerVideo.currentTime - targetTime);
+            const isAtEnd = (source.duration > 0 && Math.abs(workerVideo.currentTime - source.duration) < 0.1 && targetTime >= source.duration - 0.1);
+
+            if (!seekOk && timeDiff > 0.08 && !isAtEnd) {
+              const attempts = (failedAttempts.get(targetIdx) || 0) + 1;
+              failedAttempts.set(targetIdx, attempts);
+              if (attempts < 3) {
+                source.pendingFrames.add(targetIdx);
+              }
+              await yieldToUI();
+              continue;
+            }
+
+            let bmp = null;
+            if (workerVideo.videoWidth > 0) {
+              try {
+                if (!offCanvas) {
+                  if (typeof OffscreenCanvas !== 'undefined') {
+                    offCanvas = new OffscreenCanvas(targetW, targetH);
+                  } else {
+                    offCanvas = document.createElement('canvas');
+                    offCanvas.width = targetW;
+                    offCanvas.height = targetH;
+                  }
+                  offCtx = offCanvas.getContext('2d', { alpha: false });
+                }
+                if (offCtx) {
+                  // Skip redundant GPU video texture draw if video landed on the exact same presentation timestamp
+                  if (!hasCanvasContent || Math.abs(workerVideo.currentTime - lastDrawnVideoTime) >= 0.002) {
+                    offCtx.drawImage(workerVideo, 0, 0, targetW, targetH);
+                    lastDrawnVideoTime = workerVideo.currentTime;
+                    hasCanvasContent = true;
+                  }
+                  bmp = await createImageBitmap(offCanvas);
+                } else {
+                  bmp = await createImageBitmap(workerVideo);
+                }
+              } catch (_) {
+                try {
+                  bmp = await createImageBitmap(workerVideo, {
+                    resizeWidth: targetW,
+                    resizeHeight: targetH,
+                    resizeQuality: 'high'
+                  });
+                } catch (__) {}
+              }
+            }
+
+            if (bmp) {
+              source.frames.set(targetIdx, bmp);
+              if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
+              source.cachedFrameIndices.add(targetIdx);
+              source._hasNewExtractedFrames = true;
+              this._queueBitmapForDB(source.sourceKey, targetIdx, bmp, source.fps);
+              this._evictOldestFrame(source, targetIdx);
+            }
+
+            this._notifyLayersForSource(source.sourceKey, false, targetIdx);
+            await yieldToUI();
+          }
+        }
+      };
+
+      await Promise.all(videos.map(v => runWorker(v)));
     }
 
     /**
@@ -1491,6 +2478,32 @@
 
       source.isExtracting = true;
 
+      // Fast Path: Attempt WebCodecs Hardware Batch Stream Extraction first (10x-20x faster on MP4/MOV)
+      this._tryWebCodecsBatchExtract(source).then(completedViaWebCodecs => {
+        if (!this.sources.has(source.sourceKey) || !source.isExtracting) {
+          this._cleanupSourceDecoders(source);
+          return;
+        }
+        if (completedViaWebCodecs && (!source.pendingFrames || source.pendingFrames.size === 0)) {
+          source.isExtracting = false;
+          this._cleanupSourceDecoders(source);
+          this._scheduleBlobEncodeDrain();
+          this._flushSaveQueue();
+          this._notifyLayersForSource(source.sourceKey, true);
+          return;
+        }
+        // Fallback / Remaining frames: Use Parallel Multi-Video Decoder Pool
+        this._startVideoElementExtraction(source);
+      }).catch(() => {
+        if (this.sources.has(source.sourceKey) && source.isExtracting) {
+          this._startVideoElementExtraction(source);
+        }
+      });
+    }
+
+    _startVideoElementExtraction(source) {
+      if (!this.sources.has(source.sourceKey) || !source.isExtracting) return;
+
       const video = document.createElement('video');
       video.muted = true;
       video.playsInline = true;
@@ -1524,29 +2537,7 @@
         }
 
         // Auto-expand any timeline layer using this video source whose duration was clamped or cut off
-        if (source.duration > 0 && window.currentProjectState && Array.isArray(window.currentProjectState.layers)) {
-          let layerChanged = false;
-          window.currentProjectState.layers.forEach(l => {
-            if (l.type === 'video') {
-              const matches = (this._getSourceKey(l) === source.sourceKey || l.mediaId === source.sourceKey || l.id === source.sourceKey || (l.name && source.name && l.name === source.name));
-              if (matches) {
-                l.mediaDuration = source.duration;
-                if (!l._userResized && (!l.durationSec || l.durationSec < source.duration)) {
-                  l.durationSec = source.duration;
-                  const pps = window.currentPixelsPerSecond || 80;
-                  l.widthPx = Math.round(source.duration * pps);
-                  l.isDurationExplicit = true;
-                  layerChanged = true;
-                }
-              }
-            }
-          });
-          if (layerChanged) {
-            if (typeof window.renderTimelineLayers === 'function') window.renderTimelineLayers();
-            if (typeof window.updateTimelineDuration === 'function') window.updateTimelineDuration(true);
-            if (typeof window.saveCurrentProjectLayers === 'function') window.saveCurrentProjectLayers();
-          }
-        }
+        this._syncSourceDurationToLayers(source);
 
         const vw = video.videoWidth || 640;
         const vh = video.videoHeight || 360;
@@ -1558,154 +2549,11 @@
         source.width = targetW;
         source.height = targetH;
 
-        let offCanvas = null;
-        let offCtx = null;
-        const failedAttempts = new Map();
-
-        while (source.pendingFrames && source.pendingFrames.size > 0) {
-          // If source was cleared or cancelled, abort
-          if (!this.sources.has(source.sourceKey) || !source.isExtracting) break;
-
-          // Pause background extraction while exporting unless priority extraction was requested
-          if (window.isExporting && !source._forceExtraction) {
-            await new Promise(r => setTimeout(r, 120));
-            continue;
-          }
-
-          // Point 1: Auto-pause while user is actively interacting (playback, scrubbing, dragging)
-          if (!source._forceExtraction && this._isUserInteracting()) {
-            await new Promise(r => setTimeout(r, 80));
-            continue;
-          }
-
-          // Point 2: Pick next frame with Playhead-Proximity Priority
-          let targetIdx = -1;
-
-          if (source._forceExtraction) {
-            // Strictly ascending order during export cache verification
-            for (const idx of source.pendingFrames) {
-              if (targetIdx === -1 || idx < targetIdx) {
-                targetIdx = idx;
-              }
-            }
-          } else {
-            // Playhead-Proximity Priority for live interactive editing
-            const anchorFrame = this._getVideoFrameForPlayhead(source);
-            const fps = source.fps || 60;
-            const lookahead = Math.round(fps * 1.5);
-            const lookbehind = Math.round(fps * 0.75);
-
-            let bestTier = 99;
-            for (const idx of source.pendingFrames) {
-              let tier = 4;
-              if (idx >= anchorFrame && idx <= anchorFrame + lookahead) {
-                tier = 1; // Immediate forward playback window
-              } else if (idx >= anchorFrame - lookbehind && idx < anchorFrame) {
-                tier = 2; // Immediate reverse scrub window
-              } else if (idx > anchorFrame + lookahead) {
-                tier = 3; // Remaining forward frames
-              } else {
-                tier = 4; // Remaining backward frames
-              }
-
-              if (tier < bestTier) {
-                bestTier = tier;
-                targetIdx = idx;
-              } else if (tier === bestTier) {
-                if (targetIdx === -1 || idx < targetIdx) {
-                  targetIdx = idx;
-                }
-              }
-            }
-          }
-
-          source.pendingFrames.delete(targetIdx);
-
-          // If frame was already extracted, notify and continue
-          if (source.frames.has(targetIdx)) {
-            this._notifyLayersForSource(source.sourceKey, false, targetIdx);
-            continue;
-          }
-
-          const targetTime = Math.min(Math.max(0, (source.duration || 3600) - 0.01), Math.max(0, targetIdx / source.fps));
-
-          const seekOk = await this._seekVideo(video, targetTime);
-          const timeDiff = Math.abs(video.currentTime - targetTime);
-          const isAtEnd = (source.duration > 0 && Math.abs(video.currentTime - source.duration) < 0.1 && targetTime >= source.duration - 0.1);
-          if (!seekOk && timeDiff > 0.08 && !isAtEnd) {
-            const attempts = (failedAttempts.get(targetIdx) || 0) + 1;
-            failedAttempts.set(targetIdx, attempts);
-            if (attempts < 4) {
-              source.pendingFrames.add(targetIdx);
-            }
-            await yieldToUI();
-            continue;
-          }
-
-          let bmp = null;
-          if (video.videoWidth > 0) {
-            try {
-              if (!offCanvas) {
-                if (typeof OffscreenCanvas !== 'undefined') {
-                  offCanvas = new OffscreenCanvas(targetW, targetH);
-                } else {
-                  offCanvas = document.createElement('canvas');
-                  offCanvas.width = targetW;
-                  offCanvas.height = targetH;
-                }
-                offCtx = offCanvas.getContext('2d', { alpha: false });
-              }
-              if (offCtx) {
-                offCtx.drawImage(video, 0, 0, targetW, targetH);
-                bmp = await createImageBitmap(offCanvas);
-
-                if (typeof offCanvas.convertToBlob === 'function') {
-                  offCanvas.convertToBlob({ type: 'image/webp', quality: 0.75 }).then(blob => {
-                    if (blob) this._queueFrameSave(source.sourceKey, targetIdx, blob, source.fps);
-                  }).catch(() => {});
-                } else if (typeof offCanvas.toBlob === 'function') {
-                  offCanvas.toBlob(blob => {
-                    if (blob) this._queueFrameSave(source.sourceKey, targetIdx, blob, source.fps);
-                  }, 'image/webp', 0.75);
-                }
-              } else {
-                bmp = await createImageBitmap(video);
-              }
-            } catch (_) {
-              try {
-                bmp = await createImageBitmap(video, {
-                  resizeWidth: targetW,
-                  resizeHeight: targetH,
-                  resizeQuality: 'high'
-                });
-              } catch (__) {}
-            }
-          }
-
-          if (bmp) {
-            source.frames.set(targetIdx, bmp);
-            if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
-            source.cachedFrameIndices.add(targetIdx);
-            source._hasNewExtractedFrames = true;
-            this._evictOldestFrame(source, targetIdx);
-          }
-
-          // Realtime progress bar update for all layers referencing this source (throttled)
-          this._notifyLayersForSource(source.sourceKey, false, targetIdx);
-
-          // Yield smoothly to browser UI thread with minimal overhead
-          await yieldToUI();
-        }
+        await this._extractWithVideoPool(source, video, targetW, targetH);
 
         source.isExtracting = false;
-        source.activeVideo = null;
-        try {
-          video.removeAttribute('src');
-          video.load();
-        } catch (_) {}
-        if (video.parentNode) {
-          try { video.parentNode.removeChild(video); } catch (_) {}
-        }
+        this._cleanupSourceDecoders(source);
+        this._scheduleBlobEncodeDrain();
         this._flushSaveQueue();
         this._notifyLayersForSource(source.sourceKey, true);
       };
@@ -1744,6 +2592,7 @@
             if (m && m.blob) {
               const freshUrl = URL.createObjectURL(m.blob);
               source.dataUrl = freshUrl;
+              source._cachedArrayBuffer = null;
               if (m.name && !source.name) source.name = m.name;
               if (m.id && source.sourceKey.startsWith('src_')) {
                 this.sources.delete(source.sourceKey);
@@ -1775,11 +2624,8 @@
             console.warn('[VideoFrameExtractor] Video recovery failed:', e);
           }
         }
-        if (video.parentNode) {
-          try { video.parentNode.removeChild(video); } catch (_) {}
-        }
         source.isExtracting = false;
-        source.activeVideo = null;
+        this._cleanupSourceDecoders(source);
       };
 
       video.src = source.dataUrl;
@@ -1950,18 +2796,9 @@
 
       const source = this.sources.get(sourceKey);
       if (source) {
-        // 1. Immediately abort active extraction & release decoder video element
+        // 1. Immediately abort active extraction & release decoders / video elements
         source.isExtracting = false;
-        if (source.activeVideo) {
-          try {
-            source.activeVideo.removeAttribute('src');
-            source.activeVideo.load();
-            if (source.activeVideo.parentNode) {
-              source.activeVideo.parentNode.removeChild(source.activeVideo);
-            }
-          } catch (_) {}
-          source.activeVideo = null;
-        }
+        this._cleanupSourceDecoders(source);
         if (source.pendingFrames) source.pendingFrames.clear();
 
         // 2. Revert all half-rendered RAM frames
@@ -1979,6 +2816,9 @@
       }
 
       // 3. Purge queued database writes for this source
+      if (this._blobEncodeQueue && this._blobEncodeQueue.length > 0) {
+        this._blobEncodeQueue = this._blobEncodeQueue.filter(item => item.sourceKey !== sourceKey);
+      }
       if (this._saveQueue && this._saveQueue.length > 0) {
         this._saveQueue = this._saveQueue.filter(item => item.sourceKey !== sourceKey);
       }
@@ -2056,6 +2896,9 @@
         }
       }
 
+      if (this._blobEncodeQueue && this._blobEncodeQueue.length > 0) {
+        this._blobEncodeQueue = this._blobEncodeQueue.filter(item => !keysToClear.has(item.sourceKey));
+      }
       if (this._saveQueue && this._saveQueue.length > 0) {
         this._saveQueue = this._saveQueue.filter(item => !keysToClear.has(item.sourceKey));
       }
@@ -2065,16 +2908,8 @@
         if (source) {
           source.isExtracting = false;
           if (source.pendingFrames) source.pendingFrames.clear();
-          if (source.activeVideo) {
-            try {
-              source.activeVideo.removeAttribute('src');
-              source.activeVideo.load();
-              if (source.activeVideo.parentNode) {
-                source.activeVideo.parentNode.removeChild(source.activeVideo);
-              }
-            } catch (_) {}
-            source.activeVideo = null;
-          }
+          this._cleanupSourceDecoders(source);
+          source._cachedArrayBuffer = null;
           if (source.frames) {
             source.frames.forEach(bmp => {
               if (bmp && typeof bmp.close === 'function') {

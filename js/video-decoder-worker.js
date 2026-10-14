@@ -124,6 +124,8 @@ class MP4Demuxer {
     let width = 1920, height = 1080;
     let description = null;
     let sampleDurations = [];
+    let compositionOffsets = [];
+    let hasCtts = false;
     let keyframeIndexes = null;
     let sampleSizes = [];
     let chunkOffsets = [];
@@ -132,34 +134,48 @@ class MP4Demuxer {
     for (const box of boxes) {
       const p = box.start;
       if (box.type === 'stsd') {
-        // Sample Description Box
+        // Sample Description Box (FullBox: 4 bytes version/flags + 4 bytes entryCount)
         const entryCount = this.view.getUint32(p + 4);
         if (entryCount > 0) {
           const entryStart = p + 8;
+          const entrySize = this.view.getUint32(entryStart);
           const format = this._readString(entryStart + 4, 4);
-          width = this.view.getUint16(entryStart + 28);
-          height = this.view.getUint16(entryStart + 30);
+          // ISO/IEC 14496-12 VisualSampleEntry:
+          // 8 (box header) + 8 (SampleEntry) + 16 (VisualSampleEntry preamble) = 32
+          const parsedW = this.view.getUint16(entryStart + 32);
+          const parsedH = this.view.getUint16(entryStart + 34);
+          if (parsedW > 0) width = parsedW;
+          if (parsedH > 0) height = parsedH;
 
-          // Find avcC or hvcC extradata
-          const subBoxes = this._findSubBoxes(entryStart + 78, entryStart + this.view.getUint32(entryStart));
-          const avcC = subBoxes.find(b => b.type === 'avcC' || b.type === 'hvcC');
-          if (avcC) {
-            description = new Uint8Array(this.buffer, avcC.start - 8, avcC.end - avcC.start + 8);
-            if (avcC.type === 'avcC') {
-              const profile = this.view.getUint8(avcC.start + 1).toString(16).padStart(2, '0');
-              const compat = this.view.getUint8(avcC.start + 2).toString(16).padStart(2, '0');
-              const level = this.view.getUint8(avcC.start + 3).toString(16).padStart(2, '0');
-              codec = `avc1.${profile}${compat}${level}`;
-            } else {
-              codec = 'hvc1.1.6.L93.B0';
+          // Child boxes inside VisualSampleEntry start at offset 86 (8 + 8 + 70)
+          const subBoxStart = entryStart + 86;
+          const subBoxEnd = Math.min(box.end, entryStart + entrySize);
+          if (subBoxStart + 8 <= subBoxEnd) {
+            const subBoxes = this._findSubBoxes(subBoxStart, subBoxEnd);
+            const codecBox = subBoxes.find(b => b.type === 'avcC' || b.type === 'hvcC' || b.type === 'vpcC' || b.type === 'av1C');
+            if (codecBox) {
+              // WebCodecs VideoDecoder requires raw configuration record payload (excluding 8-byte box header)
+              description = new Uint8Array(this.buffer.slice(codecBox.start, codecBox.end));
+              if (codecBox.type === 'avcC' && (codecBox.end - codecBox.start) >= 4) {
+                const profile = this.view.getUint8(codecBox.start + 1).toString(16).padStart(2, '0');
+                const compat = this.view.getUint8(codecBox.start + 2).toString(16).padStart(2, '0');
+                const level = this.view.getUint8(codecBox.start + 3).toString(16).padStart(2, '0');
+                codec = `avc1.${profile}${compat}${level}`;
+              } else if (codecBox.type === 'hvcC') {
+                codec = format === 'hev1' ? 'hev1.1.6.L93.B0' : 'hvc1.1.6.L93.B0';
+              } else if (codecBox.type === 'vpcC') {
+                codec = 'vp09.00.10.08';
+              } else if (codecBox.type === 'av1C') {
+                codec = 'av01.0.04M.08';
+              }
             }
           }
         }
       } else if (box.type === 'stts') {
-        // Time to sample
+        // Decoding Time to Sample (DTS deltas)
         const count = this.view.getUint32(p + 4);
         let ptr = p + 8;
-        for (let i = 0; i < count; i++) {
+        for (let i = 0; i < count && ptr + 8 <= box.end; i++) {
           const sCount = this.view.getUint32(ptr);
           const sDelta = this.view.getUint32(ptr + 4);
           ptr += 8;
@@ -167,12 +183,26 @@ class MP4Demuxer {
             sampleDurations.push(sDelta);
           }
         }
+      } else if (box.type === 'ctts') {
+        // Composition Time to Sample (PTS = DTS + offset for B-frames)
+        hasCtts = true;
+        const version = this.view.getUint8(p);
+        const count = this.view.getUint32(p + 4);
+        let ptr = p + 8;
+        for (let i = 0; i < count && ptr + 8 <= box.end; i++) {
+          const sCount = this.view.getUint32(ptr);
+          const sOffset = version === 1 ? this.view.getInt32(ptr + 4) : this.view.getUint32(ptr + 4);
+          ptr += 8;
+          for (let j = 0; j < sCount; j++) {
+            compositionOffsets.push(sOffset);
+          }
+        }
       } else if (box.type === 'stss') {
         // Sync sample (Keyframes)
         const count = this.view.getUint32(p + 4);
         keyframeIndexes = new Set();
         let ptr = p + 8;
-        for (let i = 0; i < count; i++) {
+        for (let i = 0; i < count && ptr + 4 <= box.end; i++) {
           keyframeIndexes.add(this.view.getUint32(ptr) - 1); // 0-based
           ptr += 4;
         }
@@ -182,14 +212,14 @@ class MP4Demuxer {
         const count = this.view.getUint32(p + 8);
         let ptr = p + 12;
         for (let i = 0; i < count; i++) {
-          sampleSizes.push(uniformSize || this.view.getUint32(ptr));
+          sampleSizes.push(uniformSize || (ptr + 4 <= box.end ? this.view.getUint32(ptr) : 0));
           if (!uniformSize) ptr += 4;
         }
       } else if (box.type === 'stsc') {
         // Sample to chunk
         const count = this.view.getUint32(p + 4);
         let ptr = p + 8;
-        for (let i = 0; i < count; i++) {
+        for (let i = 0; i < count && ptr + 12 <= box.end; i++) {
           sampleToChunk.push({
             firstChunk: this.view.getUint32(ptr),
             samplesPerChunk: this.view.getUint32(ptr + 4),
@@ -201,7 +231,7 @@ class MP4Demuxer {
         // 32-bit chunk offsets
         const count = this.view.getUint32(p + 4);
         let ptr = p + 8;
-        for (let i = 0; i < count; i++) {
+        for (let i = 0; i < count && ptr + 4 <= box.end; i++) {
           chunkOffsets.push(this.view.getUint32(ptr));
           ptr += 4;
         }
@@ -209,26 +239,41 @@ class MP4Demuxer {
         // 64-bit chunk offsets
         const count = this.view.getUint32(p + 4);
         let ptr = p + 8;
-        for (let i = 0; i < count; i++) {
+        for (let i = 0; i < count && ptr + 8 <= box.end; i++) {
           chunkOffsets.push(Number(this.view.getBigUint64(ptr)));
           ptr += 8;
         }
       }
     }
 
-    // Build sample map (PTS, fileOffset, size, isKeyframe)
+    // Build sample map (PTS, DTS, fileOffset, size, isKeyframe)
     const samples = [];
-    let curTime = 0;
+    let curDts = 0;
+    let minCts = Infinity;
+    const rawCtsList = new Float64Array(sampleSizes.length);
+
+    for (let i = 0; i < sampleSizes.length; i++) {
+      const dur = sampleDurations[i] !== undefined ? sampleDurations[i] : (sampleDurations[0] || 1);
+      const ctsOffset = hasCtts && compositionOffsets[i] !== undefined ? compositionOffsets[i] : 0;
+      const cts = curDts + ctsOffset;
+      rawCtsList[i] = cts;
+      if (cts < minCts) minCts = cts;
+      curDts += dur;
+    }
+    if (!isFinite(minCts)) minCts = 0;
+
     let chunkIdx = 0;
     let sampleInChunk = 0;
     let curChunkOffset = chunkOffsets[0] || 0;
     let stscIdx = 0;
+    curDts = 0;
 
     for (let i = 0; i < sampleSizes.length; i++) {
       const isKey = keyframeIndexes ? keyframeIndexes.has(i) : (i === 0);
       const size = sampleSizes[i];
-      const dur = sampleDurations[i] || (sampleDurations[0] || 1);
-      const ptsSec = curTime / timescale;
+      const dur = sampleDurations[i] !== undefined ? sampleDurations[i] : (sampleDurations[0] || 1);
+      const ptsSec = Math.max(0, (rawCtsList[i] - minCts) / timescale);
+      const dtsSec = curDts / timescale;
 
       // Find samplesPerChunk for current chunk (1-based chunk numbers in stsc)
       while (stscIdx + 1 < sampleToChunk.length && (chunkIdx + 1) >= sampleToChunk[stscIdx + 1].firstChunk) {
@@ -241,6 +286,7 @@ class MP4Demuxer {
         offset: curChunkOffset,
         size: size,
         pts: ptsSec,
+        dts: dtsSec,
         duration: dur / timescale,
         isKey: isKey
       });
@@ -252,10 +298,10 @@ class MP4Demuxer {
         sampleInChunk = 0;
         curChunkOffset = chunkOffsets[chunkIdx] || 0;
       }
-      curTime += dur;
+      curDts += dur;
     }
 
-    const totalDurationSec = curTime / timescale;
+    const totalDurationSec = curDts / timescale;
 
     return {
       isVideo: true,

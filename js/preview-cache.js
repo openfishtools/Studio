@@ -27,6 +27,7 @@
       this._pendingFrames = new Set();
       // Tracks frames whose createImageBitmap is currently in-flight (prevents double-encode race)
       this._inFlightFrames = new Set();
+      this._frameGen = new Map();
       // Adaptive memory buffer: protect low-spec and mobile devices from heap pressure / OOM crashes
       const isMobile = (typeof window !== 'undefined' && (window.innerWidth <= 600 || ('ontouchstart' in window && window.innerWidth <= 900)));
       const devMem = (typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : 4;
@@ -272,17 +273,26 @@
       if (this.hasFrame(frameIndex, sourceCanvas.width, sourceCanvas.height, targetComp)) return;
       if (!this._pendingFrames) this._pendingFrames = new Set();
       if (!this._inFlightFrames) this._inFlightFrames = new Set();
+      if (!this._frameGen) this._frameGen = new Map();
       const inFlightKey = `${targetComp}:${frameIndex}`;
       // Guard against excessive GPU memory pressure (allow up to 8 in-flight frames for 60fps playback)
-      if (this._inFlightFrames.size >= 8) return;
-      if (this._pendingFrames.has(inFlightKey) || this._inFlightFrames.has(inFlightKey)) return;
+      if (this._inFlightFrames.size >= 8 && !this._inFlightFrames.has(inFlightKey)) return;
+      const gen = (this._frameGen.get(inFlightKey) || 0) + 1;
+      this._frameGen.set(inFlightKey, gen);
       this._pendingFrames.add(inFlightKey);
       this._inFlightFrames.add(inFlightKey);
       try {
         const bitmap = await createImageBitmap(sourceCanvas);
-        // Re-check after await: frame may have been cleared/invalidated while we were encoding
-        if (!this._inFlightFrames.has(inFlightKey)) return; // Was cancelled during encoding
+        // Re-check after await: frame may have been cleared/invalidated or superseded by a newer render
+        if (!this._inFlightFrames.has(inFlightKey) || this._frameGen.get(inFlightKey) !== gen) {
+          if (bitmap && typeof bitmap.close === 'function') {
+            try { bitmap.close(); } catch (_) {}
+          }
+          return;
+        }
         this.deleteFrame(frameIndex, false, targetComp);
+        // Restore generation after deleteFrame
+        this._frameGen.set(inFlightKey, gen);
         targetPool.set(frameIndex, {
           bitmap,
           isDraft,
@@ -295,14 +305,19 @@
         this._scheduleRulerUpdate();
       } catch (_) {}
       finally {
-        if (this._pendingFrames) this._pendingFrames.delete(inFlightKey);
-        if (this._inFlightFrames) this._inFlightFrames.delete(inFlightKey);
+        if (this._frameGen && this._frameGen.get(inFlightKey) === gen) {
+          if (this._pendingFrames) this._pendingFrames.delete(inFlightKey);
+          if (this._inFlightFrames) this._inFlightFrames.delete(inFlightKey);
+        }
       }
     }
 
     deleteFrame(frameIndex, updateUI = true, compId = null) {
       const targetComp = compId || this.activeCompId;
       const inFlightKey = `${targetComp}:${frameIndex}`;
+      if (this._frameGen) {
+        this._frameGen.set(inFlightKey, (this._frameGen.get(inFlightKey) || 0) + 1);
+      }
       if (this._pendingFrames) {
         this._pendingFrames.delete(inFlightKey);
       }
@@ -341,11 +356,16 @@
       let changed = false;
       for (let f = startFrame; f <= endFrame; f++) {
         const inFlightKey = `${targetComp}:${f}`;
-        if (this._pendingFrames) {
-          this._pendingFrames.delete(inFlightKey);
+        if (this._frameGen) {
+          this._frameGen.set(inFlightKey, (this._frameGen.get(inFlightKey) || 0) + 1);
         }
-        if (this._inFlightFrames) {
+        if (this._pendingFrames && this._pendingFrames.has(inFlightKey)) {
+          this._pendingFrames.delete(inFlightKey);
+          changed = true;
+        }
+        if (this._inFlightFrames && this._inFlightFrames.has(inFlightKey)) {
           this._inFlightFrames.delete(inFlightKey);
+          changed = true;
         }
         if (pool.has(f)) {
           const entry = pool.get(f);
@@ -356,7 +376,7 @@
           changed = true;
         }
       }
-      if (changed && (!compId || compId === this.activeCompId)) {
+      if (!compId || compId === this.activeCompId) {
         this.updateRulerUI();
       }
       if (this.idleCacheEnabled) {
@@ -364,7 +384,246 @@
       }
     }
 
+    /**
+     * Compute a layer's [startSec, endSec] timeline bounds reliably.
+     */
+    getLayerBounds(layer, pps = null) {
+      if (!layer) return { startSec: 0, endSec: 5 };
+      const effectivePps = pps || ((typeof window !== 'undefined' && window.currentPixelsPerSecond) ? window.currentPixelsPerSecond : 80);
+      const startSec = layer.startSec !== undefined
+        ? Number(layer.startSec) || 0
+        : (parseFloat(layer.startPx ?? layer.left) || 0) / effectivePps;
+      const durSec = layer.durationSec !== undefined
+        ? Number(layer.durationSec) || 0
+        : ((parseFloat(layer.widthPx ?? layer.width) || 240) / effectivePps);
+      return {
+        startSec: Math.max(0, startSec),
+        endSec: Math.max(0, startSec + Math.max(0.01, durSec))
+      };
+    }
+
+    /**
+     * Invalidate cache specifically for a single layer (and any child layers if it is a parent/Null).
+     */
+    invalidateLayer(layer, compId = null) {
+      if (!layer) {
+        this.clearAll('current', compId);
+        return;
+      }
+      if (!compId && typeof window !== 'undefined' && typeof window.invalidatePreviewCacheForLayer === 'function') {
+        window.invalidatePreviewCacheForLayer(layer);
+        return;
+      }
+      const { startSec, endSec } = this.getLayerBounds(layer);
+      let minStart = startSec;
+      let maxEnd = endSec;
+      const layers = (typeof window !== 'undefined' && window.currentProjectState && Array.isArray(window.currentProjectState.layers))
+        ? window.currentProjectState.layers
+        : [];
+      if (layer.id && layers.length > 0) {
+        const visited = new Set([layer.id]);
+        let added = true;
+        while (added) {
+          added = false;
+          for (let i = 0; i < layers.length; i++) {
+            const l = layers[i];
+            if (l && l.id && l.parentId && visited.has(l.parentId) && !visited.has(l.id)) {
+              visited.add(l.id);
+              const b = this.getLayerBounds(l);
+              if (b.startSec < minStart) minStart = b.startSec;
+              if (b.endSec > maxEnd) maxEnd = b.endSec;
+              added = true;
+            }
+          }
+        }
+      }
+      this.invalidateRange(minStart, maxEnd, this.fps, compId);
+    }
+
+    /**
+     * Fast visual state signature for a layer to detect new layers, removed layers,
+     * new effects, keyframe edits, expression changes, parenting, or transform changes.
+     */
+    getLayerSignature(layer, idx = 0) {
+      if (!layer) return '';
+      const { startSec, endSec } = this.getLayerBounds(layer);
+      let fxSig = '';
+      if (Array.isArray(layer.effects) && layer.effects.length > 0) {
+        try { fxSig = JSON.stringify(layer.effects); } catch (_) { fxSig = String(layer.effects.length); }
+      }
+      let kfSig = '';
+      if (layer.keyframes && typeof layer.keyframes === 'object') {
+        try { kfSig = JSON.stringify(layer.keyframes); } catch (_) { kfSig = Object.keys(layer.keyframes).join(','); }
+      }
+      let exprSig = '';
+      if (layer.expressions && typeof layer.expressions === 'object') {
+        try { exprSig = JSON.stringify(layer.expressions); } catch (_) { exprSig = Object.keys(layer.expressions).join(','); }
+      }
+      let trSig = '';
+      if (layer.timeRemap !== undefined) {
+        try { trSig = JSON.stringify(layer.timeRemap); } catch (_) {}
+      }
+      let subSig = '';
+      if (Array.isArray(layer.subLayers) && layer.subLayers.length > 0) {
+        subSig = `${layer.subLayers.length}:${layer.subLayers.map(s => s && s.id).join(',')}`;
+      }
+      return [
+        idx,
+        layer.id || '',
+        layer.type || '',
+        layer.hidden ? 1 : 0,
+        layer.isAdjustment ? 1 : 0,
+        layer.isNull ? 1 : 0,
+        layer.is3D ? 1 : 0,
+        layer.blendMode || 'normal',
+        layer.parentId || '',
+        startSec.toFixed(4),
+        endSec.toFixed(4),
+        Number(layer.sourceOffsetSec || 0).toFixed(4),
+        Number(layer.posX ?? layer.x ?? 0).toFixed(2),
+        Number(layer.posY ?? layer.y ?? 0).toFixed(2),
+        Number(layer.posZ ?? layer.z ?? 0).toFixed(2),
+        Number(layer.scaleW ?? layer.scaleX ?? layer.scale ?? 100).toFixed(2),
+        Number(layer.scaleH ?? layer.scaleY ?? layer.scale ?? 100).toFixed(2),
+        Number(layer.scaleZ ?? 100).toFixed(2),
+        Number(layer.rotZ ?? layer.rotationZ ?? layer.rotation ?? 0).toFixed(2),
+        Number(layer.rotX ?? layer.rotationX ?? 0).toFixed(2),
+        Number(layer.rotY ?? layer.rotationY ?? 0).toFixed(2),
+        Number(layer.opacity ?? 1).toFixed(3),
+        Number(layer.anchorX ?? 0).toFixed(2),
+        Number(layer.anchorY ?? 0).toFixed(2),
+        Number(layer.speed ?? 1).toFixed(3),
+        layer.speedMode || '',
+        layer.timeRemapEnabled ? 1 : 0,
+        layer.isFrozen ? 1 : 0,
+        Number(layer.freezeTime || 0).toFixed(3),
+        layer.fillColor || layer.color || '',
+        layer.text || '',
+        fxSig,
+        kfSig,
+        exprSig,
+        trSig,
+        subSig
+      ].join('|');
+    }
+
+    /**
+     * Capture a lightweight snapshot of all current layers before an extension/tool runs.
+     */
+    captureStateSnapshot(layers = null) {
+      const list = Array.isArray(layers)
+        ? layers
+        : ((typeof window !== 'undefined' && window.currentProjectState && Array.isArray(window.currentProjectState.layers))
+            ? window.currentProjectState.layers
+            : []);
+      const map = new Map();
+      for (let i = 0; i < list.length; i++) {
+        const l = list[i];
+        if (!l) continue;
+        const key = l.id || `__idx_${i}`;
+        const bounds = this.getLayerBounds(l);
+        map.set(key, {
+          startSec: bounds.startSec,
+          endSec: bounds.endSec,
+          parentId: l.parentId || null,
+          sig: this.getLayerSignature(l, i)
+        });
+      }
+      return map;
+    }
+
+    /**
+     * Compare a pre-action snapshot with current layers and selectively invalidate ONLY
+     * the time ranges [startSec, endSec] where layers were added, removed, or modified
+     * (new adjustment layer, new Null layer, new effect, keyframes, expressions, etc.).
+     * Returns true if any range was invalidated.
+     */
+    invalidateSmartDiff(beforeSnapshot, afterLayers = null, compId = null) {
+      const list = Array.isArray(afterLayers)
+        ? afterLayers
+        : ((typeof window !== 'undefined' && window.currentProjectState && Array.isArray(window.currentProjectState.layers))
+            ? window.currentProjectState.layers
+            : []);
+      if (!(beforeSnapshot instanceof Map)) {
+        return false;
+      }
+
+      const ranges = [];
+      const changedLayers = [];
+      const changedLayerIds = new Set();
+      const seenKeys = new Set();
+
+      for (let i = 0; i < list.length; i++) {
+        const l = list[i];
+        if (!l) continue;
+        const key = l.id || `__idx_${i}`;
+        seenKeys.add(key);
+        const nowBounds = this.getLayerBounds(l);
+        const nowSig = this.getLayerSignature(l, i);
+        const prev = beforeSnapshot.get(key);
+        if (!prev) {
+          // Newly added layer (e.g., Adjustment layer, Null layer, Solid, Shape, Precomp)
+          ranges.push({ startSec: nowBounds.startSec, endSec: nowBounds.endSec });
+          changedLayers.push(l);
+          if (l.id) changedLayerIds.add(l.id);
+        } else if (prev.sig !== nowSig) {
+          // Layer modified (e.g., new effect, keyframes, expressions, split, trim, parentId)
+          ranges.push({
+            startSec: Math.min(prev.startSec, nowBounds.startSec),
+            endSec: Math.max(prev.endSec, nowBounds.endSec)
+          });
+          changedLayers.push(l);
+          if (l.id) changedLayerIds.add(l.id);
+        }
+      }
+
+      // Check removed layers
+      for (const [key, prev] of beforeSnapshot.entries()) {
+        if (!seenKeys.has(key)) {
+          ranges.push({ startSec: prev.startSec, endSec: prev.endSec });
+          changedLayerIds.add(key);
+        }
+      }
+
+      // Propagate to child layers if a parent/Null layer was added or modified
+      if (changedLayerIds.size > 0 && list.length > 0) {
+        let added = true;
+        while (added) {
+          added = false;
+          for (let i = 0; i < list.length; i++) {
+            const l = list[i];
+            if (l && l.id && l.parentId && changedLayerIds.has(l.parentId) && !changedLayerIds.has(l.id)) {
+              changedLayerIds.add(l.id);
+              changedLayers.push(l);
+              const b = this.getLayerBounds(l);
+              ranges.push({ startSec: b.startSec, endSec: b.endSec });
+              added = true;
+            }
+          }
+        }
+      }
+
+      if (ranges.length === 0) return false;
+
+      if (!compId && typeof window !== 'undefined' && typeof window.invalidatePreviewCacheForLayer === 'function') {
+        for (let i = 0; i < changedLayers.length; i++) {
+          window.invalidatePreviewCacheForLayer(changedLayers[i]);
+        }
+      }
+
+      for (let i = 0; i < ranges.length; i++) {
+        this.invalidateRange(ranges[i].startSec, ranges[i].endSec, this.fps, compId);
+      }
+      if (typeof window !== 'undefined' && typeof window.invalidateEffectivePropsCache === 'function') {
+        window.invalidateEffectivePropsCache();
+      }
+      return true;
+    }
+
     clearAll(scope = 'current', compId = null) {
+      if (this._frameGen) {
+        this._frameGen.clear();
+      }
       if (this._pendingFrames) {
         this._pendingFrames.clear();
       }

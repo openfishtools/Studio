@@ -929,8 +929,9 @@
       const anchorY = (layer.anchorY || 0) * bufferScale;
       const anchorZ = (layer.anchorZ || 0) * bufferScale;
 
+      const hasParticleEngine = Array.isArray(layer.effects) && layer.effects.some(f => f && !f.disabled && f.type === 'particle-engine');
       const has3DFx = Array.isArray(layer.effects) && layer.effects.some(f => f && !f.disabled && (f.type === 'box_3d' || f.type === 'extrude_3d' || f.type === 'pyramid_3d' || f.type === 'sphere_3d'));
-      const is3D = !!layer.is3D || has3DFx || (layer.type === 'precomp' && !!layer.collapseTransformations) || layer.type === 'camera';
+      const is3D = !hasParticleEngine && (!!layer.is3D || has3DFx || (layer.type === 'precomp' && !!layer.collapseTransformations) || layer.type === 'camera');
       const boxFx = Array.isArray(layer.effects) ? layer.effects.find(f => f && !f.disabled && f.type === 'box_3d') : null;
       const boxAngleX = (boxFx && boxFx.angleX !== undefined) ? Number(boxFx.angleX) : 0;
       const boxAngleY = (boxFx && boxFx.angleY !== undefined) ? Number(boxFx.angleY) : 0;

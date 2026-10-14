@@ -147,16 +147,33 @@
           btn.appendChild(lbl);
         }
 
+        const getPCM = () => (typeof window !== 'undefined' && (window.PreviewCacheManager || (window.parent && window.parent.PreviewCacheManager))) || null;
+        const redrawHost = (reason) => {
+          if (typeof window !== 'undefined' && typeof window.redrawComposition === 'function') {
+            window.redrawComposition(reason);
+          } else if (typeof window !== 'undefined' && window.parent && typeof window.parent.redrawComposition === 'function') {
+            window.parent.redrawComposition(reason);
+          }
+        };
+
         if (typeof opts.onClick === 'function') {
           btn.addEventListener('click', (e) => {
             e.preventDefault();
             btn.classList.add('tool-btn--active');
             setTimeout(() => btn.classList.remove('tool-btn--active'), 180);
+            const pcm = getPCM();
+            const beforeSnap = (pcm && typeof pcm.captureStateSnapshot === 'function') ? pcm.captureStateSnapshot() : null;
             try {
               opts.onClick(e, ctx);
             } catch (err) {
               console.error(`[Card:${ctx.id}] Button click error:`, err);
               ctx.showToast(`Error: ${err.message}`);
+            } finally {
+              if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
+                if (pcm.invalidateSmartDiff(beforeSnap)) {
+                  redrawHost(`extClick:${ctx.id}`);
+                }
+              }
             }
           });
         }
@@ -166,11 +183,19 @@
             e.preventDefault();
             btn.classList.add('tool-btn--active');
             setTimeout(() => btn.classList.remove('tool-btn--active'), 180);
+            const pcm = getPCM();
+            const beforeSnap = (pcm && typeof pcm.captureStateSnapshot === 'function') ? pcm.captureStateSnapshot() : null;
             try {
               opts.onContextMenu(e, ctx);
             } catch (err) {
               console.error(`[Card:${ctx.id}] Context menu error:`, err);
               ctx.showToast(`Error: ${err.message}`);
+            } finally {
+              if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
+                if (pcm.invalidateSmartDiff(beforeSnap)) {
+                  redrawHost(`extContext:${ctx.id}`);
+                }
+              }
             }
           });
         }
@@ -414,6 +439,13 @@
    */
   function createCardContext(def) {
     const cardStorageKey = `oft_card_store_${def.id}`;
+    const getHostWindow = () => {
+      if (typeof window !== 'undefined') {
+        if (window.PreviewCacheManager) return window;
+        if (window.parent && window.parent.PreviewCacheManager) return window.parent;
+      }
+      return typeof window !== 'undefined' ? window : null;
+    };
 
     return {
       id: def.id,
@@ -427,24 +459,59 @@
         return (typeof window !== 'undefined' && window.JSXTranslator) || (typeof window !== 'undefined' && window.parent && window.parent.JSXTranslator) || null;
       },
 
+      invalidateCache(targetOrStartSec, endSec) {
+        const host = getHostWindow();
+        const pcm = host && host.PreviewCacheManager;
+        if (!pcm) return;
+        if (typeof targetOrStartSec === 'number' && typeof endSec === 'number') {
+          pcm.invalidateRange(targetOrStartSec, endSec);
+        } else if (targetOrStartSec && typeof targetOrStartSec === 'object') {
+          if (typeof host.invalidatePreviewCacheForLayer === 'function') {
+            host.invalidatePreviewCacheForLayer(targetOrStartSec);
+          } else if (typeof pcm.invalidateLayer === 'function') {
+            pcm.invalidateLayer(targetOrStartSec);
+          }
+        } else {
+          pcm.clearAll('current');
+        }
+        if (host && typeof host.redrawComposition === 'function') {
+          host.redrawComposition('invalidateCache');
+        }
+      },
+
       executeJSX(codeOrFn) {
+        const host = getHostWindow();
+        const pcm = host && host.PreviewCacheManager;
+        const beforeSnap = (pcm && typeof pcm.captureStateSnapshot === 'function') ? pcm.captureStateSnapshot() : null;
+        let res = null;
         if (typeof window !== 'undefined' && typeof window.executeJSX === 'function') {
-          return window.executeJSX(codeOrFn);
+          res = window.executeJSX(codeOrFn);
+        } else if (typeof window !== 'undefined' && window.parent && typeof window.parent.executeJSX === 'function') {
+          res = window.parent.executeJSX(codeOrFn);
+        } else if (typeof window !== 'undefined' && window.JSXTranslator) {
+          res = window.JSXTranslator.executeJSX(codeOrFn);
         }
-        if (typeof window !== 'undefined' && window.parent && typeof window.parent.executeJSX === 'function') {
-          return window.parent.executeJSX(codeOrFn);
+        if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
+          if (pcm.invalidateSmartDiff(beforeSnap) && host && typeof host.redrawComposition === 'function') {
+            host.redrawComposition('executeJSX');
+          }
         }
-        if (typeof window !== 'undefined' && window.JSXTranslator) {
-          return window.JSXTranslator.executeJSX(codeOrFn);
-        }
-        return null;
+        return res;
       },
 
       runTool(toolName, ...args) {
+        const host = getHostWindow();
+        const pcm = host && host.PreviewCacheManager;
+        const beforeSnap = (pcm && typeof pcm.captureStateSnapshot === 'function') ? pcm.captureStateSnapshot() : null;
         // 1. Direct parent/editor tool bridge
         try {
           if (typeof window.executeFishTool === 'function') {
             const res = window.executeFishTool(toolName, ...args);
+            if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
+              if (pcm.invalidateSmartDiff(beforeSnap) && host && typeof host.redrawComposition === 'function') {
+                host.redrawComposition(`runTool:${toolName}`);
+              }
+            }
             if (res && res.error) {
               if (res.message) this.showToast(res.message, true);
               return false;
@@ -453,6 +520,11 @@
           }
           if (window.parent && typeof window.parent.executeFishTool === 'function') {
             const res = window.parent.executeFishTool(toolName, ...args);
+            if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
+              if (pcm.invalidateSmartDiff(beforeSnap) && host && typeof host.redrawComposition === 'function') {
+                host.redrawComposition(`runTool:${toolName}`);
+              }
+            }
             if (res && res.error) {
               if (res.message) this.showToast(res.message, true);
               return false;

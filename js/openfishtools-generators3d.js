@@ -277,18 +277,6 @@
       });
     }
 
-    // Invalidate caches completely across all pools to guarantee immediate recache
-    if (typeof root.invalidatePreviewCacheForLayer === 'function') {
-      root.invalidatePreviewCacheForLayer(precompLayer);
-    }
-    if (root.PreviewCacheManager) {
-      if (typeof root.PreviewCacheManager.clearAll === 'function') {
-        root.PreviewCacheManager.clearAll('all');
-      } else if (typeof root.PreviewCacheManager.clear === 'function') {
-        root.PreviewCacheManager.clear();
-      }
-    }
-
     // Replace or prepend
     if (replaceLayer) {
       const idx = state.layers.findIndex(l => l.id === replaceLayer.id);
@@ -299,6 +287,18 @@
       }
     } else {
       state.layers.unshift(precompLayer);
+    }
+
+    // Selectively invalidate only the affected layer time range (Smart Caching)
+    if (root.PreviewCacheManager && typeof root.PreviewCacheManager.deletePool === 'function') {
+      root.PreviewCacheManager.deletePool(precompId);
+    }
+    if (typeof root.invalidatePreviewCacheForLayer === 'function') {
+      if (replaceLayer) root.invalidatePreviewCacheForLayer(replaceLayer);
+      root.invalidatePreviewCacheForLayer(precompLayer);
+    } else if (root.PreviewCacheManager && typeof root.PreviewCacheManager.invalidateLayer === 'function') {
+      if (replaceLayer) root.PreviewCacheManager.invalidateLayer(replaceLayer);
+      root.PreviewCacheManager.invalidateLayer(precompLayer);
     }
 
     // Select precomp layer
@@ -328,6 +328,13 @@
   // 1. CUBE GENERATOR
   // =========================================================================
   FishTools3D.createProceduralCube = function (w, h, d, useLayer = false) {
+    if (w && typeof w === 'object' && !Array.isArray(w)) {
+      const opts = w;
+      w = opts.width ?? opts.w;
+      h = opts.height ?? opts.h;
+      d = opts.depth ?? opts.d;
+      useLayer = Boolean(opts.useLayer);
+    }
     const state = root.currentProjectState || {};
     const layers = state.layers || [];
     const selId = root.selectedLayerId;

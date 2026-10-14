@@ -2820,7 +2820,7 @@
   // ======================================================================
   // CENTRAL DISPATCHER: executeFishTool
   // ======================================================================
-  function executeFishTool(tool, ...args) {
+  function _executeFishToolInternal(tool, ...args) {
     if (!tool) return;
     if (typeof window !== 'undefined') {
       window._lastDirectFishToolCall = { key: tool + ':' + JSON.stringify(args), time: Date.now() };
@@ -2886,12 +2886,14 @@
 
       // Cut (Trim In, Split, Trim Out)
       case 'CUT_FRONT':
+      case 'CUT_LEFT':
         if (typeof window.executeCutLeft === 'function') return window.executeCutLeft();
         break;
       case 'CUT_MID':
         if (typeof window.executeCutMid === 'function') return window.executeCutMid();
         break;
       case 'CUT_BACK':
+      case 'CUT_RIGHT':
         if (typeof window.executeCutRight === 'function') return window.executeCutRight();
         break;
 
@@ -2918,6 +2920,7 @@
           return window.precomposeSelectedLayers(true);
         }
         break;
+      case 'CENTER':
       case 'CENTERINCOMP':
         if (typeof window.alignSelectedLayers === 'function') {
           return window.alignSelectedLayers('CENTERINCOMP');
@@ -2928,11 +2931,13 @@
           return window.applyKeyframeOverlap();
         }
         break;
+      case 'SCREENSHOT':
       case 'PNG':
         if (typeof window.exportCurrentFrameAsPNG === 'function') {
           return window.exportCurrentFrameAsPNG();
         }
         break;
+      case 'DUP_COMP':
       case 'DUP': {
         const layers = (window.currentProjectState && window.currentProjectState.layers) || [];
         const selId = window.selectedLayerId;
@@ -2960,6 +2965,11 @@
         return applyToolboxMirror(args[0]);
 
       // Toolbox - Create
+      case 'TXT': {
+        const timing = getSelectedLayerTiming();
+        if (typeof window.addTextLayer === 'function') return window.addTextLayer(timing.durationSec, timing.startSec);
+        break;
+      }
       case 'SHA': {
         const timing = getSelectedLayerTiming();
         if (typeof window.addShapeLayer === 'function') return window.addShapeLayer('rectangle', { durationSec: timing.durationSec, startSec: timing.startSec });
@@ -3021,15 +3031,18 @@
         return applyTimeRemapVelocity();
 
       // Format
+      case 'setCompositionFormat':
       case 'changeCompRatio':
         if (typeof window.changeCompositionRatio === 'function') return window.changeCompositionRatio(args[0], args[1]);
         break;
+      case 'setCompositionFPS':
       case 'changeCompFPS':
         if (typeof window.changeCompositionFPS === 'function') return window.changeCompositionFPS(args[0]);
         break;
 
       // 3D Procedural Generators & Cube
       case 'CUBE':
+      case 'CREATE_CUBE':
         if (typeof window.createProceduralCube === 'function') {
           return window.createProceduralCube(args[0], args[1], args[2], args[3]);
         }
@@ -3099,7 +3112,22 @@
     }
   }
 
+  function executeFishTool(tool, ...args) {
+    if (!tool) return;
+    const pcm = (typeof window !== 'undefined') ? window.PreviewCacheManager : null;
+    const beforeSnap = (pcm && typeof pcm.captureStateSnapshot === 'function') ? pcm.captureStateSnapshot() : null;
+    const res = _executeFishToolInternal(tool, ...args);
+    if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
+      const changed = pcm.invalidateSmartDiff(beforeSnap);
+      if (changed && typeof window.redrawComposition === 'function') {
+        window.redrawComposition('smartCache:' + String(tool));
+      }
+    }
+    return res;
+  }
+
   // Export to window
+  window.openfishtoolsControllerExecute = executeFishTool;
   window.executeFishTool = executeFishTool;
   window.applyToolboxFreezeFrame = applyToolboxFreezeFrame;
   window.applyToolboxFitToComp = applyToolboxFitToComp;

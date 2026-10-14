@@ -926,12 +926,12 @@ body.is-exporting .template-scrubber-wrap {
 
 
 /* ==========================================================================
-   1. MOBILE VIEW (<= 600px) - Ukuran Besar & Jelas (Top/Bottom 50/50 Flow)
+   1. MOBILE VIEW (<= 600px) - Compact & Spacious (Alight Motion Proportion Flow)
    ========================================================================== */
 @media (max-width: 600px) {
   .editor-label {
     font-family: var(--font-brand);
-    font-size: 20px;
+    font-size: 16px;
     font-weight: 700;
     letter-spacing: -0.2px;
     color: var(--text-primary);
@@ -939,18 +939,18 @@ body.is-exporting .template-scrubber-wrap {
   }
 
   .preview-label {
-    font-size: 28px;
+    font-size: 22px;
     letter-spacing: 0.5px;
     color: var(--text-primary);
   }
 
   .timeline-label {
-    font-size: 28px;
+    font-size: 22px;
     color: var(--text-primary);
   }
 
   .editor-header {
-    height: 50px;
+    height: 42px;
     width: 100%;
     background-color: var(--bg-panel);
     border-radius: 0;
@@ -962,6 +962,80 @@ body.is-exporting .template-scrubber-wrap {
     z-index: 10;
   }
 
+  .editor-header-nav {
+    padding: 0 10px;
+  }
+
+  .editor-header-left {
+    gap: 6px;
+  }
+
+  .editor-header-right-actions {
+    gap: 4px;
+  }
+
+  .editor-back-btn,
+  .editor-settings-btn,
+  .editor-export-btn,
+  .editor-layer-precomp-btn,
+  .editor-layer-delete-btn,
+  .editor-layer-link-btn,
+  .editor-layer-motion-blur-btn,
+  .editor-layer-3d-btn,
+  .editor-layer-group-mask-btn,
+  .editor-layer-group-exclude-btn,
+  .editor-layer-collapse-btn,
+  .editor-precomp-collapse-btn,
+  .editor-layer-more-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+  }
+
+  .editor-back-btn svg,
+  .editor-back-btn i.fticon,
+  .editor-settings-btn svg,
+  .editor-settings-btn i.fticon,
+  .editor-export-btn svg,
+  .editor-export-btn i.fticon,
+  .editor-layer-precomp-btn svg,
+  .editor-layer-precomp-btn i.fticon,
+  .editor-layer-delete-btn svg,
+  .editor-layer-delete-btn i.fticon,
+  .editor-layer-link-btn svg,
+  .editor-layer-link-btn i.fticon,
+  .editor-layer-motion-blur-btn svg,
+  .editor-layer-motion-blur-btn i.fticon,
+  .editor-layer-3d-btn svg,
+  .editor-layer-3d-btn i.fticon,
+  .editor-layer-3d-btn .fticon,
+  .editor-layer-group-mask-btn svg,
+  .editor-layer-group-mask-btn i.fticon,
+  .editor-layer-group-exclude-btn svg,
+  .editor-layer-group-exclude-btn i.fticon,
+  .editor-layer-collapse-btn svg,
+  .editor-layer-collapse-btn i.fticon,
+  .editor-precomp-collapse-btn svg,
+  .editor-precomp-collapse-btn i.fticon,
+  .editor-layer-more-btn svg,
+  .editor-layer-more-btn i.fticon {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+  }
+
+  .editor-title-input {
+    font-size: 14px;
+    padding: 3px 8px;
+    min-width: 100px;
+    max-width: 210px;
+  }
+
+  .editor-layer-batch-title {
+    font-size: 13.5px;
+    padding: 3px 6px;
+  }
+
   .editor-main-body {
     display: flex;
     flex-direction: column;
@@ -971,13 +1045,13 @@ body.is-exporting .template-scrubber-wrap {
     position: relative;
     overflow: hidden;
     background-color: var(--bg-preview);
-    --mobile-preview-height: 48%;
+    --mobile-preview-height: 55%;
   }
 
   .editor-left-pane {
     display: flex;
     flex-direction: column;
-    height: var(--mobile-preview-height, 48%);
+    height: var(--mobile-preview-height, 55%);
     min-height: 120px;
     max-height: calc(100% - 140px);
     width: 100%;
@@ -996,8 +1070,14 @@ body.is-exporting .template-scrubber-wrap {
     justify-content: center;
     position: relative;
     overflow: hidden;
-    padding: 6px 6px 0 6px;
+    padding: 4px 4px 2px 4px;
     box-sizing: border-box;
+  }
+
+  .preview-canvas-box {
+    max-width: calc(100% - 10px);
+    max-height: calc(100% - 10px);
+    border-radius: 6px;
   }
 
   /* Modular Horizontal Preview Split Handle (Visible below preview on mobile) */
@@ -1005,11 +1085,16 @@ body.is-exporting .template-scrubber-wrap {
     display: flex;
   }
 
+  .preview-split-handle .split-handle-pill {
+    width: 40px;
+    height: 4px;
+  }
+
   .editor-controller {
-    height: 48px;
+    height: 40px;
     background-color: var(--bg-timeline);
-    border-top-left-radius: 16px;
-    border-top-right-radius: 16px;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1018,11 +1103,26 @@ body.is-exporting .template-scrubber-wrap {
     position: relative;
   }
 
+  .ctrl-buttons-row {
+    padding: 0 12px;
+    border: none;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .ctrl-btn svg,
+  .ctrl-btn img,
+  .ctrl-btn .fticon,
+  .ctrl-btn i.fticon {
+    width: 19px;
+    height: 19px;
+    font-size: 19px;
+  }
+
   /* Timeline Mobile: Flexible, adaptive split - never overflows */
   .editor-timeline-wrapper {
     background-color: var(--bg-timeline);
     width: 100%;
-    height: calc(100% - var(--mobile-preview-height, 48%));
+    height: calc(100% - var(--mobile-preview-height, 55%));
     min-height: 140px;
     flex: 1;
     position: relative;
@@ -1054,8 +1154,8 @@ body.is-exporting .template-scrubber-wrap {
     overflow-x: clip !important;
     position: relative;
     z-index: 15;
-    padding: 12px 0 48px;
-    padding: 12px 0 calc(48px + env(safe-area-inset-bottom, 0px));
+    padding: 8px 0 42px;
+    padding: 8px 0 calc(42px + env(safe-area-inset-bottom, 0px));
     box-sizing: border-box;
     cursor: grab;
     user-select: none;
@@ -1066,22 +1166,23 @@ body.is-exporting .template-scrubber-wrap {
   .editor-timeline.has-drawer-open .timeline-layers-viewport,
   .editor-timeline.has-layer-drawer-open .timeline-layers-viewport,
   body.has-active-drawer .timeline-layers-viewport {
-    padding-bottom: max(75vh, calc(var(--timeline-drawer-height, 380px) + 240px));
-    padding-bottom: max(75vh, calc(var(--timeline-drawer-height, 380px) + 240px + env(safe-area-inset-bottom, 0px)));
+    padding-bottom: max(65vh, calc(var(--timeline-drawer-height, 260px) + 180px));
+    padding-bottom: max(65vh, calc(var(--timeline-drawer-height, 260px) + 180px + env(safe-area-inset-bottom, 0px)));
   }
 
   .timeline-fab-add {
-    right: 16px;
-    bottom: 16px;
-    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-    width: 56px;
-    height: 56px;
+    right: 14px;
+    bottom: 14px;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    width: 46px;
+    height: 46px;
   }
 
   .timeline-fab-add .fticon {
-    width: 26px;
-    height: 26px;
-  font-size: 26px;}
+    width: 22px;
+    height: 22px;
+    font-size: 22px;
+  }
 
   .editor-timeline.has-drawer-open .timeline-fab-add,
   .editor-timeline.has-layer-drawer-open .timeline-fab-add,
@@ -3177,18 +3278,192 @@ body.has-active-drawer .timeline-fab-add {
 }
 
 @media (max-width: 600px) {
+  /* Compact Timeline Time Badge, Needle & Ruler on Mobile */
+  .timeline-current-time-badge {
+    height: 20px;
+    padding: 0 7px;
+    border-bottom-left-radius: 5px;
+    border-bottom-right-radius: 5px;
+  }
+
+  .current-time-text {
+    font-size: 10px;
+  }
+
+  .timeline-center-needle {
+    top: 20px;
+    width: 1.5px;
+  }
+
+  .timeline-header-ruler {
+    height: 28px;
+  }
+
+  .ruler-second-text {
+    font-size: 9.5px;
+    font-weight: 600;
+    top: 3px;
+    opacity: 0.78;
+  }
+
+  .ruler-ticks-row {
+    height: 12px;
+  }
+
+  .ruler-tick.major {
+    height: 10px;
+    width: 1px;
+  }
+
+  .ruler-tick.medium {
+    height: 6px;
+  }
+
+  .ruler-tick.minor {
+    height: 3.5px;
+  }
+
+  /* Compact Track Lanes, Clips & Overlays on Mobile (34px lane + 6px gap = 40px pitch) */
+  .timeline-layers-viewport {
+    padding: 8px 0 42px;
+    padding: 8px 0 calc(42px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .timeline-layers-viewport.has-drawer-open,
+  .editor-timeline.has-drawer-open .timeline-layers-viewport,
+  .editor-timeline.has-layer-drawer-open .timeline-layers-viewport,
+  body.has-active-drawer .timeline-layers-viewport {
+    padding-bottom: max(65vh, calc(var(--timeline-drawer-height, 260px) + 180px));
+    padding-bottom: max(65vh, calc(var(--timeline-drawer-height, 260px) + 180px + env(safe-area-inset-bottom, 0px)));
+  }
+
+  .timeline-layers-track {
+    gap: 6px;
+  }
+
+  .timeline-lane-heads-overlay,
+  .timeline-lane-reorder-overlay {
+    top: 8px;
+    gap: 6px;
+  }
+
+  .timeline-track-lane,
+  .timeline-lane-pill-slot,
+  .timeline-lane-reorder-slot {
+    height: 34px;
+  }
+
+  .timeline-track-lane::after {
+    bottom: -3px;
+  }
+
+  .timeline-clip-block {
+    height: 30px;
+    border-radius: 6px;
+    padding: 0 8px;
+    font-size: 10.5px;
+  }
+
+  .timeline-clip-block.is-selected {
+    padding: 0 8px;
+  }
+
+  .timeline-clip-tag {
+    font-size: 8.5px;
+    padding: 1.5px 4px;
+    border-radius: 3px;
+    margin-right: 5px;
+  }
+
+  .timeline-clip-handle {
+    width: 18px;
+  }
+
+  .timeline-clip-handle.handle-left {
+    border-radius: 6px 0 0 6px;
+  }
+
+  .timeline-clip-handle.handle-right {
+    border-radius: 0 6px 6px 0;
+  }
+
+  .timeline-layer-ctrl-pill {
+    width: 28px;
+    height: 30px;
+    border-radius: 0 9px 9px 0;
+  }
+
+  .timeline-layer-ctrl-pill.has-precomp-expand {
+    width: 46px;
+    gap: 2px;
+    padding: 0 3px;
+  }
+
+  .timeline-layer-eye-btn,
+  .timeline-layer-checkbox {
+    width: 15px;
+    height: 15px;
+  }
+
+  .timeline-layer-eye-btn .fticon,
+  .timeline-layer-eye-btn svg,
+  .timeline-layer-eye-btn i.fticon {
+    width: 15px;
+    height: 15px;
+    font-size: 15px;
+  }
+
+  .timeline-layer-reorder-pill {
+    height: 30px;
+    width: 24px;
+    right: 4px;
+  }
+
+  .reorder-grip {
+    width: 20px;
+    height: 20px;
+  }
+
+  .reorder-grip svg,
+  .reorder-grip .reorder-grip-svg,
+  .reorder-grip i.fticon,
+  .reorder-grip .fticon {
+    width: 15px;
+    height: 15px;
+    font-size: 15px;
+  }
+
+  /* Precompose Child Rows on Mobile */
+  .timeline-track-lane.is-precomp-child,
+  .timeline-lane-pill-slot.is-precomp-child,
+  .timeline-lane-reorder-slot.is-precomp-child {
+    height: 26px;
+  }
+
+  .timeline-lane-pill-slot.is-precomp-child.is-mobile-spacer {
+    height: 26px !important;
+    min-height: 26px !important;
+  }
+
+  .timeline-layer-ctrl-pill.is-precomp-child,
+  .timeline-clip-block.is-precomp-child {
+    height: 22px;
+    font-size: 10px;
+  }
+
   .timeline-fab-add {
-    right: 16px;
-    bottom: 16px;
-    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
-    width: 56px;
-    height: 56px;
+    right: 14px;
+    bottom: 14px;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    width: 46px;
+    height: 46px;
   }
 
   .timeline-fab-add .fticon {
-    width: 26px;
-    height: 26px;
-  font-size: 26px;}
+    width: 22px;
+    height: 22px;
+    font-size: 22px;
+  }
 
   .editor-timeline.has-drawer-open .timeline-fab-add,
   .editor-timeline.has-layer-drawer-open .timeline-fab-add,

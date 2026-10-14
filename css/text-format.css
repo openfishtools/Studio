@@ -187,15 +187,15 @@
   justify-content: center;
 }
 
-/* 8. Touch sizing: boolean Off/On toggle meets 44px touch target */
-@media (pointer: coarse) {
+/* 8. Touch sizing: boolean Off/On toggle on tablet touch (>= 601px) */
+@media (pointer: coarse) and (min-width: 601px) {
   .text-toggle-switch {
-    width: 132px;
+    width: 120px;
   }
 
   .text-toggle-switch .segmented-switch-item {
-    height: 44px;
-    font-size: 13px;
+    height: 36px;
+    font-size: 12px;
   }
 }
 
@@ -217,4 +217,60 @@
   color: var(--text-primary);
   border-radius: 4px;
   outline: none;
+}
+
+/* 9. Mobile Compact Proportions (<= 600px) for Text Subview */
+@media (max-width: 600px) {
+  .text-tab-pane {
+    gap: 6px;
+  }
+
+  .text-section-head,
+  .text-anim-head {
+    min-height: 24px;
+    padding: 4px 2px 0;
+  }
+
+  .text-section-title,
+  .text-anim-sub {
+    font-size: 10.5px;
+  }
+
+  .text-toggle-switch {
+    width: 88px;
+  }
+
+  .text-toggle-switch .segmented-switch-item {
+    height: 26px;
+    font-size: 11px;
+  }
+
+  .text-content-textarea {
+    min-height: 44px;
+    max-height: 110px;
+    font-size: 13px;
+    padding: 6px 10px;
+    border-radius: 6px;
+  }
+
+  .text-tab-pane .custom-dropdown-trigger {
+    height: 28px;
+    font-size: 11px;
+  }
+
+  .text-tab-pane .segmented-switch.is-compact .segmented-switch-item {
+    height: 28px;
+    font-size: 11px;
+  }
+
+  .text-tab-pane .effects-param-pill.jog-wheel-container {
+    height: 28px;
+    min-height: 28px;
+    margin: 0;
+  }
+
+  .text-anim-section {
+    gap: 6px;
+    padding: 8px 0 10px;
+  }
 }

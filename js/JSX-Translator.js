@@ -84,7 +84,21 @@
     };
   }
 
-  function notifyProjectChange(reason, toastMsg) {
+  function invalidateLayerRange(layer) {
+    if (!layer) return;
+    if (typeof global.invalidatePreviewCacheForLayer === 'function') {
+      global.invalidatePreviewCacheForLayer(layer);
+    } else if (global.PreviewCacheManager && typeof global.PreviewCacheManager.invalidateLayer === 'function') {
+      global.PreviewCacheManager.invalidateLayer(layer);
+    }
+  }
+
+  function notifyProjectChange(reason, toastMsg, affectedLayers) {
+    if (Array.isArray(affectedLayers)) {
+      affectedLayers.forEach(l => invalidateLayerRange(l));
+    } else if (affectedLayers && typeof affectedLayers === 'object') {
+      invalidateLayerRange(affectedLayers);
+    }
     if (typeof global.saveCurrentProjectLayers === 'function') global.saveCurrentProjectLayers();
     if (typeof global.renderTimelineLayers === 'function') global.renderTimelineLayers();
     if (typeof global.redrawComposition === 'function') global.redrawComposition(reason);
@@ -796,7 +810,7 @@
 
     if (typeof global.selectTimelineLayer === 'function') global.selectTimelineLayer(adj.id, false);
     global.selectedLayerId = adj.id;
-    notifyProjectChange('applyBeatGhostEffect', 'Ghost Effect applied');
+    notifyProjectChange('applyBeatGhostEffect', 'Ghost Effect applied', adj);
     return JSON.stringify({ error: false, message: 'Ghost Effect applied', layerId: adj.id });
   }
 
@@ -852,7 +866,7 @@
 
     if (typeof global.selectTimelineLayer === 'function') global.selectTimelineLayer(adj.id, false);
     global.selectedLayerId = adj.id;
-    notifyProjectChange('applyBeatWarpEffect', 'Warp Effect applied');
+    notifyProjectChange('applyBeatWarpEffect', 'Warp Effect applied', adj);
     return JSON.stringify({ error: false, message: 'Warp Effect applied', layerId: adj.id });
   }
 
@@ -914,7 +928,7 @@
 
     if (typeof global.selectTimelineLayer === 'function') global.selectTimelineLayer(adj.id, false);
     global.selectedLayerId = adj.id;
-    notifyProjectChange('applyBeatFisheyeEffect', 'Fish Eye Ripple applied');
+    notifyProjectChange('applyBeatFisheyeEffect', 'Fish Eye Ripple applied', adj);
     return JSON.stringify({ error: false, message: 'Fish Eye Ripple applied', layerId: adj.id });
   }
 
@@ -998,7 +1012,7 @@
 
     if (typeof global.selectTimelineLayer === 'function') global.selectTimelineLayer(adj.id, false);
     global.selectedLayerId = adj.id;
-    notifyProjectChange('applyBeatMidwaveEffect', 'Mid-Wave applied');
+    notifyProjectChange('applyBeatMidwaveEffect', 'Mid-Wave applied', adj);
     return JSON.stringify({ error: false, message: 'Mid-Wave applied', layerId: adj.id });
   }
 
@@ -1047,7 +1061,7 @@
 
     if (typeof global.selectTimelineLayer === 'function') global.selectTimelineLayer(adj.id, false);
     global.selectedLayerId = adj.id;
-    notifyProjectChange('applyBeatHuespinEffect', 'Hue Spin applied');
+    notifyProjectChange('applyBeatHuespinEffect', 'Hue Spin applied', adj);
     return JSON.stringify({ error: false, message: 'Hue Spin applied', layerId: adj.id });
   }
 
@@ -1121,7 +1135,7 @@
 
     if (typeof global.selectTimelineLayer === 'function') global.selectTimelineLayer(adj.id, false);
     global.selectedLayerId = adj.id;
-    notifyProjectChange('applyBeatFlashEffect', 'Exposure Flash Beat applied');
+    notifyProjectChange('applyBeatFlashEffect', 'Exposure Flash Beat applied', adj);
     return JSON.stringify({ error: false, message: 'Exposure Flash Beat applied', layerId: adj.id });
   }
 
@@ -1211,7 +1225,7 @@
     if (typeof global.selectTimelineLayer === 'function') global.selectTimelineLayer(adj.id, false);
     global.selectedLayerId = adj.id;
     const label = isLensBlur ? 'Lens Blur Beat' : 'Fast Box Blur Beat';
-    notifyProjectChange('applyBeatBlurEffect', `${label} applied`);
+    notifyProjectChange('applyBeatBlurEffect', `${label} applied`, adj);
     return JSON.stringify({ error: false, message: `${label} applied`, layerId: adj.id });
   }
 
@@ -1634,7 +1648,7 @@
 
     if (typeof global.selectTimelineLayer === 'function') global.selectTimelineLayer(nullLayer.id, false);
     global.selectedLayerId = nullLayer.id;
-    notifyProjectChange('applyBeatNullTool', `${nullName} applied`);
+    notifyProjectChange('applyBeatNullTool', `${nullName} applied`, [nullLayer, targetLayer]);
     return JSON.stringify({ error: false, message: `${nullName} applied`, nullLayerId: nullLayer.id, targetLayerId: targetLayer.id });
   }
 
@@ -1818,7 +1832,7 @@
   // =========================================================================
   // UNIVERSAL CENTRAL TRANSLATOR: executeFishTool
   // =========================================================================
-  function executeFishTool(tool, ...args) {
+  function _executeFishToolInternal(tool, ...args) {
     if (!tool) return false;
 
     // Check if openfishtools-controller.js has defined its own full method
@@ -2034,6 +2048,20 @@
     }
   }
 
+  function executeFishTool(tool, ...args) {
+    if (!tool) return false;
+    const pcm = global.PreviewCacheManager;
+    const beforeSnap = (pcm && typeof pcm.captureStateSnapshot === 'function') ? pcm.captureStateSnapshot() : null;
+    const res = _executeFishToolInternal(tool, ...args);
+    if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
+      const changed = pcm.invalidateSmartDiff(beforeSnap);
+      if (changed && typeof global.redrawComposition === 'function') {
+        global.redrawComposition('smartCache:' + String(tool));
+      }
+    }
+    return res;
+  }
+
   // =========================================================================
   // ADOBE AFTER EFFECTS EXTENDSCRIPT DOM SHIM (app.project.activeItem...)
   // Allows traditional AE .jsx scripts to manipulate Web Studio layers directly!
@@ -2052,12 +2080,14 @@
           ? createSlider(matchName || 'Slider', 0)
           : { id: uid('fx'), name: matchName, type: (matchName || '').toLowerCase().replace(/[^a-z0-9]/g, '_') };
         rawLayer.effects.push(fx);
+        invalidateLayerRange(rawLayer);
         return createPropertyWrapper(rawLayer, matchName, fx);
       },
       setValue(val) {
         if (parentFx) {
           if (parentFx.slider !== undefined) parentFx.slider = val;
           parentFx.value = val;
+          invalidateLayerRange(rawLayer);
           return;
         }
         if (clean.includes('position') || clean.includes('pos')) {
@@ -2070,12 +2100,14 @@
           rawLayer.rotZ = val;
           rawLayer.rotation = val;
         }
+        invalidateLayerRange(rawLayer);
       },
       setValueAtTime(time, val) {
         rawLayer.keyframes = rawLayer.keyframes || {};
         const key = propName.toLowerCase();
         if (!Array.isArray(rawLayer.keyframes[key])) rawLayer.keyframes[key] = [];
         rawLayer.keyframes[key].push({ time, value: val, easing: [0.33, 0, 0.67, 1] });
+        invalidateLayerRange(rawLayer);
       },
       get expression() {
         const exprs = rawLayer.expressions || {};
@@ -2101,6 +2133,7 @@
         } else {
           rawLayer.expressions[propName.toLowerCase()] = exprStr;
         }
+        invalidateLayerRange(rawLayer);
       }
     };
   }
@@ -2113,7 +2146,7 @@
       get name() { return rawLayer.name; },
       set name(v) { rawLayer.name = v; },
       get inPoint() { return rawLayer.startSec || 0; },
-      set inPoint(v) { rawLayer.startSec = v; },
+      set inPoint(v) { rawLayer.startSec = v; invalidateLayerRange(rawLayer); },
       get outPoint() { return (rawLayer.startSec || 0) + (rawLayer.durationSec || 5); },
       get parent() {
         if (!rawLayer.parentId) return null;
@@ -2123,6 +2156,7 @@
       },
       set parent(pLayer) {
         rawLayer.parentId = pLayer && (pLayer.id || pLayer._raw?.id);
+        invalidateLayerRange(rawLayer);
       },
       property(propName) {
         return createPropertyWrapper(rawLayer, propName);
@@ -2136,6 +2170,7 @@
               ? createSlider(matchName || 'Slider', 0)
               : { id: uid('fx'), name: matchName, type: (matchName || '').toLowerCase().replace(/[^a-z0-9]/g, '_') };
             rawLayer.effects.push(fx);
+            invalidateLayerRange(rawLayer);
             return createPropertyWrapper(rawLayer, matchName, fx);
           }
         };
@@ -2162,6 +2197,7 @@
               const cur = getPlayheadSec();
               const adj = typeof global.addAdjustmentLayer === 'function' ? global.addAdjustmentLayer(d, cur) : null;
               if (adj && name) adj.name = name;
+              if (adj) invalidateLayerRange(adj);
               return createLayerWrapper(adj);
             },
             addNull(name, dur) {
@@ -2169,6 +2205,7 @@
               const cur = getPlayheadSec();
               const n = typeof global.addNullLayer === 'function' ? global.addNullLayer(false, { durationSec: d, startSec: cur }) : null;
               if (n && name) n.name = name;
+              if (n) invalidateLayerRange(n);
               return createLayerWrapper(n);
             },
             addSolid(color, name, w, h, par, dur) {
@@ -2176,6 +2213,7 @@
               const cur = getPlayheadSec();
               const s = typeof global.addSolidLayer === 'function' ? global.addSolidLayer(d, cur) : null;
               if (s && name) s.name = name;
+              if (s) invalidateLayerRange(s);
               return createLayerWrapper(s);
             }
           }
@@ -2185,19 +2223,27 @@
   };
 
   function executeJSX(codeOrFn) {
+    const pcm = global.PreviewCacheManager;
+    const beforeSnap = (pcm && typeof pcm.captureStateSnapshot === 'function') ? pcm.captureStateSnapshot() : null;
+    let res = null;
     if (typeof codeOrFn === 'function') {
-      return codeOrFn(appShim);
-    }
-    if (typeof codeOrFn === 'string') {
+      res = codeOrFn(appShim);
+    } else if (typeof codeOrFn === 'string') {
       try {
         const fn = new Function('app', 'window', 'globalThis', 'JSXTranslator', 'executeFishTool', codeOrFn);
-        return fn(appShim, global, global, global.JSXTranslator, executeFishTool);
+        res = fn(appShim, global, global, global.JSXTranslator, executeFishTool);
       } catch (err) {
         console.error('[JSXTranslator] executeJSX error:', err);
         throw err;
       }
     }
-    return null;
+    if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
+      const changed = pcm.invalidateSmartDiff(beforeSnap);
+      if (changed) {
+        notifyProjectChange('executeJSX');
+      }
+    }
+    return res;
   }
 
   const supportedTools = [
