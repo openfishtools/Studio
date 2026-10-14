@@ -1966,16 +1966,24 @@
     let isNeedleDragging = false;
     needle.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
-      // If clicking directly over a keyframe diamond or marker, yield control to keyframe
+      // If clicking directly over a trim handle, keyframe diamond, or marker, yield control
       const elementsUnder = (typeof document.elementsFromPoint === 'function')
         ? document.elementsFromPoint(e.clientX, e.clientY)
         : [];
-      const kfUnder = elementsUnder.find(el => el && el.classList && (
+      const interactiveUnder = elementsUnder.find(el => el && el.classList && (
+        el.classList.contains('timeline-clip-handle') ||
         el.classList.contains('desktop-kf-diamond') ||
         el.classList.contains('timeline-keyframe-marker')
       ));
-      if (kfUnder) {
-        kfUnder.dispatchEvent(new PointerEvent('pointerdown', e));
+      if (interactiveUnder) {
+        interactiveUnder.dispatchEvent(new PointerEvent('pointerdown', {
+          bubbles: true,
+          cancelable: true,
+          clientX: e.clientX,
+          clientY: e.clientY,
+          pointerId: e.pointerId,
+          button: e.button
+        }));
         return;
       }
       isNeedleDragging = true;

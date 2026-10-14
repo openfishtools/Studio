@@ -33563,12 +33563,18 @@
             const rightHandle = clipEl.querySelector('.handle-right');
             const minWidth = 36;
 
-            if (leftHandle && isSelected) {
+            if (leftHandle) {
               leftHandle.addEventListener('pointerdown', (e) => {
+                const isCurrentlySelected = clipEl.classList.contains('is-selected') ||
+                  (window.selectedLayerIds && window.selectedLayerIds.has(layer.id)) ||
+                  (window.selectedLayerId === layer.id);
+                if (!isCurrentlySelected) return;
+                if (e.button !== undefined && e.button !== 0) return;
                 e.stopPropagation();
                 e.preventDefault();
-                leftHandle.setPointerCapture(e.pointerId);
+                try { leftHandle.setPointerCapture(e.pointerId); } catch (_) {}
 
+                const curPps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
                 const startPointerX = e.clientX;
                 const initialStartPx = layer.startPx || 0;
                 const initialWidthPx = layer.widthPx || 320;
@@ -33576,12 +33582,13 @@
                 const initialOffsetSec = layer.sourceOffsetSec || 0;
                 const totalMediaDur = (layer.type === 'video' || layer.type === 'audio') ? getLayerMediaDuration(layer) : null;
 
-                const initialStartSec = layer.startSec !== undefined ? layer.startSec : (initialStartPx / pixelsPerSecond);
-                const initialDurSec = layer.durationSec !== undefined ? layer.durationSec : (initialWidthPx / pixelsPerSecond);
+                const initialStartSec = layer.startSec !== undefined ? layer.startSec : (initialStartPx / curPps);
+                const initialDurSec = layer.durationSec !== undefined ? layer.durationSec : (initialWidthPx / curPps);
                 const initialEndSec = initialStartSec + initialDurSec;
                 window.isTransformInteracting = true;
 
                 function onPointerMove(moveEvent) {
+                  const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
                   const deltaX = moveEvent.clientX - startPointerX;
                   let newStartPx = initialStartPx + deltaX;
 
@@ -33602,7 +33609,7 @@
 
                   // Never expand before 00:00:00 of original media
                   if (totalMediaDur !== null) {
-                    const maxExtendLeftPx = Math.round(initialOffsetSec * pixelsPerSecond);
+                    const maxExtendLeftPx = Math.round(initialOffsetSec * activePps);
                     const minAllowedStartPx = Math.max(0, initialStartPx - maxExtendLeftPx);
                     newStartPx = Math.max(minAllowedStartPx, newStartPx);
                   } else {
@@ -33617,12 +33624,12 @@
 
                   layer.startPx = Math.round(newStartPx);
                   layer.widthPx = Math.round(newWidthPx);
-                  layer.startSec = layer.startPx / pixelsPerSecond;
-                  layer.durationSec = layer.widthPx / pixelsPerSecond;
+                  layer.startSec = layer.startPx / activePps;
+                  layer.durationSec = layer.widthPx / activePps;
                   layer.isDurationExplicit = true;
 
                   if (totalMediaDur !== null) {
-                    const shiftedSec = (layer.startPx - initialStartPx) / pixelsPerSecond;
+                    const shiftedSec = (layer.startPx - initialStartPx) / activePps;
                     layer.sourceOffsetSec = Math.max(0, Math.min(totalMediaDur - layer.durationSec, initialOffsetSec + shiftedSec));
                   }
 
@@ -33637,10 +33644,10 @@
                 function onPointerUp(upEvent) {
                   if (typeof hideTimelineSnapGuide === 'function') hideTimelineSnapGuide();
                   window._lastTrimSnapPx = null;
-                  leftHandle.releasePointerCapture(upEvent.pointerId);
-                  leftHandle.removeEventListener('pointermove', onPointerMove);
-                  leftHandle.removeEventListener('pointerup', onPointerUp);
-                  leftHandle.removeEventListener('pointercancel', onPointerUp);
+                  try { leftHandle.releasePointerCapture(upEvent.pointerId); } catch (_) {}
+                  window.removeEventListener('pointermove', onPointerMove);
+                  window.removeEventListener('pointerup', onPointerUp);
+                  window.removeEventListener('pointercancel', onPointerUp);
                   window.isTransformInteracting = false;
 
                   const fps = (typeof getProjectFps === 'function') ? getProjectFps() : 60;
@@ -33662,18 +33669,24 @@
                   }
                 }
 
-                leftHandle.addEventListener('pointermove', onPointerMove);
-                leftHandle.addEventListener('pointerup', onPointerUp);
-                leftHandle.addEventListener('pointercancel', onPointerUp);
+                window.addEventListener('pointermove', onPointerMove);
+                window.addEventListener('pointerup', onPointerUp);
+                window.addEventListener('pointercancel', onPointerUp);
               });
             }
 
-            if (rightHandle && isSelected) {
+            if (rightHandle) {
               rightHandle.addEventListener('pointerdown', (e) => {
+                const isCurrentlySelected = clipEl.classList.contains('is-selected') ||
+                  (window.selectedLayerIds && window.selectedLayerIds.has(layer.id)) ||
+                  (window.selectedLayerId === layer.id);
+                if (!isCurrentlySelected) return;
+                if (e.button !== undefined && e.button !== 0) return;
                 e.stopPropagation();
                 e.preventDefault();
-                rightHandle.setPointerCapture(e.pointerId);
+                try { rightHandle.setPointerCapture(e.pointerId); } catch (_) {}
 
+                const curPps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
                 const startPointerX = e.clientX;
                 const initialWidthPx = layer.widthPx || 320;
                 const currentOffsetSec = layer.sourceOffsetSec || 0;
@@ -33681,15 +33694,16 @@
                 let maxAllowedWidthPx = Infinity;
                 if (totalMediaDur !== null) {
                   const maxAvailableDurSec = Math.max(0.1, totalMediaDur - currentOffsetSec);
-                  maxAllowedWidthPx = Math.round(maxAvailableDurSec * pixelsPerSecond);
+                  maxAllowedWidthPx = Math.round(maxAvailableDurSec * curPps);
                 }
 
-                const initialStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pixelsPerSecond);
-                const initialDurSec = layer.durationSec !== undefined ? layer.durationSec : (initialWidthPx / pixelsPerSecond);
+                const initialStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / curPps);
+                const initialDurSec = layer.durationSec !== undefined ? layer.durationSec : (initialWidthPx / curPps);
                 const initialEndSec = initialStartSec + initialDurSec;
                 window.isTransformInteracting = true;
 
                 function onPointerMove(moveEvent) {
+                  const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
                   const deltaX = moveEvent.clientX - startPointerX;
                   let rawEndPx = (layer.startPx || 0) + initialWidthPx + deltaX;
 
@@ -33712,12 +33726,12 @@
                   newWidthPx = Math.max(minWidth, Math.min(maxAllowedWidthPx, newWidthPx));
 
                   layer.widthPx = Math.round(newWidthPx);
-                  layer.durationSec = layer.widthPx / pixelsPerSecond;
+                  layer.durationSec = layer.widthPx / activePps;
                   layer.isDurationExplicit = true;
 
                   clipEl.style.width = `${layer.widthPx}px`;
                   if (layer.type === 'audio') renderAudioClipWaveform(layer, clipEl);
-                  const curTrimEndSec = (layer.startSec !== undefined ? layer.startSec : (layer.startPx / pixelsPerSecond)) + (layer.durationSec || 0);
+                  const curTrimEndSec = (layer.startSec !== undefined ? layer.startSec : (layer.startPx / activePps)) + (layer.durationSec || 0);
                   if (curTrimEndSec > lastGeneratedDuration) {
                     generateRulerTicks(currentFps);
                   }
@@ -33729,10 +33743,10 @@
                 function onPointerUp(upEvent) {
                   if (typeof hideTimelineSnapGuide === 'function') hideTimelineSnapGuide();
                   window._lastTrimSnapPx = null;
-                  rightHandle.releasePointerCapture(upEvent.pointerId);
-                  rightHandle.removeEventListener('pointermove', onPointerMove);
-                  rightHandle.removeEventListener('pointerup', onPointerUp);
-                  rightHandle.removeEventListener('pointercancel', onPointerUp);
+                  try { rightHandle.releasePointerCapture(upEvent.pointerId); } catch (_) {}
+                  window.removeEventListener('pointermove', onPointerMove);
+                  window.removeEventListener('pointerup', onPointerUp);
+                  window.removeEventListener('pointercancel', onPointerUp);
                   window.isTransformInteracting = false;
 
                   const fps = (typeof getProjectFps === 'function') ? getProjectFps() : 60;
@@ -33751,9 +33765,9 @@
                   }
                 }
 
-                rightHandle.addEventListener('pointermove', onPointerMove);
-                rightHandle.addEventListener('pointerup', onPointerUp);
-                rightHandle.addEventListener('pointercancel', onPointerUp);
+                window.addEventListener('pointermove', onPointerMove);
+                window.addEventListener('pointerup', onPointerUp);
+                window.addEventListener('pointercancel', onPointerUp);
               });
             }
           }
