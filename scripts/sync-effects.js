@@ -218,18 +218,19 @@ function buildLoaderSource(files, customFiles) {
   var isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
   if (!isBrowser) return;
 
-  var host = (window.location && window.location.hostname) || '';
+  var isFileProtocol = window.location && window.location.protocol === 'file:';
+  var host = (window.location && window.location.hostname) || (isFileProtocol ? 'file://' : '');
 
   // 1. Synchronously fetch effects/effects.wasm
   var wasmBytes = null;
   try {
     var xhr = new XMLHttpRequest();
     var wasmUrl = 'effects/effects.wasm';
-    if (window.OFT_VERSION) wasmUrl += '?v=' + encodeURIComponent(window.OFT_VERSION);
+    if (window.OFT_VERSION && !isFileProtocol) wasmUrl += '?v=' + encodeURIComponent(window.OFT_VERSION);
     xhr.open('GET', wasmUrl, false);
     xhr.overrideMimeType('text/plain; charset=x-user-defined');
     xhr.send(null);
-    if (xhr.status >= 200 && xhr.status < 300 && xhr.responseText) {
+    if (((xhr.status >= 200 && xhr.status < 300) || (isFileProtocol && xhr.status === 0)) && xhr.responseText) {
       var text = xhr.responseText;
       wasmBytes = new Uint8Array(text.length);
       for (var i = 0; i < text.length; i++) {
@@ -321,10 +322,10 @@ function buildLoaderSource(files, customFiles) {
     try {
       var cXhr = new XMLHttpRequest();
       var cUrl = 'effects/' + encodeURIComponent(customFiles[c]);
-      if (window.OFT_VERSION) cUrl += '?v=' + encodeURIComponent(window.OFT_VERSION);
+      if (window.OFT_VERSION && !isFileProtocol) cUrl += '?v=' + encodeURIComponent(window.OFT_VERSION);
       cXhr.open('GET', cUrl, false);
       cXhr.send(null);
-      if (cXhr.status >= 200 && cXhr.status < 300 && cXhr.responseText) {
+      if (((cXhr.status >= 200 && cXhr.status < 300) || (isFileProtocol && cXhr.status === 0)) && cXhr.responseText) {
         (0, eval)(cXhr.responseText);
       }
     } catch (cErr) {

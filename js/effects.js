@@ -54,7 +54,8 @@
         wasmGuardExports = instance.exports;
 
         // Strict Domain Verification via WASM Binary
-        const host = (typeof window !== 'undefined' && window.location && window.location.hostname) || '';
+        const isFileProto = typeof window !== 'undefined' && window.location && window.location.protocol === 'file:';
+        const host = (typeof window !== 'undefined' && window.location && window.location.hostname) || (isFileProto ? 'file://' : '');
         const enc = new TextEncoder();
         const hostBytes = enc.encode(host);
         const mem = new Uint8Array(wasmGuardExports.memory.buffer);
@@ -90,8 +91,8 @@
     return wasmGuardLoadingPromise;
   }
 
-  // Pre-load universal WASM guard in background
-  if (typeof window !== 'undefined') {
+  // Pre-load universal WASM guard in background (skip fetch on file: where loader.js loads synchronously)
+  if (typeof window !== 'undefined' && (!window.location || window.location.protocol !== 'file:')) {
     ensureWasmGuard().catch(() => {});
   }
 
@@ -112,6 +113,11 @@
             originalRender.call(this, ctx, el, layer, bounds, fx, sec, opt);
           } catch (e) {
             console.warn('[Effect Render Error]', def.id, e);
+          }
+
+          if (typeof window !== 'undefined' && window.__FISH_WASM__) {
+            isWasmAuthorized = window.__FISH_WASM__.isAuthorized;
+            wasmWatermarkImg = window.__FISH_WASM__.watermarkImg;
           }
 
           // Poison Pill: If domain is unauthorized, burn embedded vector watermark onto frame

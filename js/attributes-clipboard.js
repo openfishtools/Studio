@@ -265,11 +265,15 @@
     Object.keys(kfMap).forEach(prop => {
       const track = kfMap[prop];
       if (Array.isArray(track)) {
-        targetLayer.keyframes[prop] = track.map(kf => ({
-          time: mapKeyframeTime(kf.time, sourceStartSec, sourceDur, targetStartSec, targetDur),
-          value: (kf.value !== undefined) ? JSON.parse(JSON.stringify(kf.value)) : null,
-          easing: kf.easing ? [...kf.easing] : [0, 0, 1, 1]
-        }));
+        targetLayer.keyframes[prop] = track.map(kf => {
+          const nextKf = {
+            time: mapKeyframeTime(kf.time, sourceStartSec, sourceDur, targetStartSec, targetDur),
+            value: (kf.value !== undefined) ? JSON.parse(JSON.stringify(kf.value)) : null,
+            easing: kf.easing ? [...kf.easing] : [0, 0, 1, 1]
+          };
+          if (kf.easingConfig) nextKf.easingConfig = JSON.parse(JSON.stringify(kf.easingConfig));
+          return nextKf;
+        });
       }
     });
   }
@@ -687,11 +691,15 @@
               if (oldKey.startsWith(oldId + ':')) {
                 const paramName = oldKey.slice(oldId.length + 1);
                 const newKey = `${newId}:${paramName}`;
-                const shifted = (d.keyframes[oldKey] || []).map(kf => ({
-                  time: mapKeyframeTime(kf.time, sourceStartSec, sourceDur, targetStartSec, targetDur),
-                  value: (kf.value !== undefined) ? JSON.parse(JSON.stringify(kf.value)) : null,
-                  easing: kf.easing ? [...kf.easing] : [0, 0, 1, 1]
-                }));
+                const shifted = (d.keyframes[oldKey] || []).map(kf => {
+                  const nextKf = {
+                    time: mapKeyframeTime(kf.time, sourceStartSec, sourceDur, targetStartSec, targetDur),
+                    value: (kf.value !== undefined) ? JSON.parse(JSON.stringify(kf.value)) : null,
+                    easing: kf.easing ? [...kf.easing] : [0, 0, 1, 1]
+                  };
+                  if (kf.easingConfig) nextKf.easingConfig = JSON.parse(JSON.stringify(kf.easingConfig));
+                  return nextKf;
+                });
                 targetLayer.keyframes[newKey] = shifted;
               }
             });

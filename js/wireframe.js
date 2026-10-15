@@ -580,7 +580,9 @@
               const span = k1.time - k0.time;
               const u = span > 0 ? (t - k0.time) / span : 0;
               const easing = k0.easing || [0.0, 0.0, 1.0, 1.0];
-              const eased = evalBezier(easing[0], easing[1], easing[2], easing[3], u);
+              const eased = (typeof window.evaluateKeyframeEasing === 'function')
+                ? window.evaluateKeyframeEasing(k0, u, easing)
+                : evalBezier(easing[0], easing[1], easing[2], easing[3], u);
               const p0 = getKfPos(k0);
               const p1 = getKfPos(k1);
               posX = p0.x + (p1.x - p0.x) * eased;

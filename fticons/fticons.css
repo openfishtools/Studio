@@ -3,13 +3,46 @@
     src: url(".//fticons.woff2?1decc2e03c8d3fcfaa25af4be56938ed") format("woff2");
 }
 
-[class^="fticon-"]:before, [class*=" fticon-"]:before {
+.fticon,
+[class^="fticon-"],
+[class*=" fticon-"] {
     font-family: fticons !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
     font-style: normal;
     font-weight: normal !important;
     font-variant: normal;
     text-transform: none;
-    line-height: 1;
+    line-height: 1 !important;
+    text-align: center !important;
+    vertical-align: middle;
+    flex-shrink: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+.fticon[style*="display: none"],
+.fticon[style*="display:none"],
+.fticon[hidden],
+[class^="fticon-"][style*="display: none"],
+[class^="fticon-"][style*="display:none"],
+[class^="fticon-"][hidden],
+[class*=" fticon-"][style*="display: none"],
+[class*=" fticon-"][style*="display:none"],
+[class*=" fticon-"][hidden] {
+    display: none !important;
+}
+
+[class^="fticon-"]:before, [class*=" fticon-"]:before {
+    font-family: fticons !important;
+    display: block;
+    font-style: normal;
+    font-weight: normal !important;
+    font-variant: normal;
+    text-transform: none;
+    line-height: 1 !important;
+    text-align: center;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }

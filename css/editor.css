@@ -236,7 +236,9 @@ html, body {
   font-size: 22px;}
 
 .fticon {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-style: normal;
   font-weight: normal;
   line-height: 1;
@@ -245,7 +247,7 @@ html, body {
 
 /* Universal SVG Mask Icons (100% CSS Color Controlled via currentColor) */
 .fticon {
-  display: inline-block;
+  display: inline-flex;
 }
 
 .ctrl-btn:hover {
@@ -287,17 +289,17 @@ body.is-exporting .template-scrubber-wrap {
 .ctrl-btn img.icon-pause,
 .ctrl-btn path.icon-pause,
 .ctrl-btn .fticon.icon-pause {
-  display: none;
+  display: none !important;
 }
 .ctrl-btn.is-playing img.icon-play,
 .ctrl-btn.is-playing path.icon-play,
 .ctrl-btn.is-playing .fticon.icon-play {
-  display: none;
+  display: none !important;
 }
 .ctrl-btn.is-playing img.icon-pause,
 .ctrl-btn.is-playing path.icon-pause,
 .ctrl-btn.is-playing .fticon.icon-pause {
-  display: block;
+  display: inline-flex !important;
 }
 
 .ctrl-btn-fish img {
@@ -3157,14 +3159,15 @@ body.has-active-drawer .timeline-layers-viewport {
 }
 
 .timeline-layer-checkbox .fticon {
-  display: none;
+  display: none !important;
 }
 
 .timeline-layer-checkbox.is-selected .fticon {
-  display: block;
+  display: inline-flex !important;
   width: 12px;
   height: 12px;
-  font-size: 12px;}
+  font-size: 12px;
+}
 
 .timeline-layer-thumb-circle,
 .timeline-layer-thumb-circle *,

@@ -22,7 +22,9 @@
 }
 
 .fticon {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-style: normal;
   font-weight: normal;
   line-height: 1;
@@ -524,6 +526,7 @@
 .desktop-panel-left .media-import-plus-icon {
   width: 20px;
   height: 20px;
+  font-size: 20px;
   fill: currentColor;
 }
 
@@ -588,6 +591,7 @@
 .desktop-panel-left #add-layer-shape-grid svg {
   width: 24px !important;
   height: 24px !important;
+  font-size: 24px !important;
   fill: currentColor !important;
 }
 
@@ -647,6 +651,7 @@
 .desktop-panel-left #add-layer-control-grid .layer-action-icon {
   width: 20px !important;
   height: 20px !important;
+  font-size: 20px !important;
   fill: currentColor !important;
 }
 
@@ -1145,6 +1150,7 @@
 .desktop-inspector-empty-icon {
   width: 36px;
   height: 36px;
+  font-size: 36px;
   color: var(--border-subtle);
   fill: currentColor;
 }
@@ -3137,6 +3143,7 @@
   color: var(--text-muted) !important;
   width: 10px !important;
   height: 10px !important;
+  font-size: 10px !important;
   margin-left: 4px !important;
   flex-shrink: 0 !important;
   transition: transform 0.15s ease, color 0.15s ease !important;
@@ -3432,15 +3439,20 @@
 }
 
 .desktop-panel-right .fill-tab-btn svg,
-#desktop-panel-inspector .fill-tab-btn svg {
+#desktop-panel-inspector .fill-tab-btn svg,
+.desktop-panel-right .fill-tab-btn .fticon,
+#desktop-panel-inspector .fill-tab-btn .fticon {
   width: 14px !important;
   height: 14px !important;
+  font-size: 14px !important;
   stroke: currentColor !important;
   pointer-events: none !important;
 }
 
 .desktop-panel-right .fill-tab-btn.is-active svg,
-#desktop-panel-inspector .fill-tab-btn.is-active svg {
+#desktop-panel-inspector .fill-tab-btn.is-active svg,
+.desktop-panel-right .fill-tab-btn.is-active .fticon,
+#desktop-panel-inspector .fill-tab-btn.is-active .fticon {
   stroke: var(--bg-canvas) !important;
   color: var(--bg-canvas) !important;
 }
@@ -3632,9 +3644,12 @@
 }
 
 .desktop-panel-right .color-picker-header-action-btn svg,
-#desktop-panel-inspector .color-picker-header-action-btn svg {
+#desktop-panel-inspector .color-picker-header-action-btn svg,
+.desktop-panel-right .color-picker-header-action-btn .fticon,
+#desktop-panel-inspector .color-picker-header-action-btn .fticon {
   width: 14px !important;
   height: 14px !important;
+  font-size: 14px !important;
   stroke: currentColor !important;
   pointer-events: none !important;
 }
@@ -4304,6 +4319,7 @@
 #desktop-panel-inspector .fill-none-watermark-icon {
   width: 32px !important;
   height: 32px !important;
+  font-size: 32px !important;
   color: currentColor !important;
   opacity: 0.6 !important;
 }
@@ -4591,6 +4607,7 @@
 .desktop-panel-right .beatmark-giant-svg {
   width: 18px !important;
   height: 18px !important;
+  font-size: 18px !important;
   fill: currentColor !important;
 }
 
@@ -5095,10 +5112,14 @@
 }
 
 .desktop-timeline-toolbar .layer-cut-bar-row > .layer-tile-btn .svg-icon,
-.desktop-timeline-toolbar .layer-cut-bar-row > .layer-tile-btn svg {
+.desktop-timeline-toolbar .layer-cut-bar-row > .layer-tile-btn svg,
+.desktop-timeline-toolbar .layer-cut-bar-row > .layer-tile-btn .fticon {
   width: 15px !important;
   height: 15px !important;
-  display: block !important;
+  font-size: 15px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .desktop-timeline-toolbar .layer-cut-bar-row > .layer-tile-btn:hover:not(:disabled) {
@@ -5161,10 +5182,14 @@
 }
 
 .desktop-timeline-toolbar .layer-cut-group .segmented-button .svg-icon,
-.desktop-timeline-toolbar .layer-cut-group .segmented-button svg {
+.desktop-timeline-toolbar .layer-cut-group .segmented-button svg,
+.desktop-timeline-toolbar .layer-cut-group .segmented-button .fticon {
   width: 15px !important;
   height: 15px !important;
-  display: block !important;
+  font-size: 15px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   fill: currentColor !important;
   color: currentColor !important;
 }

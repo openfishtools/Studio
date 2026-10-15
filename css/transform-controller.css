@@ -1,5 +1,7 @@
 .fticon {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-style: normal;
   font-weight: normal;
   line-height: 1;
@@ -1344,7 +1346,15 @@
   stroke-width: 2;
   fill: none;
   stroke-linecap: round;
+  stroke-linejoin: round;
   transition: stroke 0.12s ease;
+}
+
+.preset-thumb-fill {
+  fill: var(--text-primary);
+  fill-opacity: 0.14;
+  stroke: none;
+  transition: fill 0.12s ease, fill-opacity 0.12s ease;
 }
 
 .preset-thumb-dot {
@@ -1361,6 +1371,11 @@
   stroke: var(--color-primary);
 }
 
+.graph-preset-btn.is-active .preset-thumb-fill {
+  fill: var(--color-primary);
+  fill-opacity: 0.22;
+}
+
 .graph-preset-btn.is-active .preset-thumb-dot {
   fill: var(--color-primary);
 }
@@ -1372,6 +1387,21 @@
 .graph-preset-btn.is-active .preset-thumb-tangent {
   stroke: var(--color-primary);
   opacity: 0.6;
+}
+
+#popover-graph-mode .popover-menu-item svg {
+  fill: none;
+  stroke: currentColor;
+}
+
+#popover-graph-mode .popover-menu-item.is-active {
+  background-color: var(--bg-panel-hover);
+  color: var(--color-primary);
+}
+
+#popover-graph-mode .popover-menu-item.is-active:hover {
+  background-color: var(--color-primary);
+  color: var(--bg-canvas);
 }
 
 /* ==========================================================================
@@ -3164,6 +3194,7 @@
 .beatmark-giant-svg {
   width: 22px;
   height: 22px;
+  font-size: 22px;
   fill: currentColor;
   transition: fill 0.1s ease;
 }
@@ -3536,6 +3567,7 @@
 .beatmark-giant-svg {
   width: 19px;
   height: 19px;
+  font-size: 19px;
 }
 
 .beatmark-giant-label {
