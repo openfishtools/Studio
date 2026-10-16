@@ -2065,11 +2065,11 @@ async function handleImportedFiles(files, dropzone, statusEl) {
 }
 
 /**
- * Queries and updates storage durability status in Welcome modal
+ * Queries and updates storage durability status in Settings modal & Welcome modal
  */
 async function updateStorageDurabilityUI() {
-  const statusEl = document.getElementById('welcome-storage-status');
-  const btnEl = document.getElementById('welcome-storage-btn');
+  const statusEl = document.getElementById('settings-storage-status') || document.getElementById('welcome-storage-status');
+  const btnEl = document.getElementById('settings-storage-btn') || document.getElementById('welcome-storage-btn');
   if (!statusEl) return;
 
   if (!window.FishDatabase || typeof window.FishDatabase.checkStoragePersistence !== 'function') {
@@ -2095,7 +2095,7 @@ async function updateStorageDurabilityUI() {
 }
 
 window.requestStudioStoragePersist = async function () {
-  const btnEl = document.getElementById('welcome-storage-btn');
+  const btnEl = document.getElementById('settings-storage-btn') || document.getElementById('welcome-storage-btn');
   if (btnEl) {
     btnEl.disabled = true;
     btnEl.textContent = 'Protecting...';
@@ -2109,6 +2109,40 @@ window.requestStudioStoragePersist = async function () {
     btnEl.textContent = 'Protect';
   }
 };
+
+async function resetStudioToFactoryAction() {
+  const confirmed = window.confirm(
+    "Reset ke Kondisi Awal (Factory Reset)?\n\nSemua project lokal, file media, cache preview, dan pengaturan akan dihapus secara permanen. Aplikasi akan kembali bersih seperti baru pertama kali diunduh/dibuka.\n\nApakah Anda yakin ingin melanjutkan?"
+  );
+  if (!confirmed) return;
+
+  const resetBtn = document.getElementById('btn-settings-factory-reset');
+  if (resetBtn) {
+    resetBtn.disabled = true;
+    resetBtn.innerHTML = `<span>Resetting...</span>`;
+  }
+
+  try {
+    if (window.FishDatabase && typeof window.FishDatabase.factoryReset === 'function') {
+      await window.FishDatabase.factoryReset();
+    } else {
+      try { localStorage.clear(); } catch (_) {}
+      try { sessionStorage.clear(); } catch (_) {}
+      if (typeof indexedDB !== 'undefined') {
+        try { indexedDB.deleteDatabase('FishStudioDB'); } catch (_) {}
+        try { indexedDB.deleteDatabase('FishFrameCacheDB'); } catch (_) {}
+      }
+    }
+  } catch (err) {
+    console.error('[FishStudio] Factory reset error:', err);
+  }
+
+  // Reload back to clean origin without query parameters or hash
+  const cleanUrl = window.location.href.split('?')[0].split('#')[0];
+  window.location.replace(cleanUrl);
+}
+
+
 
 /**
  * Checks if current page was opened with an incoming shared project/preset link
@@ -2526,6 +2560,8 @@ window.closeWelcomeModal = closeWelcomeModal;
 window.openDonateFromWelcome = openDonateFromWelcome;
 window.toggleQrisDisplay = toggleQrisDisplay;
 window.openAppSettingsModal = openAppSettingsModal;
+window.resetStudioToFactoryAction = resetStudioToFactoryAction;
+window.updateStorageDurabilityUI = updateStorageDurabilityUI;
 window.setStudioTheme = setStudioTheme;
 window.getStudioTheme = getStudioTheme;
 window.initSettingsModal = initSettingsModal;
@@ -2635,6 +2671,7 @@ function initSettingsModal() {
 
 function openAppSettingsModal() {
   initSettingsModal();
+  updateStorageDurabilityUI().catch(() => {});
   if (window.Modal && typeof window.Modal.open === 'function') {
     window.Modal.open('modal-settings');
   }

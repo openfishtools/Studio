@@ -2984,6 +2984,59 @@ window.FishDatabase = (function () {
     } catch (_) {}
   }
 
+  /**
+   * Complete factory reset: wipes all local projects, media, caches,
+   * IndexedDB databases, localStorage, and sessionStorage back to pristine state.
+   */
+  async function factoryReset() {
+    try {
+      await clearProjects();
+    } catch (_) {}
+
+    try {
+      var db = await openDB();
+      if (db) {
+        if (db.objectStoreNames.contains('settings')) {
+          var tx = db.transaction('settings', 'readwrite');
+          tx.objectStore('settings').clear();
+        }
+        try { db.close(); } catch (_) {}
+      }
+    } catch (_) {}
+
+    if (typeof indexedDB !== 'undefined') {
+      try {
+        indexedDB.deleteDatabase(DB_NAME);
+      } catch (_) {}
+      try {
+        indexedDB.deleteDatabase('FishFrameCacheDB');
+      } catch (_) {}
+      if (typeof indexedDB.databases === 'function') {
+        try {
+          var dbs = await indexedDB.databases();
+          for (var i = 0; i < dbs.length; i++) {
+            if (dbs[i] && dbs[i].name) {
+              try { indexedDB.deleteDatabase(dbs[i].name); } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    try { localStorage.clear(); } catch (_) {}
+    try { sessionStorage.clear(); } catch (_) {}
+
+    if (typeof window !== 'undefined' && 'caches' in window) {
+      try {
+        var keys = await window.caches.keys();
+        await Promise.all(keys.map(function (k) { return window.caches.delete(k); }));
+      } catch (_) {}
+    }
+
+    return true;
+  }
+
+
   return {
     init: init,
     getSettings: getSettings,
@@ -3032,7 +3085,8 @@ window.FishDatabase = (function () {
     deleteSavedElement: deleteSavedElement,
     showOFTSProgressModal: showOFTSProgressModal,
     updateOFTSProgress: updateOFTSProgress,
-    hideOFTSProgressModal: hideOFTSProgressModal
+    hideOFTSProgressModal: hideOFTSProgressModal,
+    factoryReset: factoryReset
   };
 })();
 

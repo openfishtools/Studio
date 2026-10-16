@@ -4352,4 +4352,124 @@
   font-weight: 600;
 }
 
+/* --- Storage Durability Box & Danger Zone (Reset) in Settings --- */
+.settings-storage-box,
+.settings-reset-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  box-sizing: border-box;
+}
+
+.settings-storage-info,
+.settings-reset-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-storage-title,
+.settings-reset-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-brand);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.settings-storage-title svg {
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.settings-storage-desc,
+.settings-reset-desc {
+  font-family: var(--font-brand);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.settings-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background-color: var(--bg-panel-inner);
+  color: var(--color-primary);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-brand);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+
+.settings-action-btn:hover {
+  background-color: var(--color-primary);
+  color: var(--bg-canvas);
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+}
+
+.settings-action-btn:active {
+  transform: scale(0.96);
+}
+
+.settings-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background-color: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  font-family: var(--font-brand);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+
+.settings-reset-btn svg {
+  flex-shrink: 0;
+}
+
+.settings-reset-btn:hover {
+  background-color: #ef4444;
+  color: #ffffff;
+  border-color: #ef4444;
+  transform: translateY(-1px);
+}
+
+.settings-reset-btn:active {
+  transform: scale(0.96);
+}
+
+.settings-reset-btn:disabled,
+.settings-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+
 

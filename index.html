@@ -2978,20 +2978,6 @@
         </div>
 
         <div class="welcome-features-list">
-          <div class="welcome-feature-item" id="welcome-storage-item">
-            <div class="welcome-feature-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
-              </svg>
-            </div>
-            <div class="feature-text">
-              <strong>Local Storage Durability</strong>
-              <span id="welcome-storage-status">Checking storage persistence...</span>
-            </div>
-            <button type="button" class="welcome-link-btn" id="welcome-storage-btn" onclick="window.requestStudioStoragePersist()" style="display: none;">
-              <span>Protect</span>
-            </button>
-          </div>
           <div class="welcome-feature-item">
             <div class="welcome-feature-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
@@ -3361,7 +3347,47 @@
           </div>
         </div>
 
-        <!-- 2. Studio Application Info -->
+        <!-- 2. Local Storage Durability -->
+        <div class="settings-group">
+          <div class="settings-group-header">
+            <span class="settings-group-title">STORAGE DURABILITY</span>
+          </div>
+          <div class="settings-storage-box">
+            <div class="settings-storage-info">
+              <div class="settings-storage-title">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
+                  <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
+                </svg>
+                <span>Local Storage Durability</span>
+              </div>
+              <span class="settings-storage-desc" id="settings-storage-status">Checking storage persistence...</span>
+            </div>
+            <button type="button" class="settings-action-btn" id="settings-storage-btn" onclick="window.requestStudioStoragePersist()" style="display: none;">
+              <span>Protect</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 3. Reset to Initial State (Danger Zone) -->
+        <div class="settings-group">
+          <div class="settings-group-header">
+            <span class="settings-group-title">DANGER ZONE</span>
+          </div>
+          <div class="settings-reset-box">
+            <div class="settings-reset-info">
+              <span class="settings-reset-title">Reset to Initial State</span>
+              <span class="settings-reset-desc">Hapus seluruh project lokal, file media, cache, dan kembalikan aplikasi ke 0 awal download.</span>
+            </div>
+            <button type="button" class="settings-reset-btn" id="btn-settings-factory-reset" onclick="window.resetStudioToFactoryAction()">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true">
+                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+              </svg>
+              <span>Reset</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 4. Studio Application Info -->
         <div class="settings-group settings-group-info">
           <div class="settings-info-row">
             <span class="settings-info-label">Application</span>
@@ -3372,7 +3398,7 @@
             <span class="settings-info-val" id="settings-version-tag">v0.5.133</span>
           </div>
           <div class="settings-info-row">
-            <span class="settings-info-label">Local Storage</span>
+            <span class="settings-info-label">Database Engine</span>
             <span class="settings-info-val">IndexedDB Active</span>
           </div>
         </div>
