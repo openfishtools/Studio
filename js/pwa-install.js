@@ -35,44 +35,24 @@
 
   isInstalled = checkIsInstalled();
 
-  // 2. Retired Service Worker self-cleanup (sw.js deleted from repo).
-  // Stale installed workers keep serving old app shell across reloads,
-  // so purge every registration and cache once on each load.
-  function purgeStaleServiceWorkers() {
-    try {
-      if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
-        navigator.serviceWorker.getRegistrations().then(function (regs) {
-          (regs || []).forEach(function (reg) {
-            try { reg.unregister(); } catch (_) {}
-          });
-        }).catch(function () {});
-      }
-      if (window.caches && window.caches.keys) {
-        window.caches.keys().then(function (names) {
-          (names || []).forEach(function (name) {
-            try { window.caches.delete(name); } catch (_) {}
-          });
-        }).catch(function () {});
-      }
-    } catch (_) {}
-  }
-
-  // 3. Register Service Worker
+  // 2. Register Offline-First Service Worker (caches app for offline access, auto-updates when online)
   function registerServiceWorker() {
-    purgeStaleServiceWorkers();
     if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
       window.addEventListener('load', function () {
-        fetch('./sw.js', { method: 'HEAD', cache: 'no-store' }).then(function (res) {
-          if (!res || !res.ok) return;
-          navigator.serviceWorker
-            .register('./sw.js')
-            .then(function (reg) {
-              console.log('[PWA] Service Worker registered with scope:', reg.scope);
-            })
-            .catch(function (err) {
-              console.warn('[PWA] Service Worker registration failed:', err);
+        navigator.serviceWorker
+          .register('./sw.js', { updateViaCache: 'none' })
+          .then(function (reg) {
+            console.log('[PWA] Service Worker active (offline ready):', reg.scope);
+            if (navigator.onLine) {
+              try { reg.update(); } catch (_) {}
+            }
+            window.addEventListener('online', function () {
+              try { reg.update(); } catch (_) {}
             });
-        }).catch(function () {});
+          })
+          .catch(function (err) {
+            console.warn('[PWA] Service Worker registration failed:', err);
+          });
       });
     }
   }

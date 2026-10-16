@@ -1982,14 +1982,21 @@ function clearIncomingImportUrl() {
           changed = true;
         }
       });
-      if (url.hash && /import=/i.test(url.hash)) {
+      if (url.hash && /import/i.test(url.hash)) {
         url.hash = '';
         changed = true;
+      }
+      if (window.location.protocol !== 'file:') {
+        const segments = url.pathname.split('/').filter(Boolean);
+        if (segments.length === 1 && !['index.html', 'editor.html', 'desktop.html', 'demo.html', 'privacy.html', 'terms.html'].includes(segments[0])) {
+          url.pathname = '/';
+          changed = true;
+        }
       }
       if (changed) {
         const cleanSearch = url.searchParams.toString() ? '?' + url.searchParams.toString() : '';
         const cleanHash = url.hash || '';
-        window.history.replaceState({}, document.title, url.pathname + cleanSearch + cleanHash);
+        window.history.replaceState({}, document.title, (url.pathname || '/') + cleanSearch + cleanHash);
       }
     }
   } catch (_) {}
@@ -2012,6 +2019,7 @@ async function openPresetById(importId) {
 
   // Offline pre-check
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    _isOpeningPreset = false;
     showDashboardToast('Tidak ada koneksi internet. Periksa jaringan Anda untuk mengimpor preset.', 4000, 'error');
     return;
   }
@@ -2024,9 +2032,11 @@ async function openPresetById(importId) {
         showPresetConfirmModal(data.project);
       }, 150);
     } else {
+      _isOpeningPreset = false;
       alert('Project Not Found (file may have been deleted or expired).');
     }
   } catch (err) {
+    _isOpeningPreset = false;
     const isOffline = (typeof navigator !== 'undefined' && navigator.onLine === false) ||
       (err && (err.name === 'TypeError' || /network|fetch|offline|failed|abort/i.test(err.message || '')));
     if (isOffline) {
@@ -2038,57 +2048,13 @@ async function openPresetById(importId) {
 }
 window.openPresetById = openPresetById;
 
-window.onNativeDeepLinkReceived = function (url, ts) {
+window.onNativeDeepLinkReceived = function (url) {
   if (!url) return;
-  const lastTs = localStorage.getItem('oft_last_deeplink_ts');
-  if (ts && String(ts) === String(lastTs)) return;
-  if (ts) localStorage.setItem('oft_last_deeplink_ts', String(ts));
   const id = extractProjectId(url);
   if (id) {
     openPresetById(id);
   }
 };
-
-function pollNativeDeepLinkBridge() {
-  if (!isRunningInsideNativeApp()) return;
-
-  // 1. Dynamic Script Tag reload (works 100% reliably in Gecko local file scope without XHR SOP restrictions)
-  try {
-    let script = document.getElementById('oft-native-deeplink-script');
-    if (script) script.remove();
-    script = document.createElement('script');
-    script.id = 'oft-native-deeplink-script';
-    script.src = `./deeplink.js?t=${Date.now()}`;
-    document.body.appendChild(script);
-  } catch (_) {}
-
-  // 2. Dual XHR fallback across ./ and ../
-  const checkXhr = (path) => {
-    try {
-      const xhr = new XMLHttpRequest();
-      xhr.open('GET', `${path}?t=${Date.now()}`, true);
-      xhr.timeout = 800;
-      xhr.onload = function () {
-        if ((xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) && xhr.responseText) {
-          try {
-            const payload = JSON.parse(xhr.responseText);
-            if (payload && payload.ts && (payload.url || payload.id)) {
-              const lastTs = localStorage.getItem('oft_last_deeplink_ts');
-              if (String(payload.ts) !== String(lastTs)) {
-                localStorage.setItem('oft_last_deeplink_ts', String(payload.ts));
-                const id = extractProjectId(payload.url || payload.id);
-                if (id) openPresetById(id);
-              }
-            }
-          } catch (_) {}
-        }
-      };
-      xhr.send(null);
-    } catch (_) {}
-  };
-  checkXhr('./deeplink-live.json');
-  checkXhr('../deeplink-live.json');
-}
 
 async function checkIncomingProjectImportLink() {
   const url = new URL(window.location.href);
@@ -2129,19 +2095,15 @@ async function checkIncomingProjectImportLink() {
     await openPresetById(importId);
   }
 
-  if (isRunningInsideNativeApp()) {
-    pollNativeDeepLinkBridge();
-    if (!window.__oftDeepLinkWatcherStarted) {
-      window.__oftDeepLinkWatcherStarted = true;
-      setInterval(pollNativeDeepLinkBridge, 400);
-      window.addEventListener('focus', pollNativeDeepLinkBridge);
-      window.addEventListener('hashchange', () => {
-        if (window.location.hash && window.location.hash.length > 1) {
-          const hid = extractProjectId(decodeURIComponent(window.location.hash.slice(1)));
-          if (hid) openPresetById(hid);
-        }
-      });
-    }
+  if (!window.__oftDeepLinkWatcherStarted) {
+    window.__oftDeepLinkWatcherStarted = true;
+    window.addEventListener('hashchange', () => {
+      if (window.location.hash && window.location.hash.length > 1) {
+        const hid = extractProjectId(decodeURIComponent(window.location.hash.slice(1)));
+        clearIncomingImportUrl();
+        if (hid) openPresetById(hid);
+      }
+    });
   }
 }
 
