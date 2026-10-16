@@ -595,6 +595,23 @@ function renderUploadedProjects(projects, container, countBadge) {
   }).join('');
 }
 
+const STUDIO_REMOTE_ORIGIN = 'https://studio.cutefish.my.id';
+
+function getStudioApiUrl(apiPath) {
+  if (
+    window.location.protocol === 'file:' ||
+    window.__OFT_NATIVE_APP__ ||
+    (window.location.hostname &&
+      window.location.hostname !== 'studio.cutefish.my.id' &&
+      window.location.hostname !== 'localhost' &&
+      window.location.hostname !== '127.0.0.1')
+  ) {
+    return STUDIO_REMOTE_ORIGIN + apiPath;
+  }
+  return apiPath;
+}
+window.getStudioApiUrl = getStudioApiUrl;
+
 /**
  * Triggers link project import flow when clicking an uploaded project card
  */
@@ -602,7 +619,7 @@ async function triggerUploadedProjectImport(project) {
   if (!project || !project.id) return;
   showDashboardToast('Fetching project...');
   try {
-    const res = await fetch(`/api/project?id=${encodeURIComponent(project.id)}`);
+    const res = await fetch(getStudioApiUrl(`/api/project?id=${encodeURIComponent(project.id)}`));
     const data = await res.json();
     if (res.ok && data.success && data.project) {
       showPresetConfirmModal(data.project);
@@ -1198,7 +1215,7 @@ async function openShareProjectLinkModal(projectId, projectName) {
     const headers = {};
     if (shareToken) headers['x-share-token'] = shareToken;
 
-    const res = await fetch('/api/share', {
+    const res = await fetch(getStudioApiUrl('/api/share'), {
       method: 'POST',
       headers,
       body: fd
@@ -1566,16 +1583,55 @@ let activeSharedProject = null;
 
 function extractProjectId(raw) {
   if (!raw) return '';
-  const str = String(raw).trim();
+  const str = String(raw).trim().replace(/^#/, '');
+  // Handle ofts://import/<id> or fishtools://import/<id> or ofts://<id>
+  const schemeMatch = str.match(/^(?:ofts|fishtools):\/\/(?:import\/|project\/|p\/)?([a-zA-Z0-9_-]+)/i);
+  if (schemeMatch && schemeMatch[1]) return schemeMatch[1].trim();
+  // Handle #import=<id> or ?import=<id> or deeplink=<url>
+  if (str.startsWith('import=') || str.startsWith('deeplink=')) {
+    const eqVal = decodeURIComponent(str.split('=').slice(1).join('='));
+    return extractProjectId(eqVal);
+  }
   try {
-    const parsed = new URL(str, window.location.origin);
-    const queryId = parsed.searchParams.get('import') || parsed.searchParams.get('p') || parsed.searchParams.get('project');
-    if (queryId) return queryId.trim();
+    const normalized = /^https?:\/\//i.test(str) ? str : (str.includes('cutefish.my.id') ? 'https://' + str : str);
+    const parsed = new URL(normalized, window.location.origin && window.location.origin !== 'null' ? window.location.origin : STUDIO_REMOTE_ORIGIN);
+    const queryId = parsed.searchParams.get('import') || parsed.searchParams.get('p') || parsed.searchParams.get('project') || parsed.searchParams.get('id');
+    if (queryId) return queryId.replace(/[^a-zA-Z0-9_-]/g, '').trim();
+    const dl = parsed.searchParams.get('deeplink');
+    if (dl) return extractProjectId(dl);
     const segs = parsed.pathname.split('/').filter(Boolean);
-    if (segs.length > 0) return segs[segs.length - 1].trim();
+    if (segs.length > 0) {
+      const last = segs[segs.length - 1].trim();
+      if (!last.endsWith('.html')) return last.replace(/[^a-zA-Z0-9_-]/g, '');
+    }
   } catch (_) {}
   const parts = str.split('/');
   return parts[parts.length - 1].replace(/[^a-zA-Z0-9_-]/g, '').trim();
+}
+
+function isRunningInsideNativeApp() {
+  return (
+    window.location.protocol === 'file:' ||
+    Boolean(window.__OFT_NATIVE_APP__) ||
+    /FishToolsStudio/i.test(navigator.userAgent || '')
+  );
+}
+
+function triggerOpenInFishToolsApp(projectId) {
+  if (!projectId || isRunningInsideNativeApp()) return;
+  const safeId = encodeURIComponent(projectId);
+  const deepLinkUri = `ofts://import/${safeId}`;
+  try {
+    // Use hidden iframe to trigger custom URL scheme without navigating away if app is not installed
+    let iframe = document.getElementById('oft-deeplink-bridge');
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = 'oft-deeplink-bridge';
+      iframe.style.display = 'none';
+      document.body.appendChild(iframe);
+    }
+    iframe.src = deepLinkUri;
+  } catch (_) {}
 }
 
 function showPresetConfirmModal(project) {
@@ -1745,7 +1801,7 @@ function setupImportProjectModal() {
     }
 
     try {
-      const res = await fetch(`/api/project?id=${encodeURIComponent(id)}`);
+      const res = await fetch(getStudioApiUrl(`/api/project?id=${encodeURIComponent(id)}`));
       const data = await res.json();
 
       if (!res.ok || !data.success || !data.project) {
@@ -1806,6 +1862,11 @@ function setupImportProjectModal() {
       e.preventDefault();
       if (!activeSharedProject || !activeSharedProject.id) return;
 
+      // If opened in a regular web browser on studio.cutefish.my.id, trigger opening FishTools Studio app
+      if (!isRunningInsideNativeApp()) {
+        triggerOpenInFishToolsApp(activeSharedProject.id);
+      }
+
       const confirmStatus = document.getElementById('preset-confirm-status');
       if (confirmStatus) {
         confirmStatus.className = 'modal-import-status';
@@ -1815,7 +1876,7 @@ function setupImportProjectModal() {
       btnDoPresetImport.textContent = 'Importing...';
 
       try {
-        const downloadUrl = `/api/project?id=${encodeURIComponent(activeSharedProject.id)}&download=1`;
+        const downloadUrl = getStudioApiUrl(`/api/project?id=${encodeURIComponent(activeSharedProject.id)}&download=1`);
         const res = await fetch(downloadUrl);
         if (!res.ok) throw new Error('Download failed: ' + res.status);
         const blob = await res.blob();
@@ -1850,14 +1911,34 @@ function setupImportProjectModal() {
     });
   }
 
-  // Auto-detect incoming project link in URL (/1 or ?import=1)
+  // Auto-detect incoming project link in URL (/1 or ?import=1 or deep link)
   checkIncomingProjectImportLink();
 }
 
 async function checkIncomingProjectImportLink() {
   const url = new URL(window.location.href);
   let importId = url.searchParams.get('import') || url.searchParams.get('p') || url.searchParams.get('project');
+
+  if (!importId && url.searchParams.get('deeplink')) {
+    importId = extractProjectId(url.searchParams.get('deeplink'));
+  }
+  if (!importId && window.location.hash && window.location.hash.length > 1) {
+    importId = extractProjectId(decodeURIComponent(window.location.hash.slice(1)));
+  }
+  if (!importId && window.__OFT_DEEPLINK__) {
+    importId = extractProjectId(window.__OFT_DEEPLINK__);
+    window.__OFT_DEEPLINK__ = null;
+  }
   if (!importId) {
+    try {
+      const pending = sessionStorage.getItem('oft_pending_import_id');
+      if (pending) {
+        sessionStorage.removeItem('oft_pending_import_id');
+        importId = extractProjectId(pending);
+      }
+    } catch (_) {}
+  }
+  if (!importId && window.location.protocol !== 'file:') {
     const segments = window.location.pathname.split('/').filter(Boolean);
     if (segments.length === 1 && !['index.html', 'editor.html', 'desktop.html', 'demo.html', 'privacy.html', 'terms.html'].includes(segments[0])) {
       importId = segments[0];
@@ -1865,9 +1946,14 @@ async function checkIncomingProjectImportLink() {
   }
 
   if (importId) {
+    // When accessed from web browser (e.g. studio.cutefish.my.id/3), automatically attempt to open FishTools Studio app
+    if (!isRunningInsideNativeApp()) {
+      triggerOpenInFishToolsApp(importId);
+    }
+
     // Direct URL access: DO NOT open modal-import-project! Directly fetch & show preset confirmation popup
     try {
-      const res = await fetch(`/api/project?id=${encodeURIComponent(importId)}`);
+      const res = await fetch(getStudioApiUrl(`/api/project?id=${encodeURIComponent(importId)}`));
       const data = await res.json();
       if (res.ok && data.success && data.project) {
         setTimeout(() => {

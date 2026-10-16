@@ -1,6 +1,6 @@
 {
-  "name": "OpenFishTools Studio",
-  "short_name": "FishTools",
+  "name": "FishTools Studio",
+  "short_name": "FishTools Studio",
   "description": "Web-based motion graphics & video editing studio",
   "start_url": "./index.html",
   "scope": "./",

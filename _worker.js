@@ -15,6 +15,29 @@ export default {
         ? pathname.replace(/\/+$/, '')
         : pathname;
 
+      // 0. Android App Links Verification (/.well-known/assetlinks.json)
+      if (routePath === '/.well-known/assetlinks.json') {
+        return new Response(JSON.stringify([
+          {
+            relation: ['delegate_permission/common.handle_all_urls'],
+            target: {
+              namespace: 'android_app',
+              package_name: 'com.cutefishaep.ofts',
+              sha256_cert_fingerprints: [
+                'DE:AA:A6:FE:B0:AB:A1:64:88:21:0A:FC:E5:60:78:9D:B8:F8:F8:D8:66:44:40:A2:49:20:AD:24:36:79:D6:8F'
+              ]
+            }
+          }
+        ]), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Access-Control-Allow-Origin': '*',
+            'Cache-Control': 'public, max-age=3600'
+          }
+        });
+      }
+
       // Security: block direct access to .env, dotfiles, storage, server internals, and build scripts
       if (
         routePath === '/.env' || routePath.startsWith('/.env') || routePath.includes('/.env') || routePath.startsWith('/.') ||
@@ -95,10 +118,10 @@ export default {
           const shareUrl = `${origin}/${cleanPath}`;
 
           const ogTags = `
-    <!-- Essential OpenGraph Metadata -->
+    <!-- Essential OpenGraph & App Links Metadata -->
     <title>${projectName}</title>
     <meta name="description" content="${desc}">
-    <meta property="og:site_name" content="OpenFishTools Studio">
+    <meta property="og:site_name" content="FishTools Studio">
     <meta property="og:type" content="website">
     <meta property="og:url" content="${shareUrl}">
     <meta property="og:title" content="${projectName}">
@@ -108,6 +131,9 @@ export default {
     <meta property="og:image:type" content="image/jpeg">
     <meta property="og:image:width" content="600">
     <meta property="og:image:height" content="600">
+    <meta property="al:android:url" content="ofts://import/${cleanPath}">
+    <meta property="al:android:package" content="com.cutefishaep.ofts">
+    <meta property="al:android:app_name" content="FishTools Studio">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="${projectName}">
     <meta name="twitter:description" content="${desc}">

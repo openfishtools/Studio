@@ -106,6 +106,15 @@
           </svg>
           <span>Install App</span>
         </button>
+        <script>
+          (function(){
+            var p = location.protocol, h = location.href || '';
+            if (p === 'file:' || p === 'tauri:' || p === 'asset:' || h.indexOf('android_asset') !== -1 || window.self !== window.top || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone) {
+              var b = document.getElementById('btn-install-app');
+              if (b) { b.style.setProperty('display', 'none', 'important'); b.hidden = true; }
+            }
+          })();
+        </script>
 
         <!-- Settings Button -->
         <button type="button" class="studio-top-btn" id="btn-header-settings" aria-label="Settings" title="Settings" onclick="openAppSettingsModal()">

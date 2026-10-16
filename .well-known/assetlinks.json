@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.cutefishaep.ofts",
+      "sha256_cert_fingerprints": [
+        "DE:AA:A6:FE:B0:AB:A1:64:88:21:0A:FC:E5:60:78:9D:B8:F8:F8:D8:66:44:40:A2:49:20:AD:24:36:79:D6:8F"
+      ]
+    }
+  }
+]

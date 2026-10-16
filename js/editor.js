@@ -39959,7 +39959,10 @@
 
           const json = await new Promise((resolve, reject) => {
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/api/share', true);
+            const shareEndpoint = (window.location.protocol === 'file:' || (window.location.hostname && window.location.hostname !== 'studio.cutefish.my.id' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'))
+              ? 'https://studio.cutefish.my.id/api/share'
+              : '/api/share';
+            xhr.open('POST', shareEndpoint, true);
             const shareToken = localStorage.getItem('oft_share_token');
             if (shareToken) {
               xhr.setRequestHeader('x-share-token', shareToken);

@@ -9,10 +9,25 @@
   var deferredPrompt = null;
   var isInstalled = false;
 
-  // 1. Detect Standalone Display Mode
+  // 1. Detect Standalone / Native App Display Mode (macOS, Windows, Android APK, PWA)
   function checkIsInstalled() {
+    var proto = (window.location && window.location.protocol) || '';
+    var host = (window.location && window.location.hostname) || '';
+    var href = (window.location && window.location.href) || '';
     return (
+      proto === 'file:' ||
+      proto === 'tauri:' ||
+      proto === 'asset:' ||
+      host === 'tauri.localhost' ||
+      href.indexOf('android_asset') !== -1 ||
+      !!window.__TAURI_INTERNALS__ ||
+      !!window.__TAURI__ ||
+      !!window.__OFT_APP__ ||
+      window.self !== window.top ||
       (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+      (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches) ||
+      (window.matchMedia && window.matchMedia('(display-mode: minimal-ui)').matches) ||
+      (window.matchMedia && window.matchMedia('(display-mode: window-controls-overlay)').matches) ||
       window.navigator.standalone === true ||
       document.referrer.includes('android-app://')
     );
@@ -77,11 +92,14 @@
     var btn = document.getElementById('btn-install-app');
     if (!btn) return;
 
-    // Sembunyikan hanya jika sudah berjalan di dalam app mode (standalone)
-    if (isInstalled) {
-      btn.style.display = 'none';
+    // Sembunyikan jika sudah berjalan di dalam app mode (standalone / desktop / Android APK)
+    if (isInstalled || checkIsInstalled()) {
+      isInstalled = true;
+      btn.style.setProperty('display', 'none', 'important');
+      btn.setAttribute('hidden', 'hidden');
     } else {
       btn.style.display = 'inline-flex';
+      btn.removeAttribute('hidden');
     }
   }
 

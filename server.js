@@ -195,6 +195,18 @@ function handleRequest(req, res) {
   const parsedUrl = new URL(req.url, `http://${host}`);
   let pathname = decodeURIComponent(parsedUrl.pathname);
 
+  if (pathname === '/.well-known/assetlinks.json') {
+    const assetLinksPath = path.join(ROOT, '.well-known', 'assetlinks.json');
+    if (fs.existsSync(assetLinksPath)) {
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Access-Control-Allow-Origin': '*'
+      });
+      res.end(fs.readFileSync(assetLinksPath, 'utf8'));
+      return;
+    }
+  }
+
   // Security: block direct access to .env, dot-files, internal storage databases, and server internals
   if (
     pathname === '/.env' || pathname.startsWith('/.env') || pathname.includes('/.env') || pathname.startsWith('/.') ||
