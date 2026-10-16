@@ -9,7 +9,7 @@
  * - When ONLINE: fetches fresh updates from studio.cutefish.my.id and updates cache automatically.
  */
 
-const CACHE_NAME = 'oft-studio-v0.6.0';
+const CACHE_NAME = 'oft-studio-v0.6.1';
 
 const CORE_ASSETS = [
   './',

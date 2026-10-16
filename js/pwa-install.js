@@ -14,15 +14,19 @@
     var proto = (window.location && window.location.protocol) || '';
     var host = (window.location && window.location.hostname) || '';
     var href = (window.location && window.location.href) || '';
+    var ua = (window.navigator && window.navigator.userAgent) || '';
     return (
       proto === 'file:' ||
       proto === 'tauri:' ||
       proto === 'asset:' ||
       host === 'tauri.localhost' ||
       href.indexOf('android_asset') !== -1 ||
+      ua.indexOf('FishToolsStudio/') !== -1 ||
+      ua.indexOf('com.cutefishaep.ofts') !== -1 ||
       !!window.__TAURI_INTERNALS__ ||
       !!window.__TAURI__ ||
       !!window.__OFT_APP__ ||
+      !!window.__OFT_NATIVE_APP__ ||
       window.self !== window.top ||
       (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
       (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches) ||
