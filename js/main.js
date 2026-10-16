@@ -1915,6 +1915,60 @@ function setupImportProjectModal() {
   checkIncomingProjectImportLink();
 }
 
+let _lastOpenedPresetId = '';
+let _lastOpenedPresetTime = 0;
+let _isOpeningPreset = false;
+
+async function openPresetById(importId) {
+  if (!importId) return;
+  const now = Date.now();
+  if (_lastOpenedPresetId === importId && (now - _lastOpenedPresetTime) < 3000) {
+    return;
+  }
+  _lastOpenedPresetId = importId;
+  _lastOpenedPresetTime = now;
+  _isOpeningPreset = true;
+  try {
+    const res = await fetch(getStudioApiUrl(`/api/project?id=${encodeURIComponent(importId)}`));
+    const data = await res.json();
+    if (res.ok && data.success && data.project) {
+      setTimeout(() => {
+        showPresetConfirmModal(data.project);
+      }, 150);
+    } else {
+      alert('Project Not Found (file may have been deleted or expired).');
+    }
+  } catch (_) {
+    alert('Project Not Found');
+  }
+}
+window.openPresetById = openPresetById;
+
+function pollNativeDeepLinkBridge() {
+  if (!isRunningInsideNativeApp()) return;
+  try {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', `../deeplink-live.json?t=${Date.now()}`, true);
+    xhr.timeout = 1000;
+    xhr.onload = function () {
+      if ((xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) && xhr.responseText) {
+        try {
+          const payload = JSON.parse(xhr.responseText);
+          if (payload && payload.ts && (payload.url || payload.id)) {
+            const lastTs = localStorage.getItem('oft_last_deeplink_ts');
+            if (String(payload.ts) !== String(lastTs)) {
+              localStorage.setItem('oft_last_deeplink_ts', String(payload.ts));
+              const id = extractProjectId(payload.url || payload.id);
+              if (id) openPresetById(id);
+            }
+          }
+        } catch (_) {}
+      }
+    };
+    xhr.send(null);
+  } catch (_) {}
+}
+
 async function checkIncomingProjectImportLink() {
   const url = new URL(window.location.href);
   let importId = url.searchParams.get('import') || url.searchParams.get('p') || url.searchParams.get('project');
@@ -1946,24 +2000,25 @@ async function checkIncomingProjectImportLink() {
   }
 
   if (importId) {
-    // When accessed from web browser (e.g. studio.cutefish.my.id/3), automatically attempt to open FishTools Studio app
+    _isOpeningPreset = true;
     if (!isRunningInsideNativeApp()) {
       triggerOpenInFishToolsApp(importId);
     }
+    await openPresetById(importId);
+  }
 
-    // Direct URL access: DO NOT open modal-import-project! Directly fetch & show preset confirmation popup
-    try {
-      const res = await fetch(getStudioApiUrl(`/api/project?id=${encodeURIComponent(importId)}`));
-      const data = await res.json();
-      if (res.ok && data.success && data.project) {
-        setTimeout(() => {
-          showPresetConfirmModal(data.project);
-        }, 200);
-      } else {
-        alert('Project Not Found (file may have been deleted or expired).');
-      }
-    } catch (_) {
-      alert('Project Not Found');
+  if (isRunningInsideNativeApp()) {
+    pollNativeDeepLinkBridge();
+    if (!window.__oftDeepLinkWatcherStarted) {
+      window.__oftDeepLinkWatcherStarted = true;
+      setInterval(pollNativeDeepLinkBridge, 600);
+      window.addEventListener('focus', pollNativeDeepLinkBridge);
+      window.addEventListener('hashchange', () => {
+        if (window.location.hash && window.location.hash.length > 1) {
+          const hid = extractProjectId(decodeURIComponent(window.location.hash.slice(1)));
+          if (hid) openPresetById(hid);
+        }
+      });
     }
   }
 }
@@ -2059,13 +2114,19 @@ window.requestStudioStoragePersist = async function () {
  * Checks if current page was opened with an incoming shared project/preset link
  */
 function hasIncomingProjectPresetLink() {
+  if (_isOpeningPreset || activeSharedProject) return true;
   try {
     const url = new URL(window.location.href);
-    const importId = url.searchParams.get('import') || url.searchParams.get('p') || url.searchParams.get('project');
+    const importId = url.searchParams.get('import') || url.searchParams.get('p') || url.searchParams.get('project') || url.searchParams.get('deeplink');
     if (importId) return true;
-    const segments = window.location.pathname.split('/').filter(Boolean);
-    if (segments.length === 1 && !['index.html', 'editor.html', 'desktop.html', 'demo.html', 'privacy.html', 'terms.html'].includes(segments[0])) {
-      return true;
+    if (window.location.hash && window.location.hash.length > 1) return true;
+    if (window.__OFT_DEEPLINK__) return true;
+    if (sessionStorage.getItem('oft_pending_import_id')) return true;
+    if (window.location.protocol !== 'file:') {
+      const segments = window.location.pathname.split('/').filter(Boolean);
+      if (segments.length === 1 && !['index.html', 'editor.html', 'desktop.html', 'demo.html', 'privacy.html', 'terms.html'].includes(segments[0])) {
+        return true;
+      }
     }
   } catch (_) {}
   return false;

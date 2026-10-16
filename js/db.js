@@ -3035,3 +3035,47 @@ window.FishDatabase = (function () {
     hideOFTSProgressModal: hideOFTSProgressModal
   };
 })();
+
+(function () {
+  if (typeof window === 'undefined') return;
+  var isNative = window.location.protocol === 'file:' || Boolean(window.__OFT_NATIVE_APP__) || /FishToolsStudio/i.test(navigator.userAgent || '');
+  if (!isNative) return;
+  function extractDlId(raw) {
+    if (!raw) return '';
+    var str = String(raw).trim().replace(/^#/, '');
+    var m = str.match(/^(?:ofts|fishtools):\/\/(?:import\/|project\/|p\/)?([a-zA-Z0-9_-]+)/i);
+    if (m && m[1]) return m[1].trim();
+    var parts = str.split('/');
+    return parts[parts.length - 1].replace(/[^a-zA-Z0-9_-]/g, '').trim();
+  }
+  function checkEditorDeepLink() {
+    if (typeof window.openPresetById === 'function') return;
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', '../deeplink-live.json?t=' + Date.now(), true);
+      xhr.timeout = 1000;
+      xhr.onload = function () {
+        if ((xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) && xhr.responseText) {
+          try {
+            var payload = JSON.parse(xhr.responseText);
+            if (payload && payload.ts && (payload.url || payload.id)) {
+              var lastTs = localStorage.getItem('oft_last_deeplink_ts');
+              if (String(payload.ts) !== String(lastTs)) {
+                localStorage.setItem('oft_last_deeplink_ts', String(payload.ts));
+                var id = extractDlId(payload.url || payload.id);
+                if (id) {
+                  try { sessionStorage.setItem('oft_pending_import_id', id); } catch (_) {}
+                  window.location.href = 'index.html?import=' + encodeURIComponent(id) + '#import=' + encodeURIComponent(id);
+                }
+              }
+            }
+          } catch (_) {}
+        }
+      };
+      xhr.send(null);
+    } catch (_) {}
+  }
+  setInterval(checkEditorDeepLink, 800);
+  window.addEventListener('focus', checkEditorDeepLink);
+})();
+

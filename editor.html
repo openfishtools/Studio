@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>OpenFishTools Studio - Editor</title>
+  <title>FishTools Studio</title>
   <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#0e1015">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="OpenFishTools">
+  <meta name="apple-mobile-web-app-title" content="FishTools Studio">
   <link rel="apple-touch-icon" href="assets/icon-192.png">
   <!-- Early Theme Bootstrap to prevent flash of wrong accent color -->
   <script>
@@ -44,12 +44,12 @@
       var _urlName = _urlParams.get('name');
       var _urlId = _urlParams.get('id');
       if (_urlName) {
-        document.title = _urlName + ' - OpenFishTools Studio';
+        document.title = _urlName + ' - FishTools Studio';
       } else if (_urlId) {
         var _cached = localStorage.getItem('oft_active_project_backup_' + _urlId);
         if (_cached) {
           var _parsed = JSON.parse(_cached);
-          if (_parsed && _parsed.name) document.title = _parsed.name + ' - OpenFishTools Studio';
+          if (_parsed && _parsed.name) document.title = _parsed.name + ' - FishTools Studio';
         }
       }
     } catch (_) {}

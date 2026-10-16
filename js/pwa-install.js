@@ -88,7 +88,7 @@
   }
 
   var STANDALONE_REPO = 'openfishtools/Standalone';
-  var latestReleaseUrl = 'https://github.com/' + STANDALONE_REPO + '/releases/tag/v1.0.0';
+  var latestReleaseUrl = 'https://github.com/' + STANDALONE_REPO + '/releases/tag/v1.0.1';
 
   function resolveLatestStandaloneReleaseUrl() {
     if (isInstalled) return;
