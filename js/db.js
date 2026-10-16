@@ -3094,6 +3094,16 @@ window.FishDatabase = (function () {
   if (typeof window === 'undefined') return;
   var isNative = window.location.protocol === 'file:' || Boolean(window.__OFT_NATIVE_APP__) || /FishToolsStudio/i.test(navigator.userAgent || '');
   if (!isNative) return;
+
+  var pageLoadTime = Date.now();
+  // Ensure lastTs is at least set to page load time on startup so past disk events never trigger
+  try {
+    var existingTs = localStorage.getItem('oft_last_deeplink_ts');
+    if (!existingTs) {
+      localStorage.setItem('oft_last_deeplink_ts', String(pageLoadTime));
+    }
+  } catch (_) {}
+
   function extractDlId(raw) {
     if (!raw) return '';
     var str = String(raw).trim().replace(/^#/, '');
@@ -3102,7 +3112,9 @@ window.FishDatabase = (function () {
     var parts = str.split('/');
     return parts[parts.length - 1].replace(/[^a-zA-Z0-9_-]/g, '').trim();
   }
+
   function checkEditorDeepLink() {
+    // Only active in editor pages where openPresetById is not defined
     if (typeof window.openPresetById === 'function') return;
     try {
       var xhr = new XMLHttpRequest();
@@ -3112,7 +3124,8 @@ window.FishDatabase = (function () {
         if ((xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) && xhr.responseText) {
           try {
             var payload = JSON.parse(xhr.responseText);
-            if (payload && payload.ts && (payload.url || payload.id)) {
+            // CRITICAL: Only accept NEW deep links that arrived AFTER this editor page was loaded
+            if (payload && payload.ts && Number(payload.ts) > pageLoadTime && (payload.url || payload.id)) {
               var lastTs = localStorage.getItem('oft_last_deeplink_ts');
               if (String(payload.ts) !== String(lastTs)) {
                 localStorage.setItem('oft_last_deeplink_ts', String(payload.ts));
@@ -3129,7 +3142,7 @@ window.FishDatabase = (function () {
       xhr.send(null);
     } catch (_) {}
   }
-  setInterval(checkEditorDeepLink, 800);
+  setInterval(checkEditorDeepLink, 1000);
   window.addEventListener('focus', checkEditorDeepLink);
 })();
 

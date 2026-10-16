@@ -1969,12 +1969,39 @@ function setupImportProjectModal() {
   checkIncomingProjectImportLink();
 }
 
+function clearIncomingImportUrl() {
+  try {
+    sessionStorage.removeItem('oft_pending_import_id');
+    window.__OFT_DEEPLINK__ = null;
+    if (window.history && typeof window.history.replaceState === 'function') {
+      const url = new URL(window.location.href);
+      let changed = false;
+      ['import', 'project', 'p', 'deeplink'].forEach((k) => {
+        if (url.searchParams.has(k)) {
+          url.searchParams.delete(k);
+          changed = true;
+        }
+      });
+      if (url.hash && /import=/i.test(url.hash)) {
+        url.hash = '';
+        changed = true;
+      }
+      if (changed) {
+        const cleanSearch = url.searchParams.toString() ? '?' + url.searchParams.toString() : '';
+        const cleanHash = url.hash || '';
+        window.history.replaceState({}, document.title, url.pathname + cleanSearch + cleanHash);
+      }
+    }
+  } catch (_) {}
+}
+
 let _lastOpenedPresetId = '';
 let _lastOpenedPresetTime = 0;
 let _isOpeningPreset = false;
 
 async function openPresetById(importId) {
   if (!importId) return;
+  clearIncomingImportUrl();
   const now = Date.now();
   if (_lastOpenedPresetId === importId && (now - _lastOpenedPresetTime) < 3000) {
     return;
@@ -2094,6 +2121,7 @@ async function checkIncomingProjectImportLink() {
   }
 
   if (importId) {
+    clearIncomingImportUrl();
     _isOpeningPreset = true;
     if (!isRunningInsideNativeApp()) {
       triggerOpenInFishToolsApp(importId);
@@ -2171,7 +2199,11 @@ async function updateStorageDurabilityUI() {
     return;
   }
 
+  const isNative = isRunningInsideNativeApp();
+  const isPWA = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+                (typeof navigator !== 'undefined' && navigator.standalone === true);
   const info = await window.FishDatabase.checkStoragePersistence();
+
   let usageStr = '';
   if (info.usage && info.quota) {
     const usedMB = (info.usage / (1024 * 1024)).toFixed(1);
@@ -2179,8 +2211,10 @@ async function updateStorageDurabilityUI() {
     usageStr = ` (${usedMB} MB / ${quotaGB} GB)`;
   }
 
-  if (info.persisted) {
-    statusEl.innerHTML = `<span style="color: var(--color-primary); font-weight: 700;">Protected (Persistent)</span> &bull; IndexedDB${usageStr}`;
+  // If in Native app (Android APK, macOS, Windows) or PWA standalone, storage is sandboxed & persistent
+  if (isNative || info.persisted || isPWA) {
+    const label = isNative ? 'Protected (Native Storage)' : (isPWA ? 'Protected (PWA Persistent)' : 'Protected (Persistent)');
+    statusEl.innerHTML = `<span style="color: var(--color-primary); font-weight: 700;">${label}</span> &bull; IndexedDB${usageStr}`;
     if (btnEl) btnEl.style.display = 'none';
   } else {
     statusEl.innerHTML = `<span>Standard (Best-effort)${usageStr}</span>`;
@@ -2194,13 +2228,39 @@ window.requestStudioStoragePersist = async function () {
     btnEl.disabled = true;
     btnEl.textContent = 'Protecting...';
   }
+
+  let granted = false;
+  try {
+    if (navigator.storage && typeof navigator.storage.persist === 'function') {
+      granted = await navigator.storage.persist();
+    }
+  } catch (_) {}
+
   if (window.FishDatabase && typeof window.FishDatabase.requestPersistentStorage === 'function') {
     await window.FishDatabase.requestPersistentStorage();
-    await updateStorageDurabilityUI();
   }
+  await updateStorageDurabilityUI();
+
   if (btnEl) {
     btnEl.disabled = false;
     btnEl.textContent = 'Protect';
+  }
+
+  const isPersisted = granted || (navigator.storage && typeof navigator.storage.persisted === 'function' && await navigator.storage.persisted());
+  if (isPersisted) {
+    showDashboardToast('Penyimpanan persisten aktif! Project Anda terlindungi dari pembersihan browser.');
+  } else {
+    // Mobile browsers (Chrome/Safari) require adding to home screen (PWA) to unlock persistent storage
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+    if (isMobile) {
+      if (typeof window.triggerPWAInstall === 'function') {
+        window.triggerPWAInstall();
+      } else {
+        showDashboardToast('Di browser mobile, instal aplikasi ke Layar Utama (Add to Home screen) untuk mengaktifkan penyimpanan permanen.', 5000);
+      }
+    } else {
+      showDashboardToast('Penyimpanan best-effort aktif. Bookmark atau instal aplikasi untuk izin persisten.', 4000);
+    }
   }
 };
 
