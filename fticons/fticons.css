@@ -1,6 +1,6 @@
 @font-face {
     font-family: "fticons";
-    src: url(".//fticons.woff2?1decc2e03c8d3fcfaa25af4be56938ed") format("woff2");
+    src: url("./fticons.woff2?1decc2e03c8d3fcfaa25af4be56938ed") format("woff2");
 }
 
 .fticon,

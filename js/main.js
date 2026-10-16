@@ -2369,7 +2369,7 @@ let _dashboardCachedQRCardDataUrl = '';
 // Dynamically load QRCode.js if not already available
 if (typeof window !== 'undefined' && !window.QRCode) {
   const s = document.createElement('script');
-  s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+  s.src = 'vendor/qrcode.min.js';
   document.head.appendChild(s);
 }
 

@@ -39286,7 +39286,7 @@
       // Load QRCode.js dynamically (MIT, qrcodejs)
       if (!window.QRCode) {
         const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js';
+        s.src = 'vendor/qrcode.min.js';
         s.onload = () => console.log('[FishExport] QRCode.js loaded');
         document.head.appendChild(s);
       }
