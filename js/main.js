@@ -1622,16 +1622,18 @@ function triggerOpenInFishToolsApp(projectId) {
   const safeId = encodeURIComponent(projectId);
   const deepLinkUri = `ofts://import/${safeId}`;
   try {
-    // Use hidden iframe to trigger custom URL scheme without navigating away if app is not installed
-    let iframe = document.getElementById('oft-deeplink-bridge');
-    if (!iframe) {
-      iframe = document.createElement('iframe');
-      iframe.id = 'oft-deeplink-bridge';
-      iframe.style.display = 'none';
-      document.body.appendChild(iframe);
-    }
-    iframe.src = deepLinkUri;
-  } catch (_) {}
+    // Direct navigation triggers browser external protocol prompt ("Open FishTools Studio.app?")
+    window.location.href = deepLinkUri;
+  } catch (_) {
+    try {
+      const a = document.createElement('a');
+      a.href = deepLinkUri;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => a.remove(), 100);
+    } catch (_) {}
+  }
 }
 
 function showPresetConfirmModal(project) {
@@ -1799,6 +1801,20 @@ function setupImportProjectModal() {
       return;
     }
 
+    // Offline pre-check
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      showDashboardToast('Tidak ada koneksi internet. Periksa jaringan Anda untuk mengimpor preset.', 4000, 'error');
+      if (statusText) {
+        statusText.className = 'modal-import-status is-error';
+        statusText.textContent = 'Tidak ada koneksi internet';
+      }
+      if (btnSubmitLink) {
+        btnSubmitLink.disabled = false;
+        btnSubmitLink.textContent = 'Import';
+      }
+      return;
+    }
+
     if (btnSubmitLink) {
       btnSubmitLink.disabled = true;
       btnSubmitLink.textContent = 'Checking...';
@@ -1832,9 +1848,19 @@ function setupImportProjectModal() {
       if (statusText) statusText.textContent = '';
       showPresetConfirmModal(data.project);
     } catch (err) {
-      if (statusText) {
-        statusText.className = 'modal-import-status is-error';
-        statusText.textContent = 'Project Not Found';
+      const isOffline = (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+        (err && (err.name === 'TypeError' || /network|fetch|offline|failed|abort/i.test(err.message || '')));
+      if (isOffline) {
+        showDashboardToast('Tidak ada koneksi internet. Periksa jaringan Anda untuk mengimpor preset.', 4000, 'error');
+        if (statusText) {
+          statusText.className = 'modal-import-status is-error';
+          statusText.textContent = 'Tidak ada koneksi internet';
+        }
+      } else {
+        if (statusText) {
+          statusText.className = 'modal-import-status is-error';
+          statusText.textContent = 'Project Not Found';
+        }
       }
       if (btnSubmitLink) {
         btnSubmitLink.disabled = false;
@@ -1865,6 +1891,17 @@ function setupImportProjectModal() {
     btnDoPresetImport.addEventListener('click', async (e) => {
       e.preventDefault();
       if (!activeSharedProject || !activeSharedProject.id) return;
+
+      // Offline pre-check
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        showDashboardToast('Tidak ada koneksi internet. Periksa jaringan Anda untuk mengimpor preset.', 4000, 'error');
+        const confirmStatus = document.getElementById('preset-confirm-status');
+        if (confirmStatus) {
+          confirmStatus.className = 'modal-import-status is-error';
+          confirmStatus.textContent = 'Tidak ada koneksi internet. Gagal mengunduh paket preset.';
+        }
+        return;
+      }
 
       // If opened in a regular web browser on studio.cutefish.my.id, trigger opening FishTools Studio app
       if (!isRunningInsideNativeApp()) {
@@ -1911,9 +1948,16 @@ function setupImportProjectModal() {
         }, 250);
       } catch (err) {
         console.error('[FishImport:Preset]', err);
+        const isOffline = (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+          (err && (err.name === 'TypeError' || /network|fetch|offline|failed|abort/i.test(err.message || '')));
+        if (isOffline) {
+          showDashboardToast('Tidak ada koneksi internet. Periksa jaringan Anda untuk mengimpor preset.', 4000, 'error');
+        }
         if (confirmStatus) {
           confirmStatus.className = 'modal-import-status is-error';
-          confirmStatus.textContent = 'Import failed: ' + (err.message || err);
+          confirmStatus.textContent = isOffline
+            ? 'Tidak ada koneksi internet. Gagal mengunduh paket preset.'
+            : 'Import failed: ' + (err.message || err);
         }
         btnDoPresetImport.disabled = false;
         btnDoPresetImport.textContent = 'Import';
@@ -1938,6 +1982,13 @@ async function openPresetById(importId) {
   _lastOpenedPresetId = importId;
   _lastOpenedPresetTime = now;
   _isOpeningPreset = true;
+
+  // Offline pre-check
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    showDashboardToast('Tidak ada koneksi internet. Periksa jaringan Anda untuk mengimpor preset.', 4000, 'error');
+    return;
+  }
+
   try {
     const res = await fetch(getStudioApiUrl(`/api/project?id=${encodeURIComponent(importId)}`));
     const data = await res.json();
@@ -1948,35 +1999,68 @@ async function openPresetById(importId) {
     } else {
       alert('Project Not Found (file may have been deleted or expired).');
     }
-  } catch (_) {
-    alert('Project Not Found');
+  } catch (err) {
+    const isOffline = (typeof navigator !== 'undefined' && navigator.onLine === false) ||
+      (err && (err.name === 'TypeError' || /network|fetch|offline|failed|abort/i.test(err.message || '')));
+    if (isOffline) {
+      showDashboardToast('Tidak ada koneksi internet. Periksa jaringan Anda untuk mengimpor preset.', 4000, 'error');
+    } else {
+      alert('Project Not Found');
+    }
   }
 }
 window.openPresetById = openPresetById;
 
+window.onNativeDeepLinkReceived = function (url, ts) {
+  if (!url) return;
+  const lastTs = localStorage.getItem('oft_last_deeplink_ts');
+  if (ts && String(ts) === String(lastTs)) return;
+  if (ts) localStorage.setItem('oft_last_deeplink_ts', String(ts));
+  const id = extractProjectId(url);
+  if (id) {
+    openPresetById(id);
+  }
+};
+
 function pollNativeDeepLinkBridge() {
   if (!isRunningInsideNativeApp()) return;
+
+  // 1. Dynamic Script Tag reload (works 100% reliably in Gecko local file scope without XHR SOP restrictions)
   try {
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', `../deeplink-live.json?t=${Date.now()}`, true);
-    xhr.timeout = 1000;
-    xhr.onload = function () {
-      if ((xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) && xhr.responseText) {
-        try {
-          const payload = JSON.parse(xhr.responseText);
-          if (payload && payload.ts && (payload.url || payload.id)) {
-            const lastTs = localStorage.getItem('oft_last_deeplink_ts');
-            if (String(payload.ts) !== String(lastTs)) {
-              localStorage.setItem('oft_last_deeplink_ts', String(payload.ts));
-              const id = extractProjectId(payload.url || payload.id);
-              if (id) openPresetById(id);
-            }
-          }
-        } catch (_) {}
-      }
-    };
-    xhr.send(null);
+    let script = document.getElementById('oft-native-deeplink-script');
+    if (script) script.remove();
+    script = document.createElement('script');
+    script.id = 'oft-native-deeplink-script';
+    script.src = `./deeplink.js?t=${Date.now()}`;
+    document.body.appendChild(script);
   } catch (_) {}
+
+  // 2. Dual XHR fallback across ./ and ../
+  const checkXhr = (path) => {
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', `${path}?t=${Date.now()}`, true);
+      xhr.timeout = 800;
+      xhr.onload = function () {
+        if ((xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) && xhr.responseText) {
+          try {
+            const payload = JSON.parse(xhr.responseText);
+            if (payload && payload.ts && (payload.url || payload.id)) {
+              const lastTs = localStorage.getItem('oft_last_deeplink_ts');
+              if (String(payload.ts) !== String(lastTs)) {
+                localStorage.setItem('oft_last_deeplink_ts', String(payload.ts));
+                const id = extractProjectId(payload.url || payload.id);
+                if (id) openPresetById(id);
+              }
+            }
+          } catch (_) {}
+        }
+      };
+      xhr.send(null);
+    } catch (_) {}
+  };
+  checkXhr('./deeplink-live.json');
+  checkXhr('../deeplink-live.json');
 }
 
 async function checkIncomingProjectImportLink() {
@@ -2021,7 +2105,7 @@ async function checkIncomingProjectImportLink() {
     pollNativeDeepLinkBridge();
     if (!window.__oftDeepLinkWatcherStarted) {
       window.__oftDeepLinkWatcherStarted = true;
-      setInterval(pollNativeDeepLinkBridge, 600);
+      setInterval(pollNativeDeepLinkBridge, 400);
       window.addEventListener('focus', pollNativeDeepLinkBridge);
       window.addEventListener('hashchange', () => {
         if (window.location.hash && window.location.hash.length > 1) {
