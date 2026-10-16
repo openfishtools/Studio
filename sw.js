@@ -359,8 +359,9 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(req.url);
 
-  // Bypass API endpoints, live reload, and range requests
+  // Bypass API endpoints, Service Worker script itself, live reload, and range requests
   if (
+    url.pathname === '/sw.js' ||
     url.pathname.startsWith('/api/') ||
     url.pathname.includes('__live_reload') ||
     url.pathname.includes('__config') ||

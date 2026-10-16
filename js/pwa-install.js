@@ -319,7 +319,8 @@
       // Check which of the 204 assets are not yet in CacheStorage
       for (var i = 0; i < ALL_STUDIO_ASSETS.length; i++) {
         var asset = ALL_STUDIO_ASSETS[i];
-        var matched = await cache.match(asset, { ignoreSearch: true });
+        var checkUrl = new URL(asset === './' ? '/' : '/' + asset.replace(/^\//, ''), window.location.origin).href;
+        var matched = await cache.match(checkUrl, { ignoreSearch: true });
         if (!matched) {
           missing.push(asset);
         }
@@ -328,7 +329,8 @@
       // If all 204 assets are already cached, ensure double-slash fticons alias exists and return immediately (0ms!)
       if (missing.length === 0) {
         try {
-          var ftFont = await cache.match('fticons/fticons.woff2', { ignoreSearch: true });
+          var ftUrl = new URL('/fticons/fticons.woff2', window.location.origin).href;
+          var ftFont = await cache.match(ftUrl, { ignoreSearch: true });
           if (ftFont) {
             var dblSlashUrl = new URL('/fticons//fticons.woff2', window.location.origin).href;
             var hasAlias = await cache.match(dblSlashUrl, { ignoreSearch: true });
@@ -356,11 +358,10 @@
         await Promise.allSettled(
           batch.map(async function (assetPath) {
             try {
-              var req = new Request(assetPath, { cache: 'reload' });
+              var absUrl = new URL(assetPath === './' ? '/' : '/' + assetPath.replace(/^\//, ''), window.location.origin).href;
+              var req = new Request(absUrl, { cache: 'reload' });
               var res = await fetch(req);
               if (res && res.ok) {
-                await cache.put(assetPath, res.clone());
-                var absUrl = new URL(assetPath === './' ? '/' : '/' + assetPath.replace(/^\//, ''), window.location.origin).href;
                 await cache.put(absUrl, res.clone());
                 if (assetPath === 'fticons/fticons.woff2') {
                   var aliasUrl = new URL('/fticons//fticons.woff2', window.location.origin).href;
