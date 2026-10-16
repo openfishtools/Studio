@@ -1822,7 +1822,7 @@ function setupImportProjectModal() {
         btnSubmitLink.textContent = 'Import';
       }
       if (statusText) statusText.textContent = '';
-      if (window.Modal) window.Modal.close('modal-import-project');
+      if (window.Modal) window.Modal.close('modal-import-project', false);
 
       setTimeout(() => {
         showPresetConfirmModal(data.project);
@@ -1895,10 +1895,10 @@ function setupImportProjectModal() {
         }
 
         setTimeout(() => {
-          if (window.Modal) window.Modal.close();
+          if (window.Modal) window.Modal.close(false);
           const targetPage = resolveTargetEditorPage();
-          window.location.href = `${targetPage}?id=${imported.id}`;
-        }, 400);
+          window.location.href = `${targetPage}?id=${encodeURIComponent(imported.id)}&template=1`;
+        }, 250);
       } catch (err) {
         console.error('[FishImport:Preset]', err);
         if (confirmStatus) {
@@ -2051,7 +2051,7 @@ async function handleImportedFiles(files, dropzone, statusEl) {
   }
 
   setTimeout(() => {
-    if (window.Modal) window.Modal.close();
+    if (window.Modal) window.Modal.close(false);
     dropzone.classList.remove('has-file');
     if (statusEl) statusEl.textContent = '';
     
