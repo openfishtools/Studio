@@ -1688,14 +1688,22 @@ function showPresetConfirmModal(project) {
     }
   }
 
-  // Close welcome modal or any other modal before opening preset confirm to prevent modal collision/stacking
+  // Close welcome modal or import modal before opening preset confirm to prevent modal/morph collision
   const welcomeEl = document.getElementById('modal-welcome');
   if (welcomeEl && welcomeEl.classList.contains('is-active')) {
     welcomeEl.classList.remove('is-active');
   }
+  const importModalEl = document.getElementById('modal-import-project');
+  if (importModalEl && (importModalEl.classList.contains('is-active') || importModalEl._isClosingWithMorph)) {
+    if (window.FolderAnim && typeof window.FolderAnim._resetModalInstantly === 'function') {
+      window.FolderAnim._resetModalInstantly(importModalEl);
+    } else {
+      importModalEl.classList.remove('is-active');
+    }
+  }
   if (window.Modal) {
-    if (window.Modal.activeModal && window.Modal.activeModal.id === 'modal-welcome') {
-      window.Modal.close(false);
+    if (window.Modal.activeModal && (window.Modal.activeModal.id === 'modal-welcome' || window.Modal.activeModal.id === 'modal-import-project')) {
+      window.Modal.activeModal = null;
     }
     window.Modal.open('modal-preset-confirm');
   }
@@ -1822,11 +1830,7 @@ function setupImportProjectModal() {
         btnSubmitLink.textContent = 'Import';
       }
       if (statusText) statusText.textContent = '';
-      if (window.Modal) window.Modal.close('modal-import-project', false);
-
-      setTimeout(() => {
-        showPresetConfirmModal(data.project);
-      }, 180);
+      showPresetConfirmModal(data.project);
     } catch (err) {
       if (statusText) {
         statusText.className = 'modal-import-status is-error';
@@ -1877,8 +1881,14 @@ function setupImportProjectModal() {
 
       try {
         const downloadUrl = getStudioApiUrl(`/api/project?id=${encodeURIComponent(activeSharedProject.id)}&download=1`);
-        const res = await fetch(downloadUrl);
-        if (!res.ok) throw new Error('Download failed: ' + res.status);
+        let res = null;
+        try {
+          res = await fetch(downloadUrl);
+        } catch (_) {}
+        if ((!res || !res.ok) && activeSharedProject.fileUrl) {
+          res = await fetch(activeSharedProject.fileUrl);
+        }
+        if (!res || !res.ok) throw new Error('Download failed: ' + (res ? res.status : 'network error'));
         const blob = await res.blob();
 
         if (confirmStatus) confirmStatus.textContent = 'Extracting layers & assets into IndexedDB...';
