@@ -87,6 +87,46 @@
     }
   }
 
+  var STANDALONE_REPO = 'openfishtools/Standalone';
+  var latestReleaseUrl = 'https://github.com/' + STANDALONE_REPO + '/releases/tag/v1.0.0';
+
+  function resolveLatestStandaloneReleaseUrl() {
+    if (isInstalled) return;
+    fetch('https://api.github.com/repos/' + STANDALONE_REPO + '/releases/latest', {
+      cache: 'no-store'
+    })
+      .then(function (res) {
+        if (!res || !res.ok) throw new Error('status ' + (res ? res.status : 0));
+        return res.json();
+      })
+      .then(function (data) {
+        if (data && data.tag_name) {
+          var tag = String(data.tag_name).trim();
+          if (tag.charAt(0) !== 'v') tag = 'v' + tag;
+          latestReleaseUrl = 'https://github.com/' + STANDALONE_REPO + '/releases/tag/' + tag;
+        } else if (data && data.html_url) {
+          latestReleaseUrl = String(data.html_url);
+        }
+      })
+      .catch(function () {
+        fetch('https://raw.githubusercontent.com/' + STANDALONE_REPO + '/main/package.json?t=' + Date.now(), {
+          cache: 'no-store'
+        })
+          .then(function (r) {
+            return r && r.ok ? r.json() : null;
+          })
+          .then(function (pkg) {
+            if (pkg && pkg.version) {
+              var ver = String(pkg.version).trim().replace(/^v/i, '');
+              latestReleaseUrl = 'https://github.com/' + STANDALONE_REPO + '/releases/tag/v' + ver;
+            }
+          })
+          .catch(function () {});
+      });
+  }
+
+  resolveLatestStandaloneReleaseUrl();
+
   // 3. Update Install Button Visibility
   function updateInstallButton() {
     var btn = document.getElementById('btn-install-app');
@@ -103,59 +143,11 @@
     }
   }
 
-  // 4. Direct Install Trigger (Native API)
-  async function promptInstall() {
-    if (deferredPrompt) {
-      try {
-        deferredPrompt.prompt();
-        var choice = await deferredPrompt.userChoice;
-        console.log('[PWA] Install prompt user choice:', choice ? choice.outcome : 'unknown');
-        if (choice && choice.outcome === 'accepted') {
-          deferredPrompt = null;
-          isInstalled = true;
-          updateInstallButton();
-        }
-      } catch (err) {
-        console.warn('[PWA] Direct prompt error:', err);
-      }
-      return;
-    }
-
-    // Jika belum ada event native prompt (misal di Safari Mac/iOS atau di file://)
-    if (window.location.protocol === 'file:') {
-      showFeedback('Jalankan lewat server (http://localhost) untuk menginstal web app.');
-      return;
-    }
-
-    var ua = navigator.userAgent;
-    var isMac = /Macintosh|MacIntel/i.test(ua);
-    var isSafari = /Safari/i.test(ua) && !/Chrome|Chromium|Edg|CriOS/i.test(ua);
-    var isIOS = /iPad|iPhone|iPod/.test(ua);
-
-    if (isSafari && isMac) {
-      showFeedback("Safari Mac: Klik menu 'File' → 'Add to Dock...'");
-    } else if (isIOS) {
-      showFeedback("iOS Safari: Tap Share (⎋) → 'Add to Home Screen'");
-    } else {
-      showFeedback('Klik ikon Install di address bar browser untuk menginstal app.');
-    }
+  // 4. Redirect to Latest Standalone GitHub Release Tag
+  function promptInstall() {
+    var targetUrl = latestReleaseUrl || ('https://github.com/' + STANDALONE_REPO + '/releases/latest');
+    window.open(targetUrl, '_blank', 'noopener,noreferrer');
   }
-
-  // 5. Event: beforeinstallprompt
-  window.addEventListener('beforeinstallprompt', function (e) {
-    e.preventDefault();
-    deferredPrompt = e;
-    console.log('[PWA] beforeinstallprompt event captured');
-    updateInstallButton();
-  });
-
-  // 6. Event: appinstalled
-  window.addEventListener('appinstalled', function () {
-    isInstalled = true;
-    deferredPrompt = null;
-    console.log('[PWA] OpenFishTools Studio successfully installed!');
-    updateInstallButton();
-  });
 
   // Check display-mode changes dynamically
   if (window.matchMedia) {
@@ -179,11 +171,14 @@
   window.PWAInstall = {
     prompt: promptInstall,
     handleInstallRequest: promptInstall,
+    getLatestReleaseUrl: function () {
+      return latestReleaseUrl;
+    },
     isInstalled: function () {
       return isInstalled;
     },
     isInstallable: function () {
-      return !!deferredPrompt;
+      return !isInstalled;
     }
   };
 })();
