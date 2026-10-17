@@ -409,6 +409,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+}
+
+.anchor-cell::after {
+  content: '';
+  width: 5px;
+  height: 5px;
+  background-color: var(--text-muted);
+  border-radius: 50%;
+  opacity: 0.65;
+  transition: all 0.15s ease;
 }
 
 .anchor-cell:hover {
@@ -416,17 +427,23 @@
   background-color: var(--bg-panel-hover);
 }
 
+.anchor-cell:hover::after {
+  background-color: var(--color-primary);
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.anchor-cell:active,
 .anchor-cell.anchor-active {
   background-color: var(--color-primary) !important;
   border-color: var(--color-primary) !important;
+  transform: scale(0.94);
 }
 
+.anchor-cell:active::after,
 .anchor-cell.anchor-active::after {
-  content: '';
-  width: 6px;
-  height: 6px;
   background-color: var(--bg-canvas);
-  border-radius: 50%;
+  opacity: 1;
 }
 
 /* --- Timer & Digital Displays --- */

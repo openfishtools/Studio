@@ -232,8 +232,6 @@
         const grid = document.createElement('div');
         grid.className = 'anchor-grid';
 
-        let activePos = ctx.storage.get('active_anchor', 5);
-
         const positions = [
           { id: 1, title: 'Top Left' },
           { id: 2, title: 'Top Center' },
@@ -249,14 +247,12 @@
         positions.forEach(p => {
           const cell = document.createElement('button');
           cell.type = 'button';
-          cell.className = `anchor-cell ${p.id === activePos ? 'anchor-active' : ''}`;
+          cell.className = 'anchor-cell';
           cell.title = p.title;
           cell.setAttribute('aria-label', p.title);
           cell.addEventListener('click', () => {
-            grid.querySelectorAll('.anchor-cell').forEach(c => c.classList.remove('anchor-active'));
             cell.classList.add('anchor-active');
-            activePos = p.id;
-            ctx.storage.set('active_anchor', p.id);
+            setTimeout(() => cell.classList.remove('anchor-active'), 180);
             ctx.runTool('setAnchorPoint', p.id);
           });
           grid.appendChild(cell);
@@ -451,7 +447,7 @@
       id: 'beat_effects',
       name: 'Beat Effects',
       icon: 'graphic_eq',
-      description: 'Current, Continuous, Panning, and WARP1/2/3 beat-synchronized effects.',
+      description: 'Current, Continuous, Panning, and WARP1/2 beat-synchronized effects.',
       category: 'Tools',
       defaultEnabled: true,
       build(ui, ctx) {
@@ -488,10 +484,9 @@
         ]);
 
         ui.section('Presets');
-        ui.grid({ cols: 3 }, [
+        ui.grid({ cols: 2 }, [
           ui.button({ label: 'WARP 1', icon: 'waves', title: 'Warp Preset 1', onClick() { ctx.runTool('PRESET_WARP1'); } }),
-          ui.button({ label: 'WARP 2', icon: 'waves', title: 'Warp Preset 2', onClick() { ctx.runTool('PRESET_WARP2'); } }),
-          ui.button({ label: 'WARP 3', icon: 'waves', title: 'Warp Preset 3', onClick() { ctx.runTool('PRESET_WARP3'); } })
+          ui.button({ label: 'WARP 2', icon: 'waves', title: 'Warp Preset 2', onClick() { ctx.runTool('PRESET_WARP2'); } })
         ]);
       }
     },

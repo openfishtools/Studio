@@ -91,19 +91,25 @@ When debugging errors, unexpected behavior, or UI bugs:
 - **Registry Pattern**: Effects register via `FishEffectsRegistry.register({...})`.
 - **Manifest Synchronization**: Run `npm run sync:effects` after adding or editing effects.
 
-## 13. Unified Versioning & SSOT
+## 13. Extension System Synchronization & Layer Mutation Rules (`Extension/`)
+- **UI Dual-Source Sync**: When modifying any built-in extension UI or preset grid, update BOTH `Extension/<id>.jsx` AND the runtime renderer in `js/extension-manager.js`.
+- **Action Dispatch Sync**: When adding, renaming, or changing extension actions/presets, synchronize all three dispatch layers: `js/openfishtools-controller.js`, `js/JSX-Translator.js`, and `js/editor.js` (`editorExecuteFishTool`).
+- **Window Scope Bridge**: `js/openfishtools-controller.js` runs in an IIFE; any `js/editor.js` function it calls (`setAnchorPointForSelectedLayers`, `alignSelectedLayers`, `editorExecuteFishTool`) MUST be exported on `window`.
+- **Effective Props Cache Invalidation**: Whenever mutating layer transform/anchor properties (`x`, `y`, `anchorX`, `anchorY`, or `move` keyframes), always `delete layer._effectivePropsCache` before calling `draw()` or `updatePlayheadPosition()`.
+
+## 14. Unified Versioning & SSOT
 - **Single Source of Truth**: Version is strictly defined in `version.json`.
 - **Automated Synchronization**: Run `npm run bump <version>` to synchronize `package.json`, HTML badges, and cache busters.
 - **NO Hardcoded Fallback Versions**: Never write fallback version literals in JavaScript.
 
-## 14. Mandatory Quality & Test Verification
+## 15. Mandatory Quality & Test Verification
 - **Run Tests Before Turn Completion**: Before completing any task, execute:
   ```bash
   npm test
   ```
 - All files must pass syntax verification, AST scope audit (0 undeclared references), synchronizers check, and HTML structure integrity.
 
-## 15. Strict Git Safety & Working Tree Protection (NO UNNOTIFIED GIT OPERATIONS)
+## 16. Strict Git Safety & Working Tree Protection (NO UNNOTIFIED GIT OPERATIONS)
 - **Zero Silent Git Changes**: STRICTLY FORBIDDEN to run `git checkout`, `git restore`, `git reset`, `git clean`, `git pull`, `git switch`, or any Git command that alters, overwrites, or discards local changes without explicit user consent.
 - **No Remote Git Inspections/Checkouts Without Prior Notice**: Never check remote GitHub, fetch, pull, or checkout branches without explicitly informing and getting confirmation from the user first.
 - **Absolute Preservation of Local State**: Always respect and preserve active uncommitted edits and untracked files. Never overwrite or discard user work in the working directory under any circumstance.

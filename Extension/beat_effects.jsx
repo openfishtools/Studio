@@ -6,7 +6,7 @@ Card({
   id: 'beat_effects',
   name: 'Beat Effects',
   icon: 'graphic_eq',
-  description: 'Current, Continuous, Panning, and WARP1/2/3 beat-synchronized effects.',
+  description: 'Current, Continuous, Panning, and WARP1/2 beat-synchronized effects.',
   category: 'Tools',
   defaultEnabled: true,
 
@@ -44,10 +44,9 @@ Card({
     ]);
 
     ui.section('Presets');
-    ui.grid({ cols: 3 }, [
+    ui.grid({ cols: 2 }, [
       ui.button({ label: 'WARP 1', icon: 'waves', title: 'Warp Preset 1', onClick() { ctx.runTool('PRESET_WARP1'); } }),
-      ui.button({ label: 'WARP 2', icon: 'waves', title: 'Warp Preset 2', onClick() { ctx.runTool('PRESET_WARP2'); } }),
-      ui.button({ label: 'WARP 3', icon: 'waves', title: 'Warp Preset 3', onClick() { ctx.runTool('PRESET_WARP3'); } })
+      ui.button({ label: 'WARP 2', icon: 'waves', title: 'Warp Preset 2', onClick() { ctx.runTool('PRESET_WARP2'); } })
     ]);
   }
 });

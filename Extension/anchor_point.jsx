@@ -19,8 +19,6 @@ Card({
     const grid = document.createElement('div');
     grid.className = 'anchor-grid';
 
-    let activePos = ctx.storage.get('active_anchor', 5);
-
     const positions = [
       { id: 1, title: 'Top Left' },
       { id: 2, title: 'Top Center' },
@@ -36,14 +34,12 @@ Card({
     positions.forEach(p => {
       const cell = document.createElement('button');
       cell.type = 'button';
-      cell.className = `anchor-cell ${p.id === activePos ? 'anchor-active' : ''}`;
+      cell.className = 'anchor-cell';
       cell.title = p.title;
       cell.setAttribute('aria-label', p.title);
       cell.addEventListener('click', () => {
-        grid.querySelectorAll('.anchor-cell').forEach(c => c.classList.remove('anchor-active'));
         cell.classList.add('anchor-active');
-        activePos = p.id;
-        ctx.storage.set('active_anchor', p.id);
+        setTimeout(() => cell.classList.remove('anchor-active'), 180);
         ctx.runTool('setAnchorPoint', p.id);
       });
       grid.appendChild(cell);

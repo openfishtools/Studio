@@ -392,104 +392,6 @@
     const selId = global.selectedLayerId;
     const createdLayers = [];
 
-    // Layer: Hue Spin (70 frames)
-    const hueStart = curSec;
-    const hueDur = Number((70 / fps).toFixed(4));
-    const hueT1 = curSec;
-    const hueT2 = Number((curSec + hueDur).toFixed(4));
-
-    const adjHue = (typeof global.addAdjustmentLayer === 'function') ? global.addAdjustmentLayer(hueDur, hueStart) : null;
-    if (!adjHue) return JSON.stringify({ error: true, message: 'Failed to create adjustment layer' });
-
-    adjHue.name = 'Hue Spin';
-    adjHue.isDurationExplicit = true;
-
-    const hueFx = {
-      id: uid('fx_hue_shift'),
-      type: 'hue-shift',
-      name: 'Hue Shift',
-      isExpanded: true,
-      disabled: false,
-      hue: 360
-    };
-
-    const warpWw1 = {
-      id: uid('fx_wave_warp_1'),
-      type: 'wave-warp',
-      name: 'Wave Warp',
-      isExpanded: true,
-      disabled: false,
-      waveType: 'smooth-noise',
-      waveHeight: 0,
-      waveWidth: 10,
-      direction: 90,
-      speed: 10,
-      phase: 273,
-      tile: 1
-    };
-
-    adjHue.effects = [hueFx, warpWw1];
-
-    const hueEase = [0, 1, 0.58, 1];
-    const warpT2 = Number((curSec + hueDur / 2).toFixed(4));
-
-    adjHue.keyframes = {
-      [`${hueFx.id}:hue`]: [
-        { time: hueT1, value: { hue: 0 }, easing: [...hueEase] },
-        { time: hueT2, value: { hue: 360 }, easing: [...hueEase] }
-      ],
-      [`${warpWw1.id}:waveHeight`]: [
-        { time: hueT1, value: { waveHeight: 0 }, easing: [0, 0, 1, 0] },
-        { time: warpT2, value: { waveHeight: 20 }, easing: [0, 1, 0, 1] },
-        { time: hueT2, value: { waveHeight: 0 }, easing: [0, 0, 0.2, 1] }
-      ],
-      [`${warpWw1.id}:speed`]: [
-        { time: hueT1, value: { speed: -10 }, easing: [0, 0, 1, 0] },
-        { time: warpT2, value: { speed: 10 }, easing: [0, 1, 0, 1] },
-        { time: hueT2, value: { speed: -10 }, easing: [0, 0, 0.2, 1] }
-      ]
-    };
-    adjHue.defaultEasing = {
-      [`${hueFx.id}:hue`]: [0, 0, 1, 1],
-      [`${warpWw1.id}:waveHeight`]: [0, 0, 1, 1],
-      [`${warpWw1.id}:speed`]: [0, 0, 1, 1]
-    };
-    adjHue._defaultEasing = adjHue.defaultEasing;
-    createdLayers.push(adjHue);
-
-    const layers = (global.currentProjectState && global.currentProjectState.layers) || [];
-    const idsToRemove = new Set(createdLayers.map(l => l.id));
-    for (let i = layers.length - 1; i >= 0; i--) {
-      if (idsToRemove.has(layers[i].id)) layers.splice(i, 1);
-    }
-
-    if (selId) {
-      const selIdx = layers.findIndex(l => l.id === selId);
-      if (selIdx >= 0) layers.splice(selIdx, 0, adjHue);
-      else layers.unshift(adjHue);
-    } else {
-      layers.unshift(adjHue);
-    }
-
-    if (typeof global.selectTimelineLayer === 'function') global.selectTimelineLayer(adjHue.id, false);
-    global.selectedLayerId = adjHue.id;
-
-    if (typeof global.invalidatePreviewCacheForLayer === 'function') global.invalidatePreviewCacheForLayer(adjHue);
-    notifyProjectChange('applyPresetWarp2', 'Preset Warp2 applied');
-    return JSON.stringify({ error: false, message: 'Preset Warp2 applied', layerIds: createdLayers.map(l => l.id) });
-  }
-
-  function applyPresetWarp3() {
-    if (global.UndoRedoManager && typeof global.UndoRedoManager.recordSnapshot === 'function') {
-      global.UndoRedoManager.recordSnapshot();
-    }
-    const fps = getProjectFps();
-    const rawPlayheadSec = getPlayheadSec();
-    const curFrame = Math.round(rawPlayheadSec * fps);
-    const curSec = Number((curFrame / fps).toFixed(4));
-    const selId = global.selectedLayerId;
-    const createdLayers = [];
-
     // 1. Layer: Mid-Wave (145 frames)
     const midwavePreFrames = Math.round((20 / 60) * fps);
     const midwaveStartFrame = Math.max(0, curFrame - midwavePreFrames);
@@ -742,9 +644,10 @@
       if (typeof global.invalidatePreviewCacheForLayer === 'function') global.invalidatePreviewCacheForLayer(l);
     });
 
-    notifyProjectChange('applyPresetWarp3', 'Preset Warp3 applied');
-    return JSON.stringify({ error: false, message: 'Preset Warp3 applied', layerIds: createdLayers.map(l => l.id) });
+    notifyProjectChange('applyPresetWarp2', 'Preset Warp2 applied');
+    return JSON.stringify({ error: false, message: 'Preset Warp2 applied', layerIds: createdLayers.map(l => l.id) });
   }
+  const applyPresetWarp3 = applyPresetWarp2;
 
   // =========================================================================
   // SINGLE BEAT ADJUSTMENT EFFECTS
