@@ -23274,6 +23274,8 @@
         catTheme.querySelector('.settings-category-header')?.setAttribute('aria-expanded', 'false');
       }
       renderEditorThemePicker();
+      try { initEditorUiScaleSlider(); } catch (_) {}
+      try { updateEditorStorageUI(); } catch (_) {}
 
       // 10. Update dynamic summaries on category headers
       updateProjectSettingsSummaries();
@@ -23314,12 +23316,11 @@
       if (summaryTheme) {
         const themeNames = {
           'default': 'Matcha Tea',
-          'after-effects': 'After Effects',
-          'cyber-cyan': 'Cyber Cyan',
-          'amber-terminal': 'Amber Gold',
-          'amethyst': 'Amethyst',
-          'rose': 'Rose Red',
-          'ocean': 'Ocean Blue'
+          'sakura-milk': 'Sakura Milk',
+          'lemon-soda': 'Lemon Soda',
+          'sky-candy': 'Sky Candy',
+          'mint-pop': 'Mint Pop',
+          'peach-glow': 'Peach Glow'
         };
         summaryTheme.textContent = themeNames[curTheme] || 'Matcha Tea';
       }
@@ -23330,12 +23331,11 @@
       if (!grid) return;
       const themes = [
         { id: 'default', name: 'Matcha Tea', desc: 'Default Brand', color: '#aef380', checkFill: '#12170e' },
-        { id: 'after-effects', name: 'After Effects', desc: 'Motion Indigo', color: '#9999ff', checkFill: '#12111a' },
-        { id: 'cyber-cyan', name: 'Cyber Cyan', desc: 'Electric Blue', color: '#38f2ff', checkFill: '#081017' },
-        { id: 'amber-terminal', name: 'Amber Gold', desc: 'Retro Terminal', color: '#ffbe2e', checkFill: '#181105' },
-        { id: 'amethyst', name: 'Amethyst', desc: 'Neon Purple', color: '#d8b4fe', checkFill: '#130c1d' },
-        { id: 'rose', name: 'Rose Red', desc: 'Vibrant Crimson', color: '#fda4af', checkFill: '#1a0a10' },
-        { id: 'ocean', name: 'Ocean Blue', desc: 'Deep Sea Azure', color: '#7dd3fc', checkFill: '#08121c' }
+        { id: 'sakura-milk', name: 'Sakura Milk', desc: 'Pastel Pink', color: '#ffb3d1', checkFill: '#2a121a' },
+        { id: 'lemon-soda', name: 'Lemon Soda', desc: 'Bright Citrus', color: '#ffe45e', checkFill: '#241d05' },
+        { id: 'sky-candy', name: 'Sky Candy', desc: 'Soft Cyan', color: '#8ee6ff', checkFill: '#0a1a22' },
+        { id: 'mint-pop', name: 'Mint Pop', desc: 'Fresh Mint', color: '#7dfcc8', checkFill: '#0a2018' },
+        { id: 'peach-glow', name: 'Peach Glow', desc: 'Warm Peach', color: '#ffc49b', checkFill: '#2a1a0e' }
       ];
       const cur = localStorage.getItem('oft_theme') || 'default';
       grid.innerHTML = themes.map(t => {
@@ -23363,6 +23363,16 @@
           try {
             localStorage.setItem('oft_theme', val);
           } catch (_) {}
+          try {
+            if (window.FishDatabase && typeof window.FishDatabase.getSettings === 'function') {
+              window.FishDatabase.getSettings().then(s => {
+                s = s || {};
+                s.config = s.config || {};
+                s.config.accent = val;
+                return window.FishDatabase.saveSettings(s);
+              }).catch(() => {});
+            }
+          } catch (_) {}
           if (val && val !== 'default') {
             document.documentElement.setAttribute('data-theme', val);
           } else {
@@ -23379,6 +23389,159 @@
           window.dispatchEvent(new CustomEvent('theme-changed', { detail: { theme: val } }));
         });
       });
+    }
+
+    // — UI Scale for Editor/Desktop (default 100%) + simple Storage bar —
+    function detectEditorUiScalePage() {
+      try {
+        const p = (window.location && window.location.pathname) || '';
+        if (p.indexOf('desktop') !== -1) return 'desktop';
+        if (p.indexOf('editor') !== -1) return 'editor';
+      } catch (_) {}
+      return 'editor';
+    }
+
+    function clampEditorUiScale(v) {
+      const n = parseInt(v, 10);
+      if (isNaN(n)) return 100;
+      return Math.max(80, Math.min(130, n));
+    }
+
+    function getEditorUiScale(page) {
+      try {
+        const raw = localStorage.getItem('oft_ui_scale_' + page);
+        if (raw !== null && raw !== '') return clampEditorUiScale(raw);
+      } catch (_) {}
+      return 100;
+    }
+
+    function applyEditorUiScale(page, val) {
+      const scale = clampEditorUiScale(val);
+      try {
+        document.documentElement.style.setProperty('--oft-ui-scale', String(scale / 100));
+        if (scale === 100) {
+          document.documentElement.style.zoom = '';
+          document.documentElement.style.removeProperty('zoom');
+        } else {
+          document.documentElement.style.zoom = String(scale / 100);
+          document.documentElement.style.setProperty('zoom', String(scale / 100));
+        }
+        window.__OFT_ZOOM = scale / 100;
+        document.documentElement.classList.toggle('is-scaled', scale !== 100);
+
+        const settingsCard = document.querySelector('#modal-project-settings .modal-card');
+        if (settingsCard) {
+          settingsCard.style.zoom = '';
+          settingsCard.style.removeProperty('zoom');
+        }
+
+        window.dispatchEvent(new Event('oft-ui-scale-changed'));
+        // Refit preview canvas to the rescaled layout viewport (ratios stay
+        // valid, but available layout px changed).
+        try {
+          if (typeof fitPreviewCanvasBox === 'function') fitPreviewCanvasBox();
+          else if (typeof window.fitPreviewCanvasBox === 'function') window.fitPreviewCanvasBox();
+        } catch (_) {}
+        try {
+          if (typeof window.syncDesktopLayout === 'function') window.syncDesktopLayout();
+        } catch (_) {}
+      } catch (_) {}
+      return scale;
+    }
+
+    function initEditorUiScaleSlider() {
+      const page = detectEditorUiScalePage();
+      const sliderId = page === 'desktop' ? 'ui-scale-desktop' : 'ui-scale-editor';
+      const labelId = sliderId + '-val';
+      const slider = document.getElementById(sliderId);
+      const label = document.getElementById(labelId);
+      const v = getEditorUiScale(page);
+
+      function updateEditorTrackFill(sl) {
+        if (!sl) return;
+        const min = parseFloat(sl.min) || 80;
+        const max = parseFloat(sl.max) || 130;
+        const val = parseFloat(sl.value) || 100;
+        const pct = Math.max(0, Math.min(100, ((val - min) / (max - min)) * 100));
+        sl.style.setProperty('--slider-fill', pct.toFixed(1) + '%');
+      }
+
+      if (slider) {
+        updateEditorTrackFill(slider);
+        if (!slider._oftWired) {
+          slider._oftWired = true;
+          try { slider.value = String(v); } catch (_) {}
+          updateEditorTrackFill(slider);
+
+          slider.addEventListener('input', () => {
+            const nv = clampEditorUiScale(slider.value);
+            if (label) label.textContent = nv + '%';
+            updateEditorTrackFill(slider);
+          });
+          slider.addEventListener('change', () => {
+            const nv = clampEditorUiScale(slider.value);
+            try { localStorage.setItem('oft_ui_scale_' + page, String(nv)); } catch (_) {}
+            try {
+              if (window.FishDatabase && typeof window.FishDatabase.getSettings === 'function') {
+                window.FishDatabase.getSettings().then(s => {
+                  s = s || {};
+                  s.config = s.config || {};
+                  s.config['uiScale_' + page] = nv;
+                  return window.FishDatabase.saveSettings(s);
+                }).catch(() => {});
+              }
+            } catch (_) {}
+            applyEditorUiScale(page, nv);
+            updateEditorTrackFill(slider);
+          });
+        } else {
+          try { slider.value = String(v); } catch (_) {}
+          updateEditorTrackFill(slider);
+        }
+      }
+      if (label) label.textContent = v + '%';
+      // Migrate legacy accent ids to Matcha Tea once.
+      try {
+        const cur = localStorage.getItem('oft_theme') || 'default';
+        const ok = ['default', 'sakura-milk', 'lemon-soda', 'sky-candy', 'mint-pop', 'peach-glow'];
+        if (ok.indexOf(cur) === -1) {
+          localStorage.setItem('oft_theme', 'default');
+          document.documentElement.removeAttribute('data-theme');
+        }
+      } catch (_) {}
+    }
+
+    async function updateEditorStorageUI() {
+      const statusEl = document.getElementById('editor-settings-storage-status');
+      const fillEl = document.getElementById('editor-settings-storage-fill');
+      if (!statusEl && !fillEl) return;
+      function fmt(b) {
+        if (typeof b !== 'number' || isNaN(b) || b <= 0) return '0 MB';
+        const mb = b / (1024 * 1024);
+        if (mb < 1024) return mb.toFixed(1) + ' MB';
+        return (mb / 1024).toFixed(2) + ' GB';
+      }
+      try {
+        if (!window.FishDatabase || typeof window.FishDatabase.checkStoragePersistence !== 'function') {
+          if (statusEl) statusEl.textContent = 'Storage ready';
+          if (fillEl) fillEl.style.width = '0%';
+          return;
+        }
+        const info = await window.FishDatabase.checkStoragePersistence();
+        if (info && info.usage && info.quota) {
+          const pct = (info.usage / info.quota) * 100;
+          if (statusEl) statusEl.textContent = fmt(info.usage) + ' of ' + fmt(info.quota) + ' • ' + pct.toFixed(1) + '%';
+          if (fillEl) fillEl.style.width = Math.max(0, Math.min(100, pct)).toFixed(1) + '%';
+        } else if (info && info.usage) {
+          if (statusEl) statusEl.textContent = fmt(info.usage) + ' used';
+          if (fillEl) fillEl.style.width = '0%';
+        } else {
+          if (statusEl) statusEl.textContent = 'Storage ready';
+          if (fillEl) fillEl.style.width = '0%';
+        }
+      } catch (_) {
+        if (statusEl) statusEl.textContent = 'Storage ready';
+      }
     }
 
     // Save project settings action (persisting to FishDatabase & live updating Canvas and Timeline)
@@ -26140,6 +26303,26 @@
       } catch (_) {}
     }
     initEditorVersion();
+
+    // Apply persisted UI scale immediately (Editor/Desktop default 100%).
+    try {
+      const _p = (window.location.pathname || '').indexOf('desktop') !== -1 ? 'desktop' : 'editor';
+      const _v = (() => {
+        try {
+          const raw = localStorage.getItem('oft_ui_scale_' + _p);
+          const n = parseInt(raw, 10);
+          if (!isNaN(n)) return Math.max(80, Math.min(130, n));
+        } catch (_) {}
+        return 100;
+      })();
+      document.documentElement.style.setProperty('--oft-ui-scale', String(_v / 100));
+      if (_v !== 100) document.documentElement.style.setProperty('zoom', String(_v / 100));
+      else document.documentElement.style.removeProperty('zoom');
+      try {
+        window.__OFT_ZOOM = _v / 100;
+        document.documentElement.classList.toggle('is-scaled', _v !== 100);
+      } catch (_) {}
+    } catch (_) {}
 
     // Interactive Option Selectors for Modal Dialogs (Custom Dropdowns, Aspect Frames, Swatches)
     document.addEventListener('DOMContentLoaded', () => {

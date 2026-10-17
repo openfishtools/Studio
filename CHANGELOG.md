@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.0] - 2026-10-13
+## [0.6.1] - 2026-10-17
+
+### Improved
+- **Settings Storage Card & UI Scale Controls (`index.html`, `css/modal.css`, `js/main.js`)**:
+  - Redesigned Storage card with dedicated storage icon badge, separate Used and Total storage indicators, full-width progress track, and live database persistence status.
+  - Refined UI Scale slider controls with 1% granular step increments (`step="1"`), monospace percentage badges, and dynamic active track fill (`--slider-fill`) updating smoothly with thumb drag.
+- **Folder Animation Performance (`js/folderanim.js`)**:
+  - Eliminated per-frame DOM transform reads and cached SVG morph templates for lighter, zero-drop 60fps folder opening animations.
+
+### Fixed
+- **Extension Modal Desktop Layout on Scaled UI (`css/modal.css`)**:
+  - Scoped `.folder-modal-card.extension-modal-card` full-screen sizing under `html.is-scaled` strictly to mobile (`@media (max-width: 600px)`), fixing desktop pop-up expanding to full-screen and eliminating the large empty blank bar at the bottom.
+- **Scaled UI Viewport Compensation (`css/modal.css`)**:
+  - Added full viewport compensations for `html.is-scaled`, `body`, and `.modal-backdrop` under UI scale < 100%, eliminating empty black bars at the bottom of the screen.
+- **Settings Modal Header Clipping (`css/modal.css`)**:
+  - Fixed flexbox alignment with safe-centering and constrained modal card max-height, keeping modal headers pinned and visible at all zoom scales.
+- **Popup Backdrop Duplication (`css/modal.css`, `css/layout.css`, `js/folderanim.js`)**:
+  - Unified modal backdrop opacities and removed duplicate background dimmer injection.
 
 ### Added
 - **Un Group Precompose Layers (`editor.html`, `desktop.html`, `js/editor.js`)**:

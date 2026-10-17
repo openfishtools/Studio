@@ -179,12 +179,19 @@
 
         folderEl._currentRot = flapDeg;
         if (front) {
-          front.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
+          const flapTf = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
+          if (folderEl._lastFlapTf !== flapTf) {
+            folderEl._lastFlapTf = flapTf;
+            front.style.transform = flapTf;
+          }
         }
         if (graphic) {
           const rotStr = isAction ? `rotate(${curRot.toFixed(1)}deg) ` : '';
           const graphicTransform = `${rotStr}scale(${scaleX.toFixed(3)}, ${scaleY.toFixed(3)}) translateY(${translateY.toFixed(1)}px)`;
-          graphic.style.transform = graphicTransform;
+          if (folderEl._lastGraphicTf !== graphicTransform) {
+            folderEl._lastGraphicTf = graphicTransform;
+            graphic.style.transform = graphicTransform;
+          }
           folderEl._currentGraphicTransform = graphicTransform;
         }
 
@@ -192,6 +199,8 @@
           folderEl._folderTickerCancel = null;
           folderEl.classList.remove('is-animating');
           folderEl._currentRot = -48;
+          folderEl._lastFlapTf = null;
+          folderEl._lastGraphicTf = null;
           if (front) {
             front.style.transform = 'perspective(240px) rotateX(-48deg)';
             front.style.removeProperty('will-change');
@@ -319,12 +328,19 @@
         folderEl._currentRot = flapDeg;
         folderEl._arrivalBounceOffset = { translateY, scaleY, scaleX };
         if (front) {
-          front.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
+          const flapTf = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
+          if (folderEl._lastFlapTf !== flapTf) {
+            folderEl._lastFlapTf = flapTf;
+            front.style.transform = flapTf;
+          }
         }
         if (graphic) {
           const rotStr = isAction ? `rotate(${curRot.toFixed(1)}deg) ` : '';
           const graphicTransform = `${rotStr}scale(${scaleX.toFixed(3)}, ${scaleY.toFixed(3)}) translateY(${translateY.toFixed(1)}px)`;
-          graphic.style.transform = graphicTransform;
+          if (folderEl._lastGraphicTf !== graphicTransform) {
+            folderEl._lastGraphicTf = graphicTransform;
+            graphic.style.transform = graphicTransform;
+          }
           folderEl._currentGraphicTransform = graphicTransform;
         }
 
@@ -333,6 +349,8 @@
           folderEl._arrivalBounceRunning = false;
           folderEl._currentRot = 0;
           folderEl._arrivalBounceOffset = null;
+          folderEl._lastFlapTf = null;
+          folderEl._lastGraphicTf = null;
           folderEl.classList.remove('is-animating', 'is-open', 'is-closing');
           if (front) {
             front.style.opacity = '1';
@@ -354,7 +372,6 @@
 
           // Bersihkan flap overlay setelah settle sempurna
           this._removeFlapOverlay(null, folderEl);
-          document.querySelectorAll('.folder-flap-overlay').forEach(el => el.remove());
 
           // Kunci folder di posisi neutral non-hover (-8deg, scale 1.0, sheet masuk)
           // Hanya izinkan hover jika kursor mouse digerakkan aktif setelah animasi selesai di desktop
@@ -466,17 +483,52 @@
       return -48.0;
     }
 
+    /**
+     * Promotes morph subtrees to compositor layers once per morph (instead of
+     * letting the browser re-decide layerization on every opacity/transform
+     * write), and clears per-frame string caches when the morph ends so the
+     * next morph never skips its first write on a stale cache hit.
+     */
+    _setMorphLayerHint(win, header, body, footer, skeleton, on) {
+      const set = (el, v) => {
+        if (!el) return;
+        try {
+          if (on) el.style.willChange = v;
+          else el.style.removeProperty('will-change');
+        } catch (_) {}
+      };
+      set(header, 'opacity');
+      set(body, 'opacity');
+      set(footer, 'opacity');
+      set(skeleton, 'opacity');
+      if (!on && win) {
+        win._lastMorphTf = null;
+        win._lastOvTf = null;
+        win._lastFlapTf = null;
+        win._lastFrontTf = null;
+        win._lastBgAlpha = null;
+        win._lastRadius = null;
+        win._morphVis = null;
+        try { win.style.removeProperty('will-change'); } catch (_) {}
+      }
+    }
+
+
     _setupFlapOverlay(folderEl, modal, geom) {
       if (!folderEl || !modal) return null;
-      let overlay = modal.querySelector('.folder-flap-overlay');
-      if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.className = 'folder-flap-overlay';
-        overlay.style.position = 'fixed';
-        overlay.style.pointerEvents = 'none';
-        overlay.style.zIndex = '10005';
-        overlay.style.display = 'none';
-        modal.appendChild(overlay);
+      let overlay = modal._flapOverlay;
+      if (!overlay || !overlay.isConnected) {
+        overlay = modal.querySelector('.folder-flap-overlay');
+        if (!overlay) {
+          overlay = document.createElement('div');
+          overlay.className = 'folder-flap-overlay';
+          overlay.style.position = 'fixed';
+          overlay.style.pointerEvents = 'none';
+          overlay.style.zIndex = '10005';
+          overlay.style.display = 'none';
+          modal.appendChild(overlay);
+        }
+        modal._flapOverlay = overlay;
       }
       const posX = (geom && typeof geom.gx === 'number') ? geom.gx : (geom ? geom.cx : null);
       const posY = (geom && typeof geom.gy === 'number') ? geom.gy : (geom ? geom.cy : null);
@@ -486,31 +538,40 @@
         overlay.style.width = `${geom.gw.toFixed(1)}px`;
         overlay.style.height = `${geom.gh.toFixed(1)}px`;
         overlay.style.transformOrigin = geom.isActionFolder ? 'center center' : '50% 100%';
+        // Promote once: overlay + flap are written every frame during flight
+        overlay.style.willChange = 'transform';
       }
       const frontGroup = folderEl.querySelector('.folder-svg-front-group');
       const front = folderEl.querySelector('.folder-svg-front');
       const frontColor = front ? (front.getAttribute('fill') || 'var(--color-primary, #98ce7b)') : 'var(--color-primary, #98ce7b)';
-      const flapContent = frontGroup ? frontGroup.innerHTML : `
-        <rect x="6" y="16" width="56" height="32" rx="6" fill="${frontColor}"/>
-        <rect x="8" y="17" width="52" height="1.5" rx="0.75" fill="#ffffff" opacity="0.35"/>
-      `;
-      overlay.innerHTML = `
-        <svg viewBox="0 0 68 54" width="100%" height="100%" fill="none" style="overflow: visible; display: block;">
-          <g class="overlay-flap-group" style="transform-box: fill-box; transform-origin: 50% 100%; transform-style: preserve-3d;">
-            ${flapContent}
-          </g>
-        </svg>
-      `;
+      if (!overlay._flapMounted || overlay._flapColor !== frontColor) {
+        overlay._flapColor = frontColor;
+        overlay._flapMounted = true;
+        const flapContent = frontGroup ? frontGroup.innerHTML : `
+          <rect x="6" y="16" width="56" height="32" rx="6" fill="${frontColor}"/>
+          <rect x="8" y="17" width="52" height="1.5" rx="0.75" fill="#ffffff" opacity="0.35"/>
+        `;
+        overlay.innerHTML = `
+          <svg viewBox="0 0 68 54" width="100%" height="100%" fill="none" style="overflow: visible; display: block;">
+            <g class="overlay-flap-group" style="transform-box: fill-box; transform-origin: 50% 100%; transform-style: preserve-3d;">
+              ${flapContent}
+            </g>
+          </svg>
+        `;
+        overlay._cachedFlap = overlay.querySelector('.overlay-flap-group');
+      }
       return {
         overlay,
-        overlayFlap: overlay.querySelector('.overlay-flap-group')
+        overlayFlap: overlay._cachedFlap || overlay.querySelector('.overlay-flap-group')
       };
     }
 
     _mountMorphSvg(skeleton, insert) {
       if (!skeleton || !insert) return;
-      // Gunakan seluruh SVG isi folder termasuk sheet background dengan opacity 1 solid
-      // agar warna morphing dari sheet (hijau aksen) ke isi kartu pop-up bertransformasi mulus dan pekat
+      if (skeleton._mountedInsert === insert && skeleton.firstElementChild) {
+        return; // Already compiled and mounted, zero re-parse needed
+      }
+      skeleton._mountedInsert = insert;
       const content = insert.innerHTML
         .replace(/opacity="0\.95"/g, 'opacity="1"')
         .replace(/<line /g, '<line vector-effect="non-scaling-stroke" ');
@@ -525,13 +586,16 @@
 
     _removeFlapOverlay(modal, folderEl) {
       if (modal) {
-        const overlay = modal.querySelector('.folder-flap-overlay');
+        const overlay = modal._flapOverlay || modal.querySelector('.folder-flap-overlay');
         if (overlay) overlay.remove();
+        modal._flapOverlay = null;
       }
-      document.querySelectorAll('.folder-flap-overlay').forEach(el => el.remove());
-      // Pulihkan opacity penutup asli agar tidak hilang
       const folder = folderEl || (modal && modal._activeSourceFolder);
       if (folder) {
+        if (folder._activeTargetModal && folder._activeTargetModal._flapOverlay) {
+          folder._activeTargetModal._flapOverlay.remove();
+          folder._activeTargetModal._flapOverlay = null;
+        }
         const origFront = folder.querySelector('.folder-svg-front-group') || folder.querySelector('.folder-svg-front');
         if (origFront) {
           origFront.style.opacity = '1';
@@ -567,21 +631,17 @@
       const prevSheetTransform = sheet ? sheet.style.transform : '';
       const prevFrontTransform = front ? front.style.transform : '';
 
-      if (prevWinTransform && prevWinTransform !== 'none') {
-        win.style.setProperty('transform', 'none', 'important');
-      }
-      if (graphic) {
-        graphic.style.setProperty('transform', 'none', 'important');
-      }
-      if (insert) {
-        insert.style.setProperty('transform', 'none', 'important');
-      }
-      if (sheet) {
-        sheet.style.setProperty('transform', 'none', 'important');
-      }
-      if (front) {
-        front.style.setProperty('transform', 'none', 'important');
-      }
+      const hadWin = prevWinTransform && prevWinTransform !== 'none';
+      const hadGraphic = graphic && prevGraphicTransform && prevGraphicTransform !== 'none';
+      const hadInsert = insert && prevInsertTransform && prevInsertTransform !== 'none';
+      const hadSheet = sheet && prevSheetTransform && prevSheetTransform !== 'none';
+      const hadFront = front && prevFrontTransform && prevFrontTransform !== 'none';
+
+      if (hadWin) win.style.setProperty('transform', 'none', 'important');
+      if (hadGraphic) graphic.style.setProperty('transform', 'none', 'important');
+      if (hadInsert) insert.style.setProperty('transform', 'none', 'important');
+      if (hadSheet) sheet.style.setProperty('transform', 'none', 'important');
+      if (hadFront) front.style.setProperty('transform', 'none', 'important');
 
       // Batch rect reads together while in pure untransformed, unrotated neutral resting state
       const sRect = sheet.getBoundingClientRect();
@@ -589,32 +649,12 @@
       const gRect = (graphic || svgEl || sheet).getBoundingClientRect();
       const svgRect = svgEl ? svgEl.getBoundingClientRect() : gRect;
 
-      // Restore transforms
-      if (prevWinTransform && prevWinTransform !== 'none') {
-        win.style.transform = prevWinTransform;
-      } else {
-        win.style.removeProperty('transform');
-      }
-      if (prevGraphicTransform && prevGraphicTransform !== 'none') {
-        graphic.style.transform = prevGraphicTransform;
-      } else if (graphic) {
-        graphic.style.removeProperty('transform');
-      }
-      if (prevInsertTransform && prevInsertTransform !== 'none') {
-        insert.style.transform = prevInsertTransform;
-      } else if (insert) {
-        insert.style.removeProperty('transform');
-      }
-      if (prevSheetTransform && prevSheetTransform !== 'none') {
-        sheet.style.transform = prevSheetTransform;
-      } else if (sheet) {
-        sheet.style.removeProperty('transform');
-      }
-      if (prevFrontTransform && prevFrontTransform !== 'none') {
-        front.style.transform = prevFrontTransform;
-      } else if (front) {
-        front.style.removeProperty('transform');
-      }
+      // Restore transforms only if modified
+      if (hadWin) win.style.transform = prevWinTransform;
+      if (hadGraphic) graphic.style.transform = prevGraphicTransform;
+      if (hadInsert) insert.style.transform = prevInsertTransform;
+      if (hadSheet) sheet.style.transform = prevSheetTransform;
+      if (hadFront) front.style.transform = prevFrontTransform;
 
       // Unrotated exact sheet scale factors (prevents the oversized / 'kebesaran' bug caused by measuring rotated bounding box)
       const realWidth = Math.max(200, tRect.width || 320);
@@ -668,14 +708,20 @@
 
       const startRot = isActionFolder ? -8 : 0;
 
+      // UI-scale zoom compensation: rects report visual px, but translate /
+      // left / width styles render scaled — divide back to layout px so the
+      // morph lands exactly on the folder at any UI scale. Ratios (sx/sy)
+      // are unaffected. At 100% the factor is 1 (no behavior change).
+      const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || 1;
+
       return {
-        dx, dy, sx, sy, sRect, tRect,
+        dx: dx / _z, dy: dy / _z, sx, sy, sRect, tRect,
         targetRadiusTop, targetRadiusBottom, targetBg,
         startRot,
-        cx: sCenterX, cy: sCenterY,
-        gx, gy,
-        gw: svgRect.width || 60,
-        gh: svgRect.height || 48,
+        cx: sCenterX / _z, cy: sCenterY / _z,
+        gx: gx / _z, gy: gy / _z,
+        gw: (svgRect.width || 60) / _z,
+        gh: (svgRect.height || 48) / _z,
         isActionFolder,
         graphicEl: graphic
       };
@@ -750,6 +796,8 @@
           graphic.style.transform = isAction ? 'rotate(-8deg)' : '';
         }
         srcFolder._currentRot = 0;
+        srcFolder._lastFlapTf = null;
+        srcFolder._lastGraphicTf = null;
         srcFolder._activeTargetModal = null;
       }
       this._removeFlapOverlay(modal, srcFolder);
@@ -773,12 +821,14 @@
         const header = win.querySelector('.folder-modal-header, .modal-header');
         const body = win.querySelector('.folder-modal-body, .modal-body');
         const footer = win.querySelector('.folder-modal-footer, .modal-footer');
-        if (header) header.style.opacity = '';
-        if (body) body.style.opacity = '';
-        if (footer) footer.style.opacity = '';
+        this._setMorphLayerHint(win, header, body, footer, win.querySelector('.folder-morph-skeleton'), false);
+        if (header) { header.style.opacity = ''; header.style.visibility = ''; }
+        if (body) { body.style.opacity = ''; body.style.visibility = ''; }
+        if (footer) { footer.style.opacity = ''; footer.style.visibility = ''; }
         const skeleton = win.querySelector('.folder-morph-skeleton');
         if (skeleton) {
           skeleton.style.opacity = '0';
+          skeleton.style.visibility = '';
           skeleton.innerHTML = '';
         }
       }
@@ -879,7 +929,11 @@
       // Synchronized dark backdrop dimming for dialog modals (New Project & Import Project)
       if (modal && (modal.id === 'modal-new-project' || modal.id === 'modal-import-project')) {
         const bgAlpha = Math.max(0, Math.min(0.78, 0.78 * Math.sin(Math.min(1, u * 1.35) * Math.PI * 0.5)));
-        modal.style.backgroundColor = `rgba(10, 18, 10, ${bgAlpha.toFixed(3)})`;
+        const qAlpha = (Math.round(bgAlpha * 50) / 50).toFixed(2);
+        if (cached.lastBgAlpha !== qAlpha) {
+          cached.lastBgAlpha = qAlpha;
+          modal.style.backgroundColor = `rgba(10, 18, 10, ${qAlpha})`;
+        }
       }
 
       // Visual border radius morph:
@@ -892,12 +946,18 @@
         const targetRTop = (typeof geom.targetRadiusTop === 'number') ? geom.targetRadiusTop : 20;
         const targetRBottom = (typeof geom.targetRadiusBottom === 'number') ? geom.targetRadiusBottom : 20;
         const radFactor = isOpening ? (u * u * (3 - 2 * u)) : u;
-        const curVisRTop = sheetVisualR + (targetRTop - sheetVisualR) * radFactor;
-        const curVisRBottom = sheetVisualR + (targetRBottom - sheetVisualR) * radFactor;
-        const minScale = Math.max(0.01, Math.min(curSx, curSy));
-        const cssRTop = curVisRTop / minScale;
-        const cssRBottom = curVisRBottom / minScale;
-        win.style.setProperty('border-radius', `${cssRTop.toFixed(1)}px ${cssRTop.toFixed(1)}px ${cssRBottom.toFixed(1)}px ${cssRBottom.toFixed(1)}px`, 'important');
+        let minScale = curSx;
+        if (curSy < minScale) minScale = curSy;
+        if (minScale < 0.01) minScale = 0.01;
+        const rTop = sheetVisualR + (targetRTop - sheetVisualR) * radFactor;
+        const rBot = sheetVisualR + (targetRBottom - sheetVisualR) * radFactor;
+        const cssTop = Math.round(rTop / minScale);
+        const cssBot = Math.round(rBot / minScale);
+        if (cached.lastRTop !== cssTop || cached.lastRBot !== cssBot) {
+          cached.lastRTop = cssTop;
+          cached.lastRBot = cssBot;
+          win.style.borderRadius = `${cssTop}px ${cssTop}px ${cssBot}px ${cssBot}px`;
+        }
       }
 
       // Border color toggle (only when crossing threshold u = 0.15)
@@ -914,59 +974,106 @@
         if (u <= 0.08) {
           if (cached.opacitySettled !== 'zero') {
             cached.opacitySettled = 'zero';
-            if (cached.skeleton) cached.skeleton.style.opacity = '1';
-            if (cached.header) cached.header.style.opacity = '0';
-            if (cached.body) cached.body.style.opacity = '0';
-            if (cached.footer) cached.footer.style.opacity = '0';
+            win._morphVis = 'zero';
+            cached.lastSkelO = '1';
+            cached.lastMorphO = '0';
+            if (cached.skeleton) { cached.skeleton.style.opacity = '1'; cached.skeleton.style.visibility = 'visible'; }
+            if (cached.header) { cached.header.style.opacity = '0'; cached.header.style.visibility = 'hidden'; }
+            if (cached.body) { cached.body.style.opacity = '0'; cached.body.style.visibility = 'hidden'; }
+            if (cached.footer) { cached.footer.style.opacity = '0'; cached.footer.style.visibility = 'hidden'; }
           }
         } else if (u >= 0.36) {
           if (cached.opacitySettled !== 'full') {
             cached.opacitySettled = 'full';
-            if (cached.skeleton) cached.skeleton.style.opacity = '0';
-            if (cached.header) cached.header.style.opacity = '1';
-            if (cached.body) cached.body.style.opacity = '1';
-            if (cached.footer) cached.footer.style.opacity = '1';
+            win._morphVis = 'full';
+            cached.lastSkelO = '0';
+            cached.lastMorphO = '1';
+            if (cached.skeleton) { cached.skeleton.style.opacity = '0'; cached.skeleton.style.visibility = 'hidden'; }
+            if (cached.header) { cached.header.style.opacity = '1'; cached.header.style.visibility = 'visible'; }
+            if (cached.body) { cached.body.style.opacity = '1'; cached.body.style.visibility = 'visible'; }
+            if (cached.footer) { cached.footer.style.opacity = '1'; cached.footer.style.visibility = 'visible'; }
           }
         } else {
           cached.opacitySettled = 'fading';
+          if (win._morphVis !== 'fading') {
+            win._morphVis = 'fading';
+            if (cached.skeleton) cached.skeleton.style.visibility = 'visible';
+            if (cached.header) cached.header.style.visibility = 'visible';
+            if (cached.body) cached.body.style.visibility = 'visible';
+            if (cached.footer) cached.footer.style.visibility = 'visible';
+          }
           const progMorph = (u - 0.08) / 0.28;
           const easedMorph = progMorph * progMorph * (3 - 2 * progMorph);
-          if (cached.skeleton) cached.skeleton.style.opacity = (1 - easedMorph).toFixed(2);
-          if (cached.header) cached.header.style.opacity = easedMorph.toFixed(2);
-          if (cached.body) cached.body.style.opacity = easedMorph.toFixed(2);
-          if (cached.footer) cached.footer.style.opacity = easedMorph.toFixed(2);
+          const skelO = (1 - easedMorph).toFixed(2);
+          const morphO = easedMorph.toFixed(2);
+          if (cached.lastSkelO !== skelO) {
+            cached.lastSkelO = skelO;
+            if (cached.skeleton) cached.skeleton.style.opacity = skelO;
+          }
+          if (cached.lastMorphO !== morphO) {
+            cached.lastMorphO = morphO;
+            if (cached.header) cached.header.style.opacity = morphO;
+            if (cached.body) cached.body.style.opacity = morphO;
+            if (cached.footer) cached.footer.style.opacity = morphO;
+          }
         }
       } else {
         if (u >= 0.85) {
           if (cached.opacitySettled !== 'full') {
             cached.opacitySettled = 'full';
-            if (cached.skeleton) cached.skeleton.style.opacity = '0';
-            if (cached.header) cached.header.style.opacity = '1';
-            if (cached.body) cached.body.style.opacity = '1';
-            if (cached.footer) cached.footer.style.opacity = '1';
+            win._morphVis = 'full';
+            cached.lastSkelO = '0';
+            cached.lastMorphO = '1';
+            if (cached.skeleton) { cached.skeleton.style.opacity = '0'; cached.skeleton.style.visibility = 'hidden'; }
+            if (cached.header) { cached.header.style.opacity = '1'; cached.header.style.visibility = 'visible'; }
+            if (cached.body) { cached.body.style.opacity = '1'; cached.body.style.visibility = 'visible'; }
+            if (cached.footer) { cached.footer.style.opacity = '1'; cached.footer.style.visibility = 'visible'; }
           }
         } else if (u <= 0.20) {
           if (cached.opacitySettled !== 'zero') {
             cached.opacitySettled = 'zero';
-            if (cached.skeleton) cached.skeleton.style.opacity = '1';
-            if (cached.header) cached.header.style.opacity = '0';
-            if (cached.body) cached.body.style.opacity = '0';
-            if (cached.footer) cached.footer.style.opacity = '0';
+            win._morphVis = 'zero';
+            cached.lastSkelO = '1';
+            cached.lastMorphO = '0';
+            if (cached.skeleton) { cached.skeleton.style.opacity = '1'; cached.skeleton.style.visibility = 'visible'; }
+            if (cached.header) { cached.header.style.opacity = '0'; cached.header.style.visibility = 'hidden'; }
+            if (cached.body) { cached.body.style.opacity = '0'; cached.body.style.visibility = 'hidden'; }
+            if (cached.footer) { cached.footer.style.opacity = '0'; cached.footer.style.visibility = 'hidden'; }
           }
         } else {
           cached.opacitySettled = 'fading';
+          if (win._morphVis !== 'fading') {
+            win._morphVis = 'fading';
+            if (cached.skeleton) cached.skeleton.style.visibility = 'visible';
+            if (cached.header) cached.header.style.visibility = 'visible';
+            if (cached.body) cached.body.style.visibility = 'visible';
+            if (cached.footer) cached.footer.style.visibility = 'visible';
+          }
           const progMorph = (u - 0.20) / 0.65;
           const easedMorph = progMorph * progMorph * (3 - 2 * progMorph);
-          if (cached.skeleton) cached.skeleton.style.opacity = (1 - easedMorph).toFixed(2);
-          if (cached.header) cached.header.style.opacity = easedMorph.toFixed(2);
-          if (cached.body) cached.body.style.opacity = easedMorph.toFixed(2);
-          if (cached.footer) cached.footer.style.opacity = easedMorph.toFixed(2);
+          const skelO = (1 - easedMorph).toFixed(2);
+          const morphO = easedMorph.toFixed(2);
+          if (cached.lastSkelO !== skelO) {
+            cached.lastSkelO = skelO;
+            if (cached.skeleton) cached.skeleton.style.opacity = skelO;
+          }
+          if (cached.lastMorphO !== morphO) {
+            cached.lastMorphO = morphO;
+            if (cached.header) cached.header.style.opacity = morphO;
+            if (cached.body) cached.body.style.opacity = morphO;
+            if (cached.footer) cached.footer.style.opacity = morphO;
+          }
         }
       }
 
-      // Hardware accelerated GPU Transform
+      // Hardware accelerated GPU Transform (will-change is promoted once at
+      // morph start; rewriting it per frame forces needless style recalc)
       const rotStr = Math.abs(curRot) > 0.01 ? ` rotate(${curRot.toFixed(1)}deg)` : '';
-      win.style.setProperty('transform', `translate3d(${curDx.toFixed(1)}px, ${curDy.toFixed(1)}px, 0)${rotStr} scale(${curSx.toFixed(3)}, ${curSy.toFixed(3)})`, 'important');
+      const morphTf = `translate3d(${curDx.toFixed(1)}px, ${curDy.toFixed(1)}px, 0)${rotStr} scale(${curSx.toFixed(3)}, ${curSy.toFixed(3)})`;
+      if (win._lastMorphTf !== morphTf) {
+        win._lastMorphTf = morphTf;
+        win.style.transform = morphTf;
+      }
 
       // Flap Overlay Choreography (zero per-frame layout property writes)
       if (cached.overlay && cached.overlayFlap) {
@@ -976,28 +1083,57 @@
             cached.overlay.style.display = 'block';
             if (cached.front) cached.front.style.opacity = '0';
           }
+          let syncGraphicTransform = folderEl._currentGraphicTransform;
           if (cached.graphic && geom.isActionFolder && !folderEl._arrivalBounceRunning) {
-            cached.graphic.style.transform = `rotate(${curRot.toFixed(1)}deg)`;
+            const rotTf = `rotate(${curRot.toFixed(1)}deg)`;
+            if (folderEl._lastGraphicTf !== rotTf) {
+              folderEl._lastGraphicTf = rotTf;
+              cached.graphic.style.transform = rotTf;
+            }
+            syncGraphicTransform = rotTf;
+            folderEl._currentGraphicTransform = rotTf;
           }
-          const syncGraphicTransform = (cached.graphic && cached.graphic.style.transform && cached.graphic.style.transform !== 'none') ? cached.graphic.style.transform : (Math.abs(curRot) > 0.01 ? `rotate(${curRot.toFixed(1)}deg)` : 'none');
-          cached.overlay.style.transform = syncGraphicTransform;
-          cached.overlayFlap.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
+          if (!syncGraphicTransform || syncGraphicTransform === 'none') {
+            syncGraphicTransform = Math.abs(curRot) > 0.01 ? `rotate(${curRot.toFixed(1)}deg)` : 'none';
+          }
+          if (win._lastOvTf !== syncGraphicTransform) {
+            win._lastOvTf = syncGraphicTransform;
+            cached.overlay.style.transform = syncGraphicTransform;
+          }
+          const flapTf = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
+          if (win._lastFlapTf !== flapTf) {
+            win._lastFlapTf = flapTf;
+            cached.overlayFlap.style.transform = flapTf;
+          }
         } else {
           if (cached.graphic && geom.isActionFolder && !folderEl._arrivalBounceRunning && !isOpening) {
-            cached.graphic.style.transform = `rotate(${curRot.toFixed(1)}deg)`;
+            const rotTf = `rotate(${curRot.toFixed(1)}deg)`;
+            if (folderEl._lastGraphicTf !== rotTf) {
+              folderEl._lastGraphicTf = rotTf;
+              cached.graphic.style.transform = rotTf;
+            }
+            folderEl._currentGraphicTransform = rotTf;
           }
           if (cached.overlayVisible !== false) {
             cached.overlayVisible = false;
             cached.overlay.style.display = 'none';
             if (cached.front) {
               cached.front.style.opacity = '1';
-              cached.front.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
+              const frontTf = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
+              if (folderEl._lastFlapTf !== frontTf) {
+                folderEl._lastFlapTf = frontTf;
+                cached.front.style.transform = frontTf;
+              }
             }
           }
         }
       } else if (cached.front) {
         cached.front.style.opacity = '1';
-        cached.front.style.transform = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
+        const frontTf = `perspective(240px) rotateX(${flapDeg.toFixed(1)}deg)`;
+        if (win._lastFrontTf !== frontTf) {
+          win._lastFrontTf = frontTf;
+          cached.front.style.transform = frontTf;
+        }
       }
     }
 
@@ -1093,7 +1229,6 @@
       // Container UI interaktif langsung saat animasi masuk berlangsung
       win.style.setProperty('pointer-events', 'auto', 'important');
       modal.style.removeProperty('pointer-events');
-      win.querySelectorAll('button, a, input, [role="button"]').forEach(el => el.style.removeProperty('pointer-events'));
 
       // Ukur geometri murni saat modal sudah aktif (dimensi nyata 100% akurat)
       const geom = this._measureMorphGeometry(folderEl, win, modal);
@@ -1114,6 +1249,10 @@
       const body = win.querySelector('.folder-modal-body, .modal-body');
       const footer = win.querySelector('.folder-modal-footer, .modal-footer');
       const skeleton = win.querySelector('.folder-morph-skeleton');
+
+      // Promote cross-fading subtrees to compositor layers once (cheap blend
+      // per frame instead of per-frame layer decisions + repaints)
+      this._setMorphLayerHint(win, header, body, footer, skeleton, true);
 
       // Batalkan spring atau kick timer yang sedang berjalan (jika ada)
       if (win._morphCancel) {
@@ -1157,9 +1296,13 @@
             win.style.removeProperty('border-radius');
             win.style.borderColor = '';
             win.style.removeProperty('pointer-events');
+            this._setMorphLayerHint(win, header, body, footer, skeleton, false);
+            if (header) { header.style.opacity = '1'; header.style.visibility = 'visible'; }
+            if (body) { body.style.opacity = '1'; body.style.visibility = 'visible'; }
+            if (footer) { footer.style.opacity = '1'; footer.style.visibility = 'visible'; }
+            if (skeleton) { skeleton.style.opacity = '0'; skeleton.style.visibility = 'hidden'; }
             win._bgSet = false;
             modal.style.removeProperty('pointer-events');
-            win.querySelectorAll('button, a, input, [role="button"]').forEach(el => el.style.removeProperty('pointer-events'));
             if (header) header.style.opacity = '';
             if (body) body.style.opacity = '';
             if (footer) footer.style.opacity = '';
@@ -1212,7 +1355,6 @@
       // Bebaskan backdrop & kunci container agar klik tidak terhalang selama animasi keluar
       win.style.setProperty('pointer-events', 'none', 'important');
       modal.style.setProperty('pointer-events', 'none', 'important');
-      win.querySelectorAll('button, a, input, [role="button"]').forEach(el => el.style.setProperty('pointer-events', 'none', 'important'));
 
       // Hitung geometri murni neutral terbaru untuk target kembali yang presisi 100%
       const geom = this._measureMorphGeometry(folderEl, win, modal);
@@ -1239,6 +1381,8 @@
       const body = win.querySelector('.folder-modal-body, .modal-body');
       const footer = win.querySelector('.folder-modal-footer, .modal-footer');
       const skeleton = win.querySelector('.folder-morph-skeleton');
+
+      this._setMorphLayerHint(win, header, body, footer, skeleton, true);
 
       this._mountMorphSvg(skeleton, insert);
 
@@ -1275,7 +1419,6 @@
 
         // Pulihkan penutup asli seketika sebelum modal dinonaktifkan agar flap tidak hilang sedetik pun
         this._removeFlapOverlay(modal, folderEl);
-        document.querySelectorAll('.folder-flap-overlay').forEach(el => el.remove());
 
         const front = folderEl.querySelector('.folder-svg-front-group') || folderEl.querySelector('.folder-svg-front');
         if (front) {
@@ -1308,13 +1451,14 @@
         win.style.removeProperty('border-radius');
         win.style.borderColor = '';
         win.style.removeProperty('pointer-events');
+        this._setMorphLayerHint(win, header, body, footer, skeleton, false);
         modal.style.removeProperty('pointer-events');
-        win.querySelectorAll('button, a, input, [role="button"]').forEach(el => el.style.removeProperty('pointer-events'));
-        if (header) header.style.opacity = '';
-        if (body) body.style.opacity = '';
-        if (footer) footer.style.opacity = '';
+        if (header) { header.style.opacity = ''; header.style.visibility = ''; }
+        if (body) { body.style.opacity = ''; body.style.visibility = ''; }
+        if (footer) { footer.style.opacity = ''; footer.style.visibility = ''; }
         if (skeleton) {
           skeleton.style.opacity = '0';
+          skeleton.style.visibility = '';
           skeleton.innerHTML = '';
         }
 

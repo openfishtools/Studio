@@ -86,21 +86,26 @@ window.ContextMenu = (function () {
     menuCard.style.visibility = 'hidden';
     menuCard.classList.add('is-open');
 
+    // UI-scale zoom compensation: pointer coords + rects report visual px,
+    // but left/top styles render scaled — convert to layout px.
+    const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || 1;
     const cardRect = menuCard.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    const cardW = cardRect.width / _z;
+    const cardH = cardRect.height / _z;
+    const vw = window.innerWidth / _z;
+    const vh = window.innerHeight / _z;
 
-    let posX = x;
-    let posY = y;
+    let posX = x / _z;
+    let posY = y / _z;
 
     // Flip or clamp horizontal
-    if (posX + cardRect.width > vw - MARGIN) {
-      posX = Math.max(MARGIN, x - cardRect.width);
+    if (posX + cardW > vw - MARGIN) {
+      posX = Math.max(MARGIN, posX - cardW);
     }
 
     // Flip or clamp vertical
-    if (posY + cardRect.height > vh - MARGIN) {
-      posY = Math.max(MARGIN, y - cardRect.height);
+    if (posY + cardH > vh - MARGIN) {
+      posY = Math.max(MARGIN, posY - cardH);
     }
 
     menuCard.style.left = `${Math.round(posX)}px`;

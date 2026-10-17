@@ -234,7 +234,7 @@ function syncVersion(specifiedVersion) {
     }
   }
 
-  // 4. Update sw.js CACHE_NAME and header version
+  // 4. Update sw.js CACHE_NAME and header version (single source of truth: version.json)
   const swPath = path.join(ROOT, 'sw.js');
   if (fs.existsSync(swPath)) {
     try {
@@ -244,6 +244,19 @@ function syncVersion(specifiedVersion) {
       fs.writeFileSync(swPath, swContent, 'utf8');
     } catch (e) {
       console.error('[SyncVersion] Error updating sw.js:', e);
+    }
+  }
+
+  // 4b. Update js/pwa-install.js CACHE_NAME (must match sw.js or standalone
+  // resource check loops forever against a cache bucket the SW never fills)
+  const pwaPath = path.join(ROOT, 'js', 'pwa-install.js');
+  if (fs.existsSync(pwaPath)) {
+    try {
+      let pwaContent = fs.readFileSync(pwaPath, 'utf8');
+      pwaContent = pwaContent.replace(/var CACHE_NAME = 'oft-studio-v[^']*';/, `var CACHE_NAME = 'oft-studio-v${targetVersion}';`);
+      fs.writeFileSync(pwaPath, pwaContent, 'utf8');
+    } catch (e) {
+      console.error('[SyncVersion] Error updating pwa-install.js:', e);
     }
   }
 

@@ -6,8 +6,8 @@
 (function () {
   'use strict';
 
-  var CACHE_NAME = 'oft-studio-v0.6.2';
-  var READY_STORAGE_KEY = 'oft_standalone_offline_ready_v062';
+  var CACHE_NAME = 'oft-studio-v0.6.1';
+  var READY_STORAGE_KEY = 'oft_standalone_offline_ready_' + CACHE_NAME;
 
   // Complete manifest of all 204 Studio resources (0 files left behind)
   var ALL_STUDIO_ASSETS = [
@@ -257,58 +257,60 @@
 
     var overlay = document.createElement('div');
     overlay.id = 'oft-standalone-sync-overlay';
-    overlay.style.cssText = [
-      'position:fixed',
-      'inset:0',
-      'z-index:2147483646',
-      'background:rgba(14,18,11,0.96)',
-      'backdrop-filter:blur(14px)',
-      '-webkit-backdrop-filter:blur(14px)',
-      'display:flex',
-      ' flex-direction:column',
-      'align-items:center',
-      'justify-content:center',
-      'font-family:"Cal Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif',
-      'color:#e6f4dc',
-      'user-select:none',
-      'transition:opacity 0.28s ease'
-    ].join(';');
+    overlay.style.cssText =
+      'position:fixed;inset:0;background:var(--bg-dashboard, #0d140e);z-index:999999;' +
+      'display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;' +
+      'font-family:var(--font-brand, -apple-system, sans-serif);color:var(--text-primary, #ffffff);';
 
-    overlay.innerHTML =
-      '<div style="width:320px;max-width:86vw;background:#192014;border:1px solid #2b3723;border-radius:16px;padding:24px 22px;box-shadow:0 20px 50px rgba(0,0,0,0.55);text-align:center;">' +
-        '<img src="assets/icon.svg" alt="FishTools Studio" width="44" height="44" style="margin-bottom:14px;display:inline-block;" onerror="this.style.display=\'none\'">' +
-        '<div id="oft-sync-title" style="font-size:15px;font-weight:600;letter-spacing:0.2px;color:#eef8e6;margin-bottom:6px;">Preparing Offline Studio...</div>' +
-        '<div id="oft-sync-sub" style="font-size:12px;color:#8fa680;margin-bottom:16px;">Downloading all components (0 / ' + ALL_STUDIO_ASSETS.length + ')</div>' +
-        '<div style="width:100%;height:7px;background:#11160d;border-radius:999px;overflow:hidden;border:1px solid #25301e;">' +
-          '<div id="oft-sync-bar" style="width:2%;height:100%;background:linear-gradient(90deg,#88d45e,#aef380);border-radius:999px;transition:width 0.15s ease;"></div>' +
-        '</div>' +
-        '<div id="oft-sync-pct" style="font-size:11px;color:#98ce7b;margin-top:8px;font-weight:600;">0%</div>' +
-      '</div>';
+    var spinner = document.createElement('div');
+    spinner.style.cssText =
+      'width:36px;height:36px;border:3px solid var(--border-subtle, rgba(255,255,255,0.15));' +
+      'border-top-color:var(--color-primary, #47db8b);border-radius:50%;animation:oft-spin 0.8s linear infinite;';
 
+    var keyframes = document.createElement('style');
+    keyframes.textContent = '@keyframes oft-spin { to { transform: rotate(360deg); } }';
+    document.head.appendChild(keyframes);
+
+    var text = document.createElement('div');
+    text.id = 'oft-standalone-sync-text';
+    text.textContent = 'Menyiapkan FishTools Studio Offline...';
+    text.style.fontSize = '14px';
+    text.style.fontWeight = '600';
+
+    var progress = document.createElement('div');
+    progress.id = 'oft-standalone-sync-progress';
+    progress.textContent = '0%';
+    progress.style.fontSize = '12px';
+    progress.style.color = 'var(--text-muted, #859888)';
+
+    overlay.appendChild(spinner);
+    overlay.appendChild(text);
+    overlay.appendChild(progress);
     document.body.appendChild(overlay);
     return overlay;
   }
 
-  function updateStandaloneSyncProgress(done, total) {
-    var pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 100;
-    var sub = document.getElementById('oft-sync-sub');
-    var bar = document.getElementById('oft-sync-bar');
-    var pctEl = document.getElementById('oft-sync-pct');
-    if (sub) sub.textContent = 'Downloading all components (' + done + ' / ' + total + ')';
-    if (bar) bar.style.width = Math.max(2, pct) + '%';
-    if (pctEl) pctEl.textContent = pct + '%';
+  function updateStandaloneSyncProgress(completed, total) {
+    var el = document.getElementById('oft-standalone-sync-progress');
+    if (el) {
+      var pct = Math.round((completed / total) * 100);
+      el.textContent = pct + '% (' + completed + '/' + total + ')';
+    }
   }
 
   function dismissStandaloneSyncOverlay() {
-    var ov = document.getElementById('oft-standalone-sync-overlay');
-    if (!ov) return;
-    ov.style.opacity = '0';
-    setTimeout(function () {
-      try { ov.remove(); } catch (_) {}
-    }, 300);
+    var el = document.getElementById('oft-standalone-sync-overlay');
+    if (el && el.parentNode) {
+      el.style.transition = 'opacity 0.25s ease';
+      el.style.opacity = '0';
+      setTimeout(function () {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      }, 250);
+    }
   }
 
   async function ensureStandaloneOfflineResourcesCached() {
+    // Only perform exhaustive background sync in Standalone Desktop / APK mode, never in regular web tabs
     if (!checkIsInstalled()) return;
     if (!('caches' in window) || window.location.protocol === 'file:') return;
 

@@ -4,6 +4,18 @@
  * and seamless project CRUD operations (Create, Read, Update, Delete, Duplicate).
  */
 
+// UI-scale zoom factor cache (set by early bootstrap + applyUiScale; read by
+// rect→style positioning code). Root `zoom` renders style px scaled, while
+// getBoundingClientRect/clientX/innerWidth report visual px, so measured
+// deltas must be divided by this factor before writing them back to styles.
+window.__OFT_ZOOM = (typeof window.__OFT_ZOOM === 'number' && window.__OFT_ZOOM > 0)
+  ? window.__OFT_ZOOM
+  : 1;
+window.oftUiScaleFactor = function () {
+  var z = window.__OFT_ZOOM;
+  return (typeof z === 'number' && isFinite(z) && z > 0) ? z : 1;
+};
+
 window.FishDatabase = (function () {
   var DB_NAME = 'FishStudioDB';
   var DB_VERSION = 3;

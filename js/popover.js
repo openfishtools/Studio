@@ -55,28 +55,35 @@ const Popover = (function () {
     const popoverRect = activePopover.getBoundingClientRect();
     const tailEl = activePopover.querySelector('.popover-tail');
 
+    // UI-scale zoom compensation: rects + innerWidth report visual px, but
+    // offsetWidth/left/top styles live in layout px. Normalize everything
+    // below to layout px so flip/clamp math holds at any UI scale.
+    const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || 1;
+    const _vw = vw / _z;
+    const _vh = vh / _z;
+
     const hasValidCoords = triggerRect && Number.isFinite(triggerRect.left) && Number.isFinite(triggerRect.top);
 
     // If trigger has valid coordinates (including 0x0 point anchors like right-click mouse cursor), use them directly.
     // Only fallback to screen center if coordinates are genuinely invalid/missing.
     const effectiveTriggerRect = hasValidCoords ? {
-      left: triggerRect.left,
-      right: Number.isFinite(triggerRect.right) ? triggerRect.right : triggerRect.left,
-      top: triggerRect.top,
-      bottom: Number.isFinite(triggerRect.bottom) ? triggerRect.bottom : triggerRect.top,
-      width: Math.max(0, triggerRect.width || 0),
-      height: Math.max(0, triggerRect.height || 0)
+      left: triggerRect.left / _z,
+      right: Number.isFinite(triggerRect.right) ? triggerRect.right / _z : triggerRect.left / _z,
+      top: triggerRect.top / _z,
+      bottom: Number.isFinite(triggerRect.bottom) ? triggerRect.bottom / _z : triggerRect.top / _z,
+      width: Math.max(0, (triggerRect.width || 0) / _z),
+      height: Math.max(0, (triggerRect.height || 0) / _z)
     } : {
-      left: vw / 2 - 10,
-      right: vw / 2 + 10,
-      top: vh / 2 - 10,
-      bottom: vh / 2 + 10,
+      left: _vw / 2 - 10,
+      right: _vw / 2 + 10,
+      top: _vh / 2 - 10,
+      bottom: _vh / 2 + 10,
       width: 20,
       height: 20
     };
 
     // Determine vertical placement (top vs bottom)
-    const spaceBelow = vh - effectiveTriggerRect.bottom - OFFSET - MARGIN;
+    const spaceBelow = _vh - effectiveTriggerRect.bottom - OFFSET - MARGIN;
     const spaceAbove = effectiveTriggerRect.top - OFFSET - MARGIN;
     const popoverHeight = activePopover.offsetHeight;
     const popoverWidth = activePopover.offsetWidth;
@@ -103,7 +110,7 @@ const Popover = (function () {
       let originY = '0%';
 
       // Horizontal flip / clamp
-      if (clickX + popoverWidth > vw - MARGIN) {
+      if (clickX + popoverWidth > _vw - MARGIN) {
         left = Math.max(MARGIN, clickX - popoverWidth);
         originX = '100%';
       } else {
@@ -112,7 +119,7 @@ const Popover = (function () {
       }
 
       // Vertical flip / clamp
-      if (clickY + popoverHeight > vh - MARGIN) {
+      if (clickY + popoverHeight > _vh - MARGIN) {
         top = Math.max(MARGIN, clickY - popoverHeight);
         originY = '100%';
       } else {
@@ -123,7 +130,7 @@ const Popover = (function () {
       activePopover.style.transformOrigin = `${originX} ${originY}`;
       activePopover.style.left = `${Math.round(left)}px`;
       activePopover.style.top = `${Math.round(top)}px`;
-      activePopover.style.maxHeight = `${vh - MARGIN * 2}px`;
+      activePopover.style.maxHeight = `${_vh - MARGIN * 2}px`;
       return;
     } else {
       activePopover.classList.remove('is-context-menu');
@@ -133,7 +140,7 @@ const Popover = (function () {
     // Special Case: On Mobile, OpenFishTools embed panel pops UPWARD to completely fill upper preview area
     if (isMobile && isEmbedPanel) {
       const availableTopHeight = Math.max(160, Math.floor(effectiveTriggerRect.top - OFFSET - MARGIN));
-      activePopover.style.width = `calc(100vw - ${MARGIN * 2}px)`;
+      activePopover.style.width = `${Math.max(200, _vw - MARGIN * 2)}px`;
       activePopover.style.height = `${availableTopHeight}px`;
       activePopover.style.maxHeight = `${availableTopHeight}px`;
       activePopover.setAttribute('data-placement', 'top');
@@ -142,7 +149,7 @@ const Popover = (function () {
       const left = MARGIN;
       const top = MARGIN;
       let tailOffset = triggerCenterX - left;
-      tailOffset = Math.max(16, Math.min(vw - MARGIN * 2 - 16, tailOffset));
+      tailOffset = Math.max(16, Math.min(_vw - MARGIN * 2 - 16, tailOffset));
 
       if (tailEl) {
         tailEl.style.left = `${tailOffset}px`;
@@ -178,7 +185,7 @@ const Popover = (function () {
     } else if (!isMobile && (isControllerTrigger || isEmbedPanel)) {
       // On desktop, controller sits at bottom of preview pane. Always pop UPWARD above button ("kalau desktop muncul di atas")
       placement = 'top';
-    } else if (isControllerTrigger || effectiveTriggerRect.top > vh / 2) {
+    } else if (isControllerTrigger || effectiveTriggerRect.top > _vh / 2) {
       // In bottom half of screen or desktop controller bar, pop UPWARD above button (tail at bottom pointing down)
       if (spaceAbove >= popoverHeight || spaceAbove >= spaceBelow) {
         placement = 'top';
@@ -204,7 +211,7 @@ const Popover = (function () {
 
     // Viewport horizontal clamping
     const minLeft = MARGIN;
-    const maxLeft = vw - popoverWidth - MARGIN;
+    const maxLeft = _vw - popoverWidth - MARGIN;
     left = Math.max(minLeft, Math.min(maxLeft, left));
 
     if (placement === 'bottom') {
@@ -214,7 +221,7 @@ const Popover = (function () {
       activePopover.setAttribute('data-placement', 'bottom');
 
       // Allow card to extend downwards towards bottom of screen ("sampe ka bawah boleh kok")
-      const maxAvailableHeight = Math.max(160, vh - desiredTop - MARGIN);
+      const maxAvailableHeight = Math.max(160, _vh - desiredTop - MARGIN);
       activePopover.style.maxHeight = `${maxAvailableHeight}px`;
       
       // Calculate tail offset relative to popover left

@@ -9,6 +9,7 @@ const FALLBACK_PROJECTS = [];
 
 document.addEventListener('DOMContentLoaded', () => {
   initTheme();
+  initUiScaleForCurrentPage();
   initSettingsModal();
   initUIProtections();
   initVersionFetcher();
@@ -1610,11 +1611,22 @@ function extractProjectId(raw) {
 }
 
 function isRunningInsideNativeApp() {
-  return (
-    window.location.protocol === 'file:' ||
-    Boolean(window.__OFT_NATIVE_APP__) ||
-    /FishToolsStudio/i.test(navigator.userAgent || '')
-  );
+  try {
+    const proto = (window.location && window.location.protocol) || '';
+    const ua = (navigator && navigator.userAgent) || '';
+    return (
+      proto === 'file:' ||
+      proto === 'tauri:' ||
+      proto === 'asset:' ||
+      proto === 'app:' ||
+      Boolean(window.__OFT_NATIVE_APP__) ||
+      Boolean(window.__TAURI_INTERNALS__) ||
+      Boolean(window.__TAURI__) ||
+      /FishToolsStudio/i.test(ua)
+    );
+  } catch (_) {
+    return false;
+  }
 }
 
 function triggerOpenInFishToolsApp(projectId) {
@@ -2149,39 +2161,84 @@ async function handleImportedFiles(files, dropzone, statusEl) {
 }
 
 /**
- * Queries and updates storage durability status in Settings modal & Welcome modal
+ * Storage usage status in Settings modal & Welcome modal.
+ * Simple: "X MB of Y GB" + progress bar. No hyperbole.
  */
 async function updateStorageDurabilityUI() {
   const statusEl = document.getElementById('settings-storage-status') || document.getElementById('welcome-storage-status');
+  const fillEl = document.getElementById('settings-storage-fill') || document.getElementById('welcome-storage-fill');
   const btnEl = document.getElementById('settings-storage-btn') || document.getElementById('welcome-storage-btn');
-  if (!statusEl) return;
+  const usedEl = document.getElementById('settings-storage-used');
+  const totalEl = document.getElementById('settings-storage-total');
+  if (!statusEl && !fillEl) return;
+
+  function renderBar(pct) {
+    if (fillEl) {
+      const clamped = Math.max(0, Math.min(100, pct || 0));
+      fillEl.style.width = clamped.toFixed(1) + '%';
+    }
+  }
+
+  function fmtBytes(b) {
+    if (typeof b !== 'number' || isNaN(b) || b <= 0) return '0 MB';
+    const mb = b / (1024 * 1024);
+    if (mb < 1024) return mb.toFixed(1) + ' MB';
+    return (mb / 1024).toFixed(2) + ' GB';
+  }
 
   if (!window.FishDatabase || typeof window.FishDatabase.checkStoragePersistence !== 'function') {
-    statusEl.textContent = 'IndexedDB local storage active';
+    if (statusEl) statusEl.textContent = 'Storage ready';
+    if (usedEl) usedEl.textContent = '0 MB';
+    if (totalEl) totalEl.textContent = '/ --';
+    renderBar(0);
+    if (btnEl) btnEl.style.display = 'none';
     return;
   }
 
-  const isNative = isRunningInsideNativeApp();
-  const isPWA = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
-                (typeof navigator !== 'undefined' && navigator.standalone === true);
-  const info = await window.FishDatabase.checkStoragePersistence();
-
-  let usageStr = '';
-  if (info.usage && info.quota) {
-    const usedMB = (info.usage / (1024 * 1024)).toFixed(1);
-    const quotaGB = (info.quota / (1024 * 1024 * 1024)).toFixed(1);
-    usageStr = ` (${usedMB} MB / ${quotaGB} GB)`;
+  let info = null;
+  try {
+    info = await window.FishDatabase.checkStoragePersistence();
+  } catch (_) {
+    info = null;
   }
-
-  // If in Native app (Android APK, macOS, Windows) or PWA standalone, storage is sandboxed & persistent
-  if (isNative || info.persisted || isPWA) {
-    const label = isNative ? 'Protected (Native Storage)' : (isPWA ? 'Protected (PWA Persistent)' : 'Protected (Persistent)');
-    statusEl.innerHTML = `<span style="color: var(--color-primary); font-weight: 700;">${label}</span> &bull; IndexedDB${usageStr}`;
+  if (!info) {
+    if (statusEl) statusEl.textContent = 'Storage ready';
+    if (usedEl) usedEl.textContent = '0 MB';
+    if (totalEl) totalEl.textContent = '/ --';
+    renderBar(0);
     if (btnEl) btnEl.style.display = 'none';
-  } else {
-    statusEl.innerHTML = `<span>Standard (Best-effort)${usageStr}</span>`;
-    if (btnEl) btnEl.style.display = 'inline-flex';
+    return;
   }
+
+  if (info.usage && info.quota) {
+    const pct = (info.usage / info.quota) * 100;
+    if (usedEl) usedEl.textContent = fmtBytes(info.usage);
+    if (totalEl) totalEl.textContent = '/ ' + fmtBytes(info.quota);
+    if (statusEl) statusEl.textContent = pct.toFixed(1) + '% used • ' + (info.persisted ? 'Protected database' : 'Offline storage active');
+    renderBar(pct);
+  } else if (info.usage) {
+    if (usedEl) usedEl.textContent = fmtBytes(info.usage);
+    if (totalEl) totalEl.textContent = '/ --';
+    if (statusEl) statusEl.textContent = fmtBytes(info.usage) + ' used • Storage active';
+    renderBar(0);
+  } else {
+    if (usedEl) usedEl.textContent = '0 MB';
+    if (totalEl) totalEl.textContent = '/ --';
+    if (statusEl) statusEl.textContent = 'Storage ready';
+    renderBar(0);
+  }
+
+  // Only offer Protect when browser reports best-effort (not persisted, not native/PWA).
+  let showProtect = false;
+  try {
+    const isNative = isRunningInsideNativeApp();
+    const isPWA = (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+                  (typeof navigator !== 'undefined' && navigator.standalone === true);
+    showProtect = !isNative && !isPWA && !info.persisted;
+  } catch (_) {
+    showProtect = false;
+  }
+  if (btnEl) btnEl.style.display = showProtect ? 'inline-flex' : 'none';
 }
 
 window.requestStudioStoragePersist = async function () {
@@ -2682,31 +2739,55 @@ window.setStudioTheme = setStudioTheme;
 window.getStudioTheme = getStudioTheme;
 window.initSettingsModal = initSettingsModal;
 window.initTheme = initTheme;
+window.getUiScale = getUiScale;
+window.setUiScale = setUiScale;
+window.applyUiScale = applyUiScale;
+window.initUiScaleForCurrentPage = initUiScaleForCurrentPage;
+window.initUiScaleSliders = initUiScaleSliders;
 
 // ==========================================================================
-// APP THEME & ACCENT COLOR MANAGER
+// APP THEME & ACCENT COLOR MANAGER (bright accents only, no dark tones)
 // ==========================================================================
 const STUDIO_THEMES = [
   { id: 'default', name: 'Matcha Tea', desc: 'Default Brand', color: '#aef380', checkFill: '#12170e' },
-  { id: 'after-effects', name: 'After Effects', desc: 'Motion Indigo', color: '#9999ff', checkFill: '#12111a' },
-  { id: 'cyber-cyan', name: 'Cyber Cyan', desc: 'Electric Blue', color: '#38f2ff', checkFill: '#081017' },
-  { id: 'amber-terminal', name: 'Amber Gold', desc: 'Retro Terminal', color: '#ffbe2e', checkFill: '#181105' },
-  { id: 'amethyst', name: 'Amethyst', desc: 'Neon Purple', color: '#d8b4fe', checkFill: '#130c1d' },
-  { id: 'rose', name: 'Rose Red', desc: 'Vibrant Crimson', color: '#fda4af', checkFill: '#1a0a10' },
-  { id: 'ocean', name: 'Ocean Blue', desc: 'Deep Sea Azure', color: '#7dd3fc', checkFill: '#08121c' }
+  { id: 'sakura-milk', name: 'Sakura Milk', desc: 'Pastel Pink', color: '#ffb3d1', checkFill: '#2a121a' },
+  { id: 'lemon-soda', name: 'Lemon Soda', desc: 'Bright Citrus', color: '#ffe45e', checkFill: '#241d05' },
+  { id: 'sky-candy', name: 'Sky Candy', desc: 'Soft Cyan', color: '#8ee6ff', checkFill: '#0a1a22' },
+  { id: 'mint-pop', name: 'Mint Pop', desc: 'Fresh Mint', color: '#7dfcc8', checkFill: '#0a2018' },
+  { id: 'peach-glow', name: 'Peach Glow', desc: 'Warm Peach', color: '#ffc49b', checkFill: '#2a1a0e' }
 ];
+
+function isValidStudioTheme(id) {
+  return STUDIO_THEMES.some(t => t.id === id);
+}
 
 function getStudioTheme() {
   try {
-    return localStorage.getItem('oft_theme') || 'default';
+    const v = localStorage.getItem('oft_theme') || 'default';
+    if (!isValidStudioTheme(v)) {
+      try { localStorage.setItem('oft_theme', 'default'); } catch (_) {}
+      return 'default';
+    }
+    return v;
   } catch (_) {
     return 'default';
   }
 }
 
 function setStudioTheme(themeId) {
+  if (!isValidStudioTheme(themeId)) themeId = 'default';
   try {
     localStorage.setItem('oft_theme', themeId);
+  } catch (_) {}
+  try {
+    if (window.FishDatabase && typeof window.FishDatabase.saveSettings === 'function') {
+      window.FishDatabase.getSettings().then(s => {
+        s = s || {};
+        s.config = s.config || {};
+        s.config.accent = themeId;
+        return window.FishDatabase.saveSettings(s);
+      }).catch(() => {});
+    }
   } catch (_) {}
 
   if (themeId && themeId !== 'default') {
@@ -2748,21 +2829,178 @@ function initTheme() {
   }
 }
 
+// ==========================================================================
+// UI SCALE MANAGER (Index / Editor / Desktop, default 100%)
+// Uses CSS `zoom` on <html> so layout scales without breaking canvas math.
+// Persisted to localStorage (sync) + FishDatabase settings (durable for standalone).
+// ==========================================================================
+const UI_SCALE_PAGES = ['index', 'editor', 'desktop'];
+const UI_SCALE_MIN = 80;
+const UI_SCALE_MAX = 130;
+
+function clampUiScale(v) {
+  const n = parseInt(v, 10);
+  if (isNaN(n)) return 100;
+  return Math.max(UI_SCALE_MIN, Math.min(UI_SCALE_MAX, n));
+}
+
+function getUiScale(page) {
+  try {
+    const raw = localStorage.getItem('oft_ui_scale_' + page);
+    if (raw !== null && raw !== undefined && raw !== '') return clampUiScale(raw);
+  } catch (_) {}
+  try {
+    const generic = localStorage.getItem('oft_ui_scale');
+    if (generic !== null && generic !== undefined && generic !== '') return clampUiScale(generic);
+  } catch (_) {}
+  return 100;
+}
+
+function updateSliderTrackFill(slider) {
+  if (!slider) return;
+  const min = parseFloat(slider.min) || 80;
+  const max = parseFloat(slider.max) || 130;
+  const val = parseFloat(slider.value) || 100;
+  const pct = Math.max(0, Math.min(100, ((val - min) / (max - min)) * 100));
+  slider.style.setProperty('--slider-fill', pct.toFixed(1) + '%');
+}
+
+function applyUiScale(page, val) {
+  const scale = clampUiScale(val);
+  try {
+    document.documentElement.style.setProperty('--oft-ui-scale', String(scale / 100));
+    // Zoom on <html> scales UI chrome; canvas internal resolution stays independent.
+    // Clear at 100% so no residual transform affects fixed overlays / splitters.
+    if (scale === 100) {
+      document.documentElement.style.zoom = '';
+      document.documentElement.style.removeProperty('zoom');
+    } else {
+      document.documentElement.style.zoom = String(scale / 100);
+      document.documentElement.style.setProperty('zoom', String(scale / 100));
+    }
+    window.__OFT_ZOOM = scale / 100;
+    document.documentElement.classList.toggle('is-scaled', scale !== 100);
+
+    // Clean up any residual counter-zoom on settings card
+    const settingsCard = document.querySelector('#modal-settings .modal-card');
+    if (settingsCard) {
+      settingsCard.style.zoom = '';
+      settingsCard.style.removeProperty('zoom');
+    }
+
+    window.dispatchEvent(new Event('oft-ui-scale-changed'));
+  } catch (_) {}
+  return scale;
+}
+
+function setUiScale(page, val) {
+  const scale = clampUiScale(val);
+  try {
+    localStorage.setItem('oft_ui_scale_' + page, String(scale));
+  } catch (_) {}
+  try {
+    if (window.FishDatabase && typeof window.FishDatabase.getSettings === 'function') {
+      window.FishDatabase.getSettings().then(s => {
+        s = s || {};
+        s.config = s.config || {};
+        s.config['uiScale_' + page] = scale;
+        return window.FishDatabase.saveSettings(s);
+      }).catch(() => {});
+    }
+  } catch (_) {}
+  // Apply live only if this slider belongs to the current page.
+  try {
+    const cur = detectCurrentUiScalePage();
+    if (!page || page === cur) applyUiScale(cur, page === cur ? scale : getUiScale(cur));
+  } catch (_) {}
+  syncUiScaleSliderLabels();
+  return scale;
+}
+
+function detectCurrentUiScalePage() {
+  try {
+    const p = (window.location && window.location.pathname) || '';
+    if (p.indexOf('editor') !== -1) return 'editor';
+    if (p.indexOf('desktop') !== -1) return 'desktop';
+  } catch (_) {}
+  return 'index';
+}
+
+function initUiScaleForCurrentPage() {
+  const page = detectCurrentUiScalePage();
+  const stored = getUiScale(page);
+  applyUiScale(page, stored);
+  // Hydrate from FishDatabase when localStorage was empty (standalone first run).
+  try {
+    if (window.FishDatabase && typeof window.FishDatabase.getSettings === 'function') {
+      const hadLocal = (() => {
+        try { return localStorage.getItem('oft_ui_scale_' + page) !== null; } catch (_) { return true; }
+      })();
+      if (!hadLocal) {
+        window.FishDatabase.getSettings().then(s => {
+          const v = s && s.config && s.config['uiScale_' + page];
+          if (v) {
+            try { localStorage.setItem('oft_ui_scale_' + page, String(clampUiScale(v))); } catch (_) {}
+            applyUiScale(page, v);
+            syncUiScaleSliderLabels();
+          }
+        }).catch(() => {});
+      }
+    }
+  } catch (_) {}
+}
+
+function syncUiScaleSliderLabels() {
+  UI_SCALE_PAGES.forEach(page => {
+    const slider = document.getElementById('ui-scale-' + page);
+    const label = document.getElementById('ui-scale-' + page + '-val');
+    if (!slider) return;
+    const v = getUiScale(page);
+    try {
+      if (String(slider.value) !== String(v)) slider.value = String(v);
+    } catch (_) {}
+    if (label) label.textContent = v + '%';
+    updateSliderTrackFill(slider);
+  });
+}
+
+function initUiScaleSliders() {
+  syncUiScaleSliderLabels();
+  UI_SCALE_PAGES.forEach(page => {
+    const slider = document.getElementById('ui-scale-' + page);
+    if (!slider) return;
+    updateSliderTrackFill(slider);
+    if (slider._oftScaleWired) return;
+    slider._oftScaleWired = true;
+
+    slider.addEventListener('input', () => {
+      const v = clampUiScale(slider.value);
+      const label = document.getElementById('ui-scale-' + page + '-val');
+      if (label) label.textContent = v + '%';
+      updateSliderTrackFill(slider);
+    });
+
+    slider.addEventListener('change', () => {
+      setUiScale(page, slider.value);
+      updateSliderTrackFill(slider);
+    });
+  });
+}
+
 function initSettingsModal() {
   const grid = document.getElementById('settings-theme-grid');
-  if (!grid) return;
+  if (grid) {
+    const currentTheme = getStudioTheme();
+    const found = STUDIO_THEMES.find(t => t.id === currentTheme) || STUDIO_THEMES[0];
 
-  const currentTheme = getStudioTheme();
-  const found = STUDIO_THEMES.find(t => t.id === currentTheme) || STUDIO_THEMES[0];
+    const labelEl = document.getElementById('settings-current-theme-label');
+    if (labelEl) {
+      labelEl.textContent = found.name;
+    }
 
-  const labelEl = document.getElementById('settings-current-theme-label');
-  if (labelEl) {
-    labelEl.textContent = found.name;
-  }
-
-  grid.innerHTML = STUDIO_THEMES.map(t => {
-    const isSelected = t.id === currentTheme;
-    return `
+    grid.innerHTML = STUDIO_THEMES.map(t => {
+      const isSelected = t.id === currentTheme;
+      return `
       <button type="button" class="theme-card-item ${isSelected ? 'is-selected' : ''}" data-theme-val="${t.id}" title="${escapeHtml(t.name)}" aria-selected="${isSelected ? 'true' : 'false'}">
         <div class="theme-card-color-dot" style="background-color: ${t.color};">
           <svg class="theme-card-check" viewBox="0 0 24 24" width="14" height="14" fill="${t.checkFill}">
@@ -2775,14 +3013,17 @@ function initSettingsModal() {
         </div>
       </button>
     `;
-  }).join('');
+    }).join('');
 
-  grid.querySelectorAll('.theme-card-item').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const val = btn.getAttribute('data-theme-val');
-      if (val) setStudioTheme(val);
+    grid.querySelectorAll('.theme-card-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const val = btn.getAttribute('data-theme-val');
+        if (val) setStudioTheme(val);
+      });
     });
-  });
+  }
+
+  initUiScaleSliders();
 }
 
 function openAppSettingsModal() {

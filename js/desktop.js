@@ -727,21 +727,27 @@
       const spaceAbove = badgeRect.top;
       const spaceBelow = vh - badgeRect.bottom;
 
+      // UI-scale zoom compensation: rects + innerWidth report visual px,
+      // but left/top/bottom/maxHeight styles render scaled — divide the
+      // final style-bound values back to layout px. Comparisons above stay
+      // in visual space (mutually consistent).
+      const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || 1;
+
       let left = Math.max(8, Math.min(vw - dropdownRect.width - 8, badgeRect.left));
 
       if (spaceAbove >= dropdownRect.height + 6 || spaceAbove >= spaceBelow) {
         // Pop Upward (standard on bottom timeline)
         dropdown.style.top = '';
-        dropdown.style.bottom = `${vh - badgeRect.top + 4}px`;
-        dropdown.style.left = `${left}px`;
-        dropdown.style.maxHeight = `${Math.max(120, Math.min(320, spaceAbove - 12))}px`;
+        dropdown.style.bottom = `${(vh - badgeRect.top + 4) / _z}px`;
+        dropdown.style.left = `${left / _z}px`;
+        dropdown.style.maxHeight = `${Math.max(120, Math.min(320, spaceAbove / _z - 12))}px`;
         dropdown.style.transformOrigin = 'bottom left';
       } else {
         // Pop Downward
         dropdown.style.bottom = '';
-        dropdown.style.top = `${badgeRect.bottom + 4}px`;
-        dropdown.style.left = `${left}px`;
-        dropdown.style.maxHeight = `${Math.max(120, Math.min(320, spaceBelow - 12))}px`;
+        dropdown.style.top = `${(badgeRect.bottom + 4) / _z}px`;
+        dropdown.style.left = `${left / _z}px`;
+        dropdown.style.maxHeight = `${Math.max(120, Math.min(320, spaceBelow / _z - 12))}px`;
         dropdown.style.transformOrigin = 'top left';
       }
 

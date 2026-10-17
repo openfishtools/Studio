@@ -90,6 +90,7 @@ class DrawerManager {
     let isDragging = false;
     let startY = 0;
     let startHeight = 0;
+    let dragZoom = 1;
     let currentHandle = null;
     let currentCard = null;
     let currentContainer = null;
@@ -112,6 +113,9 @@ class DrawerManager {
       currentContainer = container;
       startY = e.clientY;
       startHeight = card.getBoundingClientRect().height;
+      // UI-scale zoom compensation: pointer + rects report visual px, but
+      // card heights live in layout px — convert once here.
+      dragZoom = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || 1;
 
       // Effects Gallery is flexible and allowed to expand all the way up to topLimit (full screen)
       const isEffectsGallery = Boolean(
@@ -120,12 +124,14 @@ class DrawerManager {
       );
 
       // 1. Boundary: Container top boundary (mentok ke atas viewport untuk effects gallery di mobile, atau ke atas area timeline di tablet)
+      // innerHeight reports visual px → divide by zoom to get layout px
+      // (clientHeight/scrollHeight already report layout px).
       const isTablet = window.innerWidth >= 601;
       const containerH = (isEffectsGallery && isTablet)
-        ? (container.clientHeight || (window.innerHeight - 44))
+        ? (container.clientHeight || (window.innerHeight / dragZoom - 44))
         : (isEffectsGallery
-            ? (window.innerHeight || document.documentElement.clientHeight)
-            : (container.clientHeight || window.innerHeight));
+            ? ((window.innerHeight / dragZoom) || document.documentElement.clientHeight)
+            : (container.clientHeight || window.innerHeight / dragZoom));
       const topLimit = Math.max(80, containerH - 16);
 
       // In timeline-layer-drawer, all subviews have fixed size. Handle CANNOT be dragged upwards (prevents empty "kopong" space).
@@ -174,8 +180,8 @@ class DrawerManager {
     document.addEventListener('pointermove', (e) => {
       if (!isDragging || !currentCard) return;
 
-      const deltaY = startY - e.clientY; // Dragging up increases height
-      let targetHeight = startHeight + deltaY;
+      const deltaY = (startY - e.clientY) / dragZoom; // Dragging up increases height
+      let targetHeight = startHeight / dragZoom + deltaY;
 
       // Clamp strictly within [minAllowedHeight, maxAllowedHeight]
       targetHeight = Math.max(minAllowedHeight, Math.min(maxAllowedHeight, targetHeight));
@@ -196,11 +202,11 @@ class DrawerManager {
 
       if (currentCard) {
         currentCard.style.transition = '';
-        const currentH = currentCard.getBoundingClientRect().height;
+        const currentH = currentCard.getBoundingClientRect().height / dragZoom;
 
         if (currentIsFixed) {
           // If dragged down by 45px or more, smoothly dismiss the drawer
-          const dismissThreshold = Math.max(minAllowedHeight + 10, startHeight - 45);
+          const dismissThreshold = Math.max(minAllowedHeight + 10, startHeight / dragZoom - 45);
           if (currentH <= dismissThreshold) {
             this.close();
           } else {

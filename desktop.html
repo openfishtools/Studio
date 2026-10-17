@@ -11,11 +11,24 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="FishTools Studio">
   <link rel="apple-touch-icon" href="assets/icon-192.png">
-  <!-- Early Theme Bootstrap to prevent flash of wrong accent color -->
+  <!-- Early Theme + UI Scale Bootstrap to prevent flash of wrong accent color -->
   <script>
     try {
       var _t = localStorage.getItem('oft_theme');
-      if (_t && _t !== 'default') document.documentElement.setAttribute('data-theme', _t);
+      var _ok = ['default', 'sakura-milk', 'lemon-soda', 'sky-candy', 'mint-pop', 'peach-glow'];
+      if (_t && _t !== 'default') {
+        if (_ok.indexOf(_t) !== -1) document.documentElement.setAttribute('data-theme', _t);
+        else { try { localStorage.setItem('oft_theme', 'default'); } catch (_) {} }
+      }
+      var _s = parseInt(localStorage.getItem('oft_ui_scale_desktop') || '100', 10);
+      if (!isNaN(_s) && _s >= 80 && _s <= 130) {
+        window.__OFT_ZOOM = _s / 100;
+        if (_s !== 100) {
+          document.documentElement.style.setProperty('--oft-ui-scale', String(_s / 100));
+          document.documentElement.style.zoom = String(_s / 100);
+          document.documentElement.classList.add('is-scaled');
+        }
+      }
     } catch (_) {}
   </script>
 
@@ -2725,6 +2738,24 @@
             <div class="settings-theme-grid" id="editor-settings-theme-grid">
               <!-- Swatches populated dynamically -->
             </div>
+            <div class="settings-scale-list" style="margin-top: 12px;">
+              <div class="settings-scale-row">
+                <div class="settings-scale-meta">
+                  <span class="settings-scale-name">UI Scale — Desktop</span>
+                  <span class="settings-scale-val" id="ui-scale-desktop-val">100%</span>
+                </div>
+                <input type="range" class="settings-scale-slider" id="ui-scale-desktop" min="80" max="130" step="1" value="100" aria-label="Desktop UI scale">
+              </div>
+              <div class="settings-scale-row">
+                <div class="settings-scale-meta">
+                  <span class="settings-scale-name">Storage</span>
+                  <span class="settings-scale-val" id="editor-settings-storage-status">Checking...</span>
+                </div>
+                <div class="settings-storage-bar" aria-hidden="true">
+                  <div class="settings-storage-fill" id="editor-settings-storage-fill"></div>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       </div>
@@ -3725,7 +3756,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.6.0</span>
+          <span class="welcome-badge">v0.6.1</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3755,11 +3786,131 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.1 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.1</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Oct 17, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Settings Storage Card &amp; UI Scale Controls (`index.html`, `css/modal.css`, `js/main.js`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Folder Animation Performance (`js/folderanim.js`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Extension Modal Desktop Layout on Scaled UI (`css/modal.css`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Scaled UI Viewport Compensation (`css/modal.css`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Settings Modal Header Clipping (`css/modal.css`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Popup Backdrop Duplication (`css/modal.css`, `css/layout.css`, `js/folderanim.js`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Un Group Precompose Layers (`editor.html`, `desktop.html`, `js/editor.js`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Edit Shape &amp; Corner Roundness for Media &amp; Precompose (`editor.html`, `desktop.html`, `js/editor.js`, `css/drawer.css`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Fluid Fish Simulation Effect (`effects/fluid_fish.js`, `effects/manifest.json`, `effects/loader.js`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">After Effects Extension Bridge &amp; Modular JSX Suite (`Extension/`, `js/extension-manager.js`, `js/extensions.js`, `js/JSX-Translator.js`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Element Template Architecture (`element/`, `editor.html`, `desktop.html`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Timeline Ruler &amp; Playhead Needle Polish (`css/editor.css`, `css/desktop.css`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Desktop Workstation &amp; Dual-Tier Ruler Layout (`desktop.html`, `css/desktop.css`, `js/desktop.js`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Iconography &amp; Custom Font Rendering (`fticons/`, `assets/icon.svg`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Precompose Canvas Bounds &amp; Wireframe Hit-Testing (`js/editor.js`, `js/wireframe.js`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Timeline Context Menu Pointer Event Discrimination (`js/editor.js`)</span>
+                  <span class="changelog-item-desc"></span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.0 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.0</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Oct 13, 2026</span>
               </div>
               <div class="welcome-changelog-item">

@@ -124,464 +124,189 @@
   --font-mono: 'Cal Sans', sans-serif;
 }
 
-/* Optional Alternate Themes (Full 100% token coverage for all windows, containers & components) */
-[data-theme="cyber-cyan"] {
-  /* Brand & Accents */
-  --color-primary: #38f2ff;
-  --color-primary-hover: #7df8ff;
-  --color-primary-active: #00e5ff;
-  --color-accent: #00c2e0;
-  --color-accent-subtle: #008ea6;
-  --color-danger: #ff5370;
-  --color-danger-hover: #ff3355;
-  --color-danger-bg: rgba(255, 83, 112, 0.15);
-  --color-danger-text: #ffffff;
-
-  /* Surfaces & Containers */
-  --bg-canvas: #081522;
-  --bg-dashboard: #0e2436;
-  --bg-panel: #15364d;
-  --bg-panel-hover: #1c4766;
-  --bg-panel-active: #0e2436;
-  --bg-panel-inner: #0e2436;
-  --bg-panel-inner-hover: #1c4766;
-  --bg-timeline: #0b1e2c;
-  --bg-preview: #050e17;
-
-  /* Badges */
-  --badge-prealpha-bg: #15364d;
-  --badge-prealpha-text: #38f2ff;
-  --badge-count-bg: #38f2ff;
-  --badge-count-text: #081522;
-
-  /* Timeline Track Tokens */
-  --track-video: #38f2ff;
-  --track-video-dark: #008ea6;
-  --track-image: #7df8ff;
-  --track-image-dark: #008ea6;
-  --track-audio: #6ee7b7;
-  --track-audio-dark: #0f766e;
-  --track-adj: #00c2e0;
-  --track-adj-dark: #0e2436;
-  --track-color: #7df8ff;
-  --track-color-dark: #008ea6;
-  --track-text: #a5f3fc;
-  --track-text-dark: #0e7490;
-
-  /* Grid Overlay */
-  --grid-line-thin: rgba(56, 242, 255, 0.20);
-  --grid-line-major: rgba(56, 242, 255, 0.48);
-  --grid-crosshair: #38f2ff;
-  --grid-dot: rgba(56, 242, 255, 0.60);
-
-  /* App Logo & Hero Vector Accents */
-  --logo-base: #00485a;
-  --logo-surface: #0094b0;
-  --logo-shadow: #00ccee;
-  --logo-accent: #5ef8ff;
-
-  /* Typography */
-  --text-primary: #38f2ff;
-  --text-secondary: #a5f3fc;
-  --text-muted: #38bdf8;
-  --text-dim: #0284c7;
-
-  /* Borders */
-  --border-panel: #1e5374;
-  --border-subtle: rgba(56, 242, 255, 0.25);
-  --border-focus: #38f2ff;
-
-  /* Dedicated Keyframe Theme Tokens */
-  --kf-default-bg: #0a1e28;
-  --kf-default-border: #7dd3fc;
-  --kf-active-bg: #00e5ff;
-  --kf-active-border: #040d14;
-  --kf-selected-bg: #ffffff;
-  --kf-selected-border: #040d14;
-  --kf-selected-dot: #00e5ff;
+/* Optional Alternate Accents (accent-only: bg stays Matcha dark, only accent hue changes) */
+[data-theme="sakura-milk"] {
+  /* Brand & Accents — bright pastel pink, not dark */
+  --color-primary: #ffb3d1;
+  --color-primary-hover: #ffc4db;
+  --color-primary-active: #ff8fbb;
+  --color-accent: #ff8fbb;
+  --color-accent-subtle: #a86a83;
+  --badge-prealpha-text: #ffb3d1;
+  --badge-count-bg: #ffb3d1;
+  --badge-count-text: #2a121a;
+  --track-video: #ffb3d1;
+  --track-video-dark: #a86a83;
+  --track-image: #ffc4db;
+  --track-image-dark: #a86a83;
+  --track-audio: #ff8fbb;
+  --track-audio-dark: #a86a83;
+  --track-adj: #ff8fbb;
+  --track-adj-dark: #465a37;
+  --track-color: #ffe0ec;
+  --track-color-dark: #a86a83;
+  --track-text: #ffd6e7;
+  --track-text-dark: #a86a83;
+  --grid-line-thin: rgba(255, 179, 209, 0.22);
+  --grid-line-major: rgba(255, 179, 209, 0.50);
+  --grid-crosshair: #ffb3d1;
+  --grid-dot: rgba(255, 179, 209, 0.65);
+  --logo-accent: #ffd6e7;
+  --text-primary: #ffb3d1;
+  --text-secondary: #ffe0ec;
+  --text-muted: #d8a8bc;
+  --text-dim: #a86a83;
+  --border-subtle: rgba(255, 179, 209, 0.26);
+  --border-focus: #ffb3d1;
+  --kf-active-bg: #ff8fbb;
+  --kf-selected-dot: #ff8fbb;
 }
 
-[data-theme="amber-terminal"] {
-  /* Brand & Accents */
-  --color-primary: #ffbe2e;
-  --color-primary-hover: #ffd266;
-  --color-primary-active: #ffaa00;
-  --color-accent: #f59e0b;
-  --color-accent-subtle: #b45309;
-  --color-danger: #ff5252;
-  --color-danger-hover: #e04848;
-  --color-danger-bg: rgba(255, 82, 82, 0.15);
-  --color-danger-text: #ffffff;
-
-  /* Surfaces & Containers */
-  --bg-canvas: #161005;
-  --bg-dashboard: #241a0b;
-  --bg-panel: #362711;
-  --bg-panel-hover: #473417;
-  --bg-panel-active: #241a0b;
-  --bg-panel-inner: #241a0b;
-  --bg-panel-inner-hover: #473417;
-  --bg-timeline: #1c1407;
-  --bg-preview: #0f0a03;
-
-  /* Badges */
-  --badge-prealpha-bg: #362711;
-  --badge-prealpha-text: #ffbe2e;
-  --badge-count-bg: #ffbe2e;
-  --badge-count-text: #161005;
-
-  /* Timeline Track Tokens */
-  --track-video: #ffbe2e;
-  --track-video-dark: #b45309;
-  --track-image: #ffd266;
-  --track-image-dark: #b45309;
-  --track-audio: #fde047;
-  --track-audio-dark: #926d15;
-  --track-adj: #f59e0b;
-  --track-adj-dark: #241a0b;
-  --track-color: #ffd266;
-  --track-color-dark: #b45309;
-  --track-text: #fde68a;
-  --track-text-dark: #a16207;
-
-  /* Grid Overlay */
-  --grid-line-thin: rgba(255, 190, 46, 0.20);
-  --grid-line-major: rgba(255, 190, 46, 0.48);
-  --grid-crosshair: #ffbe2e;
-  --grid-dot: rgba(255, 190, 46, 0.60);
-
-  /* App Logo & Hero Vector Accents */
-  --logo-base: #543200;
-  --logo-surface: #a66000;
-  --logo-shadow: #e68a00;
-  --logo-accent: #ffdb4d;
-
-  /* Typography */
-  --text-primary: #ffbe2e;
-  --text-secondary: #fde68a;
-  --text-muted: #eab308;
-  --text-dim: #a16207;
-
-  /* Borders */
-  --border-panel: #59401b;
-  --border-subtle: rgba(255, 190, 46, 0.25);
-  --border-focus: #ffbe2e;
-
-  /* Dedicated Keyframe Theme Tokens */
-  --kf-default-bg: #241605;
-  --kf-default-border: #fcd34d;
-  --kf-active-bg: #ffaa00;
-  --kf-active-border: #120b02;
-  --kf-selected-bg: #ffffff;
-  --kf-selected-border: #120b02;
-  --kf-selected-dot: #ffaa00;
+[data-theme="lemon-soda"] {
+  /* Brand & Accents — bright citrus yellow, not dark */
+  --color-primary: #ffe45e;
+  --color-primary-hover: #ffec8a;
+  --color-primary-active: #f5d632;
+  --color-accent: #f5d632;
+  --color-accent-subtle: #a68e2e;
+  --badge-prealpha-text: #ffe45e;
+  --badge-count-bg: #ffe45e;
+  --badge-count-text: #241d05;
+  --track-video: #ffe45e;
+  --track-video-dark: #a68e2e;
+  --track-image: #ffec8a;
+  --track-image-dark: #a68e2e;
+  --track-audio: #f5d632;
+  --track-audio-dark: #a68e2e;
+  --track-adj: #f5d632;
+  --track-adj-dark: #465a37;
+  --track-color: #fff3b0;
+  --track-color-dark: #a68e2e;
+  --track-text: #fff6c2;
+  --track-text-dark: #a68e2e;
+  --grid-line-thin: rgba(255, 228, 94, 0.22);
+  --grid-line-major: rgba(255, 228, 94, 0.50);
+  --grid-crosshair: #ffe45e;
+  --grid-dot: rgba(255, 228, 94, 0.65);
+  --logo-accent: #fff6c2;
+  --text-primary: #ffe45e;
+  --text-secondary: #fff3b0;
+  --text-muted: #e0cf7a;
+  --text-dim: #a68e2e;
+  --border-subtle: rgba(255, 228, 94, 0.26);
+  --border-focus: #ffe45e;
+  --kf-active-bg: #f5d632;
+  --kf-selected-dot: #f5d632;
 }
 
-[data-theme="amethyst"],
-[data-theme="amethyst-purple"] {
-  /* Brand & Accents */
-  --color-primary: #d8b4fe;
-  --color-primary-hover: #ebd5ff;
-  --color-primary-active: #c084fc;
-  --color-accent: #b04bf6;
-  --color-accent-subtle: #8b28db;
-  --color-danger: #ff5252;
-  --color-danger-hover: #e04848;
-  --color-danger-bg: rgba(255, 82, 82, 0.15);
-  --color-danger-text: #ffffff;
-
-  /* Surfaces & Containers */
-  --bg-canvas: #130e1b;
-  --bg-dashboard: #1e162b;
-  --bg-panel: #2c2040;
-  --bg-panel-hover: #3a2b53;
-  --bg-panel-active: #1e162b;
-  --bg-panel-inner: #1e162b;
-  --bg-panel-inner-hover: #3a2b53;
-  --bg-timeline: #171121;
-  --bg-preview: #0b0711;
-
-  /* Badges */
-  --badge-prealpha-bg: #2c2040;
-  --badge-prealpha-text: #d8b4fe;
-  --badge-count-bg: #d8b4fe;
-  --badge-count-text: #130e1b;
-
-  /* Timeline Track Tokens */
-  --track-video: #d8b4fe;
-  --track-video-dark: #8b28db;
-  --track-image: #ebd5ff;
-  --track-image-dark: #8b28db;
-  --track-audio: #a5b4fc;
-  --track-audio-dark: #4f46e5;
-  --track-adj: #b04bf6;
-  --track-adj-dark: #1e162b;
-  --track-color: #ebd5ff;
-  --track-color-dark: #8b28db;
-  --track-text: #f3e8ff;
-  --track-text-dark: #7e22ce;
-
-  /* Grid Overlay */
-  --grid-line-thin: rgba(216, 180, 254, 0.20);
-  --grid-line-major: rgba(216, 180, 254, 0.48);
-  --grid-crosshair: #d8b4fe;
-  --grid-dot: rgba(216, 180, 254, 0.60);
-
-  /* App Logo & Hero Vector Accents */
-  --logo-base: #45186b;
-  --logo-surface: #822cb8;
-  --logo-shadow: #b04bf6;
-  --logo-accent: #ebd5ff;
-
-  /* Typography */
-  --text-primary: #d8b4fe;
-  --text-secondary: #f3e8ff;
-  --text-muted: #c084fc;
-  --text-dim: #9333ea;
-
-  /* Borders */
-  --border-panel: #4b376b;
-  --border-subtle: rgba(216, 180, 254, 0.25);
-  --border-focus: #d8b4fe;
-
-  /* Dedicated Keyframe Theme Tokens */
-  --kf-default-bg: #181124;
-  --kf-default-border: #e9d5ff;
-  --kf-active-bg: #c084fc;
-  --kf-active-border: #0e0a14;
-  --kf-selected-bg: #ffffff;
-  --kf-selected-border: #0e0a14;
-  --kf-selected-dot: #c084fc;
+[data-theme="sky-candy"] {
+  /* Brand & Accents — bright soft cyan, not dark */
+  --color-primary: #8ee6ff;
+  --color-primary-hover: #b3efff;
+  --color-primary-active: #5ed6ff;
+  --color-accent: #5ed6ff;
+  --color-accent-subtle: #3f8ea6;
+  --badge-prealpha-text: #8ee6ff;
+  --badge-count-bg: #8ee6ff;
+  --badge-count-text: #0a1a22;
+  --track-video: #8ee6ff;
+  --track-video-dark: #3f8ea6;
+  --track-image: #b3efff;
+  --track-image-dark: #3f8ea6;
+  --track-audio: #5ed6ff;
+  --track-audio-dark: #3f8ea6;
+  --track-adj: #5ed6ff;
+  --track-adj-dark: #465a37;
+  --track-color: #d6f4ff;
+  --track-color-dark: #3f8ea6;
+  --track-text: #c9f0ff;
+  --track-text-dark: #3f8ea6;
+  --grid-line-thin: rgba(142, 230, 255, 0.22);
+  --grid-line-major: rgba(142, 230, 255, 0.50);
+  --grid-crosshair: #8ee6ff;
+  --grid-dot: rgba(142, 230, 255, 0.65);
+  --logo-accent: #d6f4ff;
+  --text-primary: #8ee6ff;
+  --text-secondary: #d6f4ff;
+  --text-muted: #9ecfde;
+  --text-dim: #3f8ea6;
+  --border-subtle: rgba(142, 230, 255, 0.26);
+  --border-focus: #8ee6ff;
+  --kf-active-bg: #5ed6ff;
+  --kf-selected-dot: #5ed6ff;
 }
 
-[data-theme="rose"],
-[data-theme="rose-red"] {
-  /* Brand & Accents */
-  --color-primary: #fda4af;
-  --color-primary-hover: #fecdd3;
-  --color-primary-active: #fb7185;
-  --color-accent: #f43f5e;
-  --color-accent-subtle: #be123c;
-  --color-danger: #ff5252;
-  --color-danger-hover: #e04848;
-  --color-danger-bg: rgba(255, 82, 82, 0.15);
-  --color-danger-text: #ffffff;
-
-  /* Surfaces & Containers */
-  --bg-canvas: #180a0f;
-  --bg-dashboard: #261017;
-  --bg-panel: #3a1823;
-  --bg-panel-hover: #4c202f;
-  --bg-panel-active: #261017;
-  --bg-panel-inner: #261017;
-  --bg-panel-inner-hover: #4c202f;
-  --bg-timeline: #1f0d13;
-  --bg-preview: #0f0508;
-
-  /* Badges */
-  --badge-prealpha-bg: #3a1823;
-  --badge-prealpha-text: #fda4af;
-  --badge-count-bg: #fda4af;
-  --badge-count-text: #180a0f;
-
-  /* Timeline Track Tokens */
-  --track-video: #fda4af;
-  --track-video-dark: #be123c;
-  --track-image: #fecdd3;
-  --track-image-dark: #be123c;
-  --track-audio: #f472b6;
-  --track-audio-dark: #9d174d;
-  --track-adj: #f43f5e;
-  --track-adj-dark: #261017;
-  --track-color: #fecdd3;
-  --track-color-dark: #be123c;
-  --track-text: #ffe4e6;
-  --track-text-dark: #9f1239;
-
-  /* Grid Overlay */
-  --grid-line-thin: rgba(253, 164, 175, 0.20);
-  --grid-line-major: rgba(253, 164, 175, 0.48);
-  --grid-crosshair: #fda4af;
-  --grid-dot: rgba(253, 164, 175, 0.60);
-
-  /* App Logo & Hero Vector Accents */
-  --logo-base: #590820;
-  --logo-surface: #b81643;
-  --logo-shadow: #f43f5e;
-  --logo-accent: #ffb8c4;
-
-  /* Typography */
-  --text-primary: #fda4af;
-  --text-secondary: #ffe4e6;
-  --text-muted: #fb7185;
-  --text-dim: #e11d48;
-
-  /* Borders */
-  --border-panel: #63283a;
-  --border-subtle: rgba(253, 164, 175, 0.25);
-  --border-focus: #fda4af;
-
-  /* Dedicated Keyframe Theme Tokens */
-  --kf-default-bg: #220d13;
-  --kf-default-border: #fecdd3;
-  --kf-active-bg: #fb7185;
-  --kf-active-border: #14080b;
-  --kf-selected-bg: #ffffff;
-  --kf-selected-border: #14080b;
-  --kf-selected-dot: #fb7185;
+[data-theme="mint-pop"] {
+  /* Brand & Accents — bright fresh mint, not dark */
+  --color-primary: #7dfcc8;
+  --color-primary-hover: #a5ffda;
+  --color-primary-active: #4de8a8;
+  --color-accent: #4de8a8;
+  --color-accent-subtle: #2f8e68;
+  --badge-prealpha-text: #7dfcc8;
+  --badge-count-bg: #7dfcc8;
+  --badge-count-text: #0a2018;
+  --track-video: #7dfcc8;
+  --track-video-dark: #2f8e68;
+  --track-image: #a5ffda;
+  --track-image-dark: #2f8e68;
+  --track-audio: #4de8a8;
+  --track-audio-dark: #2f8e68;
+  --track-adj: #4de8a8;
+  --track-adj-dark: #465a37;
+  --track-color: #d2ffe9;
+  --track-color-dark: #2f8e68;
+  --track-text: #c2ffdf;
+  --track-text-dark: #2f8e68;
+  --grid-line-thin: rgba(125, 252, 200, 0.22);
+  --grid-line-major: rgba(125, 252, 200, 0.50);
+  --grid-crosshair: #7dfcc8;
+  --grid-dot: rgba(125, 252, 200, 0.65);
+  --logo-accent: #d2ffe9;
+  --text-primary: #7dfcc8;
+  --text-secondary: #d2ffe9;
+  --text-muted: #9ed8bc;
+  --text-dim: #2f8e68;
+  --border-subtle: rgba(125, 252, 200, 0.26);
+  --border-focus: #7dfcc8;
+  --kf-active-bg: #4de8a8;
+  --kf-selected-dot: #4de8a8;
 }
 
-[data-theme="ocean"],
-[data-theme="ocean-blue"] {
-  /* Brand & Accents */
-  --color-primary: #7dd3fc;
-  --color-primary-hover: #bae6fd;
-  --color-primary-active: #38bdf8;
-  --color-accent: #0ea5e9;
-  --color-accent-subtle: #0284c7;
-  --color-danger: #ff5252;
-  --color-danger-hover: #e04848;
-  --color-danger-bg: rgba(255, 82, 82, 0.15);
-  --color-danger-text: #ffffff;
-
-  /* Surfaces & Containers */
-  --bg-canvas: #081322;
-  --bg-dashboard: #0f223a;
-  --bg-panel: #152f52;
-  --bg-panel-hover: #1d3f6d;
-  --bg-panel-active: #0f223a;
-  --bg-panel-inner: #0f223a;
-  --bg-panel-inner-hover: #1d3f6d;
-  --bg-timeline: #0b1a2d;
-  --bg-preview: #050e18;
-
-  /* Badges */
-  --badge-prealpha-bg: #152f52;
-  --badge-prealpha-text: #7dd3fc;
-  --badge-count-bg: #7dd3fc;
-  --badge-count-text: #081322;
-
-  /* Timeline Track Tokens */
-  --track-video: #7dd3fc;
-  --track-video-dark: #0284c7;
-  --track-image: #bae6fd;
-  --track-image-dark: #0284c7;
-  --track-audio: #34d399;
-  --track-audio-dark: #065f46;
-  --track-adj: #0ea5e9;
-  --track-adj-dark: #0f223a;
-  --track-color: #bae6fd;
-  --track-color-dark: #0284c7;
-  --track-text: #e0f2fe;
-  --track-text-dark: #0369a1;
-
-  /* Grid Overlay */
-  --grid-line-thin: rgba(125, 211, 252, 0.20);
-  --grid-line-major: rgba(125, 211, 252, 0.48);
-  --grid-crosshair: #7dd3fc;
-  --grid-dot: rgba(125, 211, 252, 0.60);
-
-  /* App Logo & Hero Vector Accents */
-  --logo-base: #0a3556;
-  --logo-surface: #0572ad;
-  --logo-shadow: #0296e3;
-  --logo-accent: #93e0ff;
-
-  /* Typography */
-  --text-primary: #7dd3fc;
-  --text-secondary: #e0f2fe;
-  --text-muted: #38bdf8;
-  --text-dim: #0284c7;
-
-  /* Borders */
-  --border-panel: #254b80;
-  --border-subtle: rgba(125, 211, 252, 0.25);
-  --border-focus: #7dd3fc;
-
-  /* Dedicated Keyframe Theme Tokens */
-  --kf-default-bg: #0b192c;
-  --kf-default-border: #bae6fd;
-  --kf-active-bg: #38bdf8;
-  --kf-active-border: #060e18;
-  --kf-selected-bg: #ffffff;
-  --kf-selected-border: #060e18;
-  --kf-selected-dot: #38bdf8;
-}
-
-[data-theme="after-effects"],
-[data-theme="ae"] {
-  /* Brand & Accents */
-  --color-primary: #9999ff;
-  --color-primary-hover: #b8b8ff;
-  --color-primary-active: #7d7dff;
-  --color-accent: #cf96fd;
-  --color-accent-subtle: #584ea6;
-  --color-danger: #ff5252;
-  --color-danger-hover: #e04848;
-  --color-danger-bg: rgba(255, 82, 82, 0.15);
-  --color-danger-text: #ffffff;
-
-  /* Surfaces & Containers */
-  --bg-canvas: #12111a;
-  --bg-dashboard: #1a1826;
-  --bg-panel: #242236;
-  --bg-panel-hover: #2f2b47;
-  --bg-panel-active: #1a1826;
-  --bg-panel-inner: #1a1826;
-  --bg-panel-inner-hover: #2f2b47;
-  --bg-timeline: #151322;
-  --bg-preview: #0a0910;
-
-  /* Badges */
-  --badge-prealpha-bg: #242236;
-  --badge-prealpha-text: #9999ff;
-  --badge-count-bg: #9999ff;
-  --badge-count-text: #12111a;
-
-  /* Timeline Track Tokens */
-  --track-video: #9999ff;
-  --track-video-dark: #4f4db3;
-  --track-image: #cf96fd;
-  --track-image-dark: #7c4da6;
-  --track-audio: #5ce1e6;
-  --track-audio-dark: #1b7a7e;
-  --track-adj: #e066ff;
-  --track-adj-dark: #1a1826;
-  --track-color: #ff99c8;
-  --track-color-dark: #9e4a6d;
-  --track-text: #ede9fe;
-  --track-text-dark: #584ea6;
-
-  /* Grid Overlay */
-  --grid-line-thin: rgba(153, 153, 255, 0.20);
-  --grid-line-major: rgba(153, 153, 255, 0.48);
-  --grid-crosshair: #9999ff;
-  --grid-dot: rgba(153, 153, 255, 0.60);
-
-  /* App Logo & Hero Vector Accents */
-  --logo-base: #1c173d;
-  --logo-surface: #32276e;
-  --logo-shadow: #5c4ae4;
-  --logo-accent: #cf96fd;
-
-  /* Typography */
-  --text-primary: #9999ff;
-  --text-secondary: #ede9fe;
-  --text-muted: #b4a8e6;
-  --text-dim: #7368a8;
-
-  /* Borders */
-  --border-panel: #3c3758;
-  --border-subtle: rgba(153, 153, 255, 0.25);
-  --border-focus: #9999ff;
-
-  /* Dedicated Keyframe Theme Tokens */
-  --kf-default-bg: #191728;
-  --kf-default-border: #b4a8e6;
-  --kf-active-bg: #9999ff;
-  --kf-active-border: #12111a;
-  --kf-selected-bg: #ffffff;
-  --kf-selected-border: #12111a;
-  --kf-selected-dot: #9999ff;
+[data-theme="peach-glow"] {
+  /* Brand & Accents — bright warm peach, not dark */
+  --color-primary: #ffc49b;
+  --color-primary-hover: #ffd4b5;
+  --color-primary-active: #ffa76e;
+  --color-accent: #ffa76e;
+  --color-accent-subtle: #a6744e;
+  --badge-prealpha-text: #ffc49b;
+  --badge-count-bg: #ffc49b;
+  --badge-count-text: #2a1a0e;
+  --track-video: #ffc49b;
+  --track-video-dark: #a6744e;
+  --track-image: #ffd4b5;
+  --track-image-dark: #a6744e;
+  --track-audio: #ffa76e;
+  --track-audio-dark: #a6744e;
+  --track-adj: #ffa76e;
+  --track-adj-dark: #465a37;
+  --track-color: #ffe8d6;
+  --track-color-dark: #a6744e;
+  --track-text: #ffddc2;
+  --track-text-dark: #a6744e;
+  --grid-line-thin: rgba(255, 196, 155, 0.22);
+  --grid-line-major: rgba(255, 196, 155, 0.50);
+  --grid-crosshair: #ffc49b;
+  --grid-dot: rgba(255, 196, 155, 0.65);
+  --logo-accent: #ffe8d6;
+  --text-primary: #ffc49b;
+  --text-secondary: #ffe8d6;
+  --text-muted: #d8b896;
+  --text-dim: #a6744e;
+  --border-subtle: rgba(255, 196, 155, 0.26);
+  --border-focus: #ffc49b;
+  --kf-active-bg: #ffa76e;
+  --kf-selected-dot: #ffa76e;
 }
 
