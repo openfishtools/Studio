@@ -1948,7 +1948,9 @@ function setupImportProjectModal() {
           throw new Error('Database import module unavailable');
         }
 
-        const imported = await window.FishDatabase.importOFTSPackage(file);
+        const imported = await window.FishDatabase.importOFTSPackage(file, (stageMsg) => {
+          if (confirmStatus && stageMsg) confirmStatus.textContent = stageMsg;
+        });
         if (confirmStatus) {
           confirmStatus.className = 'modal-import-status is-ready';
           confirmStatus.textContent = 'Import successful! Opening project...';

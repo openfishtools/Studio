@@ -85,8 +85,9 @@ window.FishDatabase = (function () {
       // Safety timeout: Never hang app if indexedDB is blocked or stalled
       var safetyTimer = setTimeout(function () {
         console.warn('FishDatabase openDB timeout, falling back to localStorage');
+        dbPromise = null;
         done(null);
-      }, 500);
+      }, 5000);
 
       try {
         var req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -126,15 +127,18 @@ window.FishDatabase = (function () {
         req.onerror = function (e) {
           clearTimeout(safetyTimer);
           console.warn('FishDatabase IndexedDB open error, using localStorage fallback:', e);
+          dbPromise = null;
           done(null);
         };
         req.onblocked = function (e) {
           clearTimeout(safetyTimer);
           console.warn('FishDatabase open blocked by another connection, using localStorage fallback');
+          dbPromise = null;
           done(null);
         };
       } catch (err) {
         clearTimeout(safetyTimer);
+        dbPromise = null;
         done(null);
       }
     });
@@ -698,32 +702,34 @@ window.FishDatabase = (function () {
     var db = await openDB();
     if (db) {
       await new Promise(function (resolve) {
-        var safetyTimer = setTimeout(function () {
-          resolve(project);
-        }, 800);
-        try {
-          var tx = db.transaction('projects', 'readwrite');
-          var store = tx.objectStore('projects');
-          store.put(storageProject);
-          tx.oncomplete = function () {
-            clearTimeout(safetyTimer);
-            window.dispatchEvent(new CustomEvent('fish-db-projects-updated', { detail: { action: 'save', project: project } }));
-            resolve(project);
-          };
-          tx.onerror = function (e) {
-            clearTimeout(safetyTimer);
-            try { e.preventDefault(); } catch (_) {}
-            window.dispatchEvent(new CustomEvent('fish-db-projects-updated', { detail: { action: 'save', project: project } }));
-            resolve(project);
-          };
-          tx.onabort = function () {
-            clearTimeout(safetyTimer);
-            resolve(project);
-          };
-        } catch (e) {
+        var isDone = false;
+        function finish() {
+          if (isDone) return;
+          isDone = true;
           clearTimeout(safetyTimer);
           window.dispatchEvent(new CustomEvent('fish-db-projects-updated', { detail: { action: 'save', project: project } }));
           resolve(project);
+        }
+        var safetyTimer = setTimeout(finish, 1500);
+        try {
+          var tx = db.transaction('projects', 'readwrite');
+          var store = tx.objectStore('projects');
+          var req = store.put(storageProject);
+          if (req) {
+            req.onsuccess = finish;
+            req.onerror = function (e) {
+              try { e.preventDefault(); } catch (_) {}
+              finish();
+            };
+          }
+          tx.oncomplete = finish;
+          tx.onerror = function (e) {
+            try { e.preventDefault(); } catch (_) {}
+            finish();
+          };
+          tx.onabort = finish;
+        } catch (e) {
+          finish();
         }
       });
     } else {
@@ -737,7 +743,7 @@ window.FishDatabase = (function () {
           updateProjectSize(project.id, res.formatted, res.bytes);
         }
       }).catch(function () {});
-    }, 60);
+    }, 150);
 
     return project;
   }
@@ -765,27 +771,39 @@ window.FishDatabase = (function () {
     var db = await openDB();
     if (db && db.objectStoreNames.contains('projects')) {
       return new Promise(function (resolve) {
+        var isDone = false;
+        function finish(val) {
+          if (isDone) return;
+          isDone = true;
+          clearTimeout(safetyTimer);
+          resolve(val);
+        }
+        var safetyTimer = setTimeout(function () { finish(false); }, 1500);
+
         try {
           var tx = db.transaction('projects', 'readwrite');
           var store = tx.objectStore('projects');
           var req = store.get(projectId);
           req.onsuccess = function () {
             if (_deletedIds.has(projectId) || _deletedIds.has(String(projectId).trim())) {
-              resolve(false);
+              finish(false);
               return;
             }
             var prj = req.result;
             if (prj) {
               prj.size = formatted;
               if (typeof bytes === 'number') prj.sizeBytes = bytes;
-              store.put(prj);
+              var putReq = store.put(prj);
+              if (putReq) {
+                putReq.onsuccess = function () { finish(true); };
+              }
             }
-            tx.oncomplete = function () { resolve(true); };
-            tx.onerror = function () { resolve(false); };
+            tx.oncomplete = function () { finish(true); };
+            tx.onerror = function () { finish(false); };
           };
-          req.onerror = function () { resolve(false); };
+          req.onerror = function () { finish(false); };
         } catch (_) {
-          resolve(false);
+          finish(false);
         }
       });
     }
@@ -902,14 +920,17 @@ window.FishDatabase = (function () {
 
       if (shouldCheckCache) {
         cacheBytes = await new Promise(function (resolve) {
+          var isFinished = false;
+          function finish(val) {
+            if (isFinished) return;
+            isFinished = true;
+            clearTimeout(safetyTimer);
+            resolve(val);
+          }
+          var safetyTimer = setTimeout(function () { finish(0); }, 1500);
+
           try {
             var req = indexedDB.open('FishFrameCacheDB');
-            var isFinished = false;
-            function finish(val) {
-              if (isFinished) return;
-              isFinished = true;
-              resolve(val);
-            }
 
             req.onsuccess = function (e) {
               var frameDb = e.target.result;
@@ -1307,14 +1328,15 @@ window.FishDatabase = (function () {
     if (db && db.objectStoreNames.contains('media')) {
       return new Promise(function (resolve) {
         var isDone = false;
-        // Safe timeout (15000ms) allows large buffers to write without premature fallback
+        var activeTx = null;
         var saveTimer = setTimeout(function () {
           if (isDone) return;
           isDone = true;
           console.warn('[FishDatabase] ⚠️ saveMedia timeout, saving optimistic fallback for:', mediaItem.name);
+          try { if (activeTx && typeof activeTx.abort === 'function') activeTx.abort(); } catch (_) {}
           saveToLocalFull(mediaItem);
           resolve(mediaItem);
-        }, 15000);
+        }, 4000);
 
         function finish(item) {
           if (isDone) return;
@@ -1325,6 +1347,7 @@ window.FishDatabase = (function () {
 
         try {
           var tx = db.transaction('media', 'readwrite');
+          activeTx = tx;
           var store = tx.objectStore('media');
           var itemToStore = Object.assign({}, mediaItem);
 
@@ -1371,13 +1394,17 @@ window.FishDatabase = (function () {
             finish(mediaItem);
           };
           tx.onabort = function () {
-            console.warn('[FishDatabase] ⚠️ saveMedia tx.onabort for:', mediaItem.name);
             saveToLocalFull(mediaItem);
             finish(mediaItem);
           };
 
           var req = store.put(itemToStore);
           if (req) {
+            req.onsuccess = function () {
+              _invalidateProjectMediaCache(mediaItem.projectId);
+              saveMetaToLocal(mediaItem);
+              finish(mediaItem);
+            };
             req.onerror = function (err) {
               console.warn('[FishDatabase] ⚠️ saveMedia req.onerror for:', mediaItem.name, err);
               try { if (err && err.preventDefault) err.preventDefault(); } catch (_) {}
@@ -2472,9 +2499,13 @@ window.FishDatabase = (function () {
    * @param {File} file
    * @returns {Promise<Object>} The imported project record
    */
-  async function importOFTSPackage(file) {
+  async function importOFTSPackage(file, onProgress) {
     if (!window.JSZip) throw new Error("JSZip not loaded");
     if (!file || !file.name.endsWith('.ofts')) return null;
+
+    if (typeof onProgress === 'function') {
+      try { onProgress('Reading project package...'); } catch (_) {}
+    }
 
     var zip = await JSZip.loadAsync(file);
     var jsonFile = zip.file("project.json");
@@ -2572,6 +2603,10 @@ window.FishDatabase = (function () {
     projectData.isTemplate = true;
     projectData.updatedAt = new Date().toISOString();
     projectData.createdAt = projectData.createdAt || new Date().toISOString();
+    if (file && file.size) {
+      projectData.size = formatBytes(file.size);
+      projectData.sizeBytes = file.size;
+    }
 
     // Save base project record first
     var savedProject = await saveProject(projectData);
@@ -2625,31 +2660,34 @@ window.FishDatabase = (function () {
           ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].includes(ext) || (mime && mime.startsWith('audio/')) ? 'audio' : 'image'
         );
 
-        // Extract raw binary Blob directly
-        var blob = await zipEntry.async("blob");
-        if (mime && (!blob.type || blob.type === 'application/octet-stream')) {
-          blob = new Blob([blob], { type: mime });
-        }
-
-        var buffer = null;
-        if (typeof blob.arrayBuffer === 'function') {
+        if (typeof onProgress === 'function') {
           try {
-            buffer = await blob.arrayBuffer();
+            onProgress('Extracting asset (' + (i + 1) + '/' + mediaEntries.length + '): ' + displayName);
           } catch (_) {}
         }
 
-        var blobUrl = '';
+        // Extract raw binary ArrayBuffer directly from archive
+        var buffer = null;
         try {
-          blobUrl = URL.createObjectURL(blob);
+          buffer = await zipEntry.async("arraybuffer");
         } catch (_) {}
+
+        var blob = buffer ? new Blob([buffer], { type: mime || 'application/octet-stream' }) : null;
+
+        var blobUrl = '';
+        if (blob) {
+          try {
+            blobUrl = URL.createObjectURL(blob);
+          } catch (_) {}
+        }
 
         var mediaItem = {
           id: mediaId,
           projectId: savedProject.id,
           name: displayName,
           type: type,
-          mimeType: mime || blob.type || '',
-          size: blob.size || matchDesc.size || 0,
+          mimeType: mime || (blob && blob.type) || '',
+          size: (buffer && buffer.byteLength) || (blob && blob.size) || matchDesc.size || 0,
           width: matchDesc.width || null,
           height: matchDesc.height || null,
           duration: matchDesc.duration || null,
@@ -2672,15 +2710,19 @@ window.FishDatabase = (function () {
       }
     }
 
-    // Compute and persist the true total size of the imported package
-    try {
-      var totalSize = await getProjectTotalSize(savedProject.id);
-      if (totalSize && totalSize.formatted) {
-        savedProject.size = totalSize.formatted;
-        savedProject.sizeBytes = totalSize.bytes;
-        await updateProjectSize(savedProject.id, totalSize.formatted, totalSize.bytes);
-      }
-    } catch (_) {}
+    if (file && file.size) {
+      savedProject.size = formatBytes(file.size);
+      savedProject.sizeBytes = file.size;
+    }
+
+    // Refresh true total size asynchronously in background without blocking import resolution
+    setTimeout(function () {
+      getProjectTotalSize(savedProject.id).then(function (totalSize) {
+        if (totalSize && totalSize.formatted) {
+          updateProjectSize(savedProject.id, totalSize.formatted, totalSize.bytes);
+        }
+      }).catch(function () {});
+    }, 150);
 
     return savedProject;
   }
