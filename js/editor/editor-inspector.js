@@ -454,6 +454,20 @@
       }
     }
 
+    function getDialLayoutMetrics(dial, defaultW, defaultH) {
+      if (!dial) return { w: defaultW, h: defaultH };
+      const cw = dial.clientWidth;
+      const ch = dial.clientHeight;
+      if (cw > 0 && ch > 0) {
+        return { w: cw, h: ch };
+      }
+      const rect = dial.getBoundingClientRect();
+      const z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || 1;
+      const w = Math.round((rect.width || (defaultW * z)) / z) || defaultW;
+      const h = Math.round((rect.height || (defaultH * z)) / z) || defaultH;
+      return { w, h };
+    }
+
     function syncRotateDialTrack() {
       const dial = document.getElementById('dial-transform-rotate');
       if (!dial) return null;
@@ -462,9 +476,7 @@
       const svg = dial.querySelector('.rotate-dial-svg');
       if (!trackEl || !trailEl || !svg) return null;
 
-      const rect = dial.getBoundingClientRect();
-      const boxW = Math.round(rect.width) || dial.clientWidth || 320;
-      const boxH = Math.round(rect.height) || dial.clientHeight || 156;
+      const { w: boxW, h: boxH } = getDialLayoutMetrics(dial, 320, 156);
 
       const padX = 18;
       const padY = 16;
@@ -502,9 +514,7 @@
       const trailEl = document.getElementById('rotate-trail-arc');
       if (!trackEl || !trailEl) return;
 
-      const rect = dial.getBoundingClientRect();
-      const boxW = Math.round(rect.width) || dial.clientWidth || 320;
-      const boxH = Math.round(rect.height) || dial.clientHeight || 156;
+      const { w: boxW, h: boxH } = getDialLayoutMetrics(dial, 320, 156);
 
       // Elongated stadium squircle track geometry: dynamically sync viewBox and path to dial container
       if (dial._lastW !== boxW || dial._lastH !== boxH || !dial._totalLen) {
@@ -606,8 +616,7 @@
           const normDeg = ((deg % 360) + 360) % 360;
           const dist = (normDeg / 360) * totalLen;
           const pt = (typeof trackPath.getPointAtLength === 'function') ? trackPath.getPointAtLength(dist) : { x: 100, y: 20 };
-          const w = dial.clientWidth || 200;
-          const h = dial.clientHeight || 200;
+          const { w, h } = getDialLayoutMetrics(dial, 200, 200);
           const size = Math.min(w, h);
           const scale = size / 200;
           const offsetX = (w - size) / 2;
@@ -644,8 +653,9 @@
           }
         } else {
           if (knob) {
+            const { w } = getDialLayoutMetrics(dial, 200, 200);
             const rad = ((deg - 90) * Math.PI) / 180;
-            const center = (dial.clientWidth || 200) / 2;
+            const center = w / 2;
             const radius = center * 0.86;
             const knobHalf = (knob.offsetWidth || 28) / 2;
             knob.style.left = `${center + radius * Math.cos(rad) - knobHalf}px`;
@@ -2053,6 +2063,29 @@
       }
       initDesktopRotateDials();
       initRotateSliders();
+
+      // UI scale (zoom) change listener: re-sync rotate dial tracks and knob positions immediately
+      if (!window._oftRotateDialScaleListenerAttached) {
+        window._oftRotateDialScaleListenerAttached = true;
+        window.addEventListener('oft-ui-scale-changed', () => {
+          try {
+            const dial = document.getElementById('dial-transform-rotate');
+            if (dial) {
+              syncRotateDialTrack();
+              const curInfo = (typeof getSelectedLayerAndBaseDims === 'function') ? getSelectedLayerAndBaseDims() : null;
+              const l = curInfo ? curInfo.layer : null;
+              let r = 0;
+              if (l) {
+                if (currentRotateAxis === 'x') r = l.rotX || 0;
+                else if (currentRotateAxis === 'y') r = l.rotY || 0;
+                else r = l.rotZ !== undefined ? l.rotZ : (l.rotation || 0);
+              }
+              updateRotateKnob(r);
+            }
+            updateDesktopRotateDials();
+          } catch (_) {}
+        });
+      }
 
       // 0. Z Position / Anchor Z Vertical Jog Wheel (#jog-pos-z)
       let posZInit = { z: 0, targetL: null, isAnchor: false };
