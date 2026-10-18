@@ -8,13 +8,13 @@ cloudflared.exe
 dist/
 native/dist/
 native/src-tauri/target/
-scratch/
+/scratch/
 .env
 .env.*
 !.env.example
 .vercel
 vercelgate
-storage/
+/storage/
 wrangler.jsonc
 .wrangler/
 

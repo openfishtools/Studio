@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Cross-Module State Synchronization & Temporal Dead Zone (TDZ) Fixes (`js/editor/editor-state.js`, `js/editor/editor-timeline-core.js`, `js/editor/editor-timeline-ops.js`, `js/editor/editor-inspector.js`)**: Resolved `isPlaying` TDZ initialization errors during `initTimelineRulerAndPan()` and eliminated `selectedLayerIds` cross-module `ReferenceError` crashes by hoisting module-level state declarations and binding shared mutable state via live `Object.defineProperty(window, ...)` getters and setters.
+- **Cloudflare Assets Ignore Rule Excluding `js/storage/db.js` (`.assetsignore`, `.gitignore`, `server.js`)**: Anchored `storage` ignore rules to root `/storage` with explicit `!/js/storage/**` negation so `js/storage/db.js` (`window.FishDB`) is never excluded during Cloudflare asset deployment, fixing database module loading and project saving/importing.
 
 ## [0.6.1] - 2026-10-17
 

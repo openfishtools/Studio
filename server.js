@@ -106,8 +106,8 @@ if (!process.env.VERCEL) {
         normalized.includes('.gemini') ||
         normalized.includes('.system_generated') ||
         normalized.includes('scratch') ||
-        normalized.startsWith('storage') ||
-        normalized.includes('/storage') ||
+        normalized === 'storage' ||
+        normalized.startsWith('storage/') ||
         normalized.endsWith('.ofts') ||
         normalized.startsWith('.')
       ) {

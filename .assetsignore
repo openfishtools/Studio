@@ -5,8 +5,11 @@ node_modules
 .gemini
 .system_generated
 vercelgate
-scratch
-storage
+/scratch
+/storage
+!/js/storage
+!/js/storage/**
+/scripts
 server.js
 run.*
 *.log
