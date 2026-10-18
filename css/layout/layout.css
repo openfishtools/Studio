@@ -169,12 +169,6 @@ html, body {
   transform: scale(0.95);
 }
 
-.btn-info-top {
-  padding: 0;
-  width: 34px;
-  justify-content: center;
-}
-
 .brand-wrapper {
   display: flex;
   flex-direction: column;
@@ -243,8 +237,8 @@ html, body {
   display: block;
   pointer-events: none;
   background-color: var(--color-primary);
-  -webkit-mask: url('../assets/doodles.svg') center / cover no-repeat;
-  mask: url('../assets/doodles.svg') center / cover no-repeat;
+  -webkit-mask: url('../../assets/doodles.svg') center / cover no-repeat;
+  mask: url('../../assets/doodles.svg') center / cover no-repeat;
 }
 
 /* ==========================================================================
@@ -643,23 +637,6 @@ html, body {
   overflow: hidden;
 }
 
-.projects-panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-  flex-shrink: 0;
-  user-select: none;
-}
-
-.projects-title {
-  font-family: var(--font-brand);
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
-  color: var(--color-primary);
-}
-
 /* Solid Count Badge (Number only, solid fill, no outline) */
 .project-count-badge {
   border: none;
@@ -734,15 +711,6 @@ html, body {
 
 
 
-
-.modal-helper-text {
-  font-family: var(--font-brand);
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-secondary);
-  margin-top: 8px;
-  margin-bottom: 2px;
-}
 
 /* Uploaded Project Action Buttons (Copy Link, QR, Delete) */
 .uploaded-actions {
@@ -1066,8 +1034,8 @@ html, body {
   color: var(--bg-canvas);
 }
 
-/* Loading & Empty States */
-.projects-loading, .projects-empty {
+/* Empty State */
+.projects-empty {
   padding: 36px 12px;
   text-align: center;
   color: var(--text-muted);

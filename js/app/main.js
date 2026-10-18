@@ -234,6 +234,7 @@ async function initProjectsFetcher() {
       renderProjects(projects, listContainer, countBadge);
     }
   }
+  window.loadAndRender = loadAndRender;
 
   function loadAndRenderUploaded() {
     let uploaded = [];
@@ -2155,7 +2156,7 @@ async function handleImportedFiles(files, dropzone, statusEl) {
       const targetPage = resolveTargetEditorPage();
       window.location.href = `${targetPage}?id=${encodeURIComponent(importedProject.id)}&template=1`;
     } else {
-      loadAndRender();
+      if (typeof window.loadAndRender === 'function') window.loadAndRender();
     }
   }, 300);
 }

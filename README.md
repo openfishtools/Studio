@@ -72,26 +72,34 @@ OpenFishTools Studio adalah aplikasi grafis gerak (motion graphics) dan penyunti
 ### Struktur Direktori Proyek
 
 ```text
-├── assets/          # Ikon vektor SVG, font, dan berkas statis
-├── css/             # Token desain tema dan lembar gaya CSS
-│   ├── theme.css    # Token warna utama dan tipografi
-│   ├── desktop.css  # Tampilan antarmuka desktop NLE
-│   ├── editor.css   # Tampilan antarmuka editor responsif
-│   └── modal.css    # Komponen dialog pop-up modular
-├── effects/         # Plugin efek visual mandiri (FishEffectsRegistry)
-├── js/              # Modul fungsional utama aplikasi
-│   ├── desktop.js   # Logika desktop, pengaturan track, dan graph editor
-│   ├── editor.js    # Komposisi canvas layer, manipulasi, dan playback
-│   ├── fishtool-engine.js  # Mesin transformasi matriks 2D/3D & rendering
-│   ├── FishExport-Enggine.js # Mesin ekspor WebCodecs
-│   └── main.js      # Peluncur proyek dan basis data IndexedDB
+├── assets/          # Berkas statis umum, ikon SVG, dan font
+├── css/             # Lembar gaya CSS berbasis domain
+│   ├── tokens/      # Token tema sentral (theme.css)
+│   ├── layout/      # Tata letak halaman (layout.css, editor.css, desktop.css)
+│   ├── components/  # Komponen UI modular (modal.css, drawer.css, popover.css, dll.)
+│   ├── panels/      # Panel khusus (transform-controller.css, effects-rack.css, dll.)
+│   └── fixes/       # Perbaikan kompatibilitas peramban (safari.css)
+├── effects/         # Plugin efek visual mandiri (FishEffectsRegistry, effects.wasm)
+├── Extension/       # Kartu ekstensi modular format .jsx (actions, toolbox, dll.)
+├── fticons/         # Ikon vektor dan glif font kustom
+├── js/              # Modul fungsional terstruktur berdasarkan domain
+│   ├── app/         # Entri aplikasi (main.js, desktop.js, template-editor.js, pwa-install.js)
+│   ├── core/        # Mesin matriks 2D/3D & rendering (fishtool-engine.js, text-engine.js, dll.)
+│   ├── media/       # Mesin audio/video, ekspor WebCodecs, dan cache RAM
+│   ├── editor/      # 11 modul editor non-linear modular (< 400 KB per modul)
+│   ├── extensions/  # Manajer kartu ekstensi, kontroler CEP, dan jembatan JSX
+│   ├── ui/          # Kontrol UI, popover, modal dialog, dan color picker
+│   ├── plugins/     # Plugin bentuk vektor, teks, dan generator efek visual
+│   ├── storage/     # Lapisan persistensi IndexedDB lokal (db.js)
+│   └── editor.js    # Fasad kompatibilitas mundur (mempertahankan 373 global window)
+├── vendor/          # Dependensi pihak ketiga (jszip, mp4-muxer, qrcode, ffmpeg, lamejs)
 ├── functions/       # Handler backend Cloudflare Pages / Workers
 ├── scripts/         # Skrip otomatisasi, pengujian, dan sinkronisasi
-│   ├── test-suite.js          # Skrip pengujian otomatis
-│   ├── static-scope-audit.js  # Audit cakupan AST dan sintaksis JS
-│   ├── prepare-wrangler.js    # Sinkronisasi konfigurasi Cloudflare dari .env
-│   └── sync-effects.js        # Generator manifest efek otomatis
-├── server.js        # Server pengembangan lokal
+│   ├── test-suite.js          # Skrip pengujian otomatis komprehensif (npm test)
+│   ├── static-scope-audit.js  # Audit cakupan AST Acorn dan identifier JS
+│   ├── sync-effects.js        # Generator manifest efek otomatis
+│   └── sync-version.js        # Sinkronisasi versi tunggal ke seluruh berkas
+├── server.js        # Server pengembangan lokal zero-dependency
 ├── version.json     # Sumber kebenaran tunggal untuk versi aplikasi
 └── CHANGELOG.md     # Catatan rilis kronologis
 ```
@@ -123,7 +131,7 @@ Karena berkas `.env` dan `wrangler.jsonc` diabaikan oleh Git (demi keamanan toke
      ```
 
 ### Pengujian Otomatis
-Jalankan rangkaian pengujian menyeluruh (validasi sintaksis, verifikasi cakupan AST, integritas dokumen HTML):
+Jalankan rangkaian pengujian menyeluruh (verifikasi sintaks, audit cakupan AST Acorn, sinkronisasi manifest, dan integritas HTML):
 ```bash
 npm test
 ```
@@ -204,27 +212,35 @@ OpenFishTools Studio is a browser-based motion graphics and video editing applic
 ### Project Structure
 
 ```text
-├── assets/          # Vector SVG icons, fonts, and static assets
-├── css/             # Design system tokens and component stylesheets
-│   ├── theme.css    # Central color and spacing tokens
-│   ├── desktop.css  # Desktop NLE styling
-│   ├── editor.css   # Responsive editor styling
-│   └── modal.css    # Modular modal components
-├── effects/         # Modular visual effect plugins (FishEffectsRegistry)
-├── js/              # Core client-side modules
-│   ├── desktop.js   # Desktop interface, track controls, and graph editor
-│   ├── editor.js    # Canvas compositor, layer operations, and playback
-│   ├── fishtool-engine.js  # 2D/3D matrix transforms and rendering pipeline
-│   ├── FishExport-Enggine.js # WebCodecs export engine
-│   └── main.js      # Project launcher and IndexedDB storage
+├── assets/          # Static assets, SVG vector icons, and fonts
+├── css/             # Domain-categorized CSS stylesheets
+│   ├── tokens/      # Central design system tokens (theme.css)
+│   ├── layout/      # Page-level layouts (layout.css, editor.css, desktop.css)
+│   ├── components/  # Modular UI components (modal.css, drawer.css, popover.css, etc.)
+│   ├── panels/      # Tool panels (transform-controller.css, effects-rack.css, etc.)
+│   └── fixes/       # Browser compatibility patches (safari.css)
+├── effects/         # Modular visual effect plugins (FishEffectsRegistry, effects.wasm)
+├── Extension/       # Standalone .jsx extension cards (actions, toolbox, etc.)
+├── fticons/         # Custom vector icon font glyphs and assets
+├── js/              # Domain-categorized application subsystems
+│   ├── app/         # Application entrypoints (main.js, desktop.js, template-editor.js, pwa-install.js)
+│   ├── core/        # Core 2D/3D affine matrix and rendering engines (fishtool-engine.js, text-engine.js, etc.)
+│   ├── media/       # Audio/video processing, WebCodecs export engine, and RAM cache
+│   ├── editor/      # 11 modular NLE subsystems (< 400 KB each)
+│   ├── extensions/  # Extension host, CEP controllers, and JSX translation bridge
+│   ├── ui/          # UI widgets, popovers, modals, and color pickers
+│   ├── plugins/     # Vector shapes, typography, and visual effect generators
+│   ├── storage/     # Local IndexedDB persistence layer (db.js)
+│   └── editor.js    # Backward-compatibility facade preserving all 373 window.* globals
+├── vendor/          # Third-party vendor bundles (jszip, mp4-muxer, qrcode, ffmpeg, lamejs)
 ├── functions/       # Cloudflare Pages / Workers backend handlers
-├── scripts/         # Verification test suite and build synchronizers
-│   ├── test-suite.js          # Automated test runner
-│   ├── static-scope-audit.js  # AST scope and syntax audit
-│   ├── prepare-wrangler.js    # Wrangler configuration synchronizer
-│   └── sync-effects.js        # Effect manifest generator
-├── server.js        # Local development server
-├── version.json     # Single source of truth for versioning
+├── scripts/         # Build synchronizers, scope auditors, and verification scripts
+│   ├── test-suite.js          # Comprehensive test runner (npm test)
+│   ├── static-scope-audit.js  # Acorn AST static scope and undeclared identifier audit
+│   ├── sync-effects.js        # Automatic effect manifest generator
+│   └── sync-version.js        # SSOT version synchronizer
+├── server.js        # Zero-dependency local development server
+├── version.json     # Single source of truth for repository version
 └── CHANGELOG.md     # Chronological release notes
 ```
 
@@ -255,7 +271,7 @@ Because `.env` and `wrangler.jsonc` are gitignored (to protect credentials and K
      ```
 
 ### Automated Testing
-Run the comprehensive test suite (syntax validation, AST scope verification, HTML integrity):
+Run the comprehensive test suite (syntax verification, Acorn AST scope audit, manifest synchronization, and HTML integrity check):
 ```bash
 npm test
 ```

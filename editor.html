@@ -33,23 +33,23 @@
   </script>
 
   <!-- CSS: Theme (Colors & Variables, Cal Sans Font), Editor Layout, and Modular Modal / Popover / Drawer / Switch -->
-  <link rel="stylesheet" href="css/theme.css">
+  <link rel="stylesheet" href="css/tokens/theme.css">
   <link rel="stylesheet" href="fticons/fticons.css?v=3">
-  <link rel="stylesheet" href="css/editor.css">
-  <link rel="stylesheet" href="css/modal.css">
-  <link rel="stylesheet" href="css/popover.css">
-  <link rel="stylesheet" href="css/drawer.css">
-  <link rel="stylesheet" href="css/switch.css">
-  <link rel="stylesheet" href="css/text-format.css">
-  <link rel="stylesheet" href="css/segmented-button.css">
-  <link rel="stylesheet" href="css/wireframe.css">
-  <link rel="stylesheet" href="css/transform-controller.css">
-  <link rel="stylesheet" href="css/effects-rack.css">
-  <link rel="stylesheet" href="css/color-picker.css">
-  <link rel="stylesheet" href="css/template-editor.css">
-  <link rel="stylesheet" href="css/safari.css">
-  <link rel="stylesheet" href="css/extensions.css">
-  <script src="js/sync-height.js"></script>
+  <link rel="stylesheet" href="css/layout/editor.css">
+  <link rel="stylesheet" href="css/components/modal.css">
+  <link rel="stylesheet" href="css/components/popover.css">
+  <link rel="stylesheet" href="css/components/drawer.css">
+  <link rel="stylesheet" href="css/components/switch.css">
+  <link rel="stylesheet" href="css/panels/text-format.css">
+  <link rel="stylesheet" href="css/components/segmented-button.css">
+  <link rel="stylesheet" href="css/panels/wireframe.css">
+  <link rel="stylesheet" href="css/panels/transform-controller.css">
+  <link rel="stylesheet" href="css/panels/effects-rack.css">
+  <link rel="stylesheet" href="css/components/color-picker.css">
+  <link rel="stylesheet" href="css/panels/template-editor.css">
+  <link rel="stylesheet" href="css/fixes/safari.css">
+  <link rel="stylesheet" href="css/panels/extensions.css">
+  <script src="js/ui/sync-height.js"></script>
   <script>
     window.DEBUG = true;
     try {
@@ -3176,13 +3176,6 @@
     </div>
   </div>
 
-  <!-- Keep old export-bitrate-switch for backward compat (hidden) -->
-  <div id="export-bitrate-switch" style="display:none;" aria-hidden="true">
-    <button data-value="light" class="segmented-switch-item">Light</button>
-    <button data-value="normal" class="segmented-switch-item is-active is-selected">Normal</button>
-    <button data-value="detail" class="segmented-switch-item">Detail</button>
-  </div>
-
   <!-- ==========================================================================
        MODULAR AUDIO EFFECTS ADD POPOVER (.is-menu-popover)
        ========================================================================== -->
@@ -3469,8 +3462,8 @@
       <div class="modal-body">
         <!-- 1. File Name Field -->
         <div class="modal-form-group">
-          <label class="modal-label" for="export-video-filename">FILE NAME</label>
-          <input type="text" class="modal-input" id="export-video-filename" placeholder="New_Project" spellcheck="false" autocomplete="off">
+          <label class="modal-label" for="export-video-modal-filename">FILE NAME</label>
+          <input type="text" class="modal-input" id="export-video-modal-filename" placeholder="New_Project" spellcheck="false" autocomplete="off">
         </div>
 
 
@@ -3664,7 +3657,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.6.1</span>
+          <span class="welcome-badge">v0.6.2</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3694,11 +3687,54 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.2 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.2</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Oct 18, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Professional Domain-Categorized Directory Structure (`js/`, `css/`, `vendor/`)</span>
+                  <span class="changelog-item-desc">Reorganized all JavaScript, CSS, and vendor files into structured domain subdirectories (`js/app/`, `js/core/`, `js/media/`, `js/editor/`, `js/extensions/`, `js/ui/`, `js/plugins/`, `js/storage/`, `css/tokens/`, `css/layout/`, `css/components/`, `css/panels/`, `css/fixes/`, and `vendor/`) and updated all asset, worker, and script paths across `index.html`, `editor.html`, `desktop.html`, `privacy.html`, and `terms.html`.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Runtime Canvas &amp; Timeline Performance Optimization (`js/editor/editor-canvas.js`, `js/editor/editor-timeline-ops.js`, `js/editor/editor-media.js`, `js/editor/editor-state.js`)</span>
+                  <span class="changelog-item-desc">Implemented `requestAnimationFrame` canvas render coalescing (`redrawComposition`), pre-allocated zero-GC scratch arrays/sets in `renderCanvasFrame`, reflow suppression guards during timeline playback/scrubbing/panning, `{ passive: true }` high-frequency event listeners, an Object URL lifecycle registry (`_studioObjectUrls`), GPU buffer release on layer teardown (`releaseLayerMediaElement`), and centralized editor cleanup (`teardownEditor`).</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Asynchronous WASM Effects Loader (`effects/loader.js`, `scripts/sync-effects.js`)</span>
+                  <span class="changelog-item-desc">Replaced main-thread synchronous `XMLHttpRequest` with asynchronous `fetch()` over HTTP/HTTPS when loading `effects.wasm`, eliminating browser deprecation warnings while retaining a fallback for local `file://` execution.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Codebase Audit, Dead Code Removal &amp; AST Scope Verification (`scripts/static-scope-audit.js`, `scripts/test-suite.js`, `AGENTS.md`, `README.md`)</span>
+                  <span class="changelog-item-desc">Removed dead functions, duplicate DOM IDs, and redundant debugging console logs across HTML, CSS, and JS files, and upgraded the Acorn AST scope auditor to dynamically verify cross-module `window` exports across all 138 JS files.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Cross-Module State Synchronization &amp; Temporal Dead Zone (TDZ) Fixes (`js/editor/editor-state.js`, `js/editor/editor-timeline-core.js`, `js/editor/editor-timeline-ops.js`, `js/editor/editor-inspector.js`)</span>
+                  <span class="changelog-item-desc">Resolved `isPlaying` TDZ initialization errors during `initTimelineRulerAndPan()` and eliminated `selectedLayerIds` cross-module `ReferenceError` crashes by hoisting module-level state declarations and binding shared mutable state via live `Object.defineProperty(window, ...)` getters and setters.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.1 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.1</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Oct 17, 2026</span>
               </div>
               <div class="welcome-changelog-item">
@@ -5960,54 +5996,66 @@
   </div>
 
   <!-- Scripts: Database, Modular Modal, Popover, Drawer & Switch Systems -->
-  <script src="js/jszip.min.js"></script>
+  <script src="vendor/jszip.min.js"></script>
   <script src="vendor/ffmpeg/ffmpeg.min.js"></script>
   <script src="vendor/mp4-muxer.js"></script>
   <script src="vendor/lamejs/lame.min.js"></script>
-  <script src="js/db.js"></script>
-  <script src="js/modal.js"></script>
-  <script src="js/pwa-install.js"></script>
-  <script src="js/popover.js?v=4"></script>
-  <script src="js/drawer.js"></script>
-  <script src="js/switch.js"></script>
-  <script src="js/wireframe.js?v=4"></script>
-  <script src="js/canvas-overlay.js"></script>
-  <script src="js/shapes.js"></script>
-  <script src="shapes/rectangle.js"></script>
-  <script src="shapes/triangle.js"></script>
-  <script src="shapes/circle.js"></script>
-  <script src="shapes/star.js"></script>
-  <script src="shapes/polygon.js"></script>
-  <script src="shapes/capsule.js"></script>
-  <script src="shapes/heart.js"></script>
-  <script src="element/number-input.js"></script>
-  <script src="element/slider.js"></script>
-  <script src="element/dropdown.js"></script>
-  <script src="element/segmented.js"></script>
-  <script src="element/color-input.js"></script>
-  <script src="element/index.js"></script>
-  <script src="js/effects.js?v=4"></script>
+  <script src="js/storage/db.js"></script>
+  <script src="js/ui/modal.js"></script>
+  <script src="js/app/pwa-install.js"></script>
+  <script src="js/ui/popover.js?v=4"></script>
+  <script src="js/ui/drawer.js"></script>
+  <script src="js/ui/switch.js"></script>
+  <script src="js/core/wireframe.js?v=4"></script>
+  <script src="js/core/canvas-overlay.js"></script>
+  <script src="js/plugins/shapes.js"></script>
+  <script src="js/plugins/shapes/rectangle.js"></script>
+  <script src="js/plugins/shapes/triangle.js"></script>
+  <script src="js/plugins/shapes/circle.js"></script>
+  <script src="js/plugins/shapes/star.js"></script>
+  <script src="js/plugins/shapes/polygon.js"></script>
+  <script src="js/plugins/shapes/capsule.js"></script>
+  <script src="js/plugins/shapes/heart.js"></script>
+  <script src="js/ui/elements/number-input.js"></script>
+  <script src="js/ui/elements/slider.js"></script>
+  <script src="js/ui/elements/dropdown.js"></script>
+  <script src="js/ui/elements/segmented.js"></script>
+  <script src="js/ui/elements/color-input.js"></script>
+  <script src="js/ui/elements/index.js"></script>
+  <script src="js/plugins/effects.js?v=4"></script>
   <!-- All Modular Effects compiled in WASM binary core (Studio/effects/effects.wasm) -->
   <script src="effects/loader.js?v=wasm"></script>
-  <script src="js/color-picker.js"></script>
-  <script src="js/fishtool-engine.js?v=8"></script>
-  <script src="js/fish-audio-engine.js"></script>
-  <script src="js/frame-extractor.js"></script>
-  <script src="js/preview-cache.js"></script>
-  <script src="js/bg-removal-engine.js?v=patch"></script>
-  <script src="js/template-editor.js"></script>
-  <script src="js/text-engine.js?v=scale-font-sync"></script>
-  <script src="text/default.js?v=unlimited-text-pad"></script>
-  <script src="js/motion-blur-engine.js"></script>
+  <script src="js/ui/color-picker.js"></script>
+  <script src="js/core/fishtool-engine.js?v=8"></script>
+  <script src="js/media/fish-audio-engine.js"></script>
+  <script src="js/media/frame-extractor.js"></script>
+  <script src="js/media/preview-cache.js"></script>
+  <script src="js/media/bg-removal-engine.js?v=patch"></script>
+  <script src="js/app/template-editor.js"></script>
+  <script src="js/core/text-engine.js?v=scale-font-sync"></script>
+  <script src="js/plugins/text/default.js?v=unlimited-text-pad"></script>
+  <script src="js/core/motion-blur-engine.js"></script>
 
-  <script src="js/FishExport-Enggine.js?v=patch"></script>
-  <script src="js/editor.js?v=unlink-pro-v2"></script>
-  <script src="js/attributes-clipboard.js"></script>
-  <script src="js/extensions.js?v=card-ext"></script>
-  <script src="element/card-builder.js"></script>
-  <script src="js/extension-manager.js"></script>
-  <script src="js/openfishtools-generators3d.js?v=patch"></script>
-  <script src="js/openfishtools-controller.js?v=patch"></script>
-  <script src="js/JSX-Translator.js?v=patch"></script>
+  <script src="js/media/fish-export-engine.js?v=patch"></script>
+  <!-- OpenFish Studio Modular Editor Subsystems -->
+  <script src="js/editor/editor-state.js"></script>
+  <script src="js/editor/editor-media.js"></script>
+  <script src="js/editor/editor-animation.js"></script>
+  <script src="js/editor/editor-canvas.js"></script>
+  <script src="js/editor/editor-inspector.js"></script>
+  <script src="js/editor/editor-layers.js"></script>
+  <script src="js/editor/editor-effects.js"></script>
+  <script src="js/editor/editor-timeline-core.js"></script>
+  <script src="js/editor/editor-timeline-ops.js"></script>
+  <script src="js/editor/editor-export.js"></script>
+  <script src="js/editor/editor-extension-bridge.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/extensions/attributes-clipboard.js"></script>
+  <script src="js/extensions/extensions.js?v=card-ext"></script>
+  <script src="js/ui/elements/card-builder.js"></script>
+  <script src="js/extensions/extension-manager.js"></script>
+  <script src="js/extensions/openfishtools-generators3d.js?v=patch"></script>
+  <script src="js/extensions/openfishtools-controller.js?v=patch"></script>
+  <script src="js/extensions/JSX-Translator.js?v=patch"></script>
 </body>
 </html>

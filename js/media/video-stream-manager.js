@@ -46,7 +46,7 @@
 
     _initWorker() {
       try {
-        this.worker = new Worker('js/video-decoder-worker.js');
+        this.worker = new Worker('js/media/video-decoder-worker.js');
         this.worker.onmessage = (e) => this._onWorkerMessage(e);
         this.worker.onerror = (err) => {
           console.warn('[VideoStreamManager] Worker error, falling back to HTML5 video:', err);

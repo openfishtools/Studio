@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-18
+
+### Improved
+- **Modular Editor Architecture (`js/editor/*.js`, `js/editor.js`, `editor.html`, `desktop.html`)**: Decomposed the monolithic `js/editor.js` (~2 MB, 43k lines) into 11 cohesive, domain-focused modules (`editor-state.js`, `editor-media.js`, `editor-animation.js`, `editor-canvas.js`, `editor-inspector.js`, `editor-layers.js`, `editor-effects.js`, `editor-timeline-core.js`, `editor-timeline-ops.js`, `editor-export.js`, and `editor-extension-bridge.js`), each strictly under 400 KB with live bidirectional `window` state synchronization.
+- **Professional Domain-Categorized Directory Structure (`js/`, `css/`, `vendor/`)**: Reorganized all JavaScript, CSS, and vendor files into structured domain subdirectories (`js/app/`, `js/core/`, `js/media/`, `js/editor/`, `js/extensions/`, `js/ui/`, `js/plugins/`, `js/storage/`, `css/tokens/`, `css/layout/`, `css/components/`, `css/panels/`, `css/fixes/`, and `vendor/`) and updated all asset, worker, and script paths across `index.html`, `editor.html`, `desktop.html`, `privacy.html`, and `terms.html`.
+- **Runtime Canvas & Timeline Performance Optimization (`js/editor/editor-canvas.js`, `js/editor/editor-timeline-ops.js`, `js/editor/editor-media.js`, `js/editor/editor-state.js`)**: Implemented `requestAnimationFrame` canvas render coalescing (`redrawComposition`), pre-allocated zero-GC scratch arrays/sets in `renderCanvasFrame`, reflow suppression guards during timeline playback/scrubbing/panning, `{ passive: true }` high-frequency event listeners, an Object URL lifecycle registry (`_studioObjectUrls`), GPU buffer release on layer teardown (`releaseLayerMediaElement`), and centralized editor cleanup (`teardownEditor`).
+- **Asynchronous WASM Effects Loader (`effects/loader.js`, `scripts/sync-effects.js`)**: Replaced main-thread synchronous `XMLHttpRequest` with asynchronous `fetch()` over HTTP/HTTPS when loading `effects.wasm`, eliminating browser deprecation warnings while retaining a fallback for local `file://` execution.
+- **Codebase Audit, Dead Code Removal & AST Scope Verification (`scripts/static-scope-audit.js`, `scripts/test-suite.js`, `AGENTS.md`, `README.md`)**: Removed dead functions, duplicate DOM IDs, and redundant debugging console logs across HTML, CSS, and JS files, and upgraded the Acorn AST scope auditor to dynamically verify cross-module `window` exports across all 138 JS files.
+
+### Fixed
+- **Cross-Module State Synchronization & Temporal Dead Zone (TDZ) Fixes (`js/editor/editor-state.js`, `js/editor/editor-timeline-core.js`, `js/editor/editor-timeline-ops.js`, `js/editor/editor-inspector.js`)**: Resolved `isPlaying` TDZ initialization errors during `initTimelineRulerAndPan()` and eliminated `selectedLayerIds` cross-module `ReferenceError` crashes by hoisting module-level state declarations and binding shared mutable state via live `Object.defineProperty(window, ...)` getters and setters.
+
 ## [0.6.1] - 2026-10-17
 
 ### Improved

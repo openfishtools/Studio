@@ -575,8 +575,6 @@
           window.parent.showDashboardToast(message, 2400, type);
         } else if (typeof window.showEffectsRackToast === 'function') {
           window.showEffectsRackToast(message, isError ? 'warn' : 'info');
-        } else {
-          console.log(`[Card:${def.id}] ${message}`);
         }
       },
 

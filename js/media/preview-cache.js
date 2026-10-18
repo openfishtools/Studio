@@ -937,8 +937,10 @@
         if (!this.offscreenCanvas) {
           this.offscreenCanvas = document.createElement('canvas');
         }
-        this.offscreenCanvas.width = activeCanvas.width;
-        this.offscreenCanvas.height = activeCanvas.height;
+        if (this.offscreenCanvas.width !== activeCanvas.width || this.offscreenCanvas.height !== activeCanvas.height) {
+          this.offscreenCanvas.width = activeCanvas.width;
+          this.offscreenCanvas.height = activeCanvas.height;
+        }
 
         const targetSec = targetFrame / this.fps;
 

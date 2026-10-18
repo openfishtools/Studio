@@ -3,8 +3,10 @@ const path = require('path');
 const acorn = require('acorn');
 const walk = require('acorn-walk');
 
-const KNOWN_GLOBALS = new Set([
-  // JS Builtins
+const STUDIO_ROOT = path.resolve(__dirname, '..');
+
+const BUILTIN_GLOBALS = new Set([
+  // JS Builtins & Web APIs
   'window', 'Window', 'document', 'navigator', 'console', 'location', 'history',
   'localStorage', 'sessionStorage', 'performance', 'setTimeout', 'clearTimeout',
   'setInterval', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame',
@@ -36,30 +38,146 @@ const KNOWN_GLOBALS = new Set([
   'caches', 'Response', 'ImageBitmap', 'requestIdleCallback', 'cancelIdleCallback',
   'undefined', 'Infinity', 'NaN', 'arguments', 'TextEncoder', 'TextDecoder',
   'DOMParser', 'XMLSerializer', 'Intl', 'eval', 'Function', 'SharedArrayBuffer',
-  'Atomics', 'WebAssembly', 'Request', 'ReadableStream', 'AbortSignal',
+  'Atomics', 'WebAssembly', 'Request', 'ReadableStream', 'AbortSignal', 'Headers',
 
-  // Project known globals
-  'FishTemplateEditor', 'FishDatabase', 'FishEffectsRegistry', 'FishEffectsLoader',
-  'FishEngine', 'OFT_VERSION', 'Modal', 'Popover', 'UndoRedoManager', 'JSZip',
-  'Mp4Muxer', 'lamejs', 'currentProjectState', 'resMap', 'compositionStack',
-  'currentActivePrecomp', 'isSelectorMode', 'getProjectFps', 'isAnyPlaybackActive',
-  'renderTimelineLayers', 'selectTimelineLayer', 'deselectTimelineLayer',
-  'centerSelectedTimelineLayer', 'updateEditorHeaderMode', 'updatePlayButtonUI',
-  'updateGraphEditorUI', 'syncLayerKeyframeMarkersInPlace', 'syncBeatmarkDrawerUI',
-  'updateVolumeAndSpeedBtnState', 'enterPrecompose', 'exitPrecompose',
-  'toggleBeatmarkAtCurrentTime', 'seekTimelineToTime', 'updateGraphPlayheadLine',
-  'updateBeatmarkPlayheadNeedle', 'pausePlayback', 'formatTransformNumber',
-  'findSnapTarget', 'renderMediaGrid', 'decodeAudioFromBlob', 'audioBufferToMp3',
-  'showOFTSProgressModal', 'updateOFTSProgress', 'hideOFTSProgressModal',
-  'processTextTransformDirectives', 'parseKeyframes', 'renderKeyframeMarkers',
-  'buildTransformMatrix', 'applyTransforms', 'parseFontString', 'drawTextLayer',
-  'drawShapeLayer', 'drawImageLayer', 'drawVideoLayer', 'drawAudioWaveform',
-  'drawSolidLayer', 'drawNullLayer', 'drawCameraLayer', 'drawAdjustmentLayer',
-  'processLayerEffects', 'activeModal', 'closeModal', 'openModal', 'module', 'exports',
-  'require', '__dirname', '__filename', 'process', 'electronAPI', 'electronBridge',
-  'tauri', '__TAURI__', '__TAURI_INTERNALS__', 'global', 'define', 'Buffer', 'setImmediate',
-  'FishElements'
+  // Environment & External Vendor / Test Globals
+  'module', 'exports', 'require', '__dirname', '__filename', 'process',
+  'electronAPI', 'electronBridge', 'tauri', '__TAURI__', '__TAURI_INTERNALS__',
+  'global', 'define', 'Buffer', 'setImmediate', 'clearImmediate',
+  'JSZip', 'Mp4Muxer', 'lamejs', 'createFFmpeg',
+  'describe', 'it', 'before', 'after', 'beforeEach', 'afterEach', 'assert'
 ]);
+
+// Keep backward-compatible alias for tests inspecting KNOWN_GLOBALS
+const KNOWN_GLOBALS = BUILTIN_GLOBALS;
+
+function getAllProjectJsFiles() {
+  const dirs = ['js', 'effects', 'scripts', 'element', 'shapes', 'text', 'functions'];
+  const excludes = ['vendor', 'node_modules', '.git', '.min.js', 'jszip.min.js'];
+  const files = [];
+
+  function walkDir(dir) {
+    const fullDir = path.isAbsolute(dir) ? dir : path.join(STUDIO_ROOT, dir);
+    if (!fs.existsSync(fullDir)) return;
+    const entries = fs.readdirSync(fullDir, { withFileTypes: true });
+    for (const ent of entries) {
+      if (ent.name.startsWith('.') || (ent.name.startsWith('_') && ent.name !== '_worker.js') || ent.name === 'node_modules' || ent.name === '.git' || ent.name === 'vendor') continue;
+      const sub = path.join(fullDir, ent.name);
+      if (excludes.some(ex => sub.includes(ex))) continue;
+      if (ent.isDirectory()) {
+        walkDir(sub);
+      } else if (ent.isFile() && ent.name.endsWith('.js') && !ent.name.includes('.min.js') && !ent.name.endsWith('.test.js')) {
+        files.push(sub);
+      }
+    }
+  }
+
+  dirs.forEach(walkDir);
+  ['server.js', 'sw.js', '_worker.js'].forEach(f => {
+    const p = path.join(STUDIO_ROOT, f);
+    if (fs.existsSync(p)) files.push(p);
+  });
+  return Array.from(new Set(files));
+}
+
+let dynamicGlobalsCache = null;
+
+function collectExportedGlobals(files = null) {
+  if (!files && dynamicGlobalsCache) return dynamicGlobalsCache;
+  const exported = new Set();
+  const targetFiles = files || getAllProjectJsFiles();
+
+  for (const file of targetFiles) {
+    let code;
+    try {
+      code = fs.readFileSync(file, 'utf8');
+    } catch (_) {
+      continue;
+    }
+
+    let ast;
+    let isModule = false;
+    try {
+      ast = acorn.parse(code, {
+        ecmaVersion: 'latest',
+        sourceType: 'script',
+        allowReturnOutsideFunction: true,
+        allowAwaitOutsideFunction: true
+      });
+    } catch (_) {
+      try {
+        ast = acorn.parse(code, {
+          ecmaVersion: 'latest',
+          sourceType: 'module',
+          allowReturnOutsideFunction: true,
+          allowAwaitOutsideFunction: true
+        });
+        isModule = true;
+      } catch (_) {
+        continue;
+      }
+    }
+
+    walk.simple(ast, {
+      AssignmentExpression(node) {
+        if (node.left.type === 'MemberExpression') {
+          const obj = node.left.object;
+          const prop = node.left.property;
+          const isGlobalObj = (obj.type === 'Identifier' && (obj.name === 'window' || obj.name === 'globalThis' || obj.name === 'self' || obj.name === 'global')) ||
+                              (obj.type === 'MemberExpression' && obj.property && obj.property.name === 'window');
+          if (isGlobalObj) {
+            if (prop.type === 'Identifier' && !node.left.computed) {
+              exported.add(prop.name);
+            } else if (prop.type === 'Literal' && typeof prop.value === 'string') {
+              exported.add(prop.value);
+            }
+          }
+        }
+      },
+      CallExpression(node) {
+        if (node.callee.type === 'MemberExpression' &&
+            node.callee.object.type === 'Identifier' && node.callee.object.name === 'Object' &&
+            node.callee.property.type === 'Identifier' && node.callee.property.name === 'defineProperty') {
+          if (node.arguments.length >= 2) {
+            const target = node.arguments[0];
+            const propName = node.arguments[1];
+            if (target.type === 'Identifier' && (target.name === 'window' || target.name === 'globalThis' || target.name === 'self' || target.name === 'global')) {
+              if (propName.type === 'Literal' && typeof propName.value === 'string') {
+                exported.add(propName.value);
+              }
+            }
+          }
+        }
+      },
+      Program(node) {
+        const isNodeOnly = file.includes(path.sep + 'scripts' + path.sep) || file.endsWith('server.js') || file.endsWith('_worker.js');
+        if (isNodeOnly || isModule) return;
+        for (const item of node.body) {
+          if (item.type === 'FunctionDeclaration' && item.id) {
+            exported.add(item.id.name);
+          } else if (item.type === 'ClassDeclaration' && item.id) {
+            exported.add(item.id.name);
+          } else if (item.type === 'VariableDeclaration' && item.kind === 'var') {
+            for (const d of item.declarations) {
+              extractPatternDeclarations(d.id, name => exported.add(name));
+            }
+          }
+        }
+      }
+    });
+  }
+
+  if (!files) dynamicGlobalsCache = exported;
+  return exported;
+}
+
+let effectiveGlobalsCache = null;
+
+function getEffectiveGlobals(customFiles = null) {
+  const dynamic = collectExportedGlobals(customFiles);
+  effectiveGlobalsCache = new Set([...BUILTIN_GLOBALS, ...dynamic]);
+  return effectiveGlobalsCache;
+}
 
 class Scope {
   constructor(parent = null, isFunction = false) {
@@ -109,7 +227,8 @@ function extractPatternDeclarations(node, addFn) {
   }
 }
 
-function analyzeFile(filePath) {
+function analyzeFile(filePath, customGlobals = null) {
+  const effectiveGlobals = customGlobals || effectiveGlobalsCache || (effectiveGlobalsCache = getEffectiveGlobals());
   const code = fs.readFileSync(filePath, 'utf8');
   let ast;
   try {
@@ -121,7 +240,21 @@ function analyzeFile(filePath) {
       allowAwaitOutsideFunction: true
     });
   } catch (err) {
-    return { error: `Parse error: ${err.message} at line ${err.loc ? err.loc.line : '?'}` };
+    if (err.message.includes('sourceType: module') || err.message.includes('import') || err.message.includes('export')) {
+      try {
+        ast = acorn.parse(code, {
+          ecmaVersion: 'latest',
+          sourceType: 'module',
+          locations: true,
+          allowReturnOutsideFunction: true,
+          allowAwaitOutsideFunction: true
+        });
+      } catch (esmErr) {
+        return { error: `Parse error (module): ${esmErr.message} at line ${esmErr.loc ? esmErr.loc.line : '?'}` };
+      }
+    } else {
+      return { error: `Parse error: ${err.message} at line ${err.loc ? err.loc.line : '?'}` };
+    }
   }
 
   const undeclaredUses = [];
@@ -145,6 +278,28 @@ function analyzeFile(filePath) {
         } else if (item.type === 'VariableDeclaration') {
           for (const decl of item.declarations) {
             extractPatternDeclarations(decl.id, name => currentScope.add(name));
+          }
+        } else if (item.type === 'ImportDeclaration') {
+          for (const spec of item.specifiers) {
+            if (spec.local && spec.local.name) {
+              currentScope.add(spec.local.name);
+            }
+          }
+        } else if (item.type === 'ExportNamedDeclaration') {
+          if (item.declaration) {
+            if (item.declaration.type === 'FunctionDeclaration' && item.declaration.id) {
+              currentScope.add(item.declaration.id.name);
+            } else if (item.declaration.type === 'ClassDeclaration' && item.declaration.id) {
+              currentScope.add(item.declaration.id.name);
+            } else if (item.declaration.type === 'VariableDeclaration') {
+              for (const decl of item.declaration.declarations) {
+                extractPatternDeclarations(decl.id, name => currentScope.add(name));
+              }
+            }
+          }
+        } else if (item.type === 'ExportDefaultDeclaration') {
+          if (item.declaration && item.declaration.id && item.declaration.id.name) {
+            currentScope.add(item.declaration.id.name);
           }
         }
       }
@@ -231,7 +386,7 @@ function analyzeFile(filePath) {
     if (node.type === 'AssignmentExpression') {
       if (node.left.type === 'Identifier') {
         const name = node.left.name;
-        if (!currentScope.has(name) && !KNOWN_GLOBALS.has(name)) {
+        if (!currentScope.has(name) && !effectiveGlobals.has(name)) {
           implicitGlobals.push({
             name,
             line: node.loc.start.line,
@@ -244,7 +399,7 @@ function analyzeFile(filePath) {
     if (node.type === 'Identifier') {
       const name = node.name;
       const isRef = isReference(node, parent);
-      if (isRef && !currentScope.has(name) && !KNOWN_GLOBALS.has(name)) {
+      if (isRef && !currentScope.has(name) && !effectiveGlobals.has(name)) {
         if (!(parent && parent.type === 'UnaryExpression' && parent.operator === 'typeof')) {
           undeclaredUses.push({
             name,
@@ -306,27 +461,80 @@ function isReference(node, parent) {
   if (parent.type === 'ImportSpecifier' || parent.type === 'ImportDefaultSpecifier' || parent.type === 'ImportNamespaceSpecifier') {
     return false;
   }
+  if (parent.type === 'ExportSpecifier' && parent.exported === node) {
+    return false;
+  }
   if (parent.type === 'LabeledStatement' || parent.type === 'BreakStatement' || parent.type === 'ContinueStatement') {
     return false;
   }
   return true;
 }
 
-module.exports = { analyzeFile };
+module.exports = { analyzeFile, collectExportedGlobals, getEffectiveGlobals, BUILTIN_GLOBALS, KNOWN_GLOBALS };
 
 if (require.main === module) {
-  const targetFiles = process.argv.slice(2);
+  const rawArgs = process.argv.slice(2);
+  let targetFiles = [];
+
+  function collectFiles(p) {
+    if (!fs.existsSync(p)) return;
+    const stat = fs.statSync(p);
+    if (stat.isFile() && p.endsWith('.js')) {
+      if (!p.includes('jszip.min.js') && !p.includes('vendor' + path.sep) && !p.endsWith('.min.js')) {
+        targetFiles.push(p);
+      }
+    } else if (stat.isDirectory()) {
+      const entries = fs.readdirSync(p, { withFileTypes: true });
+      for (const ent of entries) {
+        if (ent.name.startsWith('.') || ent.name === 'node_modules' || ent.name === '.git' || ent.name === 'vendor') continue;
+        const sub = path.join(p, ent.name);
+        if (ent.isDirectory()) {
+          collectFiles(sub);
+        } else if (ent.isFile() && ent.name.endsWith('.js') && !ent.name.includes('.min.js')) {
+          targetFiles.push(sub);
+        }
+      }
+    }
+  }
+
+  const fileListArg = rawArgs.find(a => a.startsWith('--file-list='));
+  if (fileListArg) {
+    const listPath = fileListArg.slice('--file-list='.length);
+    if (fs.existsSync(listPath)) {
+      const listContent = fs.readFileSync(listPath, 'utf8');
+      const lines = listContent.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      lines.forEach(collectFiles);
+    }
+  } else if (rawArgs.includes('--stdin') || rawArgs.includes('-')) {
+    const listContent = fs.readFileSync(0, 'utf8');
+    const lines = listContent.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    lines.forEach(collectFiles);
+  } else if (rawArgs.length === 0) {
+    ['js', 'effects', 'scripts', 'element', 'shapes', 'text', 'functions'].forEach(collectFiles);
+    ['server.js', 'sw.js', '_worker.js'].forEach(f => {
+      if (fs.existsSync(f)) targetFiles.push(f);
+    });
+  } else {
+    rawArgs.forEach(arg => collectFiles(arg));
+  }
+
+  targetFiles = Array.from(new Set(targetFiles)).sort();
+  const effectiveGlobals = getEffectiveGlobals();
+
+  let hasErrors = false;
   for (const f of targetFiles) {
     console.log(`Analyzing ${f}...`);
-    const res = analyzeFile(f);
+    const res = analyzeFile(f, effectiveGlobals);
     if (res.error) {
       console.error(`  ERROR: ${res.error}`);
+      hasErrors = true;
     } else {
       if (res.implicitGlobals.length > 0) {
         console.log(`  Implicit global assignments (${res.implicitGlobals.length}):`);
         for (const item of res.implicitGlobals.slice(0, 20)) {
           console.log(`    Line ${item.line}:${item.col} - ${item.name}`);
         }
+        hasErrors = true;
       }
       if (res.undeclaredUses.length > 0) {
         console.log(`  Undeclared references (${res.undeclaredUses.length}):`);
@@ -338,10 +546,14 @@ if (require.main === module) {
         for (const [name, lines] of Object.entries(byName)) {
           console.log(`    "${name}" on lines: ${lines.slice(0, 8).join(', ')}${lines.length > 8 ? ` (+${lines.length - 8} more)` : ''}`);
         }
+        hasErrors = true;
       }
       if (res.implicitGlobals.length === 0 && res.undeclaredUses.length === 0) {
         console.log(`  PASS: No issues found.`);
       }
     }
+  }
+  if (hasErrors) {
+    process.exit(1);
   }
 }

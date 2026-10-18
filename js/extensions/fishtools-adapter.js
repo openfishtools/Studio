@@ -1214,7 +1214,7 @@ window.FishToolsAdapter = (function () {
         const href = el.getAttribute('href');
         if (href && !href.startsWith('http:') && !href.startsWith('https:') && !href.startsWith('//') && !href.startsWith('data:')) {
           if (href.includes('theme.css')) {
-            el.setAttribute('href', new URL('css/theme.css', appRoot).href);
+            el.setAttribute('href', new URL('css/tokens/theme.css', appRoot).href);
           } else {
             el.setAttribute('href', new URL(href, extensionBase).href);
           }

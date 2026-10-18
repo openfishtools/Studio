@@ -34,11 +34,6 @@
   overflow: hidden; /* Clips blocky inner segments to pill curvature */
 }
 
-/* Square/Card Radius Variant (if needed) */
-.segmented-switch.is-square {
-  border-radius: 12px;
-}
-
 /* Compact Variant */
 .segmented-switch.is-compact .segmented-switch-item {
   height: 34px;

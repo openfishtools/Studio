@@ -1506,21 +1506,6 @@
   transform: translate(-50%, -50%) rotate(45deg) scale(1.6) !important;
 }
 
-/* Timeline Keyframe Marquee Selection Box (Pure Flat Theme Token, Strictly Confined Inside Layer Clip) */
-.timeline-keyframe-marquee {
-  position: absolute;
-  pointer-events: none;
-  top: 0;
-  height: 100%;
-  border: 1.5px dashed var(--color-primary);
-  background-color: var(--color-primary);
-  opacity: 0.22;
-  border-radius: 6px;
-  z-index: 25;
-  display: none;
-  box-sizing: border-box;
-}
-
 /* Keyframe button in transform navigation column */
 .transform-nav-btn.is-active {
   background-color: var(--color-primary);
@@ -1897,96 +1882,11 @@
   gap: 8px;
 }
 
-.camera-header-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 8px;
-  background-color: var(--bg-panel-inner);
-  border-radius: 6px;
-  min-height: 34px;
-  box-sizing: border-box;
-}
-
-.camera-section-title {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-}
-
-.camera-lens-switch {
-  max-width: 170px;
-  height: 26px;
-}
-
-.camera-lens-switch .segmented-switch-item {
-  font-size: 11px;
-  padding: 0 8px;
-}
-
-.camera-control-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  background-color: var(--bg-panel-inner);
-  border-radius: 6px;
-  padding: 6px 8px;
-  box-sizing: border-box;
-}
-
-
-.camera-control-row .jog-wheel-container,
 .jog-wheel-container.is-horizontal {
   width: 100%;
   height: 32px;
   min-height: 32px;
   margin-top: 4px;
-}
-
-.camera-control-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.camera-control-label {
-  font-size: 10.5px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
-  color: var(--text-secondary);
-}
-
-.camera-val-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px 6px;
-  background-color: var(--bg-canvas);
-  color: var(--color-primary);
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  min-width: 50px;
-  text-align: right;
-}
-
-.camera-toggle-row {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px;
-}
-
-.camera-toggle-label-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.camera-toggle-subtext {
-  font-size: 9.5px;
-  color: var(--text-muted);
 }
 
 .camera-blur-switch {

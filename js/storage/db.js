@@ -175,11 +175,6 @@ window.FishDatabase = (function () {
             isPersisted = await navigator.storage.persist();
           }
           _storagePersistenceState.persisted = !!isPersisted;
-          if (isPersisted) {
-            console.log('[FishDatabase] 🛡️ Storage durability: persistent (protected from browser eviction)');
-          } else {
-            console.info('[FishDatabase] ℹ️ Storage durability: best-effort (installing as app or bookmarking grants persistence)');
-          }
         }
         await checkStoragePersistence();
       } catch (e) {
@@ -1312,7 +1307,6 @@ window.FishDatabase = (function () {
     if (db && db.objectStoreNames.contains('media')) {
       return new Promise(function (resolve) {
         var isDone = false;
-        console.log('[FishDatabase] 💾 saveMedia starting for:', mediaItem.name, '(' + (mediaItem.type || 'media') + ')');
         // Safe timeout (15000ms) allows large buffers to write without premature fallback
         var saveTimer = setTimeout(function () {
           if (isDone) return;
@@ -1366,7 +1360,6 @@ window.FishDatabase = (function () {
 
           // Attach transaction completion handlers BEFORE issuing store request
           tx.oncomplete = function () {
-            console.log('[FishDatabase] ✅ saveMedia complete for:', mediaItem.name);
             _invalidateProjectMediaCache(mediaItem.projectId);
             saveMetaToLocal(mediaItem);
             finish(mediaItem);

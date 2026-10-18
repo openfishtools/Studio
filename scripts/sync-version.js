@@ -249,8 +249,12 @@ function syncVersion(specifiedVersion) {
 
   // 4b. Update js/pwa-install.js CACHE_NAME (must match sw.js or standalone
   // resource check loops forever against a cache bucket the SW never fills)
-  const pwaPath = path.join(ROOT, 'js', 'pwa-install.js');
-  if (fs.existsSync(pwaPath)) {
+  const pwaCandidates = [
+    path.join(ROOT, 'js', 'app', 'pwa-install.js'),
+    path.join(ROOT, 'js', 'pwa-install.js')
+  ];
+  const pwaPath = pwaCandidates.find(p => fs.existsSync(p));
+  if (pwaPath) {
     try {
       let pwaContent = fs.readFileSync(pwaPath, 'utf8');
       pwaContent = pwaContent.replace(/var CACHE_NAME = 'oft-studio-v[^']*';/, `var CACHE_NAME = 'oft-studio-v${targetVersion}';`);

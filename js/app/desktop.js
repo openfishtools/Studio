@@ -55,12 +55,14 @@
   // --- 2. Multi-Axis Split Resizers ---
 
   // A. Horizontal Splitter (Upper Row vs Timeline)
+  let _cachedSplitViewportRect = null;
   const splitH = document.getElementById('desktop-split-horizontal');
   if (splitH) {
     let isDraggingH = false;
 
     splitH.addEventListener('pointerdown', (e) => {
       isDraggingH = true;
+      _cachedSplitViewportRect = viewport.getBoundingClientRect();
       splitH.classList.add('is-dragging');
       viewport.classList.add('is-resizing');
       splitH.setPointerCapture(e.pointerId);
@@ -70,7 +72,7 @@
 
     splitH.addEventListener('pointermove', (e) => {
       if (!isDraggingH) return;
-      const rect = viewport.getBoundingClientRect();
+      const rect = _cachedSplitViewportRect || viewport.getBoundingClientRect();
       const headerH = 36;
       const splitterH = 5;
       const minTimelineH = 160; // Timeline must always have at least 160px visible
@@ -88,11 +90,12 @@
         localStorage.setItem('oft_desktop_upper_height', percent);
       } catch (_) {}
       syncLayout();
-    });
+    }, { passive: true });
 
     function stopH(e) {
       if (!isDraggingH) return;
       isDraggingH = false;
+      _cachedSplitViewportRect = null;
       splitH.classList.remove('is-dragging');
       viewport.classList.remove('is-resizing');
       try { splitH.releasePointerCapture(e.pointerId); } catch (_) {}
@@ -111,6 +114,7 @@
 
     splitLeft.addEventListener('pointerdown', (e) => {
       isDraggingLeft = true;
+      _cachedSplitViewportRect = viewport.getBoundingClientRect();
       splitLeft.classList.add('is-dragging');
       viewport.classList.add('is-resizing');
       splitLeft.setPointerCapture(e.pointerId);
@@ -120,7 +124,7 @@
 
     splitLeft.addEventListener('pointermove', (e) => {
       if (!isDraggingLeft) return;
-      const rect = viewport.getBoundingClientRect();
+      const rect = _cachedSplitViewportRect || viewport.getBoundingClientRect();
       let px = e.clientX - rect.left;
 
       // Clamp between 220px and 460px
@@ -131,11 +135,12 @@
         localStorage.setItem('oft_desktop_left_width', val);
       } catch (_) {}
       syncLayout();
-    });
+    }, { passive: true });
 
     function stopLeft(e) {
       if (!isDraggingLeft) return;
       isDraggingLeft = false;
+      _cachedSplitViewportRect = null;
       splitLeft.classList.remove('is-dragging');
       viewport.classList.remove('is-resizing');
       try { splitLeft.releasePointerCapture(e.pointerId); } catch (_) {}
@@ -154,6 +159,7 @@
 
     splitRight.addEventListener('pointerdown', (e) => {
       isDraggingRight = true;
+      _cachedSplitViewportRect = viewport.getBoundingClientRect();
       splitRight.classList.add('is-dragging');
       viewport.classList.add('is-resizing');
       splitRight.setPointerCapture(e.pointerId);
@@ -163,7 +169,7 @@
 
     splitRight.addEventListener('pointermove', (e) => {
       if (!isDraggingRight) return;
-      const rect = viewport.getBoundingClientRect();
+      const rect = _cachedSplitViewportRect || viewport.getBoundingClientRect();
       let px = rect.right - e.clientX;
 
       // Clamp between 260px and 500px
@@ -174,11 +180,12 @@
         localStorage.setItem('oft_desktop_right_width', val);
       } catch (_) {}
       syncLayout();
-    });
+    }, { passive: true });
 
     function stopRight(e) {
       if (!isDraggingRight) return;
       isDraggingRight = false;
+      _cachedSplitViewportRect = null;
       splitRight.classList.remove('is-dragging');
       viewport.classList.remove('is-resizing');
       try { splitRight.releasePointerCapture(e.pointerId); } catch (_) {}
@@ -1814,10 +1821,12 @@
     // Initial position sync
     syncDesktopPlayhead();
 
+    let _cachedRulerLeft = null;
+
     function handleRulerSeek(clientX) {
       if (!rulerViewport) return;
-      const rect = rulerViewport.getBoundingClientRect();
-      const clickX = clientX - rect.left;
+      const rulerLeft = (_cachedRulerLeft !== null) ? _cachedRulerLeft : (_cachedRulerLeft = rulerViewport.getBoundingClientRect().left);
+      const clickX = clientX - rulerLeft;
       const pps = window.currentPixelsPerSecond || 80;
       const fps = window.currentTimelineFps || (window.currentProjectState && window.currentProjectState.fps) || 60;
       let targetSec = Math.max(0, (clickX + desktopScrollX) / pps);
@@ -1851,6 +1860,7 @@
       rulerViewport.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
         isRulerSeeking = true;
+        _cachedRulerLeft = rulerViewport.getBoundingClientRect().left;
         try { rulerViewport.setPointerCapture(e.pointerId); } catch (_) {}
         handleRulerSeek(e.clientX);
         e.stopPropagation();
@@ -1865,7 +1875,11 @@
       function stopRulerSeek(e) {
         if (!isRulerSeeking) return;
         isRulerSeeking = false;
+        _cachedRulerLeft = null;
         try { rulerViewport.releasePointerCapture(e.pointerId); } catch (_) {}
+        if (typeof updateReorderHandlesContrast === 'function') {
+          updateReorderHandlesContrast();
+        }
         e.stopPropagation();
       }
 
@@ -1965,7 +1979,7 @@
           if (layersViewport.scrollLeft !== 0) {
             layersViewport.scrollLeft = 0;
           }
-        }, { passive: false });
+        }, { passive: true });
       }
     }
 
@@ -1993,6 +2007,9 @@
         return;
       }
       isNeedleDragging = true;
+      if (rulerViewport) {
+        _cachedRulerLeft = rulerViewport.getBoundingClientRect().left;
+      }
       try { needle.setPointerCapture(e.pointerId); } catch (_) {}
       e.stopPropagation();
     });
@@ -2006,7 +2023,11 @@
     function stopNeedleDrag(e) {
       if (!isNeedleDragging) return;
       isNeedleDragging = false;
+      _cachedRulerLeft = null;
       try { needle.releasePointerCapture(e.pointerId); } catch (_) {}
+      if (typeof updateReorderHandlesContrast === 'function') {
+        updateReorderHandlesContrast();
+      }
       e.stopPropagation();
     }
 
@@ -3273,13 +3294,6 @@
       if (urlParams.get('testSelectAll')) {
         setTimeout(() => {
           window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }));
-          console.log('TEST_SELECT_ALL_FIRED', {
-            windowSelectedLayerIds: Array.from(window.selectedLayerIds || []),
-            windowSelectedLayerId: window.selectedLayerId,
-            isSelectorMode: window.isSelectorMode,
-            batchTitle: (function() { var el = document.getElementById('editor-layer-batch-title'); return el ? el.textContent : ''; })(),
-            batchDisplay: (function() { var el = document.getElementById('editor-layer-batch-title'); return el ? el.style.display : 'none'; })()
-          });
         }, 1200);
       }
     } catch (_) {}

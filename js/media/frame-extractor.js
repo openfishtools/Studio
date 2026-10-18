@@ -48,11 +48,18 @@
     if (typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function') {
       return scheduler.yield();
     }
-    return new Promise(resolve => {
-      const channel = new MessageChannel();
-      channel.port1.onmessage = () => resolve();
-      channel.port2.postMessage(null);
-    });
+    if (typeof MessageChannel !== 'undefined') {
+      return new Promise(resolve => {
+        const channel = new MessageChannel();
+        channel.port1.onmessage = () => {
+          try { channel.port1.close(); } catch (_) {}
+          try { if (channel.port2 && typeof channel.port2.close === 'function') channel.port2.close(); } catch (_) {}
+          resolve();
+        };
+        channel.port2.postMessage(null);
+      });
+    }
+    return new Promise(resolve => setTimeout(resolve, 0));
   }
 
   /**
@@ -2454,7 +2461,7 @@
           const parts = source.dataUrl.split(',');
           const mimeMatch = parts[0].match(/:(.*?);/);
           const mime = mimeMatch ? mimeMatch[1] : 'video/mp4';
-          const bstr = atob(parts[1]);
+          const bstr = (typeof atob === 'function' ? atob(parts[1]) : (typeof Buffer !== 'undefined' ? Buffer.from(parts[1], 'base64').toString('binary') : ''));
           let n = bstr.length;
           const u8arr = new Uint8Array(n);
           while (n--) {

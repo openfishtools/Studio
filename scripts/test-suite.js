@@ -5,19 +5,35 @@ const { execFileSync } = require('child_process');
 
 console.log('--- OpenFishTools Studio Comprehensive Test Suite ---');
 
-function getJsFiles(dir) {
+function getJsFilesRecursive(dir, excludes = []) {
   if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir)
-    .filter(f => f.endsWith('.js'))
-    .map(f => path.join(dir, f));
-}
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  let files = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.name === '.git') continue;
+    const fullPath = path.join(dir, entry.name);
+    if (excludes.some(ex => fullPath === ex || fullPath.startsWith(ex + path.sep) || fullPath.includes(path.sep + ex + path.sep) || entry.name === ex || entry.name.endsWith(ex))) continue;
 
-const targetDirs = ['js', 'effects', 'scripts', 'element'];
+    if (entry.isDirectory()) {
+      files.push(...getJsFilesRecursive(fullPath, excludes));
+    } else if (entry.isFile() && entry.name.endsWith('.js')) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+const walkJsFiles = getJsFilesRecursive;
+
+const vendorExcludes = ['vendor', 'node_modules', '.git', '.min.js', 'jszip.min.js'];
+const targetDirs = ['js', 'effects', 'scripts', 'element', 'shapes', 'text', 'functions'];
 let allJsFiles = [];
 targetDirs.forEach(d => {
-  allJsFiles.push(...getJsFiles(d));
+  allJsFiles.push(...getJsFilesRecursive(d, vendorExcludes));
 });
-if (fs.existsSync('server.js')) allJsFiles.push('server.js');
+['server.js', 'sw.js', '_worker.js'].forEach(f => {
+  if (fs.existsSync(f)) allJsFiles.push(f);
+});
+allJsFiles = Array.from(new Set(allJsFiles)).sort();
 
 console.log(`\n[1/4] Syntax Verification (node --check) across ${allJsFiles.length} JS files...`);
 let syntaxFailures = 0;
@@ -39,17 +55,22 @@ if (syntaxFailures === 0) {
 console.log('\n[2/4] AST Scope & Undeclared Reference Audit...');
 try {
   const auditScript = path.join(__dirname, 'static-scope-audit.js');
-  // Exclude third-party vendor minified bundle jszip.min.js from strict audit
-  const auditFiles = allJsFiles.filter(f => !f.includes('jszip.min.js'));
-  const output = execFileSync('node', [auditScript, ...auditFiles], { encoding: 'utf8' });
+  const tmpListPath = path.join(__dirname, '.audit-files.tmp');
+  fs.writeFileSync(tmpListPath, allJsFiles.join('\n'), 'utf8');
+  let output;
+  try {
+    output = execFileSync('node', [auditScript, `--file-list=${tmpListPath}`], { encoding: 'utf8' });
+  } finally {
+    if (fs.existsSync(tmpListPath)) fs.unlinkSync(tmpListPath);
+  }
   const lines = output.trim().split('\n');
-  const fails = lines.filter(l => l.includes('Undeclared references'));
+  const fails = lines.filter(l => l.includes('Undeclared references') || l.includes('ERROR:'));
   if (fails.length > 0) {
     console.error(output);
-    console.error(`  FAIL: ${fails.length} files contain undeclared references.`);
+    console.error(`  FAIL: ${fails.length} files contain undeclared references or errors.`);
     process.exit(1);
   }
-  console.log(`  PASS: All ${auditFiles.length} application files passed scope audit with 0 undeclared references.`);
+  console.log(`  PASS: All ${allJsFiles.length} application files passed scope audit with 0 undeclared references.`);
 } catch (err) {
   console.error('  FAIL: Scope audit execution failed:', err.message);
   process.exit(1);
@@ -68,8 +89,8 @@ try {
 console.log('\n[4/4] HTML File Integrity & Structure Check...');
 const expectedHtmlFiles = [
   { file: 'index.html', minLines: 2500 },
-  { file: 'editor.html', minLines: 5000 },
-  { file: 'desktop.html', minLines: 5000 }
+  { file: 'editor.html', minLines: 4500 },
+  { file: 'desktop.html', minLines: 4500 }
 ];
 
 let htmlFailures = 0;

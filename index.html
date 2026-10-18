@@ -33,14 +33,14 @@
   </script>
 
   <!-- Separated CSS: Theme (Colors & Variables, Cal Sans Font), Layout, and Modular Modal -->
-  <link rel="stylesheet" href="css/theme.css">
-  <link rel="stylesheet" href="css/layout.css">
-  <link rel="stylesheet" href="css/extensions.css">
-  <link rel="stylesheet" href="css/modal.css">
-  <link rel="stylesheet" href="css/popover.css">
-  <link rel="stylesheet" href="css/color-picker.css">
-  <link rel="stylesheet" href="css/context-menu.css">
-  <link rel="stylesheet" href="css/safari.css">
+  <link rel="stylesheet" href="css/tokens/theme.css">
+  <link rel="stylesheet" href="css/layout/layout.css">
+  <link rel="stylesheet" href="css/panels/extensions.css">
+  <link rel="stylesheet" href="css/components/modal.css">
+  <link rel="stylesheet" href="css/components/popover.css">
+  <link rel="stylesheet" href="css/components/color-picker.css">
+  <link rel="stylesheet" href="css/components/context-menu.css">
+  <link rel="stylesheet" href="css/fixes/safari.css">
   <link rel="stylesheet" href="fticons/fticons.css">
 </head>
 <body oncontextmenu="return false;" onselectstart="return false;">
@@ -54,7 +54,7 @@
         <h1 class="brand-title">FishTools</h1>
         <div class="brand-subtitle-row">
           <span class="brand-subtitle">Studio</span>
-          <span class="badge-pre-alpha" id="studio-version-badge">0.6.1</span>
+          <span class="badge-pre-alpha" id="studio-version-badge">0.6.2</span>
         </div>
 
         <!-- Desktop Folders Shelf in Photo 2 area -->
@@ -799,7 +799,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">FishTools Studio</h3>
-          <span class="welcome-badge">v0.6.1</span>
+          <span class="welcome-badge">v0.6.2</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
@@ -835,11 +835,54 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.2 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.2</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Oct 18, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Professional Domain-Categorized Directory Structure (`js/`, `css/`, `vendor/`)</span>
+                  <span class="changelog-item-desc">Reorganized all JavaScript, CSS, and vendor files into structured domain subdirectories (`js/app/`, `js/core/`, `js/media/`, `js/editor/`, `js/extensions/`, `js/ui/`, `js/plugins/`, `js/storage/`, `css/tokens/`, `css/layout/`, `css/components/`, `css/panels/`, `css/fixes/`, and `vendor/`) and updated all asset, worker, and script paths across `index.html`, `editor.html`, `desktop.html`, `privacy.html`, and `terms.html`.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Runtime Canvas &amp; Timeline Performance Optimization (`js/editor/editor-canvas.js`, `js/editor/editor-timeline-ops.js`, `js/editor/editor-media.js`, `js/editor/editor-state.js`)</span>
+                  <span class="changelog-item-desc">Implemented `requestAnimationFrame` canvas render coalescing (`redrawComposition`), pre-allocated zero-GC scratch arrays/sets in `renderCanvasFrame`, reflow suppression guards during timeline playback/scrubbing/panning, `{ passive: true }` high-frequency event listeners, an Object URL lifecycle registry (`_studioObjectUrls`), GPU buffer release on layer teardown (`releaseLayerMediaElement`), and centralized editor cleanup (`teardownEditor`).</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Asynchronous WASM Effects Loader (`effects/loader.js`, `scripts/sync-effects.js`)</span>
+                  <span class="changelog-item-desc">Replaced main-thread synchronous `XMLHttpRequest` with asynchronous `fetch()` over HTTP/HTTPS when loading `effects.wasm`, eliminating browser deprecation warnings while retaining a fallback for local `file://` execution.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Codebase Audit, Dead Code Removal &amp; AST Scope Verification (`scripts/static-scope-audit.js`, `scripts/test-suite.js`, `AGENTS.md`, `README.md`)</span>
+                  <span class="changelog-item-desc">Removed dead functions, duplicate DOM IDs, and redundant debugging console logs across HTML, CSS, and JS files, and upgraded the Acorn AST scope auditor to dynamically verify cross-module `window` exports across all 138 JS files.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Cross-Module State Synchronization &amp; Temporal Dead Zone (TDZ) Fixes (`js/editor/editor-state.js`, `js/editor/editor-timeline-core.js`, `js/editor/editor-timeline-ops.js`, `js/editor/editor-inspector.js`)</span>
+                  <span class="changelog-item-desc">Resolved `isPlaying` TDZ initialization errors during `initTimelineRulerAndPan()` and eliminated `selectedLayerIds` cross-module `ReferenceError` crashes by hoisting module-level state declarations and binding shared mutable state via live `Object.defineProperty(window, ...)` getters and setters.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.1 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.1</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Oct 17, 2026</span>
               </div>
               <div class="welcome-changelog-item">
@@ -3581,19 +3624,19 @@
     </div>
   </div>
 
-  <script src="js/jszip.min.js"></script>
-  <script src="js/db.js"></script>
-  <script src="js/fishtool-engine.js"></script>
-  <script src="js/modal.js"></script>
-  <script src="js/folderanim.js"></script>
-  <script src="js/pwa-install.js"></script>
-  <script src="js/popover.js"></script>
-  <script src="js/color-picker.js"></script>
-  <script src="js/context-menu.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="js/storage/db.js"></script>
+  <script src="js/core/fishtool-engine.js"></script>
+  <script src="js/ui/modal.js"></script>
+  <script src="js/ui/folderanim.js"></script>
+  <script src="js/app/pwa-install.js"></script>
+  <script src="js/ui/popover.js"></script>
+  <script src="js/ui/color-picker.js"></script>
+  <script src="js/ui/context-menu.js"></script>
   <script src="vendor/qrcode.min.js"></script>
-  <script src="element/card-builder.js"></script>
-  <script src="js/extension-manager.js"></script>
-  <script src="js/JSX-Translator.js"></script>
-  <script src="js/main.js"></script>
+  <script src="js/ui/elements/card-builder.js"></script>
+  <script src="js/extensions/extension-manager.js"></script>
+  <script src="js/extensions/JSX-Translator.js"></script>
+  <script src="js/app/main.js"></script>
 </body>
 </html>

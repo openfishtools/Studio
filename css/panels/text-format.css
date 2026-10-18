@@ -167,10 +167,6 @@
   min-height: 28px;
 }
 
-.text-anim-hint {
-  display: none;
-}
-
 .text-anim-sub {
   font-family: var(--font-brand);
   font-size: 11px;
@@ -185,16 +181,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-}
-
-/* 8. Flat theme-token-only overrides: match effects-rack 2-col grid */
-.text-tab-pane .shape-control-row {
-  display: grid;
-  grid-template-columns: minmax(95px, 36%) 1fr;
-  align-items: center;
-  gap: 8px;
-  min-height: 28px;
-  box-sizing: border-box;
 }
 
 .text-tab-pane .custom-dropdown-trigger {

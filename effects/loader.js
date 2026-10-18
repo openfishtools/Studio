@@ -12,100 +12,122 @@
 
   var isFileProtocol = window.location && window.location.protocol === 'file:';
   var host = (window.location && window.location.hostname) || (isFileProtocol ? 'file://' : '');
+  var wasmUrl = 'effects/effects.wasm';
+  if (window.OFT_VERSION && !isFileProtocol) wasmUrl += '?v=' + encodeURIComponent(window.OFT_VERSION);
 
-  // 1. Synchronously fetch effects/effects.wasm
-  var wasmBytes = null;
-  try {
-    var xhr = new XMLHttpRequest();
-    var wasmUrl = 'effects/effects.wasm';
-    if (window.OFT_VERSION && !isFileProtocol) wasmUrl += '?v=' + encodeURIComponent(window.OFT_VERSION);
-    xhr.open('GET', wasmUrl, false);
-    xhr.overrideMimeType('text/plain; charset=x-user-defined');
-    xhr.send(null);
-    if (((xhr.status >= 200 && xhr.status < 300) || (isFileProtocol && xhr.status === 0)) && xhr.responseText) {
-      var text = xhr.responseText;
-      wasmBytes = new Uint8Array(text.length);
-      for (var i = 0; i < text.length; i++) {
-        wasmBytes[i] = text.charCodeAt(i) & 0xff;
-      }
-    }
-  } catch (e) {
-    console.warn('[FishEffectsLoader] Synchronous WASM fetch failed:', e);
-  }
-
-  if (!wasmBytes) {
-    console.error('[FishEffectsLoader] Critical: failed to load effects/effects.wasm');
-    return;
-  }
-
-  // 2. Synchronously instantiate WASM module
   var wasmInstance = null;
   var wasmExports = null;
-  try {
-    var mod = new WebAssembly.Module(wasmBytes);
-    wasmInstance = new WebAssembly.Instance(mod, {});
-    wasmExports = wasmInstance.exports;
-  } catch (err) {
-    console.error('[FishEffectsLoader] WASM instantiation failed:', err);
-    return;
-  }
-
-  // 3. Verify Domain Authorization via WASM Security Engine
-  var enc = new TextEncoder();
-  var hostBytes = enc.encode(host);
-  var mem = new Uint8Array(wasmExports.memory.buffer);
-  var tempPtr = 10000;
-  mem.set(hostBytes, tempPtr);
-  wasmExports.verify_domain(tempPtr, hostBytes.length);
-  var isAuthorized = wasmExports.is_authorized() === 1;
-
   var watermarkImg = null;
-  if (!isAuthorized) {
+  var isAuthorized = false;
+
+  function initFromWasmBytes(wasmBytes) {
+    if (!wasmBytes) {
+      console.error('[FishEffectsLoader] Critical: failed to load effects/effects.wasm');
+      return false;
+    }
+
     try {
-      var svgPtr = wasmExports.get_watermark_svg_ptr();
-      var svgLen = wasmExports.get_watermark_svg_len();
-      var svgSlice = new Uint8Array(wasmExports.memory.buffer, svgPtr, svgLen);
-      var svgText = new TextDecoder('utf-8').decode(svgSlice);
-      var blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
-      watermarkImg = new Image();
-      watermarkImg.onload = function () {
-        if (typeof window.redrawComposition === 'function') {
-          window.redrawComposition('wasmWatermarkLoaded');
-        }
-      };
-      watermarkImg.src = URL.createObjectURL(blob);
-    } catch (_) {}
-  }
+      var mod = new WebAssembly.Module(wasmBytes);
+      wasmInstance = new WebAssembly.Instance(mod, {});
+      wasmExports = wasmInstance.exports;
+    } catch (err) {
+      console.error('[FishEffectsLoader] WASM instantiation failed:', err);
+      return false;
+    }
 
-  // Share WASM instance globally for fluid_fish and universal effects guard
-  global.__FISH_WASM__ = {
-    instance: wasmInstance,
-    exports: wasmExports,
-    isAuthorized: isAuthorized,
-    watermarkImg: watermarkImg
-  };
+    var enc = new TextEncoder();
+    var hostBytes = enc.encode(host);
+    var mem = new Uint8Array(wasmExports.memory.buffer);
+    var tempPtr = 10000;
+    mem.set(hostBytes, tempPtr);
+    wasmExports.verify_domain(tempPtr, hostBytes.length);
+    isAuthorized = wasmExports.is_authorized() === 1;
 
-  // 4. Unpack bundled effects from WASM binary
-  try {
-    wasmExports.unpack_effects_bundle();
-    var ptr = wasmExports.get_effects_bundle_ptr();
-    var len = wasmExports.get_effects_bundle_len();
-    var slice = new Uint8Array(wasmExports.memory.buffer, ptr, len);
-    var jsonStr = new TextDecoder('utf-8').decode(slice);
-    var bundle = JSON.parse(jsonStr);
+    if (!isAuthorized) {
+      try {
+        var svgPtr = wasmExports.get_watermark_svg_ptr();
+        var svgLen = wasmExports.get_watermark_svg_len();
+        var svgSlice = new Uint8Array(wasmExports.memory.buffer, svgPtr, svgLen);
+        var svgText = new TextDecoder('utf-8').decode(svgSlice);
+        var blob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+        watermarkImg = new Image();
+        watermarkImg.onload = function () {
+          if (typeof window.redrawComposition === 'function') {
+            window.redrawComposition('wasmWatermarkLoaded');
+          }
+        };
+        watermarkImg.src = URL.createObjectURL(blob);
+      } catch (_) {}
+    }
 
-    // 5. Evaluate and register each effect into FishEffectsRegistry
-    for (var file in bundle) {
-      if (Object.prototype.hasOwnProperty.call(bundle, file)) {
-        try {
-          (0, eval)(bundle[file]);
-        } catch (evalErr) {
-          console.error('[FishEffectsLoader] Error executing effect ' + file + ':', evalErr);
+    global.__FISH_WASM__ = {
+      instance: wasmInstance,
+      exports: wasmExports,
+      isAuthorized: isAuthorized,
+      watermarkImg: watermarkImg
+    };
+
+    try {
+      wasmExports.unpack_effects_bundle();
+      var ptr = wasmExports.get_effects_bundle_ptr();
+      var len = wasmExports.get_effects_bundle_len();
+      var slice = new Uint8Array(wasmExports.memory.buffer, ptr, len);
+      var jsonStr = new TextDecoder('utf-8').decode(slice);
+      var bundle = JSON.parse(jsonStr);
+
+      for (var file in bundle) {
+        if (Object.prototype.hasOwnProperty.call(bundle, file)) {
+          try {
+            (0, eval)(bundle[file]);
+          } catch (evalErr) {
+            console.error('[FishEffectsLoader] Error executing effect ' + file + ':', evalErr);
+          }
         }
       }
+    } catch (unpackErr) {
+      console.error('[FishEffectsLoader] Failed to unpack effects from WASM:', unpackErr);
     }
-  } catch (unpackErr) {
-    console.error('[FishEffectsLoader] Failed to unpack effects from WASM:', unpackErr);
+    return true;
+  }
+
+  var wasmLoadingPromise = null;
+  var useAsyncFetch = typeof fetch === 'function' && !isFileProtocol;
+
+  function loadSyncFallback() {
+    var wasmBytes = null;
+    try {
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', wasmUrl, false);
+      xhr.overrideMimeType('text/plain; charset=x-user-defined');
+      xhr.send(null);
+      if (((xhr.status >= 200 && xhr.status < 300) || (isFileProtocol && xhr.status === 0)) && xhr.responseText) {
+        var text = xhr.responseText;
+        wasmBytes = new Uint8Array(text.length);
+        for (var i = 0; i < text.length; i++) {
+          wasmBytes[i] = text.charCodeAt(i) & 0xff;
+        }
+      }
+    } catch (e) {
+      console.warn('[FishEffectsLoader] Synchronous WASM fetch fallback failed:', e);
+    }
+    initFromWasmBytes(wasmBytes);
+  }
+
+  if (useAsyncFetch) {
+    wasmLoadingPromise = fetch(wasmUrl)
+      .then(function(res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.arrayBuffer();
+      })
+      .then(function(buf) {
+        initFromWasmBytes(new Uint8Array(buf));
+      })
+      .catch(function(e) {
+        console.warn('[FishEffectsLoader] Async WASM fetch failed, falling back:', e);
+        loadSyncFallback();
+      });
+  } else {
+    loadSyncFallback();
   }
 
   // 5b. Evaluate custom / contributor effects added directly into effects/
@@ -128,6 +150,9 @@
   // 6. Pre-warm WASM engine & GPU effects during loading for instantaneous editing
   global.prewarmWasmEffects = async function() {
     try {
+      if (wasmLoadingPromise) {
+        try { await wasmLoadingPromise; } catch (_) {}
+      }
       if (!global.__FISH_WASM__) return;
       var exp = global.__FISH_WASM__.exports;
       if (!exp) return;

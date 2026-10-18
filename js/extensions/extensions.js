@@ -190,7 +190,7 @@
       } catch (_) {}
 
       syncLayout();
-    });
+    }, { passive: true });
 
     function stopDrag(e) {
       if (!isDragging) return;
@@ -407,8 +407,6 @@
             window.showDashboardToast(message, 2400, type);
           } else if (typeof window.showEffectsRackToast === 'function') {
             window.showEffectsRackToast(message, isError ? 'warn' : 'info');
-          } else {
-            console.log(`[Toast] ${message}`);
           }
         },
 

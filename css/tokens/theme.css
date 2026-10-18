@@ -7,9 +7,9 @@
 /* --- Cal Sans Regular / SemiBold Web Font --- */
 @font-face {
   font-family: 'Cal Sans';
-  src: url('../assets/fonts/CalSans-SemiBold.woff2') format('woff2'),
-       url('../assets/fonts/CalSans-SemiBold.woff') format('woff'),
-       url('../assets/fonts/CalSans-SemiBold.ttf') format('truetype');
+  src: url('../../assets/fonts/CalSans-SemiBold.woff2') format('woff2'),
+       url('../../assets/fonts/CalSans-SemiBold.woff') format('woff'),
+       url('../../assets/fonts/CalSans-SemiBold.ttf') format('truetype');
   font-weight: 400 700;
   font-style: normal;
   font-display: swap;
