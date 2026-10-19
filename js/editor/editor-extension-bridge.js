@@ -1849,32 +1849,7 @@
           // --- 3D GENERATOR & CUBE GENERATOR ---
           case 'CUBE':
           case 'CREATE_CUBE': {
-            if (typeof window.createProceduralCube === 'function') {
-              return window.createProceduralCube(args[0], args[1], args[2], args[3]);
-            }
-            const opts = args[0] || {};
-            if (opts.useLayer) {
-              const targets = getSelectedLayersForFishTool();
-              if (!targets.length) {
-                const msg = 'Pilih layer terlebih dahulu untuk membuat kubus dari layer';
-                showEditorToast(msg, 2400, 'error');
-                return { error: true, message: msg };
-              }
-            }
-            const targets = getSelectedLayersForFishTool();
-            if (targets.length && typeof addEffectToLayer === 'function') {
-              addEffectToLayer('box_3d');
-              showEditorToast('Kubus 3D diterapkan pada layer');
-              return true;
-            }
-            if (typeof addSolidLayer === 'function') {
-              addSolidLayer();
-              if (typeof addEffectToLayer === 'function') addEffectToLayer('box_3d');
-              showEditorToast('Kubus 3D baru dibuat');
-              return true;
-            }
-            showEditorToast('Kubus 3D dibuat');
-            return true;
+            return createProceduralCube(args[0], args[1], args[2], args[3]);
           }
           case 'GEN_3D_3SPLIT':
           case 'GEN_3D_2SPLIT':
@@ -1898,33 +1873,7 @@
           case 'GEN_3D_BINDER':
           case 'GEN_3D_GLASSES':
           case 'GEN_3D_MC': {
-            if (toolName === 'GEN_3D_2SPLIT' && typeof window.createProcedural2Split === 'function') {
-              return window.createProcedural2Split();
-            }
-            if (toolName === 'GEN_3D_3SPLIT' && typeof window.createProcedural3Split === 'function') {
-              return window.createProcedural3Split();
-            }
-            if (toolName === 'GEN_3D_TUNNEL' && typeof window.createProceduralTunnel === 'function') {
-              return window.createProceduralTunnel();
-            }
-            if (toolName === 'GEN_3D_MC' && typeof window.createProceduralMC === 'function') {
-              return window.createProceduralMC();
-            }
-            if (typeof window.createProcedural3D === 'function') {
-              return window.createProcedural3D(toolName.replace('GEN_3D_', ''));
-            }
-            const targets = getSelectedLayersForFishTool();
-            if (targets.length) {
-              if (typeof addEffectToLayer === 'function') addEffectToLayer('box_3d');
-              showEditorToast(`3D Scene: ${toolName.replace('GEN_3D_', '')} diterapkan`);
-            } else if (typeof addSolidLayer === 'function') {
-              addSolidLayer();
-              if (typeof addEffectToLayer === 'function') addEffectToLayer('box_3d');
-              showEditorToast(`3D Scene: ${toolName.replace('GEN_3D_', '')} dibuat`);
-            } else {
-              showEditorToast('Pilih layer terlebih dahulu untuk membuat scene 3D', 2400, 'error');
-            }
-            return true;
+            return createProcedural3D(toolName.replace('GEN_3D_', ''));
           }
 
           default: {
@@ -1934,6 +1883,60 @@
           }
         }
       }
+
+      function createProceduralCube(arg0) {
+        const opts = (arg0 && typeof arg0 === 'object') ? arg0 : {};
+        if (opts.useLayer) {
+          const targets = getSelectedLayersForFishTool();
+          if (!targets.length) {
+            const msg = 'Pilih layer terlebih dahulu untuk membuat kubus dari layer';
+            showEditorToast(msg, 2400, 'error');
+            return { error: true, message: msg };
+          }
+        }
+        const targets = getSelectedLayersForFishTool();
+        if (targets.length && typeof addEffectToLayer === 'function') {
+          addEffectToLayer('box_3d');
+          showEditorToast('Kubus 3D diterapkan pada layer');
+          return true;
+        }
+        if (typeof addSolidLayer === 'function') {
+          addSolidLayer();
+          if (typeof addEffectToLayer === 'function') addEffectToLayer('box_3d');
+          showEditorToast('Kubus 3D baru dibuat');
+          return true;
+        }
+        showEditorToast('Kubus 3D dibuat');
+        return true;
+      }
+
+      function createProcedural3D(sceneType = 'CUBE') {
+        const label = String(sceneType || '3D').replace(/^GEN_3D_/i, '');
+        const targets = getSelectedLayersForFishTool();
+        if (targets.length) {
+          if (typeof addEffectToLayer === 'function') addEffectToLayer('box_3d');
+          showEditorToast(`3D Scene: ${label} diterapkan`);
+        } else if (typeof addSolidLayer === 'function') {
+          addSolidLayer();
+          if (typeof addEffectToLayer === 'function') addEffectToLayer('box_3d');
+          showEditorToast(`3D Scene: ${label} dibuat`);
+        } else {
+          showEditorToast('Pilih layer terlebih dahulu untuk membuat scene 3D', 2400, 'error');
+        }
+        return true;
+      }
+
+      function createProcedural2Split() { return createProcedural3D('2SPLIT'); }
+      function createProcedural3Split() { return createProcedural3D('3SPLIT'); }
+      function createProceduralTunnel() { return createProcedural3D('TUNNEL'); }
+      function createProceduralMC() { return createProcedural3D('MC'); }
+
+      window.createProceduralCube = createProceduralCube;
+      window.createProcedural3D = createProcedural3D;
+      window.createProcedural2Split = createProcedural2Split;
+      window.createProcedural3Split = createProcedural3Split;
+      window.createProceduralTunnel = createProceduralTunnel;
+      window.createProceduralMC = createProceduralMC;
 
       function executeFishTool(toolName, ...args) {
         if (!toolName) return false;
@@ -1950,7 +1953,9 @@
         return result;
       }
       window.editorExecuteFishTool = executeFishTool;
-      window.executeFishTool = executeFishTool;
+      if (typeof window.executeFishTool !== 'function') {
+        window.executeFishTool = executeFishTool;
+      }
       window.setAnchorPointForSelectedLayers = (pos) => executeFishTool('setAnchorPoint', pos);
       window.alignSelectedLayers = (mode) => executeFishTool(mode);
       window.applyCutefishEffect = applyCutefishEffect;

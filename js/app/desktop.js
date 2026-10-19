@@ -493,6 +493,7 @@
       if (inspectorTitle) inspectorTitle.textContent = 'Inspector';
     }
   }
+  window._desktopSyncInspectorState = syncInspectorState;
   window.syncInspectorState = syncInspectorState;
 
   // Observe headerNavLayer style changes (which toggles when a layer is selected/deselected)
@@ -1121,8 +1122,6 @@
               const globalMbIcon = document.getElementById('editor-icon-motion-blur');
               if (globalMbIcon) globalMbIcon.classList.add('is-active');
             }
-            if (window.PreviewCacheManager) window.PreviewCacheManager.clearAll();
-
             if (typeof window.saveCurrentProjectLayers === 'function') window.saveCurrentProjectLayers(true);
             if (typeof window.redrawComposition === 'function') window.redrawComposition();
           });
@@ -4067,7 +4066,9 @@
     initDesktopTimelineScrollbar();
     syncLayout();
     checkUrlTestParams();
-    checkAndPromptMobileSwitch();
+    if (typeof window.checkAndPromptMobileSwitch === 'function') {
+      window.checkAndPromptMobileSwitch();
+    }
   });
 
   checkUrlTestParams();
@@ -4087,92 +4088,10 @@
     initDesktopTimelineScrollbar();
     syncLayout();
     checkUrlTestParams();
-    checkAndPromptMobileSwitch();
+    if (typeof window.checkAndPromptMobileSwitch === 'function') {
+      window.checkAndPromptMobileSwitch();
+    }
   }, 350);
-
-  // --- Mobile Device & Small Viewport Detection ---
-  const MOBILE_DISMISS_KEY = 'oft_desktop_mobile_dismissed';
-  let mobilePromptDismissedThisSession = false;
-
-  function isMobileOrSmallScreen() {
-    const ua = navigator.userAgent || '';
-    const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|SM-G/i.test(ua) ||
-      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) ||
-      (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-    const w = window.innerWidth || (document.documentElement ? document.documentElement.clientWidth : 0) || (window.screen ? window.screen.width : 0) || 0;
-    const sw = (window.screen && window.screen.width) ? window.screen.width : 0;
-    const isNarrowViewport = (w > 0 && w <= 900) || (sw > 0 && sw <= 900) || (window.matchMedia && window.matchMedia('(max-width: 900px)').matches);
-    return isNarrowViewport || isMobileUA;
-  }
-
-  function checkAndPromptMobileSwitch(force) {
-    force = Boolean(force);
-    if (!force) {
-      try {
-        if (localStorage.getItem(MOBILE_DISMISS_KEY) === 'stay' || localStorage.getItem('oft_preferred_view') === 'desktop') {
-          return;
-        }
-      } catch (_) {}
-      if (mobilePromptDismissedThisSession) {
-        return;
-      }
-    }
-
-    if (isMobileOrSmallScreen()) {
-      setTimeout(() => {
-        if (window.Modal && typeof window.Modal.open === 'function') {
-          const modalEl = document.getElementById('modal-switch-mobile');
-          if (modalEl && !modalEl.classList.contains('is-active')) {
-            window.Modal.open('modal-switch-mobile');
-          }
-        }
-      }, 250);
-    }
-  }
-
-  function proceedToMobileView() {
-    try {
-      localStorage.setItem('oft_preferred_view', 'mobile');
-    } catch (_) {}
-    const checkbox = document.getElementById('checkbox-remember-mobile-switch');
-    if (checkbox && checkbox.checked) {
-      try {
-        localStorage.setItem(MOBILE_DISMISS_KEY, 'mobile');
-      } catch (_) {}
-    }
-    const search = window.location.search || '';
-    window.location.href = 'editor.html' + search;
-  }
-
-  function dismissMobileSwitchModal() {
-    mobilePromptDismissedThisSession = true;
-    try {
-      localStorage.setItem(MOBILE_DISMISS_KEY, 'stay');
-      localStorage.setItem('oft_preferred_view', 'desktop');
-    } catch (_) {}
-
-    if (window.Modal && typeof window.Modal.close === 'function') {
-      window.Modal.close();
-    }
-  }
-
-  let resizeMobileTimer = null;
-  window.addEventListener('resize', () => {
-    clearTimeout(resizeMobileTimer);
-    resizeMobileTimer = setTimeout(() => {
-      if (isMobileOrSmallScreen()) {
-        try {
-          if (localStorage.getItem(MOBILE_DISMISS_KEY) === 'stay') return;
-        } catch (_) {}
-        const modalEl = document.getElementById('modal-switch-mobile');
-        if (modalEl && !modalEl.classList.contains('is-active')) {
-          if (window.Modal && typeof window.Modal.open === 'function') {
-            window.Modal.open('modal-switch-mobile');
-          }
-        }
-      }
-    }, 300);
-  });
 
   // Template Editor Auto-Open Fallback for Initial Import in Desktop Workstation
   function ensureTemplateEditorAutoOpens() {
@@ -4190,20 +4109,17 @@
     }
   }
 
-  // Trigger mobile check immediately if DOM already loaded
+  // Trigger template editor check immediately if DOM already loaded
   if (document.readyState !== 'loading') {
-    checkAndPromptMobileSwitch();
+    if (typeof window.checkAndPromptMobileSwitch === 'function') window.checkAndPromptMobileSwitch();
     ensureTemplateEditorAutoOpens();
   } else {
     document.addEventListener('DOMContentLoaded', () => {
-      checkAndPromptMobileSwitch();
+      if (typeof window.checkAndPromptMobileSwitch === 'function') window.checkAndPromptMobileSwitch();
       ensureTemplateEditorAutoOpens();
     });
   }
 
-  window.proceedToMobileView = proceedToMobileView;
-  window.dismissMobileSwitchModal = dismissMobileSwitchModal;
-  window.checkAndPromptMobileSwitch = checkAndPromptMobileSwitch;
   window.ensureTemplateEditorAutoOpens = ensureTemplateEditorAutoOpens;
 
 })();

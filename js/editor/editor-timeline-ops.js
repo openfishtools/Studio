@@ -760,9 +760,6 @@ function initTimelineOperations() {
                 layerMediaCache.delete(l.id);
                 layerMediaCache.delete(l.mediaId);
               }
-              if (window.VideoFrameExtractor) {
-                window.VideoFrameExtractor.clearLayer(l);
-              }
             });
 
             // Clean up child layers pointing to deleted parents
@@ -823,7 +820,6 @@ function initTimelineOperations() {
               const globalMbIcon = document.getElementById('editor-icon-motion-blur');
               if (globalMbIcon) globalMbIcon.classList.add('is-active');
             }
-            if (window.PreviewCacheManager) window.PreviewCacheManager.clearAll();
 
             btnLayerMotionBlur.classList.toggle('is-active', nextState);
 
@@ -1157,6 +1153,26 @@ function initTimelineOperations() {
             e.stopPropagation();
             if (typeof ungroupPrecompose === 'function') {
               ungroupPrecompose();
+            }
+          });
+        }
+
+        const btnFitComp = document.getElementById('popover-btn-fit-comp');
+        if (btnFitComp) {
+          btnFitComp.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof window.applyFitOrStretchToComposition === 'function') {
+              window.applyFitOrStretchToComposition('fit');
+            }
+          });
+        }
+
+        const btnStretchComp = document.getElementById('popover-btn-stretch-comp');
+        if (btnStretchComp) {
+          btnStretchComp.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof window.applyFitOrStretchToComposition === 'function') {
+              window.applyFitOrStretchToComposition('stretch');
             }
           });
         }
@@ -1496,6 +1512,48 @@ function initTimelineOperations() {
           }
         }
 
+        // 3d. Fit to Composition & Stretch to Composition (Visual layers)
+        const fitCompBtn = document.getElementById('popover-btn-fit-comp');
+        const stretchCompBtn = document.getElementById('popover-btn-stretch-comp');
+        const transformDivider = document.getElementById('popover-layer-transform-divider');
+        let hasVisualTarget = false;
+        if (!hasKeyframesSelected && selectedCount >= 1 && !isFromEmptyTimeline) {
+          const checkLayers = [];
+          if (selectedLayerIds && selectedLayerIds.size > 0) {
+            selectedLayerIds.forEach(id => {
+              const found = layers.find(l => l.id === id);
+              if (found) checkLayers.push(found);
+            });
+          } else if (contextLayer) {
+            checkLayers.push(contextLayer);
+          } else if (selectedLayerId) {
+            const found = layers.find(l => l.id === selectedLayerId);
+            if (found) checkLayers.push(found);
+          }
+          hasVisualTarget = checkLayers.some(l => l && l.type !== 'audio' && l.type !== 'camera' && l.type !== 'null');
+        }
+        if (fitCompBtn) {
+          if (hasVisualTarget) {
+            fitCompBtn.removeAttribute('disabled');
+            fitCompBtn.style.display = 'flex';
+          } else {
+            fitCompBtn.setAttribute('disabled', 'true');
+            fitCompBtn.style.display = 'none';
+          }
+        }
+        if (stretchCompBtn) {
+          if (hasVisualTarget) {
+            stretchCompBtn.removeAttribute('disabled');
+            stretchCompBtn.style.display = 'flex';
+          } else {
+            stretchCompBtn.setAttribute('disabled', 'true');
+            stretchCompBtn.style.display = 'none';
+          }
+        }
+        if (transformDivider) {
+          transformDivider.style.display = hasVisualTarget ? 'block' : 'none';
+        }
+
         // 4. Extract Audio State (Only for single selected video)
         let isSingleVideo = false;
         if (!hasKeyframesSelected && selectedCount === 1) {
@@ -1677,11 +1735,8 @@ function initTimelineOperations() {
             }
           }
 
-          if (l.type === 'video' && window.VideoFrameExtractor) {
-            const origSourceKey = window.VideoFrameExtractor._getSourceKey(l);
-            if (origSourceKey && !clonedLayer.mediaId) {
-              clonedLayer.mediaId = l.mediaId || origSourceKey;
-            }
+          if (l.type === 'video' && !clonedLayer.mediaId) {
+            clonedLayer.mediaId = l.mediaId || l.sourceVideoId || l.id;
           }
 
           invalidatePreviewCacheForLayer(clonedLayer);
@@ -1802,11 +1857,8 @@ function initTimelineOperations() {
             }
           }
 
-          if (orig.type === 'video' && window.VideoFrameExtractor) {
-            const origSourceKey = window.VideoFrameExtractor._getSourceKey(orig);
-            if (origSourceKey && !cloned.mediaId) {
-              cloned.mediaId = orig.mediaId || origSourceKey;
-            }
+          if (orig.type === 'video' && !cloned.mediaId) {
+            cloned.mediaId = orig.mediaId || orig.sourceVideoId || orig.id;
           }
 
           // Insert directly above original layer in timeline stack (in-place timecode)
@@ -2881,10 +2933,6 @@ function initTimelineOperations() {
         }
         if (window.PreviewCacheManager) {
           window.PreviewCacheManager.setFps(fpsVal);
-          window.PreviewCacheManager.clearAll();
-        }
-        if (window.VideoFrameExtractor) {
-          window.VideoFrameExtractor.setFps(fpsVal);
         }
         if (typeof window.updateTimelineDuration === 'function') {
           window.updateTimelineDuration(true);
@@ -3504,6 +3552,8 @@ function initTimelineOperations() {
           if (typeof renderTimelineLinkConnectors === 'function') renderTimelineLinkConnectors();
         }
       }
+      window.syncSelectionClassesInPlace = syncSelectionClassesInPlace;
+      window.updateTimelineLayerSelectionState = syncSelectionClassesInPlace;
 
 
       function renderTimelineLayers() {
@@ -3731,9 +3781,6 @@ function initTimelineOperations() {
                   invalidatePreviewCacheForLayer(layer);
                 }
                 layer.hidden = !layer.hidden;
-                if (!layer.hidden && layer.type === 'video' && window.VideoFrameExtractor) {
-                  window.VideoFrameExtractor.extractLayerRange(layer);
-                }
                 renderTimelineLayers();
                 redrawComposition();
                 saveCurrentProjectLayers();
@@ -3911,10 +3958,6 @@ function initTimelineOperations() {
                   <span class="fticon fticon-chevron-right" style="width: 13px; height: 13px;" aria-hidden="true"></span>
                 </button>
                 ${(clipType === 'audio') ? '<canvas class="timeline-audio-waveform-canvas"></canvas>' : ''}
-                ${(clipType === 'video') ? `
-                <div class="timeline-clip-progress-track ${layer._extractComplete ? 'is-complete' : ''}">
-                  <div class="timeline-clip-progress ${layer._extractComplete ? 'is-complete' : ''}" style="width: ${(layer._extractProgress || 0) * 100}%;"></div>
-                </div>` : ''}
                 ${(clipType === 'text') ? (() => {
                   const pps = window.currentPixelsPerSecond || 80;
                   const tp = layer.textProps || {};
@@ -4613,9 +4656,6 @@ function initTimelineOperations() {
                   redrawComposition();
                   saveCurrentProjectLayers();
                   updateTimelineDuration(true);
-                  if (window.VideoFrameExtractor && layer.type === 'video') {
-                    window.VideoFrameExtractor.extractLayerRange(layer);
-                  }
                 }
 
                 window.addEventListener('pointermove', onPointerMove, { passive: true });
@@ -4723,9 +4763,6 @@ function initTimelineOperations() {
                   redrawComposition();
                   saveCurrentProjectLayers();
                   updateTimelineDuration(true);
-                  if (window.VideoFrameExtractor && layer.type === 'video') {
-                    window.VideoFrameExtractor.extractLayerRange(layer);
-                  }
                 }
 
                 window.addEventListener('pointermove', onPointerMove, { passive: true });
@@ -5313,14 +5350,6 @@ function initTimelineOperations() {
           window.renderTimelineBeatmarks();
         }
 
-        // Auto-start frame extraction for video layers range
-        if (window.VideoFrameExtractor && currentProjectState.layers) {
-          currentProjectState.layers.forEach(l => {
-            if (l.type === 'video' && (l.dataUrl || l.mediaId) && !l._extractComplete) {
-              window.VideoFrameExtractor.extractLayerRange(l);
-            }
-          });
-        }
 
         if (typeof updateCutBarRowState === 'function') {
           updateCutBarRowState();
@@ -5606,9 +5635,6 @@ function initTimelineOperations() {
           if (removed.type === 'precomp' && window.PreviewCacheManager && typeof window.PreviewCacheManager.deletePool === 'function') {
             window.PreviewCacheManager.deletePool(removed.id);
           }
-          if (window.VideoFrameExtractor) {
-            window.VideoFrameExtractor.clearLayer(removed);
-          }
           if (window.Drawer && window.Drawer.isOpen('timeline-layer-drawer')) {
             window.Drawer.close(false);
           }
@@ -5747,10 +5773,6 @@ function initTimelineOperations() {
         saveCurrentProjectLayers();
         renderTimelineLayers();
         redrawComposition();
-
-        if (window.VideoFrameExtractor && newLayer.type === 'video') {
-          window.VideoFrameExtractor.extractLayerRange(newLayer);
-        }
 
         if (!isSelectorMode) {
           selectTimelineLayer(newLayer.id, false);
@@ -6021,9 +6043,6 @@ function initTimelineOperations() {
                   layerMediaCache.delete(l.id);
                   layerMediaCache.delete(l.mediaId);
                 }
-                if (window.VideoFrameExtractor) {
-                  window.VideoFrameExtractor.clearLayer(l);
-                }
                 return false;
               }
               return true;
@@ -6127,8 +6146,6 @@ function initTimelineOperations() {
       // Expose globally for media drawer interactions
       window.addOrSelectMediaLayer = addOrSelectMediaLayer;
       window.renderTimelineLayers = renderTimelineLayers;
-      window.selectTimelineLayer = selectTimelineLayer;
-      window.deselectTimelineLayer = deselectTimelineLayer;
       window.toggleSelectTimelineLayer = toggleSelectTimelineLayer;
       window.removeTimelineLayersForMedia = function(mediaId, dataUrl, item) {
         if (!currentProjectState.layers || !Array.isArray(currentProjectState.layers)) return;
@@ -6198,17 +6215,7 @@ function initTimelineOperations() {
             layerMediaCache.delete(l.id);
             if (l.mediaId) layerMediaCache.delete(l.mediaId);
           }
-          if (window.VideoFrameExtractor) {
-            try { window.VideoFrameExtractor.clearLayer(l); } catch (_) {}
-          }
         });
-
-        if (window.VideoFrameExtractor) {
-          try { window.VideoFrameExtractor.clearSource(targetMediaId || targetDataUrl); } catch (_) {}
-          if (targetName) {
-            try { window.VideoFrameExtractor.clearSource(targetName); } catch (_) {}
-          }
-        }
 
         // Clean up nested precomp layers if any child matches
         currentProjectState.layers.forEach(l => {

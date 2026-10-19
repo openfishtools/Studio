@@ -882,6 +882,7 @@
             layer._shapeDirty = true;
             layer._fillDirty = true;
             if (layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
+            if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
           }
           if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
           return;
@@ -916,6 +917,7 @@
           layer._shapeDirty = true;
           layer._fillDirty = true;
           if (layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
+          if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
         }
         const curStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
         const curDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
@@ -1384,6 +1386,7 @@
     function clearEmergencySnapshot() {
       try { localStorage.removeItem(_EMERGENCY_KEY); } catch (_) {}
     }
+    window.clearEmergencySnapshot = clearEmergencySnapshot;
 
     // Patch doSave to clear dirty flag and emergency snapshot on successful DB write
     const _patchedDoSaveOrig = saveCurrentProjectLayers;
@@ -1755,6 +1758,7 @@
         window.Modal.open('modal-project-settings');
       }
     }
+    window.openProjectSettingsModal = openProjectSettingsModal;
 
     // Helper: Update dynamic summary indicators on composition settings categories
     function updateProjectSettingsSummaries() {
@@ -2015,6 +2019,13 @@
         if (statusEl) statusEl.textContent = 'Storage ready';
       }
     }
+    window.renderEditorThemePicker = renderEditorThemePicker;
+    window.detectEditorUiScalePage = detectEditorUiScalePage;
+    window.clampEditorUiScale = clampEditorUiScale;
+    window.getEditorUiScale = getEditorUiScale;
+    window.applyEditorUiScale = applyEditorUiScale;
+    window.initEditorUiScaleSlider = initEditorUiScaleSlider;
+    window.updateEditorStorageUI = updateEditorStorageUI;
 
     // Save project settings action (persisting to FishDatabase & live updating Canvas and Timeline)
     async function saveProjectSettingsAction() {
@@ -2113,10 +2124,6 @@
       if (window.PreviewCacheManager) {
         window.PreviewCacheManager.setFps(selectedFps);
         window.PreviewCacheManager.setIdleCacheEnabled(selectedIdle);
-        window.PreviewCacheManager.clearAll();
-      }
-      if (window.VideoFrameExtractor) {
-        window.VideoFrameExtractor.setFps(selectedFps);
       }
 
       // 1. Close Modal immediately for instantaneous UX feedback
@@ -2177,6 +2184,7 @@
         }
       }, 16);
     }
+    window.saveProjectSettingsAction = saveProjectSettingsAction;
 
     // ── Debug State Helper: Multi-Layer Fetch & Duration Analysis ──────────────
     window.getSelectedLayerDebugState = function() {
@@ -2857,10 +2865,6 @@
         window.PreviewCacheManager.setDraftMode(isDraftActive);
         window.PreviewCacheManager.setIdleCacheEnabled(savedIdleCache);
       }
-      if (window.VideoFrameExtractor) {
-        window.VideoFrameExtractor.clearAll();
-        window.VideoFrameExtractor.setFps(initialFps);
-      }
 
       if (typeof updatePreviewCanvas === 'function') {
         updatePreviewCanvas(
@@ -2908,9 +2912,6 @@
         currentProjectState.layers.forEach(l => {
           if (typeof sanitizeLayer3DEffects === 'function') {
             sanitizeLayer3DEffects(l);
-          }
-          if (l.type === 'video' && window.VideoFrameExtractor) {
-            window.VideoFrameExtractor.extractLayerRange(l);
           }
         });
       }
@@ -3111,6 +3112,7 @@
 
       return { duration, fps, timescale };
     }
+    window.parseMp4Metadata = parseMp4Metadata;
 
     // Comprehensive Video Metadata Inspector (Instant Duration, Native FPS, Dims, Poster)
     function inspectVideoMetadata(file, dataUrl) {
@@ -3361,13 +3363,6 @@
           }
           if (typeof window.PreviewCacheManager.clearAll === 'function') {
             window.PreviewCacheManager.clearAll('all');
-          }
-        } catch (_) {}
-      }
-      if (window.VideoFrameExtractor) {
-        try {
-          if (typeof window.VideoFrameExtractor.clearAll === 'function') {
-            window.VideoFrameExtractor.clearAll();
           }
         } catch (_) {}
       }

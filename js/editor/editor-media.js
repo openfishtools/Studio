@@ -106,66 +106,6 @@
   }
   window.releaseLayerMediaElement = releaseLayerMediaElement;
 
-  function audioBufferToWav(buffer) {
-    const numChannels = buffer.numberOfChannels;
-    const sampleRate = buffer.sampleRate;
-    const format = 1; // PCM
-    const bitDepth = 16;
-    const bytesPerSample = bitDepth / 8;
-    const blockAlign = numChannels * bytesPerSample;
-
-    let interleaved;
-    if (numChannels === 2) {
-      const left = buffer.getChannelData(0);
-      const right = buffer.getChannelData(1);
-      const length = left.length + right.length;
-      interleaved = new Float32Array(length);
-      let inputIdx = 0;
-      let outputIdx = 0;
-      while (inputIdx < left.length) {
-        interleaved[outputIdx++] = left[inputIdx];
-        interleaved[outputIdx++] = right[inputIdx];
-        inputIdx++;
-      }
-    } else {
-      interleaved = buffer.getChannelData(0);
-    }
-
-    const dataByteCount = interleaved.length * bytesPerSample;
-    const wavBuffer = new ArrayBuffer(44 + dataByteCount);
-    const view = new DataView(wavBuffer);
-
-    function writeString(view, offset, string) {
-      for (let i = 0; i < string.length; i++) {
-        view.setUint8(offset + i, string.charCodeAt(i));
-      }
-    }
-
-    writeString(view, 0, 'RIFF');
-    view.setUint32(4, 36 + dataByteCount, true);
-    writeString(view, 8, 'WAVE');
-    writeString(view, 12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, format, true);
-    view.setUint16(22, numChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * blockAlign, true);
-    view.setUint16(32, blockAlign, true);
-    view.setUint16(34, bitDepth, true);
-    writeString(view, 36, 'data');
-    view.setUint32(40, dataByteCount, true);
-
-    let offset = 44;
-    for (let i = 0; i < interleaved.length; i++) {
-      let s = Math.max(-1, Math.min(1, interleaved[i]));
-      s = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      view.setInt16(offset, s, true);
-      offset += 2;
-    }
-    return wavBuffer;
-  }
-  window.audioBufferToWav = audioBufferToWav;
-
     if (!window.layerMediaCache) window.layerMediaCache = new Map();
 
     function getLayerMediaDuration(layer) {
@@ -194,9 +134,33 @@
           isReady: true
         };
       }
+      if (window._activeMediaMap) {
+        let activeItem = layer.mediaId ? window._activeMediaMap.get(layer.mediaId) : null;
+        if (!activeItem && layer.name) {
+          for (const item of window._activeMediaMap.values()) {
+            if (item && item.name === layer.name && (!item.type || item.type === layer.type)) {
+              activeItem = item;
+              if (!layer.mediaId && item.id) layer.mediaId = item.id;
+              break;
+            }
+          }
+        }
+        if (activeItem && activeItem.dataUrl && layer.dataUrl !== activeItem.dataUrl) {
+          layer.dataUrl = activeItem.dataUrl;
+        }
+      }
       const key = (layer.type === 'video' || layer.type === 'audio') ? layer.id : (layer.mediaId || layer.id);
       if (layerMediaCache.has(key)) {
-        return layerMediaCache.get(key);
+        const cachedEntry = layerMediaCache.get(key);
+        if (cachedEntry && cachedEntry.el && layer.dataUrl) {
+          const curSrc = cachedEntry.el.getAttribute('src') || cachedEntry.el.src || '';
+          if (!curSrc || curSrc !== layer.dataUrl) {
+            cachedEntry.el._contentVersion = (cachedEntry.el._contentVersion || 0) + 1;
+            cachedEntry.el.src = layer.dataUrl;
+            if (typeof cachedEntry.el.load === 'function') cachedEntry.el.load();
+          }
+        }
+        return cachedEntry;
       }
 
       const entry = {
@@ -352,9 +316,6 @@
               saveCurrentProjectLayers();
             }
           }
-          if (window.VideoFrameExtractor && layer.dataUrl) {
-            window.VideoFrameExtractor.extractLayerRange(layer);
-          }
           try { video.currentTime = 0.001; } catch (_) {}
         };
 
@@ -376,32 +337,10 @@
             }
           }
         };
+        entry.snapshotFreezeCanvas = snapshotFreezeCanvas;
 
         video.onseeked = () => {
-          entry.isReady = true;
-
-          // Skip heavy freeze frame & UI preview redraws during active export
-          if (window.isExporting) return;
-
-          // Snapshot frame to freezeCanvas to eliminate black flicker completely
-          snapshotFreezeCanvas();
-
-          // Process any queued scrub seek smoothly
-          if (!window.isTimelinePlaying && video._pendingScrubTime !== null && video._pendingScrubTime !== undefined) {
-            const nextTime = video._pendingScrubTime;
-            video._pendingScrubTime = null;
-            const maxSeek = (video.duration && !isNaN(video.duration) && video.duration > 0)
-              ? Math.max(0, video.duration - 0.01)
-              : Infinity;
-            const targetSeek = Math.min(nextTime, maxSeek);
-            if (Math.abs(video.currentTime - targetSeek) > 0.03) {
-              try {
-                video.currentTime = targetSeek;
-              } catch (_) {}
-            }
-          }
-
-          redrawComposition('video:onseeked');
+          window.VideoCompEngine.handleVideoSeeked(video, entry);
         };
 
         video.onloadeddata = () => {
@@ -486,9 +425,11 @@
       }
 
       // Fallback async hydration if layer.dataUrl is missing or dead blob URL
-      const isDeadBlob = layer.dataUrl && typeof layer.dataUrl === 'string' && layer.dataUrl.startsWith('blob:') && !(window._activeMediaMap && window._activeMediaMap.has(layer.mediaId));
+      const activePoolItem = (window._activeMediaMap && layer.mediaId) ? window._activeMediaMap.get(layer.mediaId) : null;
+      const isDeadBlob = layer.dataUrl && typeof layer.dataUrl === 'string' && layer.dataUrl.startsWith('blob:') &&
+        (!activePoolItem || !activePoolItem.dataUrl || activePoolItem.dataUrl !== layer.dataUrl);
       if ((!layer.dataUrl || isDeadBlob) && (layer.mediaId || layer.type === 'video' || layer.type === 'audio' || layer.type === 'image') && window.FishDatabase && currentProjectState.id) {
-        window.FishDatabase.getProjectMedia(currentProjectState.id).then(medias => {
+        window.FishDatabase.getProjectMedia(currentProjectState.id).then(async medias => {
           let m = (medias || []).find(item => item.id === layer.mediaId);
           if (!m) {
             m = (medias || []).find(item => item.id === layer.id || item.name === layer.name || (item.name && layer.name && (item.name.includes(layer.name) || layer.name.includes(item.name))));
@@ -503,21 +444,57 @@
             } else if (!m.dataUrl && m.blob) {
               try { m.dataUrl = trackStudioObjectUrl(URL.createObjectURL(m.blob)); } catch (_) {}
             }
-            if (m.dataUrl) {
-              layer.dataUrl = m.dataUrl;
-              window._activeMediaMap = window._activeMediaMap || new Map();
-              window._activeMediaMap.set(m.id, m);
-              if (entry.el && entry.el.src !== m.dataUrl) {
-                entry.el._contentVersion = (entry.el._contentVersion || 0) + 1;
-                entry.el.src = m.dataUrl;
-                if (typeof entry.el.load === 'function') entry.el.load();
+          }
+          // Local storage/files fallback recovery if IndexedDB write was previously interrupted
+          const targetName = (m && m.name) || layer.name;
+          if ((!m || !m.dataUrl) && targetName) {
+            try {
+              const res = await fetch('/storage/files/' + encodeURIComponent(targetName));
+              if (res.ok) {
+                const blob = await res.blob();
+                if (blob && blob.size > 64) {
+                  const freshUrl = trackStudioObjectUrl(URL.createObjectURL(blob));
+                  if (!m) {
+                    m = {
+                      id: layer.mediaId || ('med_rec_' + Date.now()),
+                      projectId: currentProjectState.id,
+                      name: targetName,
+                      type: layer.type || 'video',
+                      mimeType: blob.type || (layer.type === 'video' ? 'video/mp4' : ''),
+                      size: blob.size,
+                      blob: blob,
+                      dataUrl: freshUrl,
+                      duration: layer.mediaDuration || layer.durationSec || 5,
+                      width: layer.mediaWidth || null,
+                      height: layer.mediaHeight || null,
+                      createdAt: new Date().toISOString()
+                    };
+                    layer.mediaId = m.id;
+                  } else {
+                    m.blob = blob;
+                    m.dataUrl = freshUrl;
+                  }
+                  if (window.FishDatabase && typeof window.FishDatabase.saveMedia === 'function') {
+                    window.FishDatabase.saveMedia(m).catch(() => {});
+                  }
+                  if (typeof window.refreshProjectMediaGrid === 'function') {
+                    window.refreshProjectMediaGrid();
+                  }
+                }
               }
-              if (window.VideoFrameExtractor && layer.type === 'video') {
-                window.VideoFrameExtractor.extractLayerRange(layer);
-              }
-              if (typeof redrawComposition === 'function') {
-                redrawComposition('mediaHydrated');
-              }
+            } catch (_) {}
+          }
+          if (m && m.dataUrl) {
+            layer.dataUrl = m.dataUrl;
+            window._activeMediaMap = window._activeMediaMap || new Map();
+            window._activeMediaMap.set(m.id, m);
+            if (entry.el && entry.el.src !== m.dataUrl) {
+              entry.el._contentVersion = (entry.el._contentVersion || 0) + 1;
+              entry.el.src = m.dataUrl;
+              if (typeof entry.el.load === 'function') entry.el.load();
+            }
+            if (typeof redrawComposition === 'function') {
+              redrawComposition('mediaHydrated');
             }
           }
         }).catch(() => {});
@@ -1114,6 +1091,7 @@
         grid.appendChild(tile);
       });
     }
+    window.renderFillMediaPool = renderFillMediaPool;
 
     // Color interpolation for adding gradient stops
     function interpolateHexColor(color1, color2, t) {
@@ -1770,11 +1748,6 @@
           if (window.FishDatabase) {
             await window.FishDatabase.deleteMedia(item.id);
           }
-          if (window.VideoFrameExtractor) {
-            window.VideoFrameExtractor.clearSource(item.id).catch(() => {});
-            if (item.dataUrl) window.VideoFrameExtractor.clearSource(item.dataUrl).catch(() => {});
-            if (item.name) window.VideoFrameExtractor.clearSource(item.name).catch(() => {});
-          }
         } catch (err) {
           console.warn('[MediaPool] Error during media deletion:', err);
         } finally {
@@ -2148,8 +2121,8 @@
                 </div>
                 <span class="media-item-type-badge">VID</span>
               `;
-              // Lazily generate missing thumbnail and persist
-              if (item.dataUrl) {
+              // Lazily generate missing thumbnail and persist (skip if handleFiles Phase 3 is already ingesting)
+              if (item.dataUrl && !item._ingesting) {
                 captureVideoThumbnail(null, item.dataUrl).then(thumb => {
                   if (thumb) {
                     item.thumbUrl = thumb;
@@ -2157,7 +2130,7 @@
                       item.width = window.lastCapturedVideoDims.width;
                       item.height = window.lastCapturedVideoDims.height;
                     }
-                    if (window.FishDatabase) window.FishDatabase.saveMedia(item);
+                    if (window.FishDatabase && !item._ingesting) window.FishDatabase.saveMedia(item);
                     const placeholder = tile.querySelector('.media-item-vid-placeholder');
                     if (placeholder) {
                       const img = document.createElement('img');
@@ -2340,6 +2313,8 @@
       }
 
       window.refreshProjectMediaGrid = renderMediaGrid;
+      window.renderProjectMediaGrid = renderMediaGrid;
+      window.renderMediaGrid = renderMediaGrid;
 
       if (mediaPoolInitialized) {
         renderMediaGrid();
@@ -2447,6 +2422,7 @@
               fps: null,
               width: null,
               height: null,
+              _ingesting: true,
               createdAt: new Date().toISOString()
             };
 
@@ -2574,13 +2550,7 @@
                 } catch (_) {}
               }
 
-              // Background binary extraction & IndexedDB persistence
-              if (file && typeof file.arrayBuffer === 'function') {
-                try {
-                  mediaItem.buffer = await file.arrayBuffer();
-                } catch (_) {}
-              }
-
+              delete mediaItem._ingesting;
               if (window.FishDatabase) {
                 try {
                   await window.FishDatabase.saveMedia(mediaItem);
@@ -2589,6 +2559,7 @@
                 }
               }
             } catch (err) {
+              delete mediaItem._ingesting;
               console.warn(`[MediaPool] Background worker warning for ${mediaItem.name}:`, err);
             }
           })();
@@ -3322,18 +3293,32 @@
       // 5. Speed Draft Mode button (Adaptive Fast Resolution toggle & persistence)
       const draftBtn = document.getElementById('editor-icon-low-quality');
       if (draftBtn) {
+        try {
+          if (localStorage.getItem('oft_more_settings_draft') === 'true') {
+            draftBtn.classList.add('is-active');
+            window._adaptiveDraftState = { scale: 0.5, emaMs: 8.0, fastStreak: 0 };
+            window._currentAdaptiveDraftScale = 0.5;
+            if (window.PreviewCacheManager) {
+              window.PreviewCacheManager.setDraftMode(true);
+            }
+          }
+        } catch (_) {}
         draftBtn.addEventListener('click', () => {
           draftBtn.classList.toggle('is-active');
           const isActive = draftBtn.classList.contains('is-active');
-          window._adaptiveDraftState = { scale: 1.0, emaMs: 8.0, fastStreak: 0 };
-          window._currentAdaptiveDraftScale = 1.0;
+          window._adaptiveDraftState = { scale: isActive ? 0.5 : 1.0, emaMs: 8.0, fastStreak: 0 };
+          window._currentAdaptiveDraftScale = isActive ? 0.5 : 1.0;
           try {
             localStorage.setItem('oft_more_settings_draft', isActive ? 'true' : 'false');
           } catch (err) {}
           if (window.PreviewCacheManager) {
             window.PreviewCacheManager.setDraftMode(isActive);
           }
+          if (typeof fitPreviewCanvasBox === 'function') {
+            fitPreviewCanvasBox();
+          }
           updatePreviewCanvas();
+          redrawComposition('draftToggle');
         });
       }
 
@@ -3349,9 +3334,6 @@
           try {
             localStorage.setItem('oft_global_motion_blur', String(isActive));
           } catch (_) {}
-          if (window.PreviewCacheManager) {
-            window.PreviewCacheManager.clearAll();
-          }
           if (typeof redrawComposition === 'function') {
             redrawComposition('globalMotionBlurToggle');
           }

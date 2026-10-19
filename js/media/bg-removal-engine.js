@@ -549,9 +549,7 @@
       delete layer._bgCutoutBitmap;
       delete layer._bgMaskCanvas;
       delete layer._bgSrcElement;
-      const sourceKey = (window.VideoFrameExtractor && window.VideoFrameExtractor._getSourceKey)
-        ? window.VideoFrameExtractor._getSourceKey(layer)
-        : (layer.mediaId || layer.dataUrl || layer.id);
+      const sourceKey = (layer.mediaId || layer.dataUrl || layer.id);
       this._photoCutoutCache.delete(sourceKey);
       if (layer.mediaId) this._photoCutoutCache.delete(layer.mediaId);
       if (layer.fillMediaId) this._photoCutoutCache.delete(layer.fillMediaId);
@@ -620,22 +618,7 @@
       if (!this.isLayerMattingActive(layer) && !force) return;
 
       const isVideo = (layer.type === 'video');
-      const sourceKey = (window.VideoFrameExtractor && window.VideoFrameExtractor._getSourceKey)
-        ? window.VideoFrameExtractor._getSourceKey(layer)
-        : (layer.mediaId || layer.dataUrl || layer.id);
-
-      // If video layer raw extraction is still in progress or incomplete, revert half-rendered raw frames immediately
-      if (isVideo && window.VideoFrameExtractor) {
-        const source = window.VideoFrameExtractor.getSourceCache(sourceKey);
-        const fps = (window.currentProjectState && window.currentProjectState.fps) || 60;
-        const pps = window.currentPixelsPerSecond || 80;
-        const durSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
-        const totalFrames = Math.max(1, Math.round(durSec * fps));
-        const isRawIncomplete = !layer._extractComplete || (source && (source.isExtracting || (source.frames && source.frames.size < totalFrames)));
-        if (isRawIncomplete && typeof window.VideoFrameExtractor.abortAndRevertPartialSequence === 'function') {
-          await window.VideoFrameExtractor.abortAndRevertPartialSequence(layer);
-        }
-      }
+      const sourceKey = (layer.mediaId || layer.dataUrl || layer.id);
 
       // Check if already cached (bypass when forced)
       if (!force && !isVideo && this.getPhotoCutout(layer)) {
@@ -868,14 +851,7 @@
         this._videoFrameCache.set(sourceKey, frameCache);
       }
 
-      // Check VideoFrameExtractor for cached source frames
       let cachedSource = null;
-      if (window.VideoFrameExtractor) {
-        cachedSource = window.VideoFrameExtractor.getSourceCache(sourceKey);
-        if (!cachedSource) {
-          cachedSource = window.VideoFrameExtractor._getOrCreateSource(sourceKey, layer.dataUrl, layer.name, layer.id);
-        }
-      }
 
       // Resolve video URL for dedicated decoding element
       let videoUrl = layer.dataUrl || (cachedSource && cachedSource.dataUrl);
@@ -956,13 +932,9 @@
           }
 
           let rawFrame = null;
-          // Check if previously extracted raw frame exists in RAM or DB
+          // Check if previously extracted raw frame exists in RAM
           if (cachedSource && cachedSource.frames && cachedSource.frames.has(fIdx)) {
             rawFrame = cachedSource.frames.get(fIdx);
-          } else if (cachedSource && window.VideoFrameExtractor && typeof window.VideoFrameExtractor.fetchFrameFromDB === 'function') {
-            try {
-              rawFrame = await window.VideoFrameExtractor.fetchFrameFromDB(cachedSource, fIdx);
-            } catch (_) {}
           }
 
           // Otherwise seek dedicated decoder video directly to exact timestamp
@@ -1012,25 +984,11 @@
               const cutout = await this.compositeCutout(rawFrame, maskCanvas);
               frameCache.set(fIdx, cutout);
 
-              // Seamlessly populate VideoFrameExtractor so timeline scrubbing and playback read the cutouts directly
               if (cachedSource) {
                 cachedSource.frames.set(fIdx, cutout);
                 if (!cachedSource.cachedFrameIndices) cachedSource.cachedFrameIndices = new Set();
                 cachedSource.cachedFrameIndices.add(fIdx);
                 cachedSource._hasNewExtractedFrames = true;
-
-                // Queue save to IndexedDB as WebP (with alpha) so cutouts persist across reloads
-                if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor._queueFrameSave === 'function') {
-                  if (typeof cutout.convertToBlob === 'function') {
-                    cutout.convertToBlob({ type: 'image/webp', quality: 0.85 }).then(blob => {
-                      if (blob) window.VideoFrameExtractor._queueFrameSave(sourceKey, fIdx, blob, fps);
-                    }).catch(() => {});
-                  } else if (typeof cutout.toBlob === 'function') {
-                    cutout.toBlob(blob => {
-                      if (blob) window.VideoFrameExtractor._queueFrameSave(sourceKey, fIdx, blob, fps);
-                    }, 'image/webp', 0.85);
-                  }
-                }
               }
             } catch (segErr) {
               console.warn('[FishBgRemovalEngine] Frame segment error at', fIdx, segErr);
@@ -1042,10 +1000,6 @@
           layer._extractProgress = (i + 1) / totalFramesToProcess;
           if (i + 1 >= totalFramesToProcess) {
             layer._extractComplete = true;
-          }
-
-          if (window.VideoFrameExtractor) {
-            window.VideoFrameExtractor.updateLayerProgressBar(layer);
           }
 
           // Notify progress every 2 frames or at completion
@@ -1070,18 +1024,12 @@
           } catch (_) {}
           decoderVideo = null;
         }
-        if (cachedSource && window.VideoFrameExtractor && typeof window.VideoFrameExtractor._flushSaveQueue === 'function') {
-          window.VideoFrameExtractor._flushSaveQueue();
-        }
         if (!task.cancelled) {
           layer._extractComplete = true;
           layer._extractProgress = 1;
           task.percent = 100;
           task.status = 'done';
           this._notifyProgress();
-          if (window.VideoFrameExtractor) {
-            window.VideoFrameExtractor.updateLayerProgressBar(layer);
-          }
           if (typeof window.redrawComposition === 'function') {
             window.redrawComposition('bgRemovalDone');
           }

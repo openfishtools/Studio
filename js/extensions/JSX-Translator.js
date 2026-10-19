@@ -1947,6 +1947,12 @@
           const targets = getSelectedLayers();
           return global.applyCutefishEffect(tool, targets);
         }
+        if (typeof global.openfishtoolsControllerExecute === 'function') {
+          return global.openfishtoolsControllerExecute(tool, ...args);
+        }
+        if (typeof global.editorExecuteFishTool === 'function') {
+          return global.editorExecuteFishTool(tool, ...args);
+        }
         break;
     }
   }
@@ -2188,26 +2194,36 @@
   };
 
   global.app = global.app || appShim;
-  global.executeFishTool = executeFishTool;
+  if (typeof global.executeFishTool !== 'function') {
+    global.executeFishTool = executeFishTool;
+  }
   global.executeJSX = executeJSX;
-  global.applyPresetWarp1 = applyPresetWarp1;
-  global.applyPresetWarp2 = applyPresetWarp2;
-  global.applyPresetWarp3 = applyPresetWarp3;
-  global.applyBeatGhostEffect = applyBeatGhostEffect;
-  global.applyBeatWarpEffect = applyBeatWarpEffect;
-  global.applyBeatFisheyeEffect = applyBeatFisheyeEffect;
-  global.applyBeatMidwaveEffect = applyBeatMidwaveEffect;
-  global.applyBeatHuespinEffect = applyBeatHuespinEffect;
-  global.applyBeatFlashEffect = applyBeatFlashEffect;
-  global.applyBeatBlurEffect = applyBeatBlurEffect;
-  global.applyBeatNullTool = applyBeatNullTool;
+  if (typeof window !== 'undefined') {
+    window.executeJSX = executeJSX;
+    if (typeof window.executeFishTool !== 'function') {
+      window.executeFishTool = executeFishTool;
+    }
+  }
+  global.applyPresetWarp1 = global.applyPresetWarp1 || applyPresetWarp1;
+  global.applyPresetWarp2 = global.applyPresetWarp2 || applyPresetWarp2;
+  global.applyPresetWarp3 = global.applyPresetWarp3 || applyPresetWarp3;
+  global.applyBeatGhostEffect = global.applyBeatGhostEffect || applyBeatGhostEffect;
+  global.applyBeatWarpEffect = global.applyBeatWarpEffect || applyBeatWarpEffect;
+  global.applyBeatFisheyeEffect = global.applyBeatFisheyeEffect || applyBeatFisheyeEffect;
+  global.applyBeatMidwaveEffect = global.applyBeatMidwaveEffect || applyBeatMidwaveEffect;
+  global.applyBeatHuespinEffect = global.applyBeatHuespinEffect || applyBeatHuespinEffect;
+  global.applyBeatFlashEffect = global.applyBeatFlashEffect || applyBeatFlashEffect;
+  global.applyBeatBlurEffect = global.applyBeatBlurEffect || applyBeatBlurEffect;
+  global.applyBeatNullTool = global.applyBeatNullTool || applyBeatNullTool;
 
   // Cross-frame message listener for postMessage triggers from OpenFishTools panel iframe
-  if (typeof global.addEventListener === 'function') {
+  if (typeof global.addEventListener === 'function' && !global.__oftRunToolMsgBound) {
+    global.__oftRunToolMsgBound = true;
     global.addEventListener('message', (event) => {
       if (event && event.data && event.data.type === 'fishtools-run-tool' && event.data.tool) {
         const args = Array.isArray(event.data.args) ? event.data.args : [];
-        executeFishTool(event.data.tool, ...args);
+        const runner = global.executeFishTool || executeFishTool;
+        runner(event.data.tool, ...args);
       }
     });
   }

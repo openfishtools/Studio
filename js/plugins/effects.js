@@ -1597,6 +1597,7 @@
       const processedParams = new Set();
       const controlsHTMLArr = [];
       const paramsList = def.params || [];
+      const FishElements = (typeof window !== 'undefined' && window.FishElements) ? window.FishElements : undefined;
       const sec = (currentSec !== undefined && currentSec !== null) ? currentSec : 0;
       const tol = 0.04;
 

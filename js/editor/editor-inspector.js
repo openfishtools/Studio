@@ -328,6 +328,45 @@
     }
     window.switchLayerDrawerSubview = switchLayerDrawerSubview;
 
+    function syncInspectorState() {
+      if (typeof window._desktopSyncInspectorState === 'function') {
+        return window._desktopSyncInspectorState();
+      }
+      const hasActiveLayer = !!(
+        (window.selectedLayerId && window.selectedLayerId !== '') ||
+        (window.selectedLayerIds && window.selectedLayerIds.size > 0)
+      );
+      if (typeof window.updateClipboardButtonsVisibility === 'function') {
+        window.updateClipboardButtonsVisibility();
+      }
+      if (typeof window.updateCutBarRowState === 'function') {
+        window.updateCutBarRowState();
+      }
+      if (hasActiveLayer) {
+        const currentLayer = window.selectedLayerId
+          ? ((window.currentProjectState && window.currentProjectState.layers) || []).find(l => l.id === window.selectedLayerId)
+          : null;
+        if (typeof window.updateVolumeAndSpeedBtnState === 'function') {
+          window.updateVolumeAndSpeedBtnState(currentLayer);
+        }
+      }
+    }
+    if (typeof window.syncInspectorState !== 'function') {
+      window.syncInspectorState = syncInspectorState;
+    }
+
+    function syncDesktopInspectorProperty(layer, prop) {
+      if (typeof syncTransformControllerValues === 'function') {
+        syncTransformControllerValues();
+      } else if (typeof window.syncTransformControllerValues === 'function') {
+        window.syncTransformControllerValues();
+      }
+      if (typeof window.syncInspectorState === 'function') {
+        window.syncInspectorState();
+      }
+    }
+    window.syncDesktopInspectorProperty = syncDesktopInspectorProperty;
+
     function focusLayerTransformProperty(prop) {
       const hasSelected = !!(window.selectedLayerId || (window.selectedLayerIds && window.selectedLayerIds.size > 0));
       if (!hasSelected) return;
@@ -1640,20 +1679,32 @@
       // F. Aspect Ratio Link Toggle on Scale pane
       const btnScaleLink = document.getElementById('btn-scale-link');
       let isScaleLinked = true;
+      function setScaleLinked(linked, targetLayer = null) {
+        isScaleLinked = Boolean(linked);
+        const layer = targetLayer || ((currentProjectState && currentProjectState.layers) || []).find(l => l.id === window.selectedLayerId);
+        if (layer) {
+          layer.isScaleLinked = isScaleLinked;
+          layer.lockAspect = isScaleLinked;
+          layer.aspectLocked = isScaleLinked;
+        }
+        if (btnScaleLink) {
+          const linkOnSvg = btnScaleLink.querySelector('.svg-link-on');
+          const linkOffSvg = btnScaleLink.querySelector('.svg-link-off');
+          if (linkOnSvg) linkOnSvg.style.display = isScaleLinked ? '' : 'none';
+          if (linkOffSvg) linkOffSvg.style.display = isScaleLinked ? 'none' : '';
+        }
+        const singleJog = document.getElementById('jog-scale-linked');
+        const dualJog = document.getElementById('jog-scale-unlinked');
+        if (singleJog) singleJog.style.display = isScaleLinked ? '' : 'none';
+        if (dualJog) dualJog.style.display = isScaleLinked ? 'none' : 'flex';
+        syncTransformControllerValues();
+      }
+      window.setScaleLinked = setScaleLinked;
+
       if (btnScaleLink) {
         btnScaleLink.addEventListener('click', (e) => {
           e.stopPropagation();
-          isScaleLinked = !isScaleLinked;
-          const linkOnSvg = btnScaleLink.querySelector('.svg-link-on');
-          const linkOffSvg = btnScaleLink.querySelector('.svg-link-off');
-          const singleJog = document.getElementById('jog-scale-linked');
-          const dualJog = document.getElementById('jog-scale-unlinked');
-
-          if (linkOnSvg) linkOnSvg.style.display = isScaleLinked ? '' : 'none';
-          if (linkOffSvg) linkOffSvg.style.display = isScaleLinked ? 'none' : '';
-          if (singleJog) singleJog.style.display = isScaleLinked ? '' : 'none';
-          if (dualJog) dualJog.style.display = isScaleLinked ? 'none' : 'flex';
-          syncTransformControllerValues();
+          setScaleLinked(!isScaleLinked);
         });
       }
 
@@ -4554,15 +4605,6 @@
           }
           updateSpeedKeyframeBtnState();
 
-          if (window.VideoFrameExtractor) {
-            if (typeof window.VideoFrameExtractor.clearInterpolationCache === 'function') {
-              window.VideoFrameExtractor.clearInterpolationCache();
-            }
-            if (layer.type === 'video' && typeof window.VideoFrameExtractor.extractLayerRange === 'function') {
-              window.VideoFrameExtractor.extractLayerRange(layer);
-            }
-          }
-
           if (window.PreviewCacheManager) {
             const pps = window.currentPixelsPerSecond || 80;
             const lStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
@@ -4766,10 +4808,6 @@
 
           updateSpeedKeyframeBtnState();
 
-          if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.clearInterpolationCache === 'function') {
-            window.VideoFrameExtractor.clearInterpolationCache();
-          }
-
           if (window.PreviewCacheManager) {
             const lStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
             const lDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
@@ -4924,17 +4962,7 @@
               b.setAttribute('aria-checked', active ? 'true' : 'false');
             });
 
-            // 1. Clear interpolation synthesis cache & ensure video frames extracted
-            if (window.VideoFrameExtractor) {
-              if (typeof window.VideoFrameExtractor.clearInterpolationCache === 'function') {
-                window.VideoFrameExtractor.clearInterpolationCache();
-              }
-              if (layer.type === 'video' && typeof window.VideoFrameExtractor.extractLayerRange === 'function') {
-                window.VideoFrameExtractor.extractLayerRange(layer);
-              }
-            }
-
-            // 2. Invalidate RAM preview cache for layer's active span
+            // Invalidate RAM preview cache for layer's active span
             invalidatePreviewCacheForLayer(layer);
 
             // 3. Auto recache composition in RAM preview buffer

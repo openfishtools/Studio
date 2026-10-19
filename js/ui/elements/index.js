@@ -59,6 +59,9 @@
 
   FishElements.initAll = initAll;
   global.FishElements = FishElements;
+  if (typeof window !== 'undefined') {
+    window.FishElements = FishElements;
+  }
 
   if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') {

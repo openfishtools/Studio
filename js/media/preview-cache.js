@@ -27,7 +27,10 @@
       this._pendingFrames = new Set();
       // Tracks frames whose createImageBitmap is currently in-flight (prevents double-encode race)
       this._inFlightFrames = new Set();
+      this._unreadyFrames = new Set();
       this._frameGen = new Map();
+      this._lastKnownCompFingerprints = new Map();
+      this._lastKnownLayerSnapshots = new Map();
       // Adaptive memory buffer: protect low-spec and mobile devices from heap pressure / OOM crashes
       const isMobile = (typeof window !== 'undefined' && (window.innerWidth <= 600 || ('ontouchstart' in window && window.innerWidth <= 900)));
       const devMem = (typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : 4;
@@ -143,6 +146,7 @@
     }
 
     hasFrame(frameIndex, expectedWidth = null, expectedHeight = null, compId = null) {
+      this.syncStateWithProject(null, compId);
       const pool = this.getPool(compId || this.activeCompId);
       const entry = pool.get(frameIndex);
       if (!entry) return false;
@@ -161,6 +165,7 @@
     }
 
     getFrame(frameIndex, expectedWidth = null, expectedHeight = null, compId = null) {
+      this.syncStateWithProject(null, compId);
       const pool = this.getPool(compId || this.activeCompId);
       const entry = pool.get(frameIndex);
       if (!entry) return null;
@@ -190,10 +195,8 @@
         ? window.getProjectTotalDuration()
         : 0;
       const totalProjectFrames = Math.round(totalDur * this.fps);
-      const isMobile = (typeof window !== 'undefined' && (window.innerWidth <= 600 || ('ontouchstart' in window && window.innerWidth <= 900)));
-      const devMem = (typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : 4;
-      const memCap = isMobile ? 600 : (devMem <= 4 ? 900 : (this.maxFrames || 2000));
-      const effectiveMax = Math.max(memCap, totalProjectFrames + 60);
+      const memCap = this.maxFrames || 360;
+      const effectiveMax = Math.min(memCap, Math.max(60, totalProjectFrames + 15));
       if (pool.size <= effectiveMax) return;
 
       const pps = (typeof window !== 'undefined' && window.currentPixelsPerSecond) ? window.currentPixelsPerSecond : 80;
@@ -269,6 +272,7 @@
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (!sourceCanvas || sourceCanvas.width === 0 || sourceCanvas.height === 0) return;
       const targetComp = compId || this.activeCompId;
+      this.syncStateWithProject(null, targetComp);
       const targetPool = this.getPool(targetComp);
       if (this.hasFrame(frameIndex, sourceCanvas.width, sourceCanvas.height, targetComp)) return;
       if (!this._pendingFrames) this._pendingFrames = new Set();
@@ -324,6 +328,9 @@
       if (this._inFlightFrames) {
         this._inFlightFrames.delete(inFlightKey);
       }
+      if (this._unreadyFrames) {
+        this._unreadyFrames.delete(inFlightKey);
+      }
       const pool = this.getPool(targetComp);
       const entry = pool.get(frameIndex);
       if (entry) {
@@ -365,6 +372,10 @@
         }
         if (this._inFlightFrames && this._inFlightFrames.has(inFlightKey)) {
           this._inFlightFrames.delete(inFlightKey);
+          changed = true;
+        }
+        if (this._unreadyFrames && this._unreadyFrames.has(inFlightKey)) {
+          this._unreadyFrames.delete(inFlightKey);
           changed = true;
         }
         if (pool.has(f)) {
@@ -467,11 +478,27 @@
       if (Array.isArray(layer.subLayers) && layer.subLayers.length > 0) {
         subSig = `${layer.subLayers.length}:${layer.subLayers.map(s => s && s.id).join(',')}`;
       }
+      let shapeSig = '';
+      if (layer.shapeProps && typeof layer.shapeProps === 'object') {
+        try { shapeSig = JSON.stringify(layer.shapeProps); } catch (_) {}
+      }
+      let textPropsSig = '';
+      if (layer.textProps && typeof layer.textProps === 'object') {
+        try { textPropsSig = JSON.stringify(layer.textProps); } catch (_) {}
+      }
+      let maskSig = '';
+      if (layer.masks || layer.maskProps) {
+        try { maskSig = JSON.stringify({ masks: layer.masks, maskProps: layer.maskProps }); } catch (_) {}
+      }
+
       return [
         idx,
         layer.id || '',
         layer.type || '',
+        (layer.mediaId || layer.dataUrl || ''),
         layer.hidden ? 1 : 0,
+        layer.locked ? 1 : 0,
+        layer.aspectLocked ? 1 : 0,
         layer.isAdjustment ? 1 : 0,
         layer.isNull ? 1 : 0,
         layer.is3D ? 1 : 0,
@@ -479,6 +506,7 @@
         layer.parentId || '',
         startSec.toFixed(4),
         endSec.toFixed(4),
+        Number(layer.durationSec || (endSec - startSec) || 0).toFixed(4),
         Number(layer.sourceOffsetSec || 0).toFixed(4),
         Number(layer.posX ?? layer.x ?? 0).toFixed(2),
         Number(layer.posY ?? layer.y ?? 0).toFixed(2),
@@ -489,21 +517,32 @@
         Number(layer.rotZ ?? layer.rotationZ ?? layer.rotation ?? 0).toFixed(2),
         Number(layer.rotX ?? layer.rotationX ?? 0).toFixed(2),
         Number(layer.rotY ?? layer.rotationY ?? 0).toFixed(2),
-        Number(layer.opacity ?? 1).toFixed(3),
+        Number(layer.rotation ?? layer.rotZ ?? 0).toFixed(2),
+        Number(layer.skewX ?? 0).toFixed(2),
+        Number(layer.skewY ?? 0).toFixed(2),
         Number(layer.anchorX ?? 0).toFixed(2),
         Number(layer.anchorY ?? 0).toFixed(2),
+        Number(layer.anchorZ ?? 0).toFixed(2),
+        Number(layer.opacity ?? 1).toFixed(3),
+        Number(layer.roundness ?? (layer.shapeProps && layer.shapeProps.roundness) ?? 0).toFixed(2),
         Number(layer.speed ?? 1).toFixed(3),
         layer.speedMode || '',
-        layer.timeRemapEnabled ? 1 : 0,
-        layer.isFrozen ? 1 : 0,
-        Number(layer.freezeTime || 0).toFixed(3),
-        layer.fillColor || layer.color || '',
+        layer.fillType || (layer.shapeProps && layer.shapeProps.fillType) || '',
+        layer.fillColor || layer.color || (layer.shapeProps && layer.shapeProps.fillColor) || '',
         layer.text || '',
+        textPropsSig,
+        shapeSig,
+        maskSig,
         fxSig,
         kfSig,
         exprSig,
         trSig,
-        subSig
+        subSig,
+        layer.timeRemapEnabled ? 1 : 0,
+        layer.isFrozen ? 1 : 0,
+        Number(layer.freezeTime || 0).toFixed(3),
+        (layer.motionBlur || layer.mblur) ? 1 : 0,
+        layer.trackMatte || ''
       ].join('|');
     }
 
@@ -605,6 +644,20 @@
 
       if (ranges.length === 0) return false;
 
+      for (let i = 0; i < changedLayers.length; i++) {
+        const l = changedLayers[i];
+        if (l) {
+          l._shapeDirty = true;
+          l._fillDirty = true;
+          if (l._shapeBufferCanvas) l._shapeBufferCanvas._lastShapeKey = null;
+          if (l._fillBufferCanvas) l._fillBufferCanvas._lastRenderKey = null;
+          if (l._precompBufferCanvas) l._precompBufferCanvas._lastRenderKey = null;
+          l._textDirty = true;
+          if (l._textBufferCanvas) l._textBufferCanvas._lastRenderKey = null;
+          if (l._textMbCanvas) l._textMbCanvas._lastRenderKey = null;
+        }
+      }
+
       if (!compId && typeof window !== 'undefined' && typeof window.invalidatePreviewCacheForLayer === 'function') {
         for (let i = 0; i < changedLayers.length; i++) {
           window.invalidatePreviewCacheForLayer(changedLayers[i]);
@@ -631,6 +684,9 @@
       if (this._inFlightFrames) {
         this._inFlightFrames.clear();
       }
+      if (this._unreadyFrames) {
+        this._unreadyFrames.clear();
+      }
       if (scope === 'all') {
         for (const pool of this.pools.values()) {
           for (const entry of pool.values()) {
@@ -653,6 +709,61 @@
       if (this.idleCacheEnabled) {
         this.scheduleIdleCheck();
       }
+    }
+
+    /**
+     * Automatic state-change detection and cache synchronization with project state.
+     * Detects project-level changes (dimensions, fps, bgColor) and layer-level modifications.
+     */
+    syncStateWithProject(projectState = null, compId = null) {
+      const ps = projectState || (typeof window !== 'undefined' ? window.currentProjectState : null);
+      if (!ps || !Array.isArray(ps.layers)) return false;
+      const targetComp = compId || this.activeCompId || 'root';
+
+      if (!this._lastKnownCompFingerprints) this._lastKnownCompFingerprints = new Map();
+      if (!this._lastKnownLayerSnapshots) this._lastKnownLayerSnapshots = new Map();
+
+      const fps = ps.fps || 60;
+      const baseW = ps.baseW || ps.width || 1920;
+      const baseH = ps.baseH || ps.height || 1080;
+      const resolution = ps.resolution || `${baseW}x${baseH}`;
+      const aspectRatio = ps.aspectRatio || '';
+      const bgColor = ps.bgColor || '';
+      const motionBlur = (ps.motionBlur && ps.motionBlur.enabled) ? 1 : 0;
+      const layers = (targetComp === 'root' || !targetComp)
+        ? (ps.layers || [])
+        : ((window.currentActivePrecomp && Array.isArray(window.currentActivePrecomp.layers))
+          ? window.currentActivePrecomp.layers
+          : (ps.layers || []));
+
+      const layerOrderSig = layers.map(l => (l && l.id) || '').join(',');
+      const compFingerprint = `${fps}|${baseW}|${baseH}|${resolution}|${aspectRatio}|${bgColor}|${motionBlur}|${layers.length}|${layerOrderSig}`;
+      const prevCompFingerprint = this._lastKnownCompFingerprints.get(targetComp);
+
+      let compChanged = false;
+      if (prevCompFingerprint && prevCompFingerprint !== compFingerprint) {
+        this.clearAll('current', targetComp);
+        compChanged = true;
+      }
+      this._lastKnownCompFingerprints.set(targetComp, compFingerprint);
+
+      const prevSnapshot = this._lastKnownLayerSnapshots.get(targetComp);
+      const currentSnapshot = this.captureStateSnapshot(layers);
+      this._lastKnownLayerSnapshots.set(targetComp, currentSnapshot);
+
+      if (!prevSnapshot) {
+        return compChanged;
+      }
+
+      const diffInvalidated = this.invalidateSmartDiff(prevSnapshot, layers, targetComp);
+      if (compChanged || diffInvalidated) {
+        if (this._unreadyFrames) this._unreadyFrames.clear();
+      }
+      return compChanged || diffInvalidated;
+    }
+
+    invalidateAll() {
+      return this.clearAll('all');
     }
 
     clearPool(compId) {
@@ -681,7 +792,8 @@
     updateRulerUI() {
       if (this._rulerRafScheduled) return;
       this._rulerRafScheduled = true;
-      requestAnimationFrame(() => {
+      const schedule = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame : (fn) => setTimeout(fn, 16);
+      schedule(() => {
         this._rulerRafScheduled = false;
         this._renderRuler();
       });
@@ -760,24 +872,6 @@
       window.addEventListener('scroll', onActivity, { passive: true });
     }
 
-    _hasExtractingVideoInActiveComp() {
-      const projectState = (typeof window !== 'undefined') ? window.currentProjectState : null;
-      if (!projectState || !Array.isArray(projectState.layers)) return false;
-      const vfe = (typeof window !== 'undefined') ? window.VideoFrameExtractor : null;
-      if (!vfe) return false;
-      const targetLayers = (this.activeCompId && this.activeCompId !== 'root' && window.currentActivePrecomp && Array.isArray(window.currentActivePrecomp.layers))
-        ? window.currentActivePrecomp.layers
-        : projectState.layers;
-      for (const layer of targetLayers) {
-        if (layer && layer.type === 'video' && !layer.hidden) {
-          const sk = (typeof vfe._getSourceKey === 'function') ? vfe._getSourceKey(layer) : (layer.mediaId || layer.dataUrl || layer.id);
-          const sc = (typeof vfe.getSourceCache === 'function') ? vfe.getSourceCache(sk) : (vfe.sources ? vfe.sources.get(sk) : null);
-          if (sc && sc.isExtracting) return true;
-        }
-      }
-      return false;
-    }
-
     scheduleIdleCheck(immediate = false) {
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (!this.idleCacheEnabled) return;
@@ -787,8 +881,6 @@
         if (typeof window !== 'undefined' && window.isExporting) return;
         if (!this.idleCacheEnabled) return;
         if (window.isTimelinePlaying || window.isTransformInteracting) return;
-        // Only pause idle cache if an active video layer in this composition is currently extracting
-        if (this._hasExtractingVideoInActiveComp()) return;
         if (document.querySelector('.modal-backdrop.is-open, .modal-backdrop.active')) return;
         this.startIdleWorker();
       }, delay);
@@ -812,7 +904,6 @@
     startIdleWorker() {
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (this.isIdleRunning || !this.idleCacheEnabled || window.isTimelinePlaying || window.isTransformInteracting) return;
-      if (this._hasExtractingVideoInActiveComp()) return;
       this.isIdleRunning = true;
       this.runIdleStep();
     }
@@ -826,39 +917,41 @@
       }
     }
 
-    isTimeReadyToCache(sec) {
-      const projectState = window.currentProjectState;
-      if (!projectState || !projectState.layers) return true;
-      const pps = window.currentPixelsPerSecond || 80;
-      const vfe = window.VideoFrameExtractor;
-
-      const checkLayers = (layers) => {
-        if (!Array.isArray(layers)) return true;
-        for (const layer of layers) {
-          if (layer.hidden) continue;
-          if (layer.type === 'precomp' && Array.isArray(layer.layers)) {
-            if (!checkLayers(layer.layers)) return false;
+    isTimeReadyToCache(sec, projectState = null) {
+      const ps = projectState || ((typeof window !== 'undefined' && window.currentProjectState) ? window.currentProjectState : null);
+      if (!ps || !Array.isArray(ps.layers)) return true;
+      const targetComp = this.activeCompId || 'root';
+      const layers = (targetComp === 'root' || !targetComp)
+        ? (ps.layers || [])
+        : ((window.currentActivePrecomp && Array.isArray(window.currentActivePrecomp.layers))
+          ? window.currentActivePrecomp.layers
+          : (ps.layers || []));
+      const pps = (typeof window !== 'undefined' && window.currentPixelsPerSecond) ? window.currentPixelsPerSecond : 80;
+      for (let i = 0; i < layers.length; i++) {
+        const l = layers[i];
+        if (!l || l.hidden) continue;
+        const start = l.startSec !== undefined ? Number(l.startSec) : ((l.startPx || 0) / pps);
+        const dur = l.durationSec !== undefined ? Number(l.durationSec) : ((l.widthPx || 240) / pps);
+        if (sec >= start && sec < start + dur) {
+          if (l.type === 'video' || l.mediaType === 'video') {
+            // Background idle cache must never seek active <video> elements
+            return false;
           }
-          if (layer.type !== 'video') continue;
-          const start = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
-          const dur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
-          const end = start + dur;
-
-          // If time falls within this video layer's active playback bounds
-          if (sec >= start && sec < end) {
-            if (vfe && typeof vfe.isVideoFrameReady === 'function') {
-              if (!vfe.isVideoFrameReady(layer, sec)) {
-                return false; // Video frame not yet extracted into cache! Skip project caching!
+          if (l.type === 'precomp' && Array.isArray(l.layers)) {
+            const precompTime = (sec - start) * (l.speed || 1.0) + (l.sourceOffsetSec || 0);
+            for (let j = 0; j < l.layers.length; j++) {
+              const sub = l.layers[j];
+              if (!sub || sub.hidden) continue;
+              const subStart = sub.startSec !== undefined ? Number(sub.startSec) : 0;
+              const subDur = sub.durationSec !== undefined ? Number(sub.durationSec) : 5;
+              if (precompTime >= subStart && precompTime < subStart + subDur) {
+                if (sub.type === 'video' || sub.mediaType === 'video') return false;
               }
-            } else {
-              return false;
             }
           }
         }
-        return true;
-      };
-
-      return checkLayers(projectState.layers);
+      }
+      return true;
     }
 
     runIdleStep() {
@@ -867,11 +960,6 @@
         return;
       }
       if (!this.isIdleRunning || !this.idleCacheEnabled || window.isTimelinePlaying || window.isTransformInteracting) {
-        this.stopIdleWorker();
-        return;
-      }
-      // Wait only for video layers in the active composition to complete extraction
-      if (this._hasExtractingVideoInActiveComp()) {
         this.stopIdleWorker();
         return;
       }
@@ -888,28 +976,29 @@
       const currentFrame = Math.max(0, Math.min(totalFrames - 1, Math.round((Math.abs(currentPanX) / pps) * this.fps)));
 
       // AE-Style Bidirectional RAM Preview Sweep:
-      // Fill cache OUTWARD from playhead in both directions simultaneously.
-      // Forward: currentFrame, +1, +2, +3...
-      // Backward: currentFrame-1, -2, -3...
+      // Fill cache OUTWARD from playhead within the active RAM window only.
       let targetFrame = -1;
       let fwdIdx = currentFrame;
       let bwdIdx = currentFrame - 1;
       const targetComp = this.activeCompId || 'root';
+      const maxRadius = Math.max(90, Math.floor((this.maxFrames || 360) * 0.65));
+      const maxFwd = Math.min(totalFrames, currentFrame + maxRadius);
+      const minBwd = Math.max(0, currentFrame - Math.floor(maxRadius * 0.35));
 
-      while (targetFrame === -1 && (fwdIdx < totalFrames || bwdIdx >= 0)) {
+      while (targetFrame === -1 && (fwdIdx < maxFwd || bwdIdx >= minBwd)) {
         // Check forward first (more useful — user is likely playing forward)
-        if (fwdIdx < totalFrames) {
+        if (fwdIdx < maxFwd) {
           const inFlightKey = `${targetComp}:${fwdIdx}`;
-          if (!this.frames.has(fwdIdx) && (!this._inFlightFrames || !this._inFlightFrames.has(inFlightKey)) && this.isTimeReadyToCache(fwdIdx / this.fps)) {
+          if (!this.frames.has(fwdIdx) && (!this._inFlightFrames || !this._inFlightFrames.has(inFlightKey)) && (!this._unreadyFrames || !this._unreadyFrames.has(inFlightKey)) && this.isTimeReadyToCache(fwdIdx / this.fps)) {
             targetFrame = fwdIdx;
             break;
           }
           fwdIdx++;
         }
         // Then check backward (recent history — scrub back support)
-        if (bwdIdx >= 0) {
+        if (bwdIdx >= minBwd) {
           const inFlightKey = `${targetComp}:${bwdIdx}`;
-          if (!this.frames.has(bwdIdx) && (!this._inFlightFrames || !this._inFlightFrames.has(inFlightKey)) && this.isTimeReadyToCache(bwdIdx / this.fps)) {
+          if (!this.frames.has(bwdIdx) && (!this._inFlightFrames || !this._inFlightFrames.has(inFlightKey)) && (!this._unreadyFrames || !this._unreadyFrames.has(inFlightKey)) && this.isTimeReadyToCache(bwdIdx / this.fps)) {
             targetFrame = bwdIdx;
             break;
           }
@@ -942,41 +1031,15 @@
           this.offscreenCanvas.height = activeCanvas.height;
         }
 
+        const inFlightKey = `${targetComp}:${targetFrame}`;
         const targetSec = targetFrame / this.fps;
-
-        // Pre-hydrate exact video frames from IndexedDB into RAM before idle-cache renders
-        const vfe = window.VideoFrameExtractor;
-        if (vfe && window.currentProjectState && Array.isArray(window.currentProjectState.layers)) {
-          const pps = window.currentPixelsPerSecond || 80;
-          for (const layer of window.currentProjectState.layers) {
-            if (layer.type === 'video' && !layer.hidden) {
-              const start = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
-              const dur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
-              if (targetSec >= start && targetSec < start + dur) {
-                const sourceKey = vfe._getSourceKey ? vfe._getSourceKey(layer) : (layer.mediaId || layer.dataUrl || layer.id);
-                const source = vfe.getSourceCache ? vfe.getSourceCache(sourceKey) : null;
-                if (source) {
-                  let timeInClip = 0;
-                  if (layer.speedMode === 'time_remap') {
-                    const eff = (typeof window.getLayerEffectivePropsAtTime === 'function')
-                      ? window.getLayerEffectivePropsAtTime(layer, targetSec)
-                      : layer;
-                    timeInClip = Math.max(0, eff.timeRemap !== undefined ? eff.timeRemap : ((targetSec - start) * (layer.speed || 1.0)));
-                  } else {
-                    timeInClip = (typeof window.getLayerIntegratedSpeedTime === 'function')
-                      ? window.getLayerIntegratedSpeedTime(layer, targetSec)
-                      : Math.max(0, (layer.sourceOffsetSec || 0) + (targetSec - start) * (layer.speed || 1.0));
-                  }
-                  const fIdx = Math.round(timeInClip * source.fps);
-                  if (!source.frames.has(fIdx) && source.cachedFrameIndices && source.cachedFrameIndices.has(fIdx)) {
-                    if (typeof vfe.fetchFrameFromDBAsync === 'function') {
-                      await vfe.fetchFrameFromDBAsync(source, fIdx);
-                    }
-                  }
-                }
-              }
-            }
+        if (!this.isTimeReadyToCache(targetSec)) {
+          if (!this._unreadyFrames) this._unreadyFrames = new Set();
+          this._unreadyFrames.add(inFlightKey);
+          if (this.isIdleRunning) {
+            this.idleWorkerId = setTimeout(() => this.runIdleStep(), 16);
           }
+          return;
         }
 
         let isFrameReady = true;
@@ -994,8 +1057,8 @@
         if (isFrameReady) {
           await this.setFrameFromCanvas(targetFrame, this.offscreenCanvas, this.isDraftMode);
         } else {
-          this.stopIdleWorker();
-          return;
+          if (!this._unreadyFrames) this._unreadyFrames = new Set();
+          this._unreadyFrames.add(inFlightKey);
         }
 
         if (this.isIdleRunning) {

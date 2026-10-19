@@ -38,7 +38,7 @@ OpenFishTools Studio is a zero-dependency, client-side web and desktop NLE (Non-
 The codebase is organized into clean, domain-categorized directories:
 - `Studio/js/app/`: Application bootstrap, desktop workstation shell, template editor, and PWA installation (`main.js`, `desktop.js`, `template-editor.js`, `pwa-install.js`).
 - `Studio/js/core/`: Core 2D/3D affine transformation matrix pipeline, multi-layer canvas rendering, camera projections, text layout, motion blur, and wireframe overlay (`fishtool-engine.js`, `motion-blur-engine.js`, `text-engine.js`, `canvas-overlay.js`, `wireframe.js`).
-- `Studio/js/media/`: Audio/video processing, frame extraction, cache, export, and streaming (`fish-export-engine.js`, `fish-audio-engine.js`, `frame-extractor.js`, `preview-cache.js`, `bg-removal-engine.js`, `video-stream-manager.js`, `video-decoder-worker.js`).
+- `Studio/js/media/`: Audio/video processing, frame extraction, cache, export, and streaming (`fish-export-engine.js`, `fish-audio-engine.js`, `videocomp-enggine.js`, `preview-cache.js`, `bg-removal-engine.js`, `video-stream-manager.js`, `video-decoder-worker.js`).
 - `Studio/js/editor/`: 11 modular subsystems decomposed from monolithic `editor.js` (< 400 KB each).
 - `Studio/js/extensions/`: Extension hosts, controllers, and bridges (`extension-manager.js`, `extensions.js`, `openfishtools-controller.js`, `openfishtools-generators3d.js`, `JSX-Translator.js`, `fishtools-adapter.js`, `attributes-clipboard.js`).
 - `Studio/js/ui/`: UI controls, modal overlays, drawers, popovers, and widgets (`modal.js`, `drawer.js`, `popover.js`, `color-picker.js`, `context-menu.js`, `switch.js`, `sync-height.js`, `folderanim.js`, `elements/`).
@@ -136,8 +136,7 @@ The workstation implements strict performance and memory hygiene protocols acros
   5. Pauses audio engine (`FishAudioEngine.pauseAll()`).
   6. Releases all media elements and empties `#editor-video-mount-pool`.
   7. Clears preview RAM cache workers (`PreviewCacheManager.stopIdleWorker()`, `clearAll()`).
-  8. Clears video frame extractor pools (`VideoFrameExtractor.clearAll()`).
-  9. Invalidates effective props cache (`invalidateEffectivePropsCache()`).
+  8. Invalidates effective props cache (`invalidateEffectivePropsCache()`).
   10. Revokes all registered Object URLs in `_studioObjectUrls`.
 
 ## 3. Error Investigation & Diagnostic Protocol (MANDATORY)

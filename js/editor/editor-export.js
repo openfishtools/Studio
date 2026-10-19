@@ -146,31 +146,7 @@
       }
 
       async function ensureAllVideosCached() {
-        const layers = currentProjectState.layers || [];
-        const videoLayers = layers.filter(l => l.type === 'video' && !l.hidden);
-        if (videoLayers.length === 0) return true;
-        if (!window.VideoFrameExtractor) return true;
-
-        showExportProgress('Preparing Export...', 0, 'Checking video cache...');
-
-        try {
-          const success = await window.VideoFrameExtractor.ensureLayersCached(
-            videoLayers,
-            (pct, msg) => {
-              updateExportProgress(pct, msg);
-            },
-            () => isExportCancelled
-          );
-
-          if (!success || isExportCancelled) {
-            hideExportProgress();
-            return false;
-          }
-          return true;
-        } catch (err) {
-          console.error('[Export:PreCache] Error caching video layers:', err);
-          return true;
-        }
+        return true;
       }
 
       async function prepareVideoFramesForTime(t, videoLayers, pps) {
@@ -182,49 +158,17 @@
           if (t >= start && t < start + dur) {
             const vlEff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(vl, t) : vl;
             const effSpeed = (vlEff && vlEff.speed !== undefined) ? vlEff.speed : (vl.speed !== undefined && vl.speed > 0 ? vl.speed : 1);
-            const timeInClip = Math.max(0, (vl.sourceOffsetSec || 0) + (t - start) * effSpeed);
-            let cached = false;
-            if (window.VideoFrameExtractor) {
-              const sourceKey = window.VideoFrameExtractor._getSourceKey ? window.VideoFrameExtractor._getSourceKey(vl) : (vl.mediaId || vl.dataUrl || vl.id);
-              const source = window.VideoFrameExtractor.getSourceCache(sourceKey);
-              if (source) {
-                const interpMode = vl.speedInterpolation || 'none';
-                if (interpMode !== 'none') {
-                  const rawF = timeInClip * (source.fps || 60);
-                  const f0 = Math.floor(rawF);
-                  const f1 = f0 + 1;
-                  let f0Cached = false;
-                  let f1Cached = false;
-
-                  if (source.frames && source.frames.has(f0)) f0Cached = true;
-                  else if (source.cachedFrameIndices && source.cachedFrameIndices.has(f0)) {
-                    frameFetches.push(window.VideoFrameExtractor.fetchFrameFromDBAsync(source, f0));
-                    f0Cached = true;
-                  }
-
-                  if (source.frames && source.frames.has(f1)) f1Cached = true;
-                  else if (source.cachedFrameIndices && source.cachedFrameIndices.has(f1)) {
-                    frameFetches.push(window.VideoFrameExtractor.fetchFrameFromDBAsync(source, f1));
-                    f1Cached = true;
-                  }
-
-                  cached = f0Cached && f1Cached;
-                } else {
-                  const fIdx = Math.round(timeInClip * source.fps);
-                  if (source.frames && source.frames.has(fIdx)) {
-                    cached = true;
-                  } else if (source.cachedFrameIndices && source.cachedFrameIndices.has(fIdx)) {
-                    cached = true;
-                    frameFetches.push(window.VideoFrameExtractor.fetchFrameFromDBAsync(source, fIdx));
-                  }
-                }
-              }
+            let timeInClip = 0;
+            if (vl.speedMode === 'time_remap') {
+              timeInClip = Math.max(0, vlEff && vlEff.timeRemap !== undefined ? vlEff.timeRemap : ((t - start) * effSpeed));
+            } else if (typeof getLayerIntegratedSpeedTime === 'function') {
+              timeInClip = getLayerIntegratedSpeedTime(vl, t);
+            } else {
+              timeInClip = Math.max(0, (vl.sourceOffsetSec || 0) + (t - start) * effSpeed);
             }
-            if (!cached) {
-              const media = getOrLoadLayerMedia(vl);
-              if (media && media.el && media.el.tagName === 'VIDEO') {
-                frameFetches.push(seekVideoToTime(media.el, timeInClip));
-              }
+            const media = getOrLoadLayerMedia(vl);
+            if (media && media.el && media.el.tagName === 'VIDEO') {
+              frameFetches.push(seekVideoToTime(media.el, timeInClip));
             }
           }
         }
@@ -900,25 +844,6 @@
             videoEncoder.encode(vFrame, { keyFrame: isKey });
             vFrame.close();
 
-            // Evict already-exported frames behind playhead to keep RAM usage minimal
-            if (window.VideoFrameExtractor && videoLayers.length > 0) {
-              for (const vl of videoLayers) {
-                const sk = window.VideoFrameExtractor._getSourceKey ? window.VideoFrameExtractor._getSourceKey(vl) : (vl.mediaId || vl.dataUrl || vl.id);
-                const sc = window.VideoFrameExtractor.getSourceCache(sk);
-                if (sc && sc.frames && sc.frames.size > 20) {
-                  const curFIdx = Math.round(t * (sc.fps || fps));
-                  for (const fIdx of sc.frames.keys()) {
-                    if (fIdx < curFIdx - 5) {
-                      const oldBmp = sc.frames.get(fIdx);
-                      sc.frames.delete(fIdx);
-                      if (oldBmp && typeof oldBmp.close === 'function') {
-                        try { oldBmp.close(); } catch (_) {}
-                      }
-                    }
-                  }
-                }
-              }
-            }
 
             const pct = 5 + Math.round((i / totalFrames) * 88);
             updateExportProgress(pct, 'Rendering video...');
@@ -1806,6 +1731,8 @@
         // Close any open settings panel too
         document.querySelectorAll('.export-settings-panel.is-active').forEach(p => p.classList.remove('is-active'));
       }
+      window.openExportOverlay = openExportOverlay;
+      window.closeExportOverlay = closeExportOverlay;
 
       // Backdrop click/tap closes drawer
       if (_exportBackdrop) {
@@ -2204,6 +2131,7 @@
           }
         });
       }
+      window.compressThumbnailForShare = compressThumbnailForShare;
       /**
        * Captures an HD 3:4 (900x1200) portrait cropped thumbnail specifically for QR card & Catbox upload
        */
@@ -2452,6 +2380,7 @@
           }
         }
       }
+      window.exportProjectToShareLinkAction = exportProjectToShareLinkAction;
 
       // ---- Image Sequence: GIF export (animated GIF via canvas) ----
       async function exportImageSequenceGIF() {
@@ -2820,6 +2749,9 @@
         }, duration);
       }
       window.showEditorToast = showEditorToast;
+      if (typeof window.showDashboardToast !== 'function') {
+        window.showDashboardToast = showEditorToast;
+      }
 
 
       // QR Copy button

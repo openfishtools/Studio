@@ -507,10 +507,6 @@
           window.FishBgRemovalEngine.clearLayerCutouts(targetLayer);
         }
         delete targetLayer._lastRenderedCutoutFrame;
-        if (targetLayer.type === 'video' && window.VideoFrameExtractor) {
-          window.VideoFrameExtractor.abortAndRevertPartialSequence(targetLayer);
-          window.VideoFrameExtractor.extractLayerRange(targetLayer);
-        }
       }
 
       syncEffectsRackUI();
@@ -946,14 +942,7 @@
               if (fx.disabled) {
                 if (window.FishBgRemovalEngine) window.FishBgRemovalEngine.clearLayerCutouts(layer);
                 delete layer._lastRenderedCutoutFrame;
-                if (layer.type === 'video' && window.VideoFrameExtractor) {
-                  window.VideoFrameExtractor.abortAndRevertPartialSequence(layer);
-                  window.VideoFrameExtractor.extractLayerRange(layer);
-                }
               } else {
-                if (layer.type === 'video' && window.VideoFrameExtractor && !layer._extractComplete) {
-                  window.VideoFrameExtractor.abortAndRevertPartialSequence(layer);
-                }
                 if (window.FishBgRemovalEngine) window.FishBgRemovalEngine.processLayer(layer, true);
               }
             }
@@ -2179,28 +2168,11 @@
         }
       }
 
-      // Dynamic automatic effects discovery & loader from manifest.json (safety net for late-added files;
-      // effects/loader.js already discovers and loads everything during page parse).
+      // Modular effects are compiled and loaded directly from effects/effects.wasm via effects/loader.js
       async function autoFetchAndLoadEffects() {
-        if (typeof fetch !== 'function') return;
-        try {
-          const res = await fetch('effects/manifest.json');
-          if (!res.ok) return;
-          const manifest = await res.json();
-          if (!Array.isArray(manifest)) return;
-          manifest.forEach(item => {
-            if (item && item.id && (!window.FishEffectsRegistry || !window.FishEffectsRegistry.get(item.id))) {
-              const scriptId = 'script_fx_' + item.id.replace(/[^a-z0-9_-]/gi, '_');
-              if (!document.getElementById(scriptId)) {
-                const s = document.createElement('script');
-                s.id = scriptId;
-                s.src = 'effects/' + item.file;
-                s.async = true;
-                document.head.appendChild(s);
-              }
-            }
-          });
-        } catch (_) {}
+        if (typeof window.prewarmWasmEffects === 'function') {
+          try { await window.prewarmWasmEffects(); } catch (_) {}
+        }
       }
       window.autoFetchAndLoadEffects = autoFetchAndLoadEffects;
 
@@ -2357,9 +2329,6 @@
         }
 
         if (canonicalId === 'remove_bg') {
-          if (layer.type === 'video' && window.VideoFrameExtractor && !layer._extractComplete) {
-            window.VideoFrameExtractor.abortAndRevertPartialSequence(layer);
-          }
           if (window.FishBgRemovalEngine) {
             window.FishBgRemovalEngine.processLayer(layer, true);
           }
@@ -3105,9 +3074,6 @@
           layer.effectsDisabled = !!layer.effects[0].disabled;
         }
         if (effectTypeId === 'remove_bg') {
-          if (layer.type === 'video' && window.VideoFrameExtractor && !layer._extractComplete) {
-            window.VideoFrameExtractor.abortAndRevertPartialSequence(layer);
-          }
           if (window.FishBgRemovalEngine) {
             window.FishBgRemovalEngine.processLayer(layer, true);
           }

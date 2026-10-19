@@ -926,7 +926,6 @@
                     b.title = nextVal ? 'Motion Blur: Enabled' : 'Motion Blur: Disabled (Click to enable)';
                   }
                 }
-                if (window.PreviewCacheManager) window.PreviewCacheManager.clearAll();
                 if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
               }
             } else {

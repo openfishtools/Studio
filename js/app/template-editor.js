@@ -1159,20 +1159,6 @@
           });
         }
 
-        // Clear VideoFrameExtractor
-        if (window.VideoFrameExtractor) {
-          if (typeof window.VideoFrameExtractor.clearLayer === 'function') {
-            try { window.VideoFrameExtractor.clearLayer(layer); } catch (_) {}
-          }
-          oldKeys.forEach(k => {
-            if (typeof window.VideoFrameExtractor.clearSource === 'function') {
-              try { window.VideoFrameExtractor.clearSource(k); } catch (_) {}
-            } else if (typeof window.VideoFrameExtractor.clearSourceCache === 'function') {
-              try { window.VideoFrameExtractor.clearSourceCache(k); } catch (_) {}
-            }
-          });
-        }
-
         // Clear layerMediaCache
         if (window.layerMediaCache) {
           oldKeys.forEach(k => window.layerMediaCache.delete(k));

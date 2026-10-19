@@ -511,3 +511,21 @@ class DrawerManager {
 
 // Global Singleton Instance
 window.Drawer = new DrawerManager();
+
+window.closeDrawer = function(target) {
+  if (!window.Drawer) return;
+  if (target) {
+    const el = window.Drawer.resolveElement(target);
+    if (el && window.Drawer.isOpen(el)) {
+      window.Drawer.close();
+    } else if (el) {
+      el.classList.remove('is-active');
+    }
+  } else {
+    window.Drawer.close();
+  }
+};
+
+window.closeLayerDrawer = function() {
+  window.closeDrawer('timeline-layer-drawer');
+};

@@ -212,20 +212,7 @@
 
   // ── Video Frame Cache Helpers ──────────────────────────────────────────────────
   async function ensureVideosCached(onProgress) {
-    var ps = window.currentProjectState || {};
-    var layers = ps.layers || [];
-    var videoLayers = layers.filter(function(l) { return l.type === 'video' && !l.hidden; });
-    if (videoLayers.length === 0 || !window.VideoFrameExtractor) return true;
-    showProgress('Preparing Export...', 0, 'Checking video cache...');
-    try {
-      var ok = await window.VideoFrameExtractor.ensureLayersCached(
-        videoLayers,
-        function(pct, msg) { updateProgress(pct, msg, onProgress); },
-        function() { return isCancelled; }
-      );
-      if (!ok || isCancelled) { hideProgress(); return false; }
-      return true;
-    } catch (_) { return true; }
+    return true;
   }
 
   async function prepareFrameAtTime(t, videoLayers, pps) {
@@ -239,24 +226,19 @@
 
       var eff   = (typeof window.getLayerEffectivePropsAtTime === 'function') ? window.getLayerEffectivePropsAtTime(vl, t) : vl;
       var speed = (eff && eff.speed > 0) ? eff.speed : (vl.speed > 0 ? vl.speed : 1);
-      var clip  = Math.max(0, (vl.sourceOffsetSec || 0) + (t - start) * speed);
-
-      var cached = false;
-      if (window.VideoFrameExtractor) {
-        var sk = window.VideoFrameExtractor._getSourceKey
-          ? window.VideoFrameExtractor._getSourceKey(vl)
-          : (vl.mediaId || vl.dataUrl || vl.id);
-        var src = window.VideoFrameExtractor.getSourceCache && window.VideoFrameExtractor.getSourceCache(sk);
-        if (src) {
-          var fIdx = Math.round(clip * (src.fps || 60));
-          if (src.frames && src.frames.has(fIdx)) { cached = true; }
-          else if (src.cachedFrameIndices && src.cachedFrameIndices.has(fIdx)) {
-            fetches.push(window.VideoFrameExtractor.fetchFrameFromDBAsync(src, fIdx));
-            cached = true;
-          }
-        }
+      var clip  = 0;
+      if (window.VideoCompEngine && typeof window.VideoCompEngine.computeLayerClipTime === 'function') {
+        clip = window.VideoCompEngine.computeLayerClipTime(vl, t, start, speed, vl.sourceOffsetSec || 0);
+      } else if (vl.speedMode === 'time_remap') {
+        clip = Math.max(0, eff && eff.timeRemap !== undefined ? eff.timeRemap : ((t - start) * speed));
+      } else if (typeof window.getLayerIntegratedSpeedTime === 'function') {
+        clip = window.getLayerIntegratedSpeedTime(vl, t);
+      } else {
+        clip = Math.max(0, (vl.sourceOffsetSec || 0) + (t - start) * speed);
       }
-      if (!cached && window.getOrLoadLayerMedia) {
+      vl._lastExportClipTime = clip;
+
+      if (window.getOrLoadLayerMedia) {
         var media = window.getOrLoadLayerMedia(vl);
         if (media && media.el && media.el.tagName === 'VIDEO') {
           fetches.push(seekVideoToTime(media.el, clip));
@@ -266,7 +248,7 @@
     if (fetches.length) {
       await Promise.race([
         Promise.all(fetches),
-        new Promise(function(resolve) { setTimeout(resolve, 300); })
+        new Promise(function(resolve) { setTimeout(resolve, 600); })
       ]);
     }
   }
@@ -691,7 +673,7 @@
   }
 
   // ── Audio Offline Mixdown ──────────────────────────────────────────────────
-  async function mixAudioBuffer(totalDur) {
+  async function mixAudioBuffer(totalDur, skipWavBlob) {
     var ps     = window.currentProjectState || {};
     var layers = ps.layers || [];
     var pps    = window.currentPixelsPerSecond || 80;
@@ -700,7 +682,7 @@
     logExportInfo('Audio:Mix', 'Found ' + playableItems.length + ' playable audio/video track(s) across timeline layers.');
     if (playableItems.length === 0 || totalDur <= 0) return null;
 
-    var SR = 44100;
+    var SR = 48000;
     var AudioCtxClass = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!AudioCtxClass) return null;
 
@@ -777,7 +759,13 @@
 
     logExportInfo('Audio:Mix', 'Rendering offline audio mixdown (' + count + ' track(s), ' + totalDur.toFixed(2) + 's)...');
     var rendered = await ctx.startRendering();
-    var wavBlob  = audioBufferToWav(rendered);
+    // Free per-layer decoded PCM buffers immediately to reclaim RAM on long exports
+    for (var ci = 0; ci < playableItems.length; ci++) {
+      if (playableItems[ci] && playableItems[ci].layer) {
+        playableItems[ci].layer._decodedAudioBuffer = null;
+      }
+    }
+    var wavBlob  = skipWavBlob ? null : audioBufferToWav(rendered);
     logExport('Audio:Mix', '✅ Offline mixdown complete! Rendered ' + rendered.duration.toFixed(2) + 's @ ' + rendered.sampleRate + 'Hz (' + (wavBlob ? (wavBlob.size / 1024).toFixed(1) + ' KB WAV' : 'raw buffer') + ')');
     return { buffer: rendered, wavBlob: wavBlob };
   }
@@ -869,19 +857,27 @@
     });
   }
 
-  // ── WebCodecs In-Memory Audio Encoding (AAC) ──────────────────────────────────
-  async function encodeAudioIntoMuxer(audioBuffer, muxer) {
+  // ── WebCodecs In-Memory Audio Encoding (AAC / Opus) ───────────────────────────
+  async function encodeAudioIntoMuxer(audioBuffer, muxer, preferredCodec) {
     if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') return false;
-    var audioCfg = {
-      codec: 'mp4a.40.2',
-      numberOfChannels: audioBuffer.numberOfChannels,
-      sampleRate: audioBuffer.sampleRate,
-      bitrate: 192000
-    };
-    try {
-      var check = await AudioEncoder.isConfigSupported(audioCfg);
-      if (!check || !check.supported) return false;
-    } catch (_) { return false; }
+    var codecsToTry = preferredCodec ? [preferredCodec] : ['mp4a.40.2', 'opus'];
+    var audioCfg = null;
+    for (var ci = 0; ci < codecsToTry.length; ci++) {
+      var candidateCfg = {
+        codec: codecsToTry[ci],
+        numberOfChannels: audioBuffer.numberOfChannels,
+        sampleRate: audioBuffer.sampleRate,
+        bitrate: 192000
+      };
+      try {
+        var check = await AudioEncoder.isConfigSupported(candidateCfg);
+        if (check && check.supported) {
+          audioCfg = candidateCfg;
+          break;
+        }
+      } catch (_) {}
+    }
+    if (!audioCfg) return false;
 
     var encErr = null;
     var aEnc = new AudioEncoder({
@@ -895,12 +891,15 @@
     var sampleRate = audioBuffer.sampleRate;
     var numChannels = audioBuffer.numberOfChannels;
     var totalFrames = audioBuffer.length;
-    var chunkSize = 1024;
+    var chunkSize = 960; // 20ms @ 48kHz (compatible with both Opus and AAC)
     var ch0 = audioBuffer.getChannelData(0);
     var ch1 = numChannels > 1 ? audioBuffer.getChannelData(1) : ch0;
 
     for (var offset = 0; offset < totalFrames; offset += chunkSize) {
       if (encErr || isCancelled) break;
+      while (aEnc.encodeQueueSize > 24 && !encErr && !isCancelled) {
+        await new Promise(function(r) { setTimeout(r, 2); });
+      }
       var chunkFrames = Math.min(chunkSize, totalFrames - offset);
       var planarData = new Float32Array(chunkFrames * numChannels);
       planarData.set(ch0.subarray(offset, offset + chunkFrames), 0);
@@ -957,6 +956,11 @@
     var bitrateMode = 'variable';
     if (preset === 'light')  { videoBps = 16000000; bitrateMode = 'variable'; }
     if (preset === 'detail') { videoBps = 50000000; bitrateMode = 'constant'; }
+    // Scale bitrate for long exports (>60s) so in-memory Mp4Muxer ArrayBuffer stays safely bounded
+    if (totalDur > 60) {
+      var durScale = Math.max(0.32, Math.min(1.0, 90 / totalDur));
+      videoBps = Math.max(6000000, Math.round(videoBps * durScale));
+    }
 
     var totalPixels = baseW * baseH;
     var is4K = totalPixels > (1920 * 1080);
@@ -1040,6 +1044,11 @@
     if (isCancelled) { logExportInfo('WebCodecs', 'Export cancelled by user'); return true; }
 
     window.isExporting = true;
+    // Free interactive RAM preview cache before starting export to maximize available heap
+    if (window.PreviewCacheManager && typeof window.PreviewCacheManager.clearAll === 'function') {
+      try { window.PreviewCacheManager.clearAll('all'); } catch (_) {}
+    }
+
     var exportCanvas = document.createElement('canvas');
     exportCanvas.width  = baseW;
     exportCanvas.height = baseH;
@@ -1047,35 +1056,37 @@
     document.body.appendChild(exportCanvas);
 
     try {
-      updateProgress(3, 'Mixing audio...', onProgress);
-      logExportInfo('WebCodecs:Audio', 'Mixing audio tracks (duration=' + totalDur.toFixed(2) + 's)...');
-      var audioResult = null;
-      try { audioResult = await mixAudioBuffer(totalDur); } catch (aErr) { logExportWarn('WebCodecs:Audio', 'Audio mix error:', aErr); }
-      if (isCancelled) { hideProgress(); return true; }
-
+      var playableItems = flattenPlayableAudioLayers(ps.layers || [], 0, 1.0, false, 1.0, pps);
+      var hasAudio = playableItems.length > 0 && totalDur > 0.01;
       var canWebCodecsAudio = false;
-      if (audioResult && audioResult.buffer && typeof AudioEncoder !== 'undefined' && typeof AudioData !== 'undefined') {
-        try {
-          var aCheck = await AudioEncoder.isConfigSupported({
-            codec: 'mp4a.40.2',
-            numberOfChannels: audioResult.buffer.numberOfChannels,
-            sampleRate: audioResult.buffer.sampleRate,
-            bitrate: 192000
-          });
-          canWebCodecsAudio = !!(aCheck && aCheck.supported);
-        } catch (_) {}
+      var webCodecsAudioCodec = null;
+      var muxerAudioCodec = null;
+
+      if (hasAudio && typeof AudioEncoder !== 'undefined' && typeof AudioData !== 'undefined') {
+        var audioProbes = [
+          { wc: 'mp4a.40.2', mux: 'aac' },
+          { wc: 'opus',      mux: 'opus' }
+        ];
+        for (var api = 0; api < audioProbes.length; api++) {
+          try {
+            var aCheck = await AudioEncoder.isConfigSupported({
+              codec: audioProbes[api].wc,
+              numberOfChannels: 2,
+              sampleRate: 48000,
+              bitrate: 192000
+            });
+            if (aCheck && aCheck.supported) {
+              canWebCodecsAudio = true;
+              webCodecsAudioCodec = audioProbes[api].wc;
+              muxerAudioCodec = audioProbes[api].mux;
+              break;
+            }
+          } catch (_) {}
+        }
       }
-      var hasAudio = !!(audioResult && audioResult.buffer && audioResult.buffer.duration > 0.01);
-      // Single-threaded FFmpeg.wasm is bundled and requires NO SharedArrayBuffer (works universally in Safari, Chrome, Firefox)
       var canFfmpegMerge = hasAudio;
 
-      logExportInfo('WebCodecs:Audio', 'Audio status: ' + (hasAudio ? (audioResult.buffer.duration.toFixed(2) + 's, ' + audioResult.buffer.numberOfChannels + 'ch @ ' + audioResult.buffer.sampleRate + 'Hz') : 'no audio') + ' | Native AAC WebCodecs=' + canWebCodecsAudio + ' | Fast FFmpeg Remux=' + canFfmpegMerge);
-
-      // Only bypass Tier 1 if project has audio, but browser lacks BOTH WebCodecs AudioEncoder AND FFmpeg remuxer:
-      if (hasAudio && !canWebCodecsAudio && !canFfmpegMerge) {
-        logExportWarn('WebCodecs:Audio', '⚠️ Project has audio, but no audio muxer available. ↳ Falling back to Tier 2: GPU MediaRecorder...');
-        return false;
-      }
+      logExportInfo('WebCodecs:Audio', 'Audio tracks=' + playableItems.length + ' | Native WebCodecs Audio=' + (canWebCodecsAudio ? webCodecsAudioCodec : 'false') + ' | Fast FFmpeg Remux=' + canFfmpegMerge);
 
       var muxerOptions = {
         target: new Mp4Muxer.ArrayBufferTarget(),
@@ -1083,15 +1094,15 @@
         firstTimestampBehavior: 'offset',
         fastStart: 'in-memory'
       };
-      if (canWebCodecsAudio) {
+      if (canWebCodecsAudio && muxerAudioCodec) {
         muxerOptions.audio = {
-          codec: 'aac',
-          numberOfChannels: audioResult.buffer.numberOfChannels,
-          sampleRate: audioResult.buffer.sampleRate
+          codec: muxerAudioCodec,
+          numberOfChannels: 2,
+          sampleRate: 48000
         };
       }
       var muxer = new Mp4Muxer.Muxer(muxerOptions);
-      logExportInfo('WebCodecs:Muxer', 'Mp4Muxer initialized (video=' + chosenCodec.muxerCodec + ', audio=' + (canWebCodecsAudio ? 'aac' : 'none') + ')');
+      logExportInfo('WebCodecs:Muxer', 'Mp4Muxer initialized (video=' + chosenCodec.muxerCodec + ', audio=' + (canWebCodecsAudio ? muxerAudioCodec : 'none') + ')');
 
       var frameDurMicros = Math.round(1000000 / fps);
       var encError = null;
@@ -1155,31 +1166,28 @@
         await prepareFrameAtTime(t, videoLayers, pps);
         window.renderCanvasFrame(exportCanvas, ps.bgColor, baseW, baseH, 'export-video', t);
 
-        // Non-blocking GPU event-loop yield:
-        // Never call flush() mid-stream (causes WebKit VideoToolbox deadlock).
-        // If queue exceeds 30, yield 8ms so GPUProcess dispatches pending chunks without stalling.
-        if (encoder.encodeQueueSize > 30) {
-          await new Promise(function(r) { setTimeout(r, 8); });
+        // Non-blocking GPU event-loop backpressure: keep queue bounded to <=8 frames
+        while (encoder.encodeQueueSize > 8 && !encError && !isCancelled) {
+          await new Promise(function(r) { setTimeout(r, 4); });
         }
         if (encError || isCancelled) break;
 
         var frameTs = Math.max(lastTs + 1, Math.round((i / fps) * 1000000));
         lastTs = frameTs;
 
-        var bmp = null;
         var vFrame = null;
         try {
-          if (typeof createImageBitmap === 'function') {
-            bmp = await createImageBitmap(exportCanvas);
+          vFrame = new VideoFrame(exportCanvas, { timestamp: frameTs, duration: frameDurMicros });
+        } catch (vfDirectErr) {
+          try {
+            var bmp = await createImageBitmap(exportCanvas);
             vFrame = new VideoFrame(bmp, { timestamp: frameTs, duration: frameDurMicros });
             bmp.close();
-          } else {
-            vFrame = new VideoFrame(exportCanvas, { timestamp: frameTs, duration: frameDurMicros });
+          } catch (vfErr) {
+            logExportError('WebCodecs:Frame', 'VideoFrame creation error at frame ' + i + ':', vfErr);
+            encError = vfErr;
+            break;
           }
-        } catch (vfErr) {
-          logExportError('WebCodecs:Frame', 'VideoFrame creation error at frame ' + i + ':', vfErr);
-          encError = vfErr;
-          break;
         }
 
         var isKey = (i === 0) || ((i % (fps * 2)) === 0);
@@ -1191,32 +1199,15 @@
         }
         vFrame.close();
 
-        // RAM eviction: drop old frames behind playhead
-        if (window.VideoFrameExtractor && videoLayers.length > 0) {
-          for (var vei = 0; vei < videoLayers.length; vei++) {
-            var vl = videoLayers[vei];
-            var sk = window.VideoFrameExtractor._getSourceKey ? window.VideoFrameExtractor._getSourceKey(vl) : (vl.mediaId || vl.dataUrl || vl.id);
-            var sc = window.VideoFrameExtractor.getSourceCache && window.VideoFrameExtractor.getSourceCache(sk);
-            if (sc && sc.frames && sc.frames.size > 20) {
-              var curF = Math.round(t * (sc.fps || fps));
-              sc.frames.forEach(function(bmp2, fi) {
-                if (fi < curF - 5) {
-                  sc.frames.delete(fi);
-                  if (bmp2 && typeof bmp2.close === 'function') try { bmp2.close(); } catch (_) {}
-                }
-              });
-            }
-          }
-        }
 
-        var pct = 5 + Math.round((i / totalFrames) * 88);
+        var pct = 3 + Math.round((i / totalFrames) * 86);
         updateProgress(pct, (i + 1) + ' / ' + totalFrames, onProgress);
         if (i === 0) {
           logExportInfo('WebCodecs:Render', 'Frame 0/' + totalFrames + ' submitted (forced keyframe)');
-        } else if (i % Math.max(1, Math.min(30, Math.round(fps))) === 0 || i === totalFrames - 1) {
+        } else if (i % Math.max(1, Math.min(60, Math.round(fps))) === 0 || i === totalFrames - 1) {
           logExportInfo('WebCodecs:Render', 'Frame ' + (i + 1) + '/' + totalFrames + ' (' + Math.round(((i + 1) / totalFrames) * 100) + '%) | t=' + t.toFixed(2) + 's | queue=' + encoder.encodeQueueSize + ' | chunks=' + chunksCount + ' | encoded=' + (totalBytesEncoded / 1024 / 1024).toFixed(2) + ' MB');
         }
-        if (i % 6 === 0) await new Promise(function(r) { setTimeout(r, 0); });
+        if (i % 8 === 0) await new Promise(function(r) { setTimeout(r, 0); });
       }
 
       if (isCancelled) {
@@ -1231,14 +1222,7 @@
         return false;
       }
 
-      if (canWebCodecsAudio && audioResult && audioResult.buffer) {
-        updateProgress(93, 'Encoding audio...', onProgress);
-        logExportInfo('WebCodecs:Audio', 'Encoding in-memory AAC audio into muxer...');
-        await encodeAudioIntoMuxer(audioResult.buffer, muxer);
-        logExport('WebCodecs:Audio', 'Audio encoding finished.');
-      }
-
-      updateProgress(93, 'Flushing...', onProgress);
+      updateProgress(90, 'Flushing video...', onProgress);
       logExportInfo('WebCodecs:Flush', 'Flushing VideoEncoder (' + chunksCount + ' chunks received, totalFrames=' + totalFrames + ')...');
       try {
         var chunksAtFlushStart = chunksCount;
@@ -1250,15 +1234,12 @@
           var drained   = chunksCount - chunksAtFlushStart;
           var remaining = Math.max(0, chunksExpected - chunksCount);
           var flushPct  = remaining > 0
-            ? 93 + Math.round((drained / (drained + remaining)) * 6)
-            : 99;
-          updateProgress(Math.min(99, flushPct), 'Flushing...', onProgress);
+            ? 90 + Math.round((drained / (drained + remaining)) * 4)
+            : 94;
+          updateProgress(Math.min(94, flushPct), 'Flushing video...', onProgress);
         }, 200);
 
-        // Safety net: 5 minutes absolute maximum (should never trigger for real encodes)
-        var flushSafetyReject;
         var safetyTimer = new Promise(function(_, reject) {
-          flushSafetyReject = reject;
           setTimeout(function() { reject(new Error('encoder.flush() safety timeout after 300s')); }, 300000);
         });
 
@@ -1268,27 +1249,49 @@
           flushDone = true;
           clearInterval(flushPollInterval);
         }
+        try { encoder.close(); } catch (_) {}
 
-        logExport('WebCodecs:Flush', 'VideoEncoder flushed. Total chunks: ' + chunksCount + '.');
+        logExport('WebCodecs:Flush', 'VideoEncoder flushed & closed. Total chunks: ' + chunksCount + '.');
       } catch (flushErr) {
         logExportError('WebCodecs:Flush', 'Encoder flush failed:', flushErr);
         try { encoder.close(); } catch (_) {}
         return false;
       }
 
+
+      var audioResult = null;
+      if (hasAudio) {
+        updateProgress(95, 'Mixing & encoding audio...', onProgress);
+        logExportInfo('WebCodecs:Audio', 'Mixing audio tracks (duration=' + totalDur.toFixed(2) + 's)...');
+        try {
+          audioResult = await mixAudioBuffer(totalDur, canWebCodecsAudio);
+        } catch (aErr) {
+          logExportWarn('WebCodecs:Audio', 'Audio mix error:', aErr);
+        }
+        if (isCancelled) { hideProgress(); return true; }
+
+        if (canWebCodecsAudio && audioResult && audioResult.buffer) {
+          logExportInfo('WebCodecs:Audio', 'Encoding in-memory ' + webCodecsAudioCodec + ' audio into muxer...');
+          await encodeAudioIntoMuxer(audioResult.buffer, muxer, webCodecsAudioCodec);
+          audioResult.buffer = null;
+          logExport('WebCodecs:Audio', 'Audio encoding finished.');
+        }
+      }
+
       logExportInfo('WebCodecs:Muxer', 'Finalizing Mp4Muxer container...');
       muxer.finalize();
       var videoBuffer = muxer.target.buffer;
+      muxer.target = null;
       logExport('WebCodecs:Muxer', 'Mp4Muxer finalized! Container size: ' + (videoBuffer.byteLength / 1024 / 1024).toFixed(2) + ' MB');
       var finalBlob   = null;
 
       if (canWebCodecsAudio) {
-        // Audio already muxed inside videoBuffer via WebCodecs AAC
+        // Audio already muxed inside videoBuffer via WebCodecs AAC/Opus
         finalBlob = new Blob([videoBuffer], { type: 'video/mp4' });
-      } else if (hasAudio && canFfmpegMerge && audioResult && audioResult.wavBlob && audioResult.wavBlob.size > 100) {
+      } else if (hasAudio && canFfmpegMerge && audioResult && audioResult.wavBlob && audioResult.wavBlob.size > 100 && videoBuffer.byteLength < 180 * 1024 * 1024) {
         var ffmpegOk = false;
         try {
-          updateProgress(95, 'Merging audio into MP4...', onProgress);
+          updateProgress(97, 'Merging audio into MP4...', onProgress);
           logExportInfo('WebCodecs:AudioMerge', 'Merging AAC audio via fast FFmpeg remux (-c:v copy -c:a aac)...');
           var ffmpeg = await getFFmpeg();
           try { ffmpeg.FS('unlink', 'v_temp.mp4'); } catch (_) {}
@@ -1313,12 +1316,11 @@
           logExportWarn('WebCodecs', '⚠️ Audio merge could not be completed. Falling back to video without audio to preserve crisp frames.');
           finalBlob = new Blob([videoBuffer], { type: 'video/mp4' });
         }
-      } else if (hasAudio) {
-        logExportWarn('WebCodecs', '⚠️ Audio track could not be prepared. Exporting video without audio.');
-        finalBlob = new Blob([videoBuffer], { type: 'video/mp4' });
       } else {
         finalBlob = new Blob([videoBuffer], { type: 'video/mp4' });
       }
+      videoBuffer = null;
+      audioResult = null;
 
       var outFileName = sanitizeName(customName || ps.name) + '.mp4';
       logExport('WebCodecs:Download', 'Triggering file download: ' + outFileName + ' (' + (finalBlob.size / 1024 / 1024).toFixed(2) + ' MB)');

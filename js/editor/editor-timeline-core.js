@@ -688,10 +688,6 @@
         if (currentProjectState) currentProjectState.fps = currentFps;
         if (window.PreviewCacheManager) {
           window.PreviewCacheManager.setFps(currentFps);
-          window.PreviewCacheManager.clearAll();
-        }
-        if (window.VideoFrameExtractor) {
-          window.VideoFrameExtractor.setFps(currentFps);
         }
         const fpsDropdown = document.getElementById('dropdown-fps');
         if (fpsDropdown) {
@@ -1522,24 +1518,6 @@
           });
         };
         pauseLayerMediaTree(currentProjectState.layers || []);
-        if (window._pendingVideoCacheInvalidation && window.PreviewCacheManager) {
-          window._pendingVideoCacheInvalidation = false;
-          // Only invalidate ranges of layers whose extraction just completed — don't nuke the whole cache!
-          const pps = window.currentPixelsPerSecond || 80;
-          const layers = currentProjectState ? (currentProjectState.layers || []) : [];
-          const vfe = window.VideoFrameExtractor;
-          layers.forEach(l => {
-            if (l.type === 'video' && vfe) {
-              const sk = vfe._getSourceKey ? vfe._getSourceKey(l) : (l.mediaId || l.id);
-              const sc = vfe.getSourceCache(sk);
-              if (sc && !sc.isExtracting && l._extractComplete) {
-                const start = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps);
-                const dur = l.durationSec !== undefined ? l.durationSec : ((l.widthPx || 320) / pps);
-                window.PreviewCacheManager.invalidateRange(start, start + dur);
-              }
-            }
-          });
-        }
         // Always trigger idle cache fill after pause — fills remaining uncached frames in background
         // This mirrors AE RAM Preview: bar fills continuously during idle time
         if (window.PreviewCacheManager && window.isPreviewCacheEnabled !== false && !window.isExporting) {
@@ -1874,7 +1852,7 @@
 
         isRulerDrag = false;
 
-        const curSec = Math.max(0, -panX / pixelsPerSecond);
+        const curSec = getCurrentPlayheadTime();
 
         if (rulerViewport) rulerViewport.classList.remove('is-dragging');
         if (layersViewport) layersViewport.classList.remove('is-dragging');
@@ -1883,23 +1861,13 @@
         const layers = currentProjectState.layers || [];
         layers.forEach(layer => {
           if (layer.type === 'audio' || layer.type === 'video') {
-            const media = getOrLoadLayerMedia(layer);
-            if (media && media.el) {
-              const start = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pixelsPerSecond);
-              const dur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pixelsPerSecond);
-              if (curSec >= start && curSec < start + dur) {
-                const eff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(layer, curSec) : layer;
-                const effSpeed = (eff && eff.speed !== undefined) ? eff.speed : (layer.speed !== undefined && layer.speed > 0 ? layer.speed : 1);
-                const timeInClip = Math.max(0, (layer.sourceOffsetSec || 0) + (curSec - start) * effSpeed);
-                const maxSeek = (media.el.duration && !isNaN(media.el.duration) && media.el.duration > 0)
-                  ? Math.max(0, media.el.duration - 0.01)
-                  : Infinity;
-                const targetSeek = Math.min(timeInClip, maxSeek);
-                if (media.el.seeking) {
-                  media.el._pendingScrubTime = targetSeek;
-                } else if (Math.abs(media.el.currentTime - targetSeek) > 0.01) {
-                  try { media.el.currentTime = targetSeek; } catch (_) {}
-                }
+            const start = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pixelsPerSecond);
+            const dur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pixelsPerSecond);
+            if (curSec >= start && curSec < start + dur) {
+              const timeInClip = window.VideoCompEngine.computeLayerClipTime(layer, curSec, pixelsPerSecond);
+              const media = getOrLoadLayerMedia(layer);
+              if (media && media.el) {
+                window.VideoCompEngine.seekVideoElementCoalesced(media.el, timeInClip, false);
               }
             }
           }
@@ -3864,9 +3832,6 @@
         });
       }
       window.toggleKeyframeExpansionForSelection = toggleKeyframeExpansionForSelection;
-
-    window.updateTimelineDuration = updateTimelineDuration;
-    window.updateTimelinePosition = updateTimelinePosition;
   }
   window.initTimelineRulerAndPan = initTimelineRulerAndPan;
   initTimelineRulerAndPan();

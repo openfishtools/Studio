@@ -80,9 +80,10 @@ console.log('\n[3/4] Synchronizers & System Sanity Check...');
 try {
   execFileSync('node', ['scripts/sync-effects.js'], { stdio: 'pipe' });
   execFileSync('node', ['scripts/sync-version.js'], { stdio: 'pipe' });
-  console.log('  PASS: Effects and version synchronizers executed cleanly.');
+  execFileSync('node', ['scripts/verify-videocomp-and-cache.js'], { stdio: 'pipe' });
+  console.log('  PASS: Synchronizers and VideoCompEngine/Cache deep verification tests executed cleanly.');
 } catch (err) {
-  console.error('  FAIL: Synchronizers failed:', err.message);
+  console.error('  FAIL: Synchronizers or functional verification failed:', err.message);
   process.exit(1);
 }
 

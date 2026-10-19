@@ -96,10 +96,16 @@
 
     function redrawComposition(source = 'general', immediate = false) {
       _lastRedrawSource = source;
+      if (window.PreviewCacheManager && typeof window.PreviewCacheManager.syncStateWithProject === 'function') {
+        window.PreviewCacheManager.syncStateWithProject();
+      }
+
+      const cancelRaf = (typeof cancelAnimationFrame === 'function') ? cancelAnimationFrame : clearTimeout;
+      const requestRaf = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame : (fn) => setTimeout(fn, 16);
 
       if (immediate) {
         if (_redrawRafId !== null) {
-          cancelAnimationFrame(_redrawRafId);
+          cancelRaf(_redrawRafId);
           _redrawRafId = null;
         }
         _redrawRafScheduled = false;
@@ -116,7 +122,7 @@
       if (_redrawRafScheduled) return;
       _redrawRafScheduled = true;
 
-      _redrawRafId = requestAnimationFrame(() => {
+      _redrawRafId = requestRaf(() => {
         _redrawRafScheduled = false;
         _redrawRafId = null;
         _redrawCount++;
@@ -203,22 +209,13 @@
           if (!m) return null;
           let el = m.el;
           if (child.type === 'video') {
-            const cStart = child.startSec !== undefined ? child.startSec : ((child.startPx || 0) / pps);
-            const timeInClip = Math.max(0, (child.sourceOffsetSec || 0) + (innerSec - cStart) * effSpeed);
-            const sourceKey = (window.VideoFrameExtractor && window.VideoFrameExtractor._getSourceKey) ? window.VideoFrameExtractor._getSourceKey(child) : (child.mediaId || child.dataUrl || child.id);
-            const cachedSource = (!isExport && window.VideoFrameExtractor) ? window.VideoFrameExtractor.getSourceCache(sourceKey) : null;
-            if (!isExport && cachedSource) {
-              const childInterp = child.speedInterpolation || 'none';
-              let cachedFrame = null;
-              if (childInterp !== 'none' && window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getInterpolatedFrame === 'function') {
-                cachedFrame = window.VideoFrameExtractor.getInterpolatedFrame(cachedSource, timeInClip, childInterp, child.mediaWidth, child.mediaHeight);
-              }
-              if (!cachedFrame) {
-                const fIdx = Math.round(timeInClip * cachedSource.fps);
-                cachedFrame = cachedSource.frames.get(fIdx);
-              }
-              if (cachedFrame) el = cachedFrame;
-            }
+            const res = window.VideoCompEngine.resolveLayerVideoElement(child, m, {
+              isExport,
+              isIdleCache: triggerSource === 'idle-cache',
+              currentSec: innerSec,
+              pixelsPerSecond: pps
+            });
+            el = res.el;
           }
           return el;
         }
@@ -773,22 +770,13 @@
             if (!m) return;
             childEl = m.el;
             if (child.type === 'video') {
-              const cStart = child.startSec !== undefined ? child.startSec : ((child.startPx || 0) / pps);
-              const timeInClip = Math.max(0, (child.sourceOffsetSec || 0) + (innerSec - cStart) * effSpeed);
-              const sourceKey = (window.VideoFrameExtractor && window.VideoFrameExtractor._getSourceKey) ? window.VideoFrameExtractor._getSourceKey(child) : (child.mediaId || child.dataUrl || child.id);
-              const cachedSource = (!isExport && window.VideoFrameExtractor) ? window.VideoFrameExtractor.getSourceCache(sourceKey) : null;
-              if (!isExport && cachedSource) {
-                const childInterp = child.speedInterpolation || 'none';
-                let cachedFrame = null;
-                if (childInterp !== 'none' && window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getInterpolatedFrame === 'function') {
-                  cachedFrame = window.VideoFrameExtractor.getInterpolatedFrame(cachedSource, timeInClip, childInterp, child.mediaWidth, child.mediaHeight);
-                }
-                if (!cachedFrame) {
-                  const fIdx = Math.round(timeInClip * cachedSource.fps);
-                  cachedFrame = cachedSource.frames.get(fIdx);
-                }
-                if (cachedFrame) childEl = cachedFrame;
-              }
+              const res = window.VideoCompEngine.resolveLayerVideoElement(child, m, {
+                isExport,
+                isIdleCache: triggerSource === 'idle-cache',
+                currentSec: innerSec,
+                pixelsPerSecond: pps
+              });
+              childEl = res.el;
             }
           }
         }
@@ -1192,31 +1180,7 @@
       // RAM preview cache: used during playback, scrubbing, and frame park for instant 60fps blit.
       // Canvas wireframe transform interaction bypasses cache to track cursor movements live.
       if (!isExport && !isIdleCache && !isTransformDragging && window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
-        let isVideoReady = true;
-        if (activeVideos.length > 0 && window.VideoFrameExtractor) {
-          for (let vi = 0; vi < activeVideos.length; vi++) {
-            const vl = activeVideos[vi];
-            const sk = window.VideoFrameExtractor._getSourceKey ? window.VideoFrameExtractor._getSourceKey(vl) : (vl.mediaId || vl.dataUrl || vl.id);
-            const sc = window.VideoFrameExtractor.getSourceCache(sk);
-            if (!sc || sc.isExtracting) {
-              const start = vl.startSec !== undefined ? vl.startSec : ((vl.startPx || 0) / pixelsPerSecond);
-              const vlEff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(vl, currentSec) : vl;
-              let timeInClip = 0;
-              if (vl.speedMode === 'time_remap') {
-                timeInClip = Math.max(0, vlEff && vlEff.timeRemap !== undefined ? vlEff.timeRemap : ((currentSec - start) * (vl.speed || 1)));
-              } else {
-                timeInClip = (typeof getLayerIntegratedSpeedTime === 'function')
-                  ? getLayerIntegratedSpeedTime(vl, currentSec)
-                  : Math.max(0, (vl.sourceOffsetSec || 0) + (currentSec - start) * (vl.speed || 1.0));
-              }
-              const fIdx = Math.round(timeInClip * (sc && sc.fps ? sc.fps : (currentProjectState.fps || 60)));
-              if (!sc || !sc.frames.has(fIdx)) {
-                isVideoReady = false;
-                break;
-              }
-            }
-          }
-        }
+        const isVideoReady = (activeVideos.length === 0);
         if (isVideoReady) {
           cachedBitmap = window.PreviewCacheManager.getFrame(frameIndex, w, h);
         }
@@ -1248,30 +1212,13 @@
         const adState = window._adaptiveDraftState;
         let adaptiveScale = 1.0;
         if (canUseAdaptiveDraft) {
-          let heavyPassCount = 0;
-          for (let li = 0; li < activeLayers.length; li++) {
-            const al = activeLayers[li];
-            if (!al || al.hidden) continue;
-            if (al.type === 'adjustment' && Array.isArray(al.effects) && al.effects.some(f => f && !f.disabled)) {
-              heavyPassCount += 1.5;
-            } else if (Array.isArray(al.effects) && al.effects.length > 0) {
-              for (let fi = 0; fi < al.effects.length; fi++) {
-                const fx = al.effects[fi];
-                if (fx && !fx.disabled) {
-                  heavyPassCount += (fx.type === 'deep-glow' || fx.type === 'shatter' || fx.type === 'particle-engine' || fx.type === 'fluid-fish' || fx.type === 'gaussian-blur') ? 1.5 : 0.5;
-                }
-              }
-            }
-          }
           const isInteractiveMotion = !!(window.isTimelinePlaying || isScrubbing || isTransformDragging);
-          if (isInteractiveMotion && heavyPassCount >= 3.0 && adState.scale > 0.55) {
-            adState.scale = Math.min(adState.scale, heavyPassCount >= 4.5 ? 0.38 : 0.52);
-          } else if (isInteractiveMotion && heavyPassCount >= 1.5 && adState.scale > 0.75 && adState.emaMs > 10) {
-            adState.scale = Math.min(adState.scale, 0.68);
-          } else if (!isInteractiveMotion && heavyPassCount < 3.0 && adState.emaMs < 14) {
-            adState.scale = 1.0;
-          }
-          adaptiveScale = Math.max(0.20, Math.min(1.0, adState.scale));
+          adaptiveScale = window.VideoCompEngine.computeAdaptiveDraftScale(activeLayers, {
+            canUseAdaptiveDraft,
+            isInteractiveMotion,
+            currentScale: adState.scale
+          });
+          adState.scale = adaptiveScale;
         } else {
           adState.scale = 1.0;
         }
@@ -2000,127 +1947,17 @@
           el = media.el;
           timeInClip = 0;
           if (layer.type === 'video') {
-            const start = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pixelsPerSecond);
-            timeInClip = 0;
-            if (layer.speedMode === 'time_remap') {
-              const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
-                ? getLayerEffectivePropsAtTime(layer, currentSec)
-                : layer;
-              timeInClip = Math.max(0, effProps.timeRemap !== undefined ? effProps.timeRemap : ((currentSec - start) * (layer.speed || 1.0)));
-            } else {
-              timeInClip = (typeof getLayerIntegratedSpeedTime === 'function')
-                ? getLayerIntegratedSpeedTime(layer, currentSec)
-                : Math.max(0, (layer.sourceOffsetSec || 0) + (currentSec - start) * (layer.speed || 1.0));
-            }
-
-            let useProxySequence = false;
-
-            // 1. Instant 60+ FPS playback & scrubbing via Shared Media-Source Image Sequence Cache
-            const sourceKey = (window.VideoFrameExtractor && window.VideoFrameExtractor._getSourceKey) ? window.VideoFrameExtractor._getSourceKey(layer) : (layer.mediaId || layer.dataUrl || layer.id);
-            const cachedSource = window.VideoFrameExtractor ? window.VideoFrameExtractor.getSourceCache(sourceKey) : null;
-            const hasBakedFrames = !!(cachedSource && ((cachedSource.cachedFrameIndices && cachedSource.cachedFrameIndices.size > 0) || (cachedSource.frames && cachedSource.frames.size > 0)));
-
-            if (cachedSource) {
-              const fIdx = Math.round(timeInClip * (cachedSource.fps || 60));
-              const interpMode = layer.speedInterpolation || 'none';
-              let cachedFrame = null;
-
-              if (interpMode !== 'none' && window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getInterpolatedFrame === 'function') {
-                cachedFrame = window.VideoFrameExtractor.getInterpolatedFrame(cachedSource, timeInClip, interpMode, layer.mediaWidth, layer.mediaHeight);
-              }
-
-              if (!cachedFrame) {
-                cachedFrame = cachedSource.frames.get(fIdx);
-
-                // Missing exact frame from RAM cache -> trigger async fetch from IndexedDB
-                if (!cachedFrame && cachedSource.cachedFrameIndices && cachedSource.cachedFrameIndices.has(fIdx)) {
-                  if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.fetchFrameFromDB === 'function') {
-                    window.VideoFrameExtractor.fetchFrameFromDB(cachedSource, fIdx);
-                  }
-                }
-              }
-
-              // Prefetch upcoming/surrounding frames ahead of playhead
-              if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.ensurePlaybackFrames === 'function') {
-                if (window.isTimelinePlaying) {
-                  window.VideoFrameExtractor.ensurePlaybackFrames(cachedSource, fIdx, 90);
-                } else if (isScrubbing || !cachedFrame) {
-                  window.VideoFrameExtractor.ensurePlaybackFrames(cachedSource, Math.max(0, fIdx - 30), 75);
-                }
-              }
-
-              // If exact frame is still decoding from IndexedDB, pick the best baked frame in RAM (0ms delay, no black frame, no video lag)
-              if (!cachedFrame && !isIdleCache && !isExport && cachedSource.frames.size > 0) {
-                if (window.isTimelinePlaying) {
-                  // Playback: prefer immediate previous frame within tight window (max 3 frames)
-                  for (let offset = 1; offset <= 3; offset++) {
-                    if (cachedSource.frames.has(fIdx - offset)) {
-                      cachedFrame = cachedSource.frames.get(fIdx - offset);
-                      break;
-                    }
-                  }
-                }
-                // Scrubbing, paused, or stopped: check immediate neighbors (max 1 frame)
-                if (!cachedFrame) {
-                  if (cachedSource.frames.has(fIdx - 1)) {
-                    cachedFrame = cachedSource.frames.get(fIdx - 1);
-                  } else if (fIdx === 0 && cachedSource.frames.has(1)) {
-                    cachedFrame = cachedSource.frames.get(1);
-                  }
-                }
-                // If exact frame is missing from RAM, pick closest available frame in RAM sequence (instant 0ms fallback)
-                if (!cachedFrame && cachedSource.frames.size > 0) {
-                  let minDiff = Infinity;
-                  let nearestF = null;
-                  for (const availIdx of cachedSource.frames.keys()) {
-                    const diff = Math.abs(availIdx - fIdx);
-                    if (diff < minDiff) {
-                      minDiff = diff;
-                      nearestF = availIdx;
-                    }
-                  }
-                  if (nearestF !== null) {
-                    cachedFrame = cachedSource.frames.get(nearestF);
-                  }
-                }
-
-                // Anti-flicker hold: hold last successfully rendered frame for this layer while next frame decodes
-                if (!cachedFrame && layer._lastRenderedFrame) {
-                  cachedFrame = layer._lastRenderedFrame;
-                }
-              }
-
-              if (cachedFrame) {
-                el = cachedFrame;
-                layer._lastRenderedFrame = cachedFrame;
-                useProxySequence = true;
-              }
-            }
-
-            if (!useProxySequence) {
-              if (isIdleCache) {
-                // During idle-cache, strictly require exact extracted video frames
-                hasUnreadyMedia = true;
-                return;
-              }
-              const videoEl = media && media.el;
-              if (videoEl && videoEl.videoWidth > 0 && videoEl.readyState >= 2) {
-                el = videoEl;
-                useProxySequence = true;
-              } else if (layer._lastRenderedFrame) {
-                el = layer._lastRenderedFrame;
-                useProxySequence = true;
-              } else {
-                const placeholderW = layer.mediaWidth || (videoEl && videoEl.videoWidth > 0 ? videoEl.videoWidth : 1920);
-                const placeholderH = layer.mediaHeight || (videoEl && videoEl.videoHeight > 0 ? videoEl.videoHeight : 1080);
-                const placeholderFn = typeof getMediaNotReadyPlaceholder === 'function'
-                  ? getMediaNotReadyPlaceholder
-                  : (typeof window !== 'undefined' && window.getMediaNotReadyPlaceholder ? window.getMediaNotReadyPlaceholder : null);
-                if (placeholderFn) {
-                  el = placeholderFn(placeholderW, placeholderH, layer._extractProgress || 0);
-                }
-                useProxySequence = false;
-              }
+            const res = window.VideoCompEngine.resolveLayerVideoElement(layer, media, {
+              isExport,
+              isIdleCache,
+              currentSec,
+              pixelsPerSecond
+            });
+            el = res.el;
+            timeInClip = res.timeInClip;
+            if (res.hasUnreadyMedia && isIdleCache) {
+              hasUnreadyMedia = true;
+              return;
             }
           }
         }
@@ -2128,11 +1965,9 @@
         // AI Background Removal: Substitute transparent cutout if ready, otherwise fallback to raw media seamlessly
         if (el && window.FishBgRemovalEngine && window.FishBgRemovalEngine.isLayerMattingActive(layer)) {
           if (layer.type === 'video') {
-            const sourceKey = (window.VideoFrameExtractor && window.VideoFrameExtractor._getSourceKey)
-              ? window.VideoFrameExtractor._getSourceKey(layer)
-              : (layer.mediaId || layer.dataUrl || layer.id);
-            const cachedSource = window.VideoFrameExtractor ? window.VideoFrameExtractor.getSourceCache(sourceKey) : null;
-            const fIdx = Math.round(timeInClip * ((cachedSource && cachedSource.fps) || (currentProjectState.fps || 60)));
+            const sourceKey = (layer.mediaId || layer.dataUrl || layer.id);
+            const fps = (currentProjectState && currentProjectState.fps) || 60;
+            const fIdx = Math.round(timeInClip * fps);
             const cutoutFrame = window.FishBgRemovalEngine.getVideoCutoutFrame(sourceKey, fIdx);
             if (cutoutFrame) {
               el = cutoutFrame;
@@ -2730,63 +2565,28 @@
           });
         }
 
-        // Check if any active video layer is currently missing frames AND actively extracting
-        const hasExtractingVideo = activeVideos.some(vl => {
-          if (vl.hidden) return false;
-          if (vl._extractComplete) return false;
-          const vfe = window.VideoFrameExtractor;
-          if (!vfe) return false;
-          const sk = vfe._getSourceKey ? vfe._getSourceKey(vl) : (vl.mediaId || vl.dataUrl || vl.id);
-          const sc = vfe.getSourceCache(sk);
-          if (!sc) return false;
-          // Only block caching if background extractor is actively working AND this frame is not cached yet
-          if (sc.isExtracting) {
-            const start = vl.startSec !== undefined ? vl.startSec : ((vl.startPx || 0) / pixelsPerSecond);
-            const vlEff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(vl, currentSec) : vl;
-            const effSpeed = (vlEff && vlEff.speed !== undefined) ? vlEff.speed : (vl.speed !== undefined && vl.speed > 0 ? vl.speed : 1);
-            const timeInClip = Math.max(0, (vl.sourceOffsetSec || 0) + (currentSec - start) * effSpeed);
-            const fIdx = Math.round(timeInClip * (sc && sc.fps ? sc.fps : (currentProjectState.fps || 60)));
-            const hasFrame = (sc.frames && sc.frames.has(fIdx)) || (sc.cachedFrameIndices && sc.cachedFrameIndices.has(fIdx));
-            return !hasFrame;
-          }
-          return false;
-        });
-
         // LIVE FRAME CACHING (After Effects RAM Preview Style)
-        // STRICT RULE: only cache when the exact video frame is available (hasExtractingVideo = false).
         // Caching during playback, scrubbing, and frame park ensures subsequent scrubbing is instant 60fps.
         const currentRenderElapsed = performance.now() - t0;
         if (canUseAdaptiveDraft) {
-          const targetBudgetMs = Math.max(10, Math.min(20, (1000 / Math.max(24, Math.min(60, fps || 60))) * 0.85));
-          adState.emaMs = (adState.emaMs || currentRenderElapsed) * 0.6 + currentRenderElapsed * 0.4;
-          if (currentRenderElapsed > targetBudgetMs * 2.2) {
-            adState.scale = Math.max(0.20, adState.scale * 0.52);
-            adState.fastStreak = 0;
-          } else if (currentRenderElapsed > targetBudgetMs * 1.4) {
-            adState.scale = Math.max(0.22, adState.scale * 0.68);
-            adState.fastStreak = 0;
-          } else if (currentRenderElapsed > targetBudgetMs) {
-            adState.scale = Math.max(0.25, adState.scale * 0.82);
-            adState.fastStreak = 0;
-          } else if (currentRenderElapsed < targetBudgetMs * 0.42 && adState.emaMs < targetBudgetMs * 0.50) {
-            adState.fastStreak = (adState.fastStreak || 0) + 1;
-            if (adState.fastStreak >= 8) {
-              adState.scale = Math.min(1.0, adState.scale + 0.12);
-              if (adState.scale > 0.96) adState.scale = 1.0;
-              adState.fastStreak = 4;
-            }
-          }
+          window.VideoCompEngine.adjustAdaptiveDraftBudget(currentRenderElapsed, fps, adState);
           window._currentAdaptiveDraftScale = adState.scale;
         }
 
-        if (!hasExtractingVideo && !isExport && !window.isExporting && !isIdleCache && !isTransformDragging &&
+        // Ensure active video layers actually rendered exact decoded frames (never cache fallback/stale frames!)
+        const hasUnreadyVideoInComposition = activeVideos.some(vl => {
+          if (vl.hidden) return false;
+          if (!vl._renderedExactVideoFrame) return true;
+          if (!vl._lastRenderedFrame) return true;
+          return false;
+        });
+
+        if (!hasUnreadyVideoInComposition && !isExport && !window.isExporting && !isIdleCache && !isTransformDragging &&
             triggerSource !== 'lookahead-cache' &&
             window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
-          // Only cache into RAM Preview when rendered at full resolution (adaptiveScale >= 0.96) and frame was fast
-          if (adaptiveScale >= 0.96 && (!window.isTimelinePlaying || currentRenderElapsed < 13)) {
-            window.PreviewCacheManager.setFrameFromCanvas(frameIndex, canvas);
+          if ((adaptiveScale >= 0.96 || isDraftModeActive) && (!window.isTimelinePlaying || currentRenderElapsed < 13)) {
+            window.PreviewCacheManager.setFrameFromCanvas(frameIndex, canvas, isDraftModeActive);
           }
-          // NEVER delete cached frames during extraction — was causing patchy cache bar!
         }
 
       }
@@ -2864,7 +2664,7 @@
         currentProjectState._baseH = baseDims[1];
         const isMobileDevice = (typeof window !== 'undefined' && (window.innerWidth <= 600 || ('ontouchstart' in window && window.innerWidth <= 900)));
 
-        // Keep backing canvas at full display DPR; Fast/Draft mode dynamically scales internal render buffer based on frame load
+        // Keep backing canvas at display DPR; Speed Draft scales internal render buffer via _adaptiveDraftCanvas
         const dpr = isMobileDevice ? 1.0 : Math.min(1.5, window.devicePixelRatio || 1);
         const targetW = Math.max(1, Math.min(baseDims[0], Math.round(w * dpr)));
         const targetH = Math.max(1, Math.min(baseDims[1], Math.round(h * dpr)));
@@ -2907,10 +2707,6 @@
         window.currentTimelineFps = fps;
         if (window.PreviewCacheManager) {
           window.PreviewCacheManager.setFps(fps);
-          window.PreviewCacheManager.clearAll();
-        }
-        if (window.VideoFrameExtractor) {
-          window.VideoFrameExtractor.setFps(fps);
         }
       } else {
         currentProjectState.fps = fps;
@@ -3011,6 +2807,13 @@
           return currentSec >= (start - 0.0001) && currentSec < (start + dur);
         });
       }
+      window.getActiveLayersAtPlayhead = getActiveLayersAtPlayhead;
+
+      function getActiveCameraLayer() {
+        const activeLayers = getActiveLayersAtPlayhead();
+        return activeLayers.find(l => l && l.type === 'camera') || (currentProjectState.layers || []).find(l => l && l.type === 'camera' && !l.hidden) || null;
+      }
+      window.getActiveCameraLayer = getActiveCameraLayer;
 
       function isLayerPixelTransparent(layer, canvasX, canvasY) {
         if (!layer || layer.type !== 'image' || !layer._canvasBounds) return false;
@@ -3511,6 +3314,8 @@
       function flushCanvasRedraw() {
         redrawComposition('canvasTransformFlush', true);
       }
+      window.requestCanvasRedraw = requestCanvasRedraw;
+      window.flushCanvasRedraw = flushCanvasRedraw;
 
       // Pointermove: Execute Live Drag / Scale with requestAnimationFrame Throttling
       window.addEventListener('pointermove', (e) => {
@@ -3915,4 +3720,173 @@
       window.addEventListener('pointercancel', onPointerEnd);
       window.addEventListener('blur', onPointerEnd);
     })();
+
+    /**
+     * Fit or stretch selected layer to composition dimensions.
+     * @param {'fit'|'stretch'} mode
+     */
+    function applyFitOrStretchToComposition(mode, explicitLayer = null) {
+      const ps = window.currentProjectState;
+      if (!ps) return;
+      const compW = ps.baseW || ps.width || 1920;
+      const compH = ps.baseH || ps.height || 1080;
+
+      let layer = explicitLayer || null;
+      if (!layer) {
+        const targetId = window.selectedLayerId || window.currentSelectedLayerId;
+        if (targetId && ps.layers) {
+          layer = ps.layers.find(l => l.id === targetId);
+        }
+        if (!layer && window.selectedLayerIds && window.selectedLayerIds.size > 0 && ps.layers) {
+          const firstId = Array.from(window.selectedLayerIds)[0];
+          layer = ps.layers.find(l => l.id === firstId);
+        }
+        if (!layer && window.currentSelectedLayer) {
+          layer = window.currentSelectedLayer;
+        }
+        if (!layer && ps.layers) {
+          layer = ps.layers.find(l => l.selected);
+        }
+      }
+      if (!layer) return;
+
+      const isShapeOrFill = (layer.type === 'shape' || layer.type === 'adjustment' || layer.type === 'solid' || layer.fillType === 'color' || layer.fillType === 'gradient');
+
+      if (mode === 'fit') {
+        if (isShapeOrFill) {
+          layer.scaleW = compW;
+          layer.scaleH = compH;
+        } else {
+          let srcW = layer.mediaWidth;
+          let srcH = layer.mediaHeight;
+          if (!srcW || !srcH) {
+            if (layer.type === 'text') {
+              const nat = (window.FishTextEngine && window.FishTextEngine.getNaturalSize)
+                ? window.FishTextEngine.getNaturalSize(layer)
+                : { width: 320, height: 100 };
+              srcW = nat.width;
+              srcH = nat.height;
+            } else {
+              const media = (typeof getOrLoadLayerMedia === 'function')
+                ? getOrLoadLayerMedia(layer)
+                : (window.getOrLoadLayerMedia ? window.getOrLoadLayerMedia(layer) : null);
+              if (media) {
+                const el = (media && media.el) ? media.el : media;
+                if (el && el.videoWidth > 0 && el.videoHeight > 0) {
+                  srcW = el.videoWidth;
+                  srcH = el.videoHeight;
+                } else if (el && el.naturalWidth > 0 && el.naturalHeight > 0) {
+                  srcW = el.naturalWidth;
+                  srcH = el.naturalHeight;
+                } else if (media.img && media.img.naturalWidth > 0 && media.img.naturalHeight > 0) {
+                  srcW = media.img.naturalWidth;
+                  srcH = media.img.naturalHeight;
+                } else if (media.naturalWidth > 0 && media.naturalHeight > 0) {
+                  srcW = media.naturalWidth;
+                  srcH = media.naturalHeight;
+                }
+              }
+              if (!srcW || !srcH) {
+                srcW = Math.abs(layer.scaleW) || compW;
+                srcH = Math.abs(layer.scaleH) || compH;
+              }
+            }
+          }
+          if (srcW > 0 && srcH > 0 && (!layer.mediaWidth || !layer.mediaHeight)) {
+            layer.mediaWidth = srcW;
+            layer.mediaHeight = srcH;
+          }
+          const scaleFactor = Math.max(compW / Math.max(1, srcW), compH / Math.max(1, srcH));
+          layer.scaleW = Math.round(srcW * scaleFactor);
+          layer.scaleH = Math.round(srcH * scaleFactor);
+        }
+      } else if (mode === 'stretch') {
+        layer.scaleW = compW;
+        layer.scaleH = compH;
+        layer.aspectLocked = false;
+      }
+
+      layer.posX = compW / 2;
+      layer.posY = compH / 2;
+      layer.anchorX = 0;
+      layer.anchorY = 0;
+      if (layer.anchorZ !== undefined) layer.anchorZ = 0;
+      layer.normX = (layer.posX - layer.scaleW / 2) / compW;
+      layer.normY = (layer.posY - layer.scaleH / 2) / compH;
+      layer.normW = layer.scaleW / compW;
+      layer.normH = layer.scaleH / compH;
+      layer._userResized = true;
+      layer._userResizedManual = true;
+
+      if (layer.type === 'shape') {
+        if (!layer.shapeProps) layer.shapeProps = {};
+        layer.shapeProps.sizeX = Math.abs(layer.scaleW);
+        layer.shapeProps.sizeY = Math.abs(layer.scaleH);
+        layer.transformScaleX = 1.0;
+        layer.transformScaleY = 1.0;
+        layer.mediaWidth = Math.abs(layer.scaleW);
+        layer.mediaHeight = Math.abs(layer.scaleH);
+        layer._shapeDirty = true;
+        layer._fillDirty = true;
+        if (layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
+        if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
+        if (typeof syncShapeControllerUI === 'function') {
+          syncShapeControllerUI();
+        } else if (typeof window.syncShapeControllerUI === 'function') {
+          window.syncShapeControllerUI();
+        }
+      } else if (layer.type === 'text') {
+        const nat = (window.FishTextEngine && window.FishTextEngine.getNaturalSize)
+          ? window.FishTextEngine.getNaturalSize(layer)
+          : { width: 320, height: 100 };
+        layer.transformScaleX = Math.abs(layer.scaleW) / Math.max(1, nat.width);
+        layer.transformScaleY = Math.abs(layer.scaleH) / Math.max(1, nat.height);
+        layer._textDirty = true;
+        if (layer._textBufferCanvas) layer._textBufferCanvas._lastRenderKey = null;
+        if (layer._textMbCanvas) layer._textMbCanvas._lastRenderKey = null;
+      } else if (layer.type === 'precomp') {
+        if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
+      }
+
+      if (typeof recordLayerPropertyChange === 'function') {
+        recordLayerPropertyChange(layer, 'scale');
+        recordLayerPropertyChange(layer, 'move');
+      } else if (typeof window.recordLayerPropertyChange === 'function') {
+        window.recordLayerPropertyChange(layer, 'scale');
+        window.recordLayerPropertyChange(layer, 'move');
+      }
+
+      if (typeof syncTransformControllerValues === 'function') {
+        syncTransformControllerValues();
+      } else if (typeof window.syncTransformControllerValues === 'function') {
+        window.syncTransformControllerValues();
+      }
+
+      if (typeof invalidatePreviewCacheForLayer === 'function') {
+        invalidatePreviewCacheForLayer(layer);
+      } else if (window.PreviewCacheManager && typeof window.PreviewCacheManager.syncStateWithProject === 'function') {
+        window.PreviewCacheManager.syncStateWithProject();
+      }
+
+      if (typeof requestCanvasRedraw === 'function') {
+        requestCanvasRedraw();
+      } else if (typeof redrawComposition === 'function') {
+        redrawComposition();
+      } else if (typeof window.redrawComposition === 'function') {
+        window.redrawComposition();
+      }
+
+      if (typeof saveCurrentProjectLayers === 'function') {
+        saveCurrentProjectLayers();
+      } else if (typeof window.saveCurrentProjectLayers === 'function') {
+        window.saveCurrentProjectLayers();
+      }
+
+      if (typeof renderTimelineLayers === 'function') {
+        renderTimelineLayers();
+      } else if (typeof window.renderTimelineLayers === 'function') {
+        window.renderTimelineLayers();
+      }
+    }
+    window.applyFitOrStretchToComposition = applyFitOrStretchToComposition;
 })();

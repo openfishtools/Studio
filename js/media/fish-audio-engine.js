@@ -617,7 +617,9 @@
           if (this.pendingMediaElements && this.pendingMediaElements.has(el)) {
             this.pendingMediaElements.delete(el);
           }
-          return;
+          if (layer.type !== 'video') {
+            return;
+          }
         } else {
           // Only attach to Web Audio API graph if layer has enabled audio effects.
           // Clean layers play natively to bypass WebKit AudioSourceProviderAVFObjC ring buffer underruns.
@@ -711,20 +713,8 @@
             ? effProps.volume
             : (layer.volume !== undefined ? layer.volume : 1.0)) * (effectiveGain || 1.0);
 
-          if (isFreezeOrReverse) {
-            currentVol = 0; // Mute audio on freeze frame or reverse to prevent stuttering
-          }
-
-          if (layer.type === 'video') {
-            const vfe = window.VideoFrameExtractor;
-            if (vfe && typeof vfe.ensurePlaybackFrames === 'function') {
-              const srcId = vfe._getSourceKey ? vfe._getSourceKey(layer) : (layer.sourceVideoId || layer.mediaId || layer.dataUrl || layer.id);
-              const source = vfe.getSourceCache ? vfe.getSourceCache(srcId) : null;
-              if (source) {
-                const targetFIdx = Math.max(0, Math.round(targetTime * (source.fps || 60)));
-                vfe.ensurePlaybackFrames(source, targetFIdx, 90);
-              }
-            }
+          if (isFreezeOrReverse || isMuted) {
+            currentVol = 0; // Mute audio on freeze frame, reverse, or muted video layer
           }
 
           this.setElementGain(el, currentVol);
@@ -739,18 +729,18 @@
               ? window.timelinePlaybackSpeed
               : 1.0);
 
-          const finalPlaybackRate = isFreezeOrReverse
-            ? 0.0625
-            : Math.max(0.0625, Math.min(8.0, currentSpeed * timelineSpeedMult));
+          const rates = window.VideoCompEngine.computePlaybackRates(el, currentSpeed, timelineSpeedMult, layer, isFreezeOrReverse);
+          const { rawRate, tooFastForVideoEl, finalPlaybackRate, wantPreservePitch } = rates;
+          const isVideoEl = el && el.tagName === 'VIDEO';
 
           if (!activeElementTargets.has(el)) {
             activeElementTargets.set(el, {
               targetTime,
               currentSpeed: finalPlaybackRate,
-              currentVol,
-              isFreezeOrReverse,
-              preservePitch: layer.preservePitch !== false,
-              isMuted: !!isMuted
+              currentVol: tooFastForVideoEl ? 0 : currentVol,
+              isFreezeOrReverse: isFreezeOrReverse || tooFastForVideoEl || (isVideoEl && currentVol <= 0.0005 && rawRate > 1.5),
+              preservePitch: wantPreservePitch,
+              isMuted: !!isMuted || tooFastForVideoEl
             });
           }
         }
@@ -761,19 +751,10 @@
 
       activeElementTargets.forEach((info, el) => {
         const { targetTime, currentSpeed, currentVol, isFreezeOrReverse, preservePitch, isMuted } = info;
-        try {
-          // Keep pitch preservation setting constant — never dynamically toggle during playback to avoid loud clicks/pops
-          if (el.preservesPitch !== preservePitch) {
-            el.preservesPitch = preservePitch;
-            if ('webkitPreservesPitch' in el) el.webkitPreservesPitch = preservePitch;
-            if ('mozPreservesPitch' in el) el.mozPreservesPitch = preservePitch;
-          }
-        } catch (_) {}
+        window.VideoCompEngine.applyPitchPreserve(el, preservePitch);
 
         if (isFreezeOrReverse) {
-          if (!el.paused) {
-            try { el.pause(); } catch (_) {}
-          }
+          window.VideoCompEngine.stepOrPauseVideoElement(el, targetTime);
           return;
         }
 
@@ -844,31 +825,22 @@
         }
 
         if (!el.seeking) {
-          // Keep steady playback rate matching desired speed — avoid continuous micro rate steering which triggers 300ms CoreAudio AVPlayer resampler stalls in Safari
           if (Math.abs((el.playbackRate || 1.0) - currentSpeed) > 0.01) {
             try {
               el.playbackRate = Math.max(0.0625, Math.min(8.0, currentSpeed));
             } catch (_) {}
           }
-          const drift = (el.currentTime || 0) - targetTime;
-          const absDrift = Math.abs(drift);
-          // Hard seek only on massive divergence (> 2.5s), throttled to once every 1000ms
-          if (absDrift > 2.5 && (!el._lastHardSeekTime || (nowMs - el._lastHardSeekTime > 1000))) {
-            try {
-              el._lastHardSeekTime = nowMs;
-              el._suppressAudioUntil = Date.now() + 250;
-              el.muted = true;
-              this.setElementGain(el, 0);
-              el.currentTime = targetTime;
-              el.playbackRate = Math.max(0.0625, Math.min(8.0, currentSpeed));
-              setTimeout(() => {
-                if (!el.paused && !isMuted) {
-                  el.muted = false;
-                  this.setElementGain(el, currentVol);
-                }
-              }, 250);
-            } catch (_) {}
-          }
+          window.VideoCompEngine.correctPlaybackDrift(el, targetTime, currentSpeed, nowMs, (audioEl) => {
+            audioEl._suppressAudioUntil = Date.now() + 250;
+            audioEl.muted = true;
+            this.setElementGain(audioEl, 0);
+            setTimeout(() => {
+              if (!audioEl.paused && !isMuted) {
+                audioEl.muted = false;
+                this.setElementGain(audioEl, currentVol);
+              }
+            }, 250);
+          });
         }
       });
 
@@ -906,21 +878,11 @@
         el._lastMasterSec = null;
         el._lastReportedTime = undefined;
         el._lastAdvanceWallTime = undefined;
+
         if (currentSec >= rootStartSec && currentSec < rootEndSec) {
           const speed = (effectiveSpeed > 0 ? effectiveSpeed : 1.0);
-          const timeInClip = Math.max(0, (sourceOffsetSec || 0) + (currentSec - rootStartSec) * speed);
-          const maxSeek = (el.duration && !isNaN(el.duration) && el.duration > 0)
-            ? Math.max(0, el.duration - 0.01)
-            : Infinity;
-          const targetSeek = Math.min(timeInClip, maxSeek);
-
-          if (el.seeking) {
-            el._pendingScrubTime = targetSeek;
-          } else if (Math.abs((el.currentTime || 0) - targetSeek) > 0.03) {
-            try {
-              el.currentTime = targetSeek;
-            } catch (_) {}
-          }
+          const targetSeek = window.VideoCompEngine.computeLayerClipTime(layer, currentSec, rootStartSec, speed, sourceOffsetSec);
+          window.VideoCompEngine.seekVideoElementCoalesced(el, targetSeek, false);
         }
       });
     }

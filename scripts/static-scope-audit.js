@@ -470,7 +470,190 @@ function isReference(node, parent) {
   return true;
 }
 
-module.exports = { analyzeFile, collectExportedGlobals, getEffectiveGlobals, BUILTIN_GLOBALS, KNOWN_GLOBALS };
+function analyzeCodeSnippet(code, effectiveGlobals, extraParams = []) {
+  let ast;
+  try {
+    ast = acorn.parse(code, {
+      ecmaVersion: 'latest',
+      sourceType: 'script',
+      locations: true,
+      allowReturnOutsideFunction: true,
+      allowAwaitOutsideFunction: true
+    });
+  } catch (err) {
+    return { error: err.message, undeclaredUses: [] };
+  }
+
+  const undeclaredUses = [];
+  let currentScope = new Scope(null, true);
+  extraParams.forEach(p => currentScope.add(p));
+
+  function getFunctionScope(scope) {
+    let s = scope;
+    while (s && !s.isFunction) s = s.parent;
+    return s || scope;
+  }
+
+  walk.ancestor(ast, {
+    Program(node) {
+      for (const item of node.body) {
+        if (item.type === 'FunctionDeclaration' && item.id) {
+          currentScope.add(item.id.name);
+        } else if (item.type === 'ClassDeclaration' && item.id) {
+          currentScope.add(item.id.name);
+        } else if (item.type === 'VariableDeclaration') {
+          for (const decl of item.declarations) {
+            extractPatternDeclarations(decl.id, name => currentScope.add(name));
+          }
+        }
+      }
+    },
+    FunctionDeclaration(node) {
+      if (node.id) {
+        getFunctionScope(currentScope).add(node.id.name);
+      }
+    }
+  });
+
+  function visit(node, parent) {
+    if (!node) return;
+    const isScopeNode =
+      node.type === 'FunctionDeclaration' ||
+      node.type === 'FunctionExpression' ||
+      node.type === 'ArrowFunctionExpression' ||
+      node.type === 'BlockStatement' ||
+      node.type === 'ForStatement' ||
+      node.type === 'ForInStatement' ||
+      node.type === 'ForOfStatement' ||
+      node.type === 'CatchClause';
+    const isFunction =
+      node.type === 'FunctionDeclaration' ||
+      node.type === 'FunctionExpression' ||
+      node.type === 'ArrowFunctionExpression';
+
+    if (isScopeNode) {
+      currentScope = new Scope(currentScope, isFunction);
+      if (isFunction && node.params) {
+        for (const param of node.params) {
+          extractPatternDeclarations(param, name => currentScope.add(name));
+        }
+      }
+      if (node.type === 'CatchClause' && node.param) {
+        extractPatternDeclarations(node.param, name => currentScope.add(name));
+      }
+      if (node.type === 'FunctionExpression' && node.id) {
+        currentScope.add(node.id.name);
+      }
+    }
+
+    if (node.type === 'VariableDeclaration' && parent && parent.type !== 'Program') {
+      const targetScope = node.kind === 'var' ? getFunctionScope(currentScope) : currentScope;
+      for (const decl of node.declarations) {
+        extractPatternDeclarations(decl.id, name => targetScope.add(name));
+      }
+    }
+
+    if (node.type === 'Identifier') {
+      const name = node.name;
+      if (isReference(node, parent) && !currentScope.has(name) && !effectiveGlobals.has(name)) {
+        if (!(parent && parent.type === 'UnaryExpression' && parent.operator === 'typeof')) {
+          undeclaredUses.push({ name, line: node.loc.start.line, col: node.loc.start.column });
+        }
+      }
+    }
+
+    for (const key of Object.keys(node)) {
+      if (key === 'loc' || key === 'range' || key === 'comments') continue;
+      const child = node[key];
+      if (Array.isArray(child)) {
+        for (const c of child) {
+          if (c && typeof c.type === 'string') visit(c, node);
+        }
+      } else if (child && typeof child.type === 'string') {
+        visit(child, node);
+      }
+    }
+
+    if (isScopeNode) {
+      currentScope = currentScope.parent;
+    }
+  }
+
+  visit(ast, null);
+  return { undeclaredUses };
+}
+
+function auditHtmlPageInlineHandlers(htmlFile) {
+  const htmlPath = path.isAbsolute(htmlFile) ? htmlFile : path.join(STUDIO_ROOT, htmlFile);
+  if (!fs.existsSync(htmlPath)) return { page: htmlFile, missingHandlers: [] };
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  const scriptTagRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  const loadedScriptPaths = [];
+  const inlineScriptSnippets = [];
+  let match;
+  while ((match = scriptTagRe.exec(html)) !== null) {
+    const attrs = match[1] || '';
+    const body = match[2] || '';
+    const srcMatch = attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
+    if (srcMatch) {
+      const cleanSrc = srcMatch[1].split('?')[0].split('#')[0];
+      if (!cleanSrc.includes('vendor/') && !cleanSrc.endsWith('.min.js')) {
+        const fullPath = path.join(STUDIO_ROOT, cleanSrc);
+        if (fs.existsSync(fullPath)) loadedScriptPaths.push(fullPath);
+      }
+    } else if (body.trim()) {
+      inlineScriptSnippets.push(body);
+    }
+  }
+
+  const pageExported = collectExportedGlobals(loadedScriptPaths);
+  const pageGlobals = new Set([...BUILTIN_GLOBALS, ...pageExported]);
+
+  // Also include globals exported in inline <script> blocks on this page
+  for (const snippet of inlineScriptSnippets) {
+    try {
+      const ast = acorn.parse(snippet, { ecmaVersion: 'latest', sourceType: 'script', allowReturnOutsideFunction: true });
+      walk.simple(ast, {
+        AssignmentExpression(node) {
+          if (node.left.type === 'MemberExpression' && node.left.object.type === 'Identifier' &&
+              (node.left.object.name === 'window' || node.left.object.name === 'globalThis' || node.left.object.name === 'global') &&
+              node.left.property.type === 'Identifier' && !node.left.computed) {
+            pageGlobals.add(node.left.property.name);
+          }
+        },
+        FunctionDeclaration(node) {
+          if (node.id && node.id.name) pageGlobals.add(node.id.name);
+        }
+      });
+    } catch (_) {}
+  }
+
+  const missingHandlers = [];
+  const htmlNoScripts = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, m => '\n'.repeat(m.split('\n').length - 1));
+  const handlerRe = /\b(on(?:click|dblclick|mousedown|mouseup|mousemove|mouseover|mouseout|mouseenter|mouseleave|pointerdown|pointerup|pointermove|touchstart|touchend|touchmove|keydown|keyup|keypress|change|input|submit|focus|blur|load|error|wheel|scroll|contextmenu|dragstart|dragover|drop))\s*=\s*(?:"([^"]*)"|'([^']*)')/gi;
+
+  while ((match = handlerRe.exec(htmlNoScripts)) !== null) {
+    const attr = match[1];
+    const expr = (match[2] !== undefined ? match[2] : match[3])
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>');
+    const line = htmlNoScripts.slice(0, match.index).split('\n').length;
+    const res = analyzeCodeSnippet(expr, pageGlobals, ['event', 'this']);
+    if (res.undeclaredUses && res.undeclaredUses.length > 0) {
+      for (const u of res.undeclaredUses) {
+        missingHandlers.push({ line, attr, name: u.name, expr: expr.trim() });
+      }
+    }
+  }
+
+  return { page: path.basename(htmlPath), missingHandlers };
+}
+
+module.exports = { analyzeFile, auditHtmlPageInlineHandlers, collectExportedGlobals, getEffectiveGlobals, BUILTIN_GLOBALS, KNOWN_GLOBALS };
 
 if (require.main === module) {
   const rawArgs = process.argv.slice(2);
@@ -553,6 +736,21 @@ if (require.main === module) {
       }
     }
   }
+
+  for (const htmlPage of ['index.html', 'editor.html', 'desktop.html']) {
+    const pageAudit = auditHtmlPageInlineHandlers(htmlPage);
+    if (pageAudit.missingHandlers.length > 0) {
+      console.error(`Analyzing HTML inline handlers in ${pageAudit.page}...`);
+      console.error(`  Undeclared references (${pageAudit.missingHandlers.length}):`);
+      for (const item of pageAudit.missingHandlers) {
+        console.error(`    Line ${item.line} [${item.attr}]: "${item.name}" in ${item.expr}`);
+      }
+      hasErrors = true;
+    } else {
+      console.log(`Analyzing HTML inline handlers in ${pageAudit.page}... PASS: No issues found.`);
+    }
+  }
+
   if (hasErrors) {
     process.exit(1);
   }

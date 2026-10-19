@@ -3017,7 +3017,8 @@
   window.applyPresetWarp3 = applyPresetWarp3;
 
   // Cross-frame message listener for postMessage triggers from OpenFishTools panel iframe
-  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function' && !window.__oftRunToolMsgBound) {
+    window.__oftRunToolMsgBound = true;
     window.addEventListener('message', (event) => {
       if (event && event.data && event.data.type === 'fishtools-run-tool' && event.data.tool) {
         const args = Array.isArray(event.data.args) ? event.data.args : [];

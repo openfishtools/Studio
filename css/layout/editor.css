@@ -1995,54 +1995,13 @@ body.has-active-drawer .timeline-layers-viewport {
   --kf-outline-hover-bg: var(--bg-canvas);
 }
 
-/* Background Frame Extraction Progress Bar on Timeline Clip */
-.timeline-clip-progress-track {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 5px;
-  background-color: var(--bg-canvas); /* Solid dark contrast groove */
-  pointer-events: none;
-  z-index: 35;
-  border-radius: 0 0 6px 6px;
-  overflow: hidden;
-  transition: opacity 0.3s ease;
-}
-
+/* Background Frame Extraction Progress Bar on Timeline Clip (Purged) */
+.timeline-clip-progress-track,
 .timeline-clip-progress {
-  height: 100%;
-  width: 0%;
-  background-color: var(--track-color, var(--color-primary-hover)); /* Bright high-contrast fill inside dark track */
-  border-right: 1.5px solid var(--text-primary);
-  box-sizing: border-box;
-  pointer-events: none;
-  transition: width 0.08s linear, opacity 0.3s ease;
-}
-
-/* When layer is selected (layer surface turns dark var(--bg-canvas)): invert track and bar */
-.timeline-clip-block.is-selected .timeline-clip-progress-track {
-  bottom: 2px;
-  left: 2px;
-  right: 2px;
-  background-color: var(--bg-panel-inner);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.timeline-clip-block.is-selected .timeline-clip-progress {
-  background-color: var(--color-primary);
-  border-right: 1.5px solid var(--color-primary-hover);
-}
-
-/* When layer is hidden */
-.timeline-clip-block.is-hidden .timeline-clip-progress {
-  background-color: var(--color-primary-hover);
-}
-
-.timeline-clip-progress-track.is-complete,
-.timeline-clip-progress.is-complete {
-  opacity: 0;
-  pointer-events: none;
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 /* Trim / Lengthen Handles (Left & Right Arrow Buttons Outside Layer when Selected) */

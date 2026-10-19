@@ -2191,9 +2191,9 @@
       const DEFAULT_MODE_CONFIGS = {
         value: { type: 'value', easing: [0.42, 0.0, 0.58, 1.0] },
         speed: { type: 'speed', outSpeed: 0, outInfl: 75, inSpeed: 0, inInfl: 75, easing: [0.75, 0.0, 0.25, 1.0] },
-        elastic: { type: 'elastic', stepLength: 0.25, attack: 1.0, decay: 0.70, magnitude: 0.25, reverse: false },
-        bounce: { type: 'bounce', firstStepLength: 0.40, bounciness: 0.70, reverse: false },
-        cyclic: { type: 'cyclic', stepLength: 0.40, sharpness: 0.50, skew: 0.50, decay: 0.50, reverse: false }
+        elastic: { type: 'elastic', stepLength: 0.35, attack: 1.0, decay: 0.45, magnitude: 0.50, reverse: false },
+        bounce: { type: 'bounce', firstStepLength: 0.45, bounciness: 0.65, reverse: false },
+        cyclic: { type: 'cyclic', stepLength: 0.35, sharpness: 0.0, skew: 0.50, decay: 0.0, reverse: false }
       };
 
       const MODE_PRESETS = {
@@ -2205,32 +2205,32 @@
           { id: 'z-graph', name: 'Z-GRAPH', easing: [0.85, 0.0, 0.15, 1.0], config: { type: 'value', easing: [0.85, 0.0, 0.15, 1.0] } }
         ],
         speed: [
-          { id: 'linear', name: 'SOFT VELOCITY', easing: [0.5, 0.0, 0.5, 1.0], config: { type: 'speed', outSpeed: 0, outInfl: 50, inSpeed: 0, inInfl: 50 } },
-          { id: 'ease-in', name: 'SLOW IN PEAK', easing: [0.75, 0.0, 0.85, 1.0], config: { type: 'speed', outSpeed: 0, outInfl: 75, inSpeed: 0, inInfl: 15 } },
-          { id: 'ease-out', name: 'FAST OUT PEAK', easing: [0.15, 0.0, 0.25, 1.0], config: { type: 'speed', outSpeed: 0, outInfl: 15, inSpeed: 0, inInfl: 75 } },
-          { id: 'ease-in-out', name: 'CENTER BELL', easing: [0.75, 0.0, 0.25, 1.0], config: { type: 'speed', outSpeed: 0, outInfl: 75, inSpeed: 0, inInfl: 75 } },
-          { id: 'z-graph', name: 'EXTREME SPIKE', easing: [0.9, 0.0, 0.1, 1.0], config: { type: 'speed', outSpeed: 0, outInfl: 90, inSpeed: 0, inInfl: 90 } }
+          { id: 'linear', name: 'SOFT VELOCITY', easing: [0.33, 0.0, 0.67, 1.0], config: { type: 'speed', outSpeed: 0, outInfl: 33, inSpeed: 0, inInfl: 33 } },
+          { id: 'ease-in', name: 'EASE IN', easing: [0.33, 0.0, 0.0, 1.0], config: { type: 'speed', outSpeed: 0, outInfl: 33, inSpeed: 0, inInfl: 100 } },
+          { id: 'ease-out', name: 'EASE OUT', easing: [1.0, 0.0, 0.67, 1.0], config: { type: 'speed', outSpeed: 0, outInfl: 100, inSpeed: 0, inInfl: 33 } },
+          { id: 'ease-in-out', name: 'FAST PEAK', easing: [0.80, 0.0, 0.20, 1.0], config: { type: 'speed', outSpeed: 0, outInfl: 80, inSpeed: 0, inInfl: 80 } },
+          { id: 'z-graph', name: 'EXTREME SPIKE', easing: [0.95, 0.0, 0.05, 1.0], config: { type: 'speed', outSpeed: 0, outInfl: 95, inSpeed: 0, inInfl: 95 } }
         ],
         elastic: [
-          { id: 'linear', name: 'SOFT SPRING', easing: [0.2, 1.35, 0.4, 1.0], config: { type: 'elastic', stepLength: 0.35, attack: 1.0, decay: 0.50, magnitude: 0.20, reverse: false } },
-          { id: 'ease-in', name: 'DEFAULT SPRING', easing: [0.15, 1.45, 0.35, 1.0], config: { type: 'elastic', stepLength: 0.25, attack: 1.0, decay: 0.70, magnitude: 0.25, reverse: false } },
-          { id: 'ease-out', name: 'BOUNCY SPRING', easing: [0.2, 1.5, 0.4, 1.0], config: { type: 'elastic', stepLength: 0.16, attack: 1.0, decay: 0.82, magnitude: 0.32, reverse: false } },
-          { id: 'ease-in-out', name: 'HEAVY WHIP', easing: [0.1, 1.6, 0.3, 1.0], config: { type: 'elastic', stepLength: 0.30, attack: 1.0, decay: 0.75, magnitude: 0.48, reverse: false } },
-          { id: 'z-graph', name: 'ELASTIC IN', easing: [0.6, 0.0, 0.8, -0.4], config: { type: 'elastic', stepLength: 0.25, attack: 1.0, decay: 0.70, magnitude: 0.25, reverse: true } }
+          { id: 'linear', name: 'SMOOTH ELASTIC', easing: [0.2, 1.35, 0.4, 1.0], config: { type: 'elastic', stepLength: 0.35, attack: 1.0, decay: 0.45, magnitude: 0.50, reverse: false } },
+          { id: 'ease-in', name: 'SNAPPY SPRING', easing: [0.15, 1.45, 0.35, 1.0], config: { type: 'elastic', stepLength: 0.22, attack: 1.0, decay: 0.65, magnitude: 0.40, reverse: false } },
+          { id: 'ease-out', name: 'HIGH OVERSHOOT', easing: [0.2, 1.5, 0.4, 1.0], config: { type: 'elastic', stepLength: 0.28, attack: 1.0, decay: 0.35, magnitude: 0.85, reverse: false } },
+          { id: 'ease-in-out', name: 'BOUNCY SPRING', easing: [0.1, 1.6, 0.3, 1.0], config: { type: 'elastic', stepLength: 0.16, attack: 1.0, decay: 0.82, magnitude: 0.32, reverse: false } },
+          { id: 'z-graph', name: 'ELASTIC OUT', easing: [0.6, 0.0, 0.8, -0.4], config: { type: 'elastic', stepLength: 0.30, attack: 1.0, decay: 0.50, magnitude: 0.60, reverse: true } }
         ],
         bounce: [
-          { id: 'linear', name: 'SOFT DROP', easing: [0.3, 1.0, 0.6, 1.0], config: { type: 'bounce', firstStepLength: 0.55, bounciness: 0.50, reverse: false } },
-          { id: 'ease-in', name: 'CLASSIC BOUNCE', easing: [0.25, 1.0, 0.5, 1.0], config: { type: 'bounce', firstStepLength: 0.40, bounciness: 0.70, reverse: false } },
-          { id: 'ease-out', name: 'HIGH RUBBER', easing: [0.2, 1.0, 0.4, 1.0], config: { type: 'bounce', firstStepLength: 0.32, bounciness: 0.84, reverse: false } },
+          { id: 'linear', name: 'NATURAL BOUNCE', easing: [0.25, 1.0, 0.5, 1.0], config: { type: 'bounce', firstStepLength: 0.45, bounciness: 0.65, reverse: false } },
+          { id: 'ease-in', name: 'HEAVY DROP', easing: [0.3, 1.0, 0.6, 1.0], config: { type: 'bounce', firstStepLength: 0.55, bounciness: 0.40, reverse: false } },
+          { id: 'ease-out', name: 'SUPER RUBBER', easing: [0.2, 1.0, 0.4, 1.0], config: { type: 'bounce', firstStepLength: 0.35, bounciness: 0.82, reverse: false } },
           { id: 'ease-in-out', name: 'HEAVY THUD', easing: [0.4, 1.0, 0.7, 1.0], config: { type: 'bounce', firstStepLength: 0.68, bounciness: 0.38, reverse: false } },
-          { id: 'z-graph', name: 'BOUNCE IN', easing: [0.5, 0.0, 0.75, 0.0], config: { type: 'bounce', firstStepLength: 0.40, bounciness: 0.70, reverse: true } }
+          { id: 'z-graph', name: 'BOUNCE OUT', easing: [0.5, 0.0, 0.75, 0.0], config: { type: 'bounce', firstStepLength: 0.45, bounciness: 0.65, reverse: true } }
         ],
         cyclic: [
-          { id: 'linear', name: 'SINE WAVE', easing: [0.42, 0.0, 0.58, 1.0], config: { type: 'cyclic', stepLength: 0.50, sharpness: 0.50, skew: 0.50, decay: 0.0, reverse: false } },
-          { id: 'ease-in', name: 'TRIANGLE WAVE', easing: [0.0, 0.0, 1.0, 1.0], config: { type: 'cyclic', stepLength: 0.50, sharpness: 1.0, skew: 0.50, decay: 0.0, reverse: false } },
-          { id: 'ease-out', name: 'SQUARE PULSE', easing: [0.85, 0.0, 0.15, 1.0], config: { type: 'cyclic', stepLength: 0.50, sharpness: 0.0, skew: 0.50, decay: 0.0, reverse: false } },
-          { id: 'ease-in-out', name: 'DAMPED SHAKE', easing: [0.25, 1.0, 0.5, 1.0], config: { type: 'cyclic', stepLength: 0.32, sharpness: 0.50, skew: 0.50, decay: 0.55, reverse: false } },
-          { id: 'z-graph', name: 'SAWTOOTH', easing: [0.7, 0.0, 0.9, 1.0], config: { type: 'cyclic', stepLength: 0.45, sharpness: 0.90, skew: 0.88, decay: 0.0, reverse: false } }
+          { id: 'linear', name: 'HARMONIC SINE', easing: [0.42, 0.0, 0.58, 1.0], config: { type: 'cyclic', stepLength: 0.3333333, sharpness: 0.0, skew: 0.50, decay: 0.0, reverse: false } },
+          { id: 'ease-in', name: 'SHARP SAWTOOTH', easing: [0.0, 0.0, 1.0, 1.0], config: { type: 'cyclic', stepLength: 0.30, sharpness: 1.0, skew: 0.20, decay: 0.0, reverse: false } },
+          { id: 'ease-out', name: 'DECAYING PULSE', easing: [0.85, 0.0, 0.15, 1.0], config: { type: 'cyclic', stepLength: 0.25, sharpness: 0.20, skew: 0.50, decay: 0.45, reverse: false } },
+          { id: 'ease-in-out', name: 'TRIANGLE WAVE', easing: [0.25, 1.0, 0.5, 1.0], config: { type: 'cyclic', stepLength: 0.50, sharpness: 1.0, skew: 0.50, decay: 0.0, reverse: false } },
+          { id: 'z-graph', name: 'DAMPED SHAKE', easing: [0.7, 0.0, 0.9, 1.0], config: { type: 'cyclic', stepLength: 0.32, sharpness: 0.50, skew: 0.50, decay: 0.55, reverse: false } }
         ]
       };
 
@@ -2317,14 +2317,27 @@
         }
       }
 
-      function getCurrentViewBox(easing) {
+      function getCurrentViewBox(easing, cfgOverride) {
         if (lockedDragViewBox) {
           return lockedDragViewBox;
         }
         if (activeGraphMode === 'elastic') {
+          const activeCfg = cfgOverride || getActiveEasingConfig() || DEFAULT_MODE_CONFIGS.elastic;
+          const isRev = Boolean(activeCfg && activeCfg.reverse);
           const HANDLE_PAD = 14;
-          const topSy = BASE_Y_START - 1.65 * BASE_RANGE_Y;
-          const bottomSy = BASE_Y_START - (-0.65) * BASE_RANGE_Y;
+          const maxNy = isRev ? 1.25 : 2.02;
+          const minNy = isRev ? -1.02 : -0.25;
+          const topSy = BASE_Y_START - maxNy * BASE_RANGE_Y;
+          const bottomSy = BASE_Y_START - minNy * BASE_RANGE_Y;
+          const viewY = Math.min(0, topSy - HANDLE_PAD);
+          const viewBottom = Math.max(BASE_SVG_H, bottomSy + HANDLE_PAD);
+          const viewH = viewBottom - viewY;
+          return { viewY, viewH, extraTop: -viewY, extraBottom: viewBottom - BASE_SVG_H };
+        }
+        if (activeGraphMode === 'bounce') {
+          const HANDLE_PAD = 14;
+          const topSy = BASE_Y_START - 1.18 * BASE_RANGE_Y;
+          const bottomSy = BASE_Y_START - (-0.18) * BASE_RANGE_Y;
           const viewY = Math.min(0, topSy - HANDLE_PAD);
           const viewBottom = Math.max(BASE_SVG_H, bottomSy + HANDLE_PAD);
           const viewH = viewBottom - viewY;
@@ -2332,8 +2345,8 @@
         }
         if (activeGraphMode === 'cyclic') {
           const HANDLE_PAD = 14;
-          const topSy = BASE_Y_START - 1.28 * BASE_RANGE_Y;
-          const bottomSy = BASE_Y_START - (-0.28) * BASE_RANGE_Y;
+          const topSy = BASE_Y_START - 1.45 * BASE_RANGE_Y;
+          const bottomSy = BASE_Y_START - (-0.22) * BASE_RANGE_Y;
           const viewY = Math.min(0, topSy - HANDLE_PAD);
           const viewBottom = Math.max(BASE_SVG_H, bottomSy + HANDLE_PAD);
           const viewH = viewBottom - viewY;
@@ -2705,7 +2718,7 @@
         const activeConfig = rawEasing
           ? (getActiveEasingConfig() || { type: activeGraphMode, easing })
           : (DEFAULT_MODE_CONFIGS[activeGraphMode] || { type: activeGraphMode, easing });
-        const { viewY, viewH } = getCurrentViewBox(easing);
+        const { viewY, viewH } = getCurrentViewBox(easing, activeConfig);
         updateSvgDimensions(viewH);
         const { minX, maxX, yStart, yEnd, rangeY } = getBounds();
 
@@ -2731,7 +2744,7 @@
 
         const gridClipRect = document.getElementById('graph-grid-clip-rect');
         if (gridClipRect) {
-          const expandClip = (activeGraphMode === 'elastic') || (activeGraphMode === 'cyclic') || (activeGraphMode === 'value' && isGraphOvershootEnabled);
+          const expandClip = (activeGraphMode === 'value' && isGraphOvershootEnabled);
           gridClipRect.setAttribute('x', minX);
           gridClipRect.setAttribute('y', expandClip ? viewY : yEnd);
           gridClipRect.setAttribute('width', maxX - minX);
@@ -2808,45 +2821,59 @@
           const inInfl = Math.max(0.5, Math.min(100, Number(spCfg.inInfl) || 33.33));
           const [bx1, by1, bx2, by2] = speedParamsToBezier(outSpeed, outInfl, inSpeed, inInfl);
 
-          // Fixed 300 velocity scale for handles so dragging influence horizontally never jumps handles vertically!
-          const FIXED_VEL_SCALE = 300;
-          const SAMPLES = 72;
-          const pts = [];
+          // Dynamic auto-scaling matching CEP GraphModule.drawSpeedCurveOnCanvas so extreme spikes never flatten/clip
+          const SAMPLES = 150;
+          const rawPts = [];
+          let peakSpeed = Math.max(outSpeed, inSpeed, 1);
           for (let i = 0; i <= SAMPLES; i++) {
             const s = i / SAMPLES;
             const inv = 1 - s;
             const tx = 3 * inv * inv * s * bx1 + 3 * inv * s * s * bx2 + s * s * s;
             const dxdt = 3 * inv * inv * bx1 + 6 * inv * s * (bx2 - bx1) + 3 * s * s * (1 - bx2);
             const dydt = 3 * inv * inv * by1 + 6 * inv * s * (by2 - by1) + 3 * s * s * (1 - by2);
-            let vel = 0;
-            if (i === 0) vel = outSpeed;
-            else if (i === SAMPLES) vel = inSpeed;
-            else vel = Math.max(0, (dydt / Math.max(0.025, dxdt)) * 100);
-            pts.push({ t: tx, v: vel });
+            const vel = (dxdt < 0.001) ? (s < 0.5 ? outSpeed : inSpeed) : Math.max(0, (dydt / dxdt) * 100);
+            if (Math.abs(vel) > peakSpeed) peakSpeed = Math.abs(vel);
+            rawPts.push({ t: tx, v: vel });
           }
 
-          let dCurve = '';
-          pts.forEach((pt, idx) => {
-            const sx = minX + pt.t * (maxX - minX);
-            const normV = pt.v <= FIXED_VEL_SCALE
-              ? (pt.v / FIXED_VEL_SCALE)
-              : (1.0 + Math.tanh((pt.v - FIXED_VEL_SCALE) / 350) * 0.08);
-            const sy = yStart - normV * rangeY;
-            dCurve += (idx === 0 ? `M ${sx.toFixed(1)} ${sy.toFixed(1)}` : ` L ${sx.toFixed(1)} ${sy.toFixed(1)}`);
-          });
+          const maxSpeed = Math.max(100, peakSpeed * 1.08);
+          const graphW = maxX - minX;
+          const points = rawPts.map(rp => ({
+            x: minX + rp.t * graphW,
+            y: yStart - (Math.abs(rp.v) / maxSpeed) * rangeY
+          })).sort((a, b) => a.x - b.x);
+
+          // Smooth quadratic curve interpolation matching CEP drawSpeedCurveOnCanvas
+          let dCurve = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+          for (let i = 1; i < points.length - 2; i++) {
+            const xc = (points[i].x + points[i + 1].x) / 2;
+            const yc = (points[i].y + points[i + 1].y) / 2;
+            dCurve += ` Q ${points[i].x.toFixed(1)} ${points[i].y.toFixed(1)}, ${xc.toFixed(1)} ${yc.toFixed(1)}`;
+          }
+          if (points.length > 2) {
+            const pen = points[points.length - 2];
+            const last = points[points.length - 1];
+            dCurve += ` Q ${pen.x.toFixed(1)} ${pen.y.toFixed(1)}, ${last.x.toFixed(1)} ${last.y.toFixed(1)}`;
+          } else if (points.length === 2) {
+            dCurve += ` L ${points[1].x.toFixed(1)} ${points[1].y.toFixed(1)}`;
+          }
+
           if (curvePath) {
             curvePath.setAttribute('d', dCurve);
             curvePath.setAttribute('stroke-width', curveWidth);
           }
           if (speedFillPath) {
             setElVisible(speedFillPath, true);
-            speedFillPath.setAttribute('d', `${dCurve} L ${maxX} ${yStart} L ${minX} ${yStart} Z`);
+            speedFillPath.setAttribute('d', `M ${points[0].x.toFixed(1)} ${yStart} L ${dCurve.slice(2)} L ${points[points.length - 1].x.toFixed(1)} ${yStart} Z`);
           }
 
+          // Keep handles on a stable 300 vertical scale during drag or proportional to maxSpeed
+          // Speed influence handle reaches maximum at center (50% of width = 100% influence), exactly matching CEP getSpeedPos
+          const FIXED_VEL_SCALE = 300;
           const startSy = yStart - (outSpeed / FIXED_VEL_SCALE) * rangeY;
           const endSy = yStart - (inSpeed / FIXED_VEL_SCALE) * rangeY;
-          const h1x = minX + (outInfl / 100) * (maxX - minX);
-          const h2x = maxX - (inInfl / 100) * (maxX - minX);
+          const h1x = minX + graphW * (outInfl / 100) * 0.5;
+          const h2x = maxX - graphW * (inInfl / 100) * 0.5;
 
           placeDot(anchorStart, minX, startSy, true);
           placeDot(anchorEnd, maxX, endSy, true);
@@ -2858,15 +2885,17 @@
           setElVisible(speedFillPath, false);
           placeHandle(handle3, handle3Hit, 0, 0, false);
           placeHandle(handle4, handle4Hit, 0, 0, false);
+          placeLine(tangent2, 0, 0, 0, 0, false);
+          placeDot(stemDot2, 0, 0, false);
 
           const cfg = (activeConfig.type === 'elastic') ? activeConfig : DEFAULT_MODE_CONFIGS.elastic;
           const rev = Boolean(cfg.reverse);
-          const sL = Math.max(0.06, Math.min(0.55, Number(cfg.stepLength) || 0.25));
-          const dcy = Math.max(0.05, Math.min(0.96, Number(cfg.decay) || 0.70));
-          const mag = Math.max(0.0, Math.min(0.75, Number(cfg.magnitude ?? 0.25)));
+          const sL = Math.max(0.06, Math.min(0.95, Number(cfg.stepLength) || 0.35));
+          const dcy = Math.max(0.0, Math.min(0.96, Number(cfg.decay !== undefined ? cfg.decay : 0.45)));
+          const mag = Math.max(0.0, Math.min(0.95, Number(cfg.magnitude ?? 0.50)));
           const atk = Number(cfg.attack ?? 1.0);
 
-          const SAMPLES = 108;
+          const SAMPLES = 300;
           let dCurve = '';
           for (let i = 0; i <= SAMPLES; i++) {
             const u = i / SAMPLES;
@@ -2879,8 +2908,8 @@
             curvePath.setAttribute('stroke-width', curveWidth);
           }
 
-          // Alight Motion EasingCurveView Elastic handle placement:
-          // Handle 1 (main): stepLength on X, decay on Y; stem anchored directly onto the elastic curve at inHX1
+          // CEP ElasticGraphModule exact handle placement:
+          // Handle 1 (main): stepLength*(attack+1) on X, decay on Y; stem anchored onto the elastic curve at inHX1
           const inHX1 = Math.max(0.10, Math.min(0.96, sL * (atk + 1.0)));
           const inHY1 = dcy;
           const inCurveY1 = evalElasticEasing(inHX1, sL, dcy, mag);
@@ -2889,22 +2918,22 @@
           const aX1 = hX1;
           const aY1 = rev ? (1.0 - inCurveY1) : inCurveY1;
 
-          // Handle 2 (magnitude): on the left/right boundary at 1.0 + magnitude
+          // Handle 2 (magnitude): ceiling knob on border + horizontal guideline across (no vertical stem line)
           const hX2 = rev ? 1.0 : 0.0;
           const hY2 = rev ? (1.0 - (1.0 + mag)) : (1.0 + mag);
-          const aX2 = hX2;
-          const aY2 = rev ? 0.0 : 1.0;
 
           const pMain = bezierToSvg(hX1, hY1);
           const pStemBase = bezierToSvg(aX1, aY1);
           const pMag = bezierToSvg(hX2, hY2);
-          const pMagBase = bezierToSvg(aX2, aY2);
           const pGuideL = bezierToSvg(0, hY2);
           const pGuideR = bezierToSvg(1, hY2);
 
           if (guidelinePath) {
             setElVisible(guidelinePath, true);
-            guidelinePath.setAttribute('d', `M ${pGuideL.sx.toFixed(1)} ${pGuideL.sy.toFixed(1)} L ${pGuideR.sx.toFixed(1)} ${pGuideR.sy.toFixed(1)}`);
+            guidelinePath.setAttribute('x1', pGuideL.sx.toFixed(1));
+            guidelinePath.setAttribute('y1', pGuideL.sy.toFixed(1));
+            guidelinePath.setAttribute('x2', pGuideR.sx.toFixed(1));
+            guidelinePath.setAttribute('y2', pGuideR.sy.toFixed(1));
             guidelinePath.setAttribute('stroke-width', dashedWidth);
           }
 
@@ -2912,8 +2941,6 @@
           placeDot(anchorEnd, maxX, yEnd, true);
           placeLine(tangent1, pStemBase.sx, pStemBase.sy, pMain.sx, pMain.sy, true);
           placeDot(stemDot1, pStemBase.sx, pStemBase.sy, true);
-          placeLine(tangent2, pMagBase.sx, pMagBase.sy, pMag.sx, pMag.sy, true);
-          placeDot(stemDot2, pMagBase.sx, pMagBase.sy, true);
           placeHandle(handle1, handle1Hit, pMain.sx, pMain.sy, true);
           placeHandle(handle2, handle2Hit, pMag.sx, pMag.sy, true);
         } else if (activeGraphMode === 'bounce') {
@@ -2927,10 +2954,10 @@
 
           const cfg = (activeConfig.type === 'bounce') ? activeConfig : DEFAULT_MODE_CONFIGS.bounce;
           const rev = Boolean(cfg.reverse);
-          const fStep = Math.max(0.10, Math.min(0.90, Number(cfg.firstStepLength) || 0.40));
-          const bnc = Math.max(0.08, Math.min(0.92, Number(cfg.bounciness) || 0.70));
+          const fStep = Math.max(0.10, Math.min(0.90, Number(cfg.firstStepLength) || 0.45));
+          const bnc = Math.max(0.08, Math.min(0.92, Number(cfg.bounciness) || 0.65));
 
-          const SAMPLES = 108;
+          const SAMPLES = 300;
           let dCurve = '';
           for (let i = 0; i <= SAMPLES; i++) {
             const u = i / SAMPLES;
@@ -2943,8 +2970,8 @@
             curvePath.setAttribute('stroke-width', curveWidth);
           }
 
-          // Alight Motion EasingCurveView Bounce handle placement:
-          // Handle 1 sits directly on the apex of the first rebound arch!
+          // CEP ElasticGraphModule Bounce handle placement:
+          // Handle 1 sits directly on the apex of the first rebound arch with stem to first impact floor
           const inHX = (fStep + fStep * bnc) / 2.0;
           const inHY = 1.0 - bnc;
           const inAX = fStep / 2.0;
@@ -2961,16 +2988,17 @@
         } else if (activeGraphMode === 'cyclic') {
           setElVisible(speedFillPath, false);
           setElVisible(guidelinePath, false);
-          placeDot(stemDot1, 0, 0, false);
+          placeLine(tangent2, 0, 0, 0, 0, false);
+          placeDot(stemDot2, 0, 0, false);
 
           const cfg = (activeConfig.type === 'cyclic') ? activeConfig : DEFAULT_MODE_CONFIGS.cyclic;
           const rev = Boolean(cfg.reverse);
-          const sL = Math.max(0.08, Math.min(0.95, Number(cfg.stepLength) || 0.40));
+          const sL = Math.max(0.05, Math.min(0.95, Number(cfg.stepLength) || 0.35));
           const skw = Math.max(0.05, Math.min(0.95, Number(cfg.skew ?? 0.50)));
-          const shp = Math.max(0.0, Math.min(1.0, Number(cfg.sharpness ?? 0.50)));
-          const dcy = Math.max(0.0, Math.min(0.90, Number(cfg.decay ?? 0.50)));
+          const shp = Math.max(0.0, Math.min(1.0, Number(cfg.sharpness ?? 0.0)));
+          const dcy = Math.max(0.0, Math.min(0.90, Number(cfg.decay ?? 0.0)));
 
-          const SAMPLES = 120;
+          const SAMPLES = 300;
           let dCurve = '';
           for (let i = 0; i <= SAMPLES; i++) {
             const u = i / SAMPLES;
@@ -2983,15 +3011,15 @@
             curvePath.setAttribute('stroke-width', curveWidth);
           }
 
-          // Alight Motion EasingCurveView Cyclic 4-handle layout:
+          // CEP ElasticGraphModule Cyclic 4-handle layout:
           // Handle 1 (skew): at first wave peak (skw * sL, 1.0)
-          // Handle 2 (sharpness): above wave peak (shp * sL, 1.22), connected by tangent1 to Handle 1
+          // Handle 2 (sharpness): above wave peak (shp * sL, 1.25), connected by stem to Handle 1
           // Handle 3 (stepLength): at end of first cycle on baseline (sL, 0.0)
-          // Handle 4 (decay): on right boundary (1.0, dcy), connected by tangent2 to baseline (1.0, 0.0)
+          // Handle 4 (decay): on right boundary (1.0, dcy) with no extra vertical line on border
           const inHX_skew = skw * sL;
           const inHY_skew = 1.0;
           const inHX_shp = shp * sL;
-          const inHY_shp = 1.22;
+          const inHY_shp = 1.25;
           const inHX_step = sL;
           const inHY_step = 0.0;
           const inHX_dcy = 1.0;
@@ -3001,13 +3029,11 @@
           const pSharp = bezierToSvg(rev ? (1.0 - inHX_shp) : inHX_shp, rev ? (1.0 - inHY_shp) : inHY_shp);
           const pStep = bezierToSvg(rev ? (1.0 - inHX_step) : inHX_step, rev ? (1.0 - inHY_step) : inHY_step);
           const pDecay = bezierToSvg(rev ? (1.0 - inHX_dcy) : inHX_dcy, rev ? (1.0 - inHY_dcy) : inHY_dcy);
-          const pDecayBase = bezierToSvg(rev ? 0.0 : 1.0, rev ? 1.0 : 0.0);
 
           placeDot(anchorStart, minX, yStart, true);
           placeDot(anchorEnd, maxX, yEnd, true);
           placeLine(tangent1, pSkew.sx, pSkew.sy, pSharp.sx, pSharp.sy, true);
-          placeLine(tangent2, pDecayBase.sx, pDecayBase.sy, pDecay.sx, pDecay.sy, true);
-          placeDot(stemDot2, pDecayBase.sx, pDecayBase.sy, true);
+          placeDot(stemDot1, pSkew.sx, pSkew.sy, true);
 
           placeHandle(handle1, handle1Hit, pSkew.sx, pSkew.sy, true);
           placeHandle(handle2, handle2Hit, pSharp.sx, pSharp.sy, true);
@@ -3190,33 +3216,42 @@
           const inSpeed = Math.max(0, Math.min(300, Number(cfg.inSpeed) || 0));
           const inInfl = Math.max(0.5, Math.min(100, Number(cfg.inInfl) || 33.33));
           const [bx1, by1, bx2, by2] = speedParamsToBezier(outSpeed, outInfl, inSpeed, inInfl);
-          const N = 24;
-          const pts = [];
-          let peak = Math.max(outSpeed, inSpeed, 180);
+          const N = 60;
+          const rawPts = [];
+          let peak = Math.max(outSpeed, inSpeed, 1);
           for (let i = 0; i <= N; i++) {
             const s = i / N;
             const inv = 1 - s;
             const tx = 3 * inv * inv * s * bx1 + 3 * inv * s * s * bx2 + s * s * s;
             const dxdt = 3 * inv * inv * bx1 + 6 * inv * s * (bx2 - bx1) + 3 * s * s * (1 - bx2);
             const dydt = 3 * inv * inv * by1 + 6 * inv * s * (by2 - by1) + 3 * s * s * (1 - by2);
-            const vel = (i === 0) ? outSpeed : (i === N ? inSpeed : Math.max(0, (dydt / Math.max(0.025, dxdt)) * 100));
-            if (vel > peak) peak = vel;
-            pts.push({ t: tx, v: vel });
+            const vel = (dxdt < 0.001) ? (s < 0.5 ? outSpeed : inSpeed) : Math.max(0, (dydt / dxdt) * 100);
+            if (Math.abs(vel) > peak) peak = Math.abs(vel);
+            rawPts.push({ t: tx, v: vel });
           }
-          const maxV = Math.max(220, peak * 1.15);
-          let d = '';
-          pts.forEach((p, idx) => {
-            const sx = (4 + p.t * 28).toFixed(1);
-            const sy = (32 - Math.min(1, p.v / maxV) * 28).toFixed(1);
-            d += (idx === 0 ? `M ${sx} ${sy}` : ` L ${sx} ${sy}`);
-          });
+          const maxV = Math.max(100, peak * 1.1);
+          const points = rawPts.map(p => ({
+            x: 4 + p.t * 28,
+            y: 32 - Math.min(1, Math.abs(p.v) / maxV) * 26
+          })).sort((a, b) => a.x - b.x);
+          let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+          for (let i = 1; i < points.length - 2; i++) {
+            const xc = (points[i].x + points[i + 1].x) / 2;
+            const yc = (points[i].y + points[i + 1].y) / 2;
+            d += ` Q ${points[i].x.toFixed(1)} ${points[i].y.toFixed(1)}, ${xc.toFixed(1)} ${yc.toFixed(1)}`;
+          }
+          if (points.length > 2) {
+            const pen = points[points.length - 2];
+            const last = points[points.length - 1];
+            d += ` Q ${pen.x.toFixed(1)} ${pen.y.toFixed(1)}, ${last.x.toFixed(1)} ${last.y.toFixed(1)}`;
+          }
           return `<svg class="preset-thumb-svg" viewBox="0 0 36 36" aria-hidden="true">
               <rect class="preset-thumb-boundary" x="4" y="4" width="28" height="28" rx="2"/>
-              <path class="preset-thumb-fill" d="${d} L 32 32 L 4 32 Z"/>
+              <path class="preset-thumb-fill" d="M 4.0 32.0 L ${d.slice(2)} L 32.0 32.0 Z"/>
               <path class="preset-thumb-curve" d="${d}"/>
             </svg>`;
         }
-        const N = 40;
+        const N = 120;
         const vals = [];
         let minV = 0;
         let maxV = 1;
@@ -3849,14 +3884,14 @@
 
         // Lock the viewBox during drag so pointer-to-normalized coordinate conversion never shifts under the cursor
         lockedDragViewBox = null;
-        lockedDragViewBox = { ...getCurrentViewBox(currentEasing) };
+        lockedDragViewBox = { ...getCurrentViewBox(currentEasing, currentCfg) };
         updateSvgDimensions(lockedDragViewBox.viewH);
 
         function clientToNorm(clientX, clientY) {
           const svgRect = (svgLayer || graphFrame).getBoundingClientRect();
           const rW = (svgRect.width > 0) ? svgRect.width : 260;
           const rH = (svgRect.height > 0) ? svgRect.height : 170;
-          const vb = lockedDragViewBox || getCurrentViewBox(currentEasing);
+          const vb = lockedDragViewBox || getCurrentViewBox(currentEasing, currentCfg);
           const { minX, maxX, yStart, rangeY } = getBounds();
           const svgX = ((clientX - svgRect.left) / rW) * svgW;
           const svgY = vb.viewY + ((clientY - svgRect.top) / rH) * vb.viewH;
@@ -3903,7 +3938,8 @@
           } else if (activeGraphMode === 'speed') {
             const FIXED_VEL_SCALE = 300;
             if (handleIndex === 1) {
-              let outInfl = Math.max(1.0, Math.min(100, targetNx * 100));
+              // 50% width = 100% influence, matching CEP ((mx - padX) / graphW) * 200
+              let outInfl = Math.max(1.0, Math.min(100, targetNx * 200));
               let outSpeed = Math.max(0, Math.min(300, targetNy * FIXED_VEL_SCALE));
               if (outSpeed < 8) outSpeed = 0;
               if (isGraphSnapEnabled) {
@@ -3913,7 +3949,8 @@
               currentCfg.outInfl = Number(outInfl.toFixed(2));
               currentCfg.outSpeed = Number(outSpeed.toFixed(2));
             } else {
-              let inInfl = Math.max(1.0, Math.min(100, (1.0 - targetNx) * 100));
+              // 50% width = 100% influence, matching CEP ((graphW - mx) / graphW) * 200
+              let inInfl = Math.max(1.0, Math.min(100, (1.0 - targetNx) * 200));
               let inSpeed = Math.max(0, Math.min(300, targetNy * FIXED_VEL_SCALE));
               if (inSpeed < 8) inSpeed = 0;
               if (isGraphSnapEnabled) {
@@ -3933,16 +3970,16 @@
             const inNy = rev ? (1.0 - targetNy) : targetNy;
             if (handleIndex === 1) {
               const atk = Number(currentCfg.attack ?? 1.0);
-              let stepVal = Math.max(0.06, Math.min(0.55, inNx / (atk + 1.0)));
-              let decayVal = Math.max(0.05, Math.min(0.96, inNy));
+              let stepVal = Math.max(0.08, Math.min(0.95, inNx / (atk + 1.0)));
+              let decayVal = Math.max(0.0, Math.min(0.95, inNy));
               if (isGraphSnapEnabled) {
-                stepVal = Math.round(stepVal / 0.02) * 0.02;
+                stepVal = Math.round(stepVal / 0.05) * 0.05;
                 decayVal = Math.round(decayVal / 0.05) * 0.05;
               }
               currentCfg.stepLength = Number(stepVal.toFixed(3));
               currentCfg.decay = Number(decayVal.toFixed(3));
             } else if (handleIndex === 2) {
-              let magVal = Math.max(0.0, Math.min(0.75, inNy - 1.0));
+              let magVal = Math.max(0.0, Math.min(0.95, inNy - 1.0));
               if (isGraphSnapEnabled) {
                 magVal = Math.round(magVal / 0.05) * 0.05;
               }
@@ -3954,7 +3991,7 @@
             const rev = Boolean(currentCfg.reverse);
             const inNx = rev ? (1.0 - targetNx) : targetNx;
             const inNy = rev ? (1.0 - targetNy) : targetNy;
-            let bVal = Math.max(0.08, Math.min(0.92, 1.0 - inNy));
+            let bVal = Math.max(0.10, Math.min(0.92, 1.0 - inNy));
             let fsVal = Math.max(0.10, Math.min(0.90, (inNx * 2.0) / (1.0 + bVal)));
             if (isGraphSnapEnabled) {
               bVal = Math.round(bVal / 0.05) * 0.05;
@@ -3968,7 +4005,7 @@
             const rev = Boolean(currentCfg.reverse);
             const inNx = rev ? (1.0 - targetNx) : targetNx;
             const inNy = rev ? (1.0 - targetNy) : targetNy;
-            const sL = Math.max(0.08, Math.min(0.95, Number(currentCfg.stepLength) || 0.40));
+            const sL = Math.max(0.05, Math.min(0.95, Number(currentCfg.stepLength) || 0.35));
             if (handleIndex === 1) {
               let skVal = Math.max(0.05, Math.min(0.95, inNx / sL));
               if (isGraphSnapEnabled) skVal = Math.round(skVal / 0.05) * 0.05;
@@ -3978,7 +4015,7 @@
               if (isGraphSnapEnabled) shVal = Math.round(shVal / 0.05) * 0.05;
               currentCfg.sharpness = Number(shVal.toFixed(3));
             } else if (handleIndex === 3) {
-              let stVal = Math.max(0.08, Math.min(0.95, inNx));
+              let stVal = Math.max(0.05, Math.min(0.95, inNx));
               if (isGraphSnapEnabled) stVal = Math.round(stVal / 0.05) * 0.05;
               currentCfg.stepLength = Number(stVal.toFixed(3));
             } else if (handleIndex === 4) {
