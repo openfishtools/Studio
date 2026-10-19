@@ -106,28 +106,11 @@
       </div>
 
       <div class="studio-header-actions">
-        <!-- Donate Button (left of install) -->
+        <!-- Donate Button -->
         <button type="button" class="studio-top-btn" id="btn-header-donate" aria-label="Donate" onclick="Modal.open('modal-donate')">
           <i class="fticon fticon-heart" aria-hidden="true"></i>
           <span>Donate</span>
         </button>
-
-        <!-- Direct Quick Action: Install App -->
-        <button type="button" class="studio-top-btn studio-top-btn-install" id="btn-install-app" aria-label="Install App" onclick="PWAInstall.prompt()">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
-            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-          </svg>
-          <span>Install App</span>
-        </button>
-        <script>
-          (function(){
-            var p = location.protocol, h = location.href || '';
-            if (p === 'file:' || p === 'tauri:' || p === 'asset:' || h.indexOf('android_asset') !== -1 || window.self !== window.top || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone) {
-              var b = document.getElementById('btn-install-app');
-              if (b) { b.style.setProperty('display', 'none', 'important'); b.hidden = true; }
-            }
-          })();
-        </script>
 
         <!-- Settings Button -->
         <button type="button" class="studio-top-btn" id="btn-header-settings" aria-label="Settings" title="Settings" onclick="openAppSettingsModal()">
