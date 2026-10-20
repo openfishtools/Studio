@@ -1,5 +1,20 @@
 
     (function initTimelineSplitResizer() {
+      function syncTimelineAfterSplitResize() {
+        fitPreviewCanvasBox();
+        const layersVp = document.getElementById('timeline-layers-viewport');
+        if (layersVp && layersVp.scrollLeft !== 0) {
+          layersVp.scrollLeft = 0;
+        }
+        if (typeof window.updateTimelinePosition === 'function') {
+          window.updateTimelinePosition(window.timelinePanX || 0, true);
+        }
+        if (window.PreviewCacheManager) {
+          window.PreviewCacheManager.updateRulerUI();
+        }
+      }
+      window.syncTimelineAfterSplitResize = syncTimelineAfterSplitResize;
+
       const handle = document.getElementById('timeline-split-handle');
       const mobileHandle = document.getElementById('preview-split-handle');
       const mainBody = document.querySelector('.editor-main-body');
@@ -18,20 +33,6 @@
         }
         syncTimelineAfterSplitResize();
       } catch (_) {}
-
-      function syncTimelineAfterSplitResize() {
-        fitPreviewCanvasBox();
-        const layersVp = document.getElementById('timeline-layers-viewport');
-        if (layersVp && layersVp.scrollLeft !== 0) {
-          layersVp.scrollLeft = 0;
-        }
-        if (typeof window.updateTimelinePosition === 'function') {
-          window.updateTimelinePosition(window.timelinePanX || 0, true);
-        }
-        if (window.PreviewCacheManager) {
-          window.PreviewCacheManager.updateRulerUI();
-        }
-      }
 
       // --- Desktop Vertical Split Handle (>= 601px) ---
       if (handle) {
@@ -2369,12 +2370,12 @@
         const timelineEl = document.getElementById('main-editor-timeline');
         const tlBottom = timelineEl ? timelineEl.getBoundingClientRect().bottom : vpRect.bottom;
         const cardRect = drawerCard ? drawerCard.getBoundingClientRect() : null;
-        let cardHeight = 260;
+        let cardHeight = 242;
         if (drawerCard) {
           if (drawerCard._targetHeight && drawerCard.style.transition) {
             cardHeight = drawerCard._targetHeight;
           } else {
-            cardHeight = Math.max(drawerCard.offsetHeight, drawerCard.scrollHeight, (cardRect ? cardRect.height : 0), 260);
+            cardHeight = Math.max(drawerCard.offsetHeight, drawerCard.scrollHeight, (cardRect ? cardRect.height : 0), 242);
           }
         }
         const cardRestingTop = tlBottom - cardHeight;

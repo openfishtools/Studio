@@ -22,6 +22,7 @@
         aliases: Array.isArray(def.aliases) ? def.aliases : [],
         name: def.name || def.id,
         title: def.title || def.name || def.id,
+        fticon: def.fticon || null,
         iconSvg: def.iconSvg || '<rect x="3" y="3" width="18" height="18" rx="2"/>',
         defaultProps: Object.assign({ sizeX: 300, sizeY: 300 }, def.defaultProps || {}),
         controls: Object.assign({
@@ -135,6 +136,9 @@
       const className = options.className || 'layer-action-icon shape-render-icon';
       if (!def) {
         return `<svg viewBox="0 0 24 24" width="${width}" height="${height}" fill="currentColor" class="${className}" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2.5"/></svg>`;
+      }
+      if (def.fticon) {
+        return `<i class="fticon ${def.fticon} ${className}" aria-hidden="true"></i>`;
       }
       if (def.iconSvg) {
         return `<svg viewBox="0 0 24 24" width="${width}" height="${height}" fill="currentColor" class="${className}" aria-hidden="true">${def.iconSvg}</svg>`;

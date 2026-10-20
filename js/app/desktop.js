@@ -9,6 +9,7 @@
   // --- 1. Load Saved Layout Dimensions ---
   const viewport = document.querySelector('.desktop-viewport');
   if (!viewport) return;
+  window.isDesktop = true;
 
   try {
     const ua = navigator.userAgent || '';

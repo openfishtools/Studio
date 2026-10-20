@@ -386,6 +386,21 @@
       if (prop === 'cameraBlurBalance') {
         return { cameraBlurBalance: layer.cameraBlurBalance !== undefined ? layer.cameraBlurBalance : (eff.cameraBlurBalance !== undefined ? eff.cameraBlurBalance : 0) };
       }
+      if (prop === 'vectorPoints') {
+        const rawPts = (layer.shapeProps && Array.isArray(layer.shapeProps.points))
+          ? layer.shapeProps.points
+          : (eff && Array.isArray(eff.vectorPoints) ? eff.vectorPoints : []);
+        return {
+          vectorPoints: rawPts.map(pt => ({
+            x: Number(pt.x) || 0,
+            y: Number(pt.y) || 0,
+            inX: Number(pt.inX) || 0,
+            inY: Number(pt.inY) || 0,
+            outX: Number(pt.outX) || 0,
+            outY: Number(pt.outY) || 0
+          }))
+        };
+      }
       return {};
     }
     window.getLayerPropertyValue = getLayerPropertyValue;
@@ -406,6 +421,22 @@
         const n1 = (v1[k] !== undefined) ? v1[k] : n0;
         if (typeof n0 === 'number' && typeof n1 === 'number') {
           res[k] = Number((n0 + (n1 - n0) * factor).toFixed(3));
+        } else if (k === 'vectorPoints' && Array.isArray(n0) && Array.isArray(n1)) {
+          const maxLen = Math.max(n0.length, n1.length);
+          const morphed = [];
+          for (let i = 0; i < maxLen; i++) {
+            const p0 = n0[i] || n0[n0.length - 1] || { x: 0, y: 0, inX: 0, inY: 0, outX: 0, outY: 0 };
+            const p1 = n1[i] || n1[n1.length - 1] || p0;
+            morphed.push({
+              x: Number(((Number(p0.x) || 0) + ((Number(p1.x) || 0) - (Number(p0.x) || 0)) * factor).toFixed(2)),
+              y: Number(((Number(p0.y) || 0) + ((Number(p1.y) || 0) - (Number(p0.y) || 0)) * factor).toFixed(2)),
+              inX: Number(((Number(p0.inX) || 0) + ((Number(p1.inX) || 0) - (Number(p0.inX) || 0)) * factor).toFixed(2)),
+              inY: Number(((Number(p0.inY) || 0) + ((Number(p1.inY) || 0) - (Number(p0.inY) || 0)) * factor).toFixed(2)),
+              outX: Number(((Number(p0.outX) || 0) + ((Number(p1.outX) || 0) - (Number(p0.outX) || 0)) * factor).toFixed(2)),
+              outY: Number(((Number(p0.outY) || 0) + ((Number(p1.outY) || 0) - (Number(p0.outY) || 0)) * factor).toFixed(2))
+            });
+          }
+          res[k] = morphed;
         } else {
           res[k] = (factor >= 0.5) ? n1 : n0;
         }
@@ -1333,7 +1364,7 @@
       }
 
       if (layer.keyframes) {
-        const propKeys = ['move', 'rotate', 'scale', 'skew', 'opacity', 'volume', 'speed', 'timeRemap', 'cameraLens', 'cameraZoom', 'cameraFocusDistance', 'cameraBlurNearFar', 'cameraBlurAmount', 'cameraBlurBalance'];
+        const propKeys = ['move', 'rotate', 'scale', 'skew', 'opacity', 'volume', 'speed', 'timeRemap', 'cameraLens', 'cameraZoom', 'cameraFocusDistance', 'cameraBlurNearFar', 'cameraBlurAmount', 'cameraBlurBalance', 'vectorPoints'];
         for (const prop of propKeys) {
           const list = layer.keyframes[prop];
           if (!list || list.length === 0) continue;
@@ -2012,17 +2043,18 @@
       }
       const camProp = window.activeKeyframeProperty || 'cameraZoom';
       checkBtn('btn-camera-graph', camProp);
+      checkBtn('btn-vector-graph', 'vectorPoints');
     }
     window.updateAllGraphBtnStates = updateAllGraphBtnStates;
 
     // Toggle Keyframe at current playhead time
-    function toggleKeyframeAtCurrentTime() {
-      const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+    function toggleKeyframeAtCurrentTime(optLayer = null, optProp = null) {
+      const layer = optLayer || (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
       if (!layer) return;
 
       const pps = window.currentPixelsPerSecond || 80;
       const currentSec = Number((Math.abs(window.timelinePanX || 0) / pps).toFixed(3));
-      const prop = window.activeKeyframeProperty || 'move';
+      const prop = optProp || window.activeKeyframeProperty || 'move';
 
       if (prop.includes(':')) {
         const effects = layer && Array.isArray(layer.effects) ? layer.effects : [];
@@ -2066,6 +2098,8 @@
       if (typeof updateBlendKeyframeBtnState === 'function') updateBlendKeyframeBtnState();
       if (typeof updateVolumeKeyframeBtnState === 'function') updateVolumeKeyframeBtnState();
       if (typeof updateSpeedKeyframeBtnState === 'function') updateSpeedKeyframeBtnState();
+      if (typeof updateVectorKeyframeBtnState === 'function') updateVectorKeyframeBtnState();
+      if (typeof updateAllGraphBtnStates === 'function') updateAllGraphBtnStates();
       if (typeof syncSpeedControllerValues === 'function') syncSpeedControllerValues();
       if (typeof syncEffectsKeyframeState === 'function') syncEffectsKeyframeState(layer);
       if (typeof syncLayerKeyframeMarkersInPlace === 'function') {
@@ -2092,7 +2126,7 @@
       let kfList = (layer.keyframes && Array.isArray(layer.keyframes[prop])) ? layer.keyframes[prop] : null;
       if ((!kfList || kfList.length === 0) && prop.includes(':') && layer.effects && layer.effects[0] && prop.startsWith(layer.effects[0].id + ':')) {
         const pName = prop.split(':')[1];
-        const builtInProps = ['move', 'scale', 'rotate', 'rotation', 'opacity', 'volume', 'origin', 'skew', 'speed', 'timeRemap', 'cameraZoom', 'cameraFocusDistance', 'cameraBlurAmount'];
+        const builtInProps = ['move', 'scale', 'rotate', 'rotation', 'opacity', 'volume', 'origin', 'skew', 'speed', 'timeRemap', 'cameraZoom', 'cameraFocusDistance', 'cameraBlurAmount', 'vectorPoints'];
         if (!builtInProps.includes(pName) && layer.keyframes && Array.isArray(layer.keyframes[pName]) && layer.keyframes[pName].length > 0) {
           kfList = layer.keyframes[pName];
           targetPropKey = pName;
@@ -2126,6 +2160,8 @@
         if (typeof updateBlendKeyframeBtnState === 'function') updateBlendKeyframeBtnState();
         if (typeof updateVolumeKeyframeBtnState === 'function') updateVolumeKeyframeBtnState();
         if (typeof updateSpeedKeyframeBtnState === 'function') updateSpeedKeyframeBtnState();
+        if (typeof updateVectorKeyframeBtnState === 'function') updateVectorKeyframeBtnState();
+        if (typeof updateAllGraphBtnStates === 'function') updateAllGraphBtnStates();
         if (typeof syncEffectsKeyframeState === 'function') syncEffectsKeyframeState(layer);
         if (typeof syncLayerKeyframeMarkersInPlace === 'function') {
           syncLayerKeyframeMarkersInPlace(layer);

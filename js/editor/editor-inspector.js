@@ -17,7 +17,7 @@
       if (!window.selectedLayerId) return false;
 
       const currentView = window.currentDrawerSubview || currentDrawerSubview || 'main';
-      const propertySubviews = ['transform', 'graph', 'opacity', 'effects', 'blend', 'camera', 'volume', 'speed'];
+      const propertySubviews = ['transform', 'graph', 'opacity', 'effects', 'blend', 'camera', 'volume', 'speed', 'vector'];
       return propertySubviews.includes(currentView);
     }
     window.isPropertyEditorActive = isPropertyEditorActive;
@@ -122,7 +122,7 @@
         openEffectsGalleryDrawer();
         return;
       }
-      const validSubviews = ['main', 'transform', 'graph', 'blend', 'effects', 'effects-gallery', 'camera', 'fill', 'volume', 'speed', 'shape', 'text', 'beatmark'];
+      const validSubviews = ['main', 'transform', 'graph', 'blend', 'effects', 'effects-gallery', 'camera', 'fill', 'volume', 'speed', 'shape', 'vector', 'text', 'beatmark'];
       if (!validSubviews.includes(subviewName)) subviewName = 'main';
 
       // If drawer-effects-gallery is open when navigating to other subviews, close it
@@ -132,6 +132,9 @@
       }
 
       const prevSubview = currentDrawerSubview || 'main';
+      if (subviewName === 'graph' && prevSubview !== 'graph') {
+        window.previousDrawerSubview = prevSubview;
+      }
       currentDrawerSubview = subviewName;
       window.currentDrawerSubview = subviewName;
 
@@ -148,7 +151,7 @@
       }
 
       // Determine animation direction
-      const isBackward = (subviewName === 'main') || (subviewName === 'transform' && prevSubview === 'graph') || (subviewName === 'effects' && prevSubview === 'effects-gallery');
+      const isBackward = (subviewName === 'main') || ((subviewName === 'transform' || subviewName === 'vector') && prevSubview === 'graph') || (subviewName === 'effects' && prevSubview === 'effects-gallery');
       const animClass = isBackward ? 'is-entering-backward' : 'is-entering-forward';
 
       const allSubviews = {
@@ -163,6 +166,7 @@
         'volume': document.getElementById('layer-drawer-volume-view'),
         'speed': document.getElementById('layer-drawer-speed-view'),
         'shape': document.getElementById('layer-drawer-shape-view'),
+        'vector': document.getElementById('layer-drawer-vector-view'),
         'text': document.getElementById('layer-drawer-text-view'),
         'beatmark': document.getElementById('layer-drawer-beatmark-view')
       };
@@ -193,7 +197,9 @@
 
         // Standard subviews render instantaneously at their native height without delay
         drawerCard.style.height = '';
-        drawerCard.style.transition = '';
+        if (!drawerCard._closingFromDrag) {
+          drawerCard.style.transition = '';
+        }
         delete drawerCard._targetHeight;
       }
 
@@ -292,6 +298,17 @@
         try {
           history.pushState({ drawerSubview: 'shape' }, '');
         } catch (_) {}
+      } else if (subviewName === 'vector') {
+        window.activeKeyframeProperty = 'vectorPoints';
+        if (typeof syncVectorControllerUI === 'function') {
+          syncVectorControllerUI();
+        }
+        if (typeof updateVectorKeyframeBtnState === 'function') {
+          updateVectorKeyframeBtnState();
+        }
+        try {
+          history.pushState({ drawerSubview: 'vector' }, '');
+        } catch (_) {}
       } else if (subviewName === 'beatmark') {
         if (typeof syncBeatmarkDrawerUI === 'function') {
           syncBeatmarkDrawerUI();
@@ -312,6 +329,10 @@
         try {
           history.pushState({ drawerSubview: 'effects-gallery' }, '');
         } catch (_) {}
+      }
+
+      if (window.CanvasOverlay && typeof window.CanvasOverlay.scheduleRedraw === 'function') {
+        window.CanvasOverlay.scheduleRedraw();
       }
 
       // Synchronously update keyframe markers on the timeline

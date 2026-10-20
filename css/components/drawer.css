@@ -33,6 +33,7 @@
   overflow: hidden;
   box-sizing: border-box;
   visibility: hidden;
+  transition: visibility 0s linear 0.3s;
 }
 
 /* Global viewport drawer variant */
@@ -52,6 +53,7 @@
 .drawer-container.is-active {
   pointer-events: auto;
   visibility: visible;
+  transition: visibility 0s linear 0s;
 }
 
 /* 2. Drawer Backdrop (Solid dark canvas opacity overlay) */
@@ -63,7 +65,7 @@
   background-color: rgba(10, 18, 10, 0.68);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: opacity;
   z-index: 1;
 }
@@ -99,7 +101,7 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
   z-index: 2;
   transform: translate3d(0, 100%, 0);
-  transition: transform 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
@@ -118,7 +120,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  cursor: grab;
   user-select: none;
   touch-action: none;
   flex-shrink: 0;
@@ -131,13 +133,17 @@
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
+.drawer-drag-handle.is-dragging {
+  cursor: grabbing;
+}
+
 .drawer-drag-pill {
   width: 36px;
   height: 4px;
   border-radius: 999px;
   background-color: var(--border-subtle);
   pointer-events: none;
-  transition: background-color 0.15s ease, width 0.15s ease, height 0.15s ease;
+  transition: background-color 0.15s ease, width 0.16s cubic-bezier(0.22, 1, 0.36, 1), height 0.15s ease, transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .drawer-drag-handle:hover .drawer-drag-pill,
@@ -145,6 +151,11 @@
   background-color: var(--color-primary);
   width: 48px;
   height: 5px;
+}
+
+.drawer-drag-handle.is-dragging.is-magnet-detached .drawer-drag-pill {
+  width: 28px;
+  transform: translateY(1.5px);
 }
 
 /* Darken handle area and show divider line ONLY when entering parameter subviews (EXCLUDING effects-gallery and fill) */
@@ -981,6 +992,7 @@
 }
 .layer-action-btn-grid.is-5-items #btn-layer-edit-group,
 .layer-action-btn-grid.is-5-items #btn-layer-edit-shape,
+.layer-action-btn-grid.is-5-items #btn-layer-edit-vector,
 .layer-action-btn-grid.is-5-items #btn-layer-edit-text,
 .layer-action-btn-grid.is-5-items #btn-layer-transform,
 .layer-action-btn-grid.is-5-items #btn-layer-fill,
@@ -2424,20 +2436,88 @@
   height: 3.5px;
 }
 
-/* 1. Add Layer Drawer (#timeline-add-drawer) */
-#timeline-add-drawer .drawer-body {
-  padding: 6px 12px 14px;
-  min-height: 0;
+/* 1. Add Layer Drawer (#timeline-add-drawer) — Locked to Transform 224px Body Height */
+#timeline-add-drawer .drawer-body,
+.editor-timeline > #timeline-add-drawer .drawer-body {
+  height: 224px;
+  min-height: 224px;
+  max-height: 224px;
+  padding: 6px 12px 10px;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
+.editor-timeline > #timeline-add-drawer .add-layer-grid,
 .add-layer-grid {
-  gap: 10px;
+  height: 100%;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.editor-timeline > #timeline-add-drawer .add-layer-categories-switch {
+  flex-shrink: 0;
+}
+
+.editor-timeline > #timeline-add-drawer .add-layer-categories-switch .segmented-switch-item {
+  height: 36px;
+}
+
+.editor-timeline > #timeline-add-drawer #add-layer-media-pool,
+.editor-timeline > #timeline-add-drawer #add-layer-text-panel,
+.editor-timeline > #timeline-add-drawer #add-layer-element-panel {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  padding: 0 !important;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.editor-timeline > #timeline-add-drawer #add-layer-shape-panel,
+.editor-timeline > #timeline-add-drawer #add-layer-control-panel {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.editor-timeline > #timeline-add-drawer .drawer-element-preset-grid {
+  max-height: none;
+  padding: 2px 0;
+  align-content: start;
+}
+
+/* Shape Tab: 8 shapes (including Vector) laid out cleanly in a symmetrical 4x2 grid */
+.editor-timeline > #timeline-add-drawer #add-layer-shape-grid {
+  grid-template-columns: repeat(12, 1fr) !important;
+  gap: 6px;
+  align-content: start;
+}
+
+.editor-timeline > #timeline-add-drawer #add-layer-shape-grid > .layer-action-btn {
+  grid-column: span 3 !important;
+}
+
+.editor-timeline > #timeline-add-drawer #add-layer-shape-grid .layer-action-btn,
+.editor-timeline > #timeline-add-drawer #add-layer-control-grid .layer-action-btn {
+  min-height: 74px;
+  height: 74px;
+  max-height: 74px;
+  padding: 6px 4px;
+  gap: 4px;
+}
+
+.editor-timeline > #timeline-add-drawer #add-layer-control-grid {
+  gap: 6px;
+  align-content: start;
 }
 
 .drawer-media-grid {
   grid-template-columns: repeat(auto-fill, minmax(66px, 1fr));
   gap: 8px;
   padding: 2px 0;
+  align-content: start;
 }
 
 .media-import-box,
@@ -2460,13 +2540,16 @@
   grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   gap: 6px;
   padding: 2px 0;
+  align-content: start;
 }
 
 .text-preset-card {
-  min-height: 62px;
+  min-height: 72px;
+  height: 72px;
   padding: 6px 8px;
   border-radius: 10px;
   gap: 3px;
+  box-sizing: border-box;
 }
 
 .text-preset-preview-box {
@@ -2481,10 +2564,23 @@
   font-size: 10px;
 }
 
-/* 2. Selected Layer Drawer Main View (#layer-drawer-main-view) */
+/* 2. Selected Layer Drawer Main View (#layer-drawer-main-view) — Locked to Transform 224px Body Height */
 #timeline-layer-drawer .drawer-body {
-  padding: 4px 12px 12px;
+  padding: 6px 12px 10px;
   min-height: 0;
+}
+
+.editor-timeline > #timeline-layer-drawer:not([data-subview="effects-gallery"]) .drawer-body {
+  height: 224px;
+  min-height: 224px;
+  max-height: 224px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.editor-timeline > #timeline-layer-drawer #layer-drawer-main-view {
+  height: 100%;
+  overflow: hidden;
 }
 
 #timeline-layer-drawer[data-subview]:not([data-subview="main"]) .drawer-body {
@@ -2492,12 +2588,15 @@
 }
 
 .layer-action-grid {
+  height: 100%;
+  justify-content: flex-start;
   gap: 8px;
 }
 
 /* Balanced Cut Bar Row (40px height, 19px icons) */
 .layer-cut-bar-row {
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .layer-cut-bar-row .layer-tile-btn {
@@ -2525,16 +2624,18 @@
   font-size: 19px;
 }
 
-/* Balanced Action Button Grid (62px height, 22px icon, 11px label, 3+2 flexible grid preserved) */
+/* Balanced Action Button Grid (74px height, 22px icon, 11px label, 3+2 flexible grid preserved, no stretch) */
 .layer-action-btn-grid {
   gap: 6px;
+  align-content: start;
 }
 
 .layer-action-btn,
 .layer-action-btn.is-solo,
 .layer-action-btn:only-child {
-  min-height: 60px;
-  height: 62px;
+  min-height: 74px;
+  height: 74px;
+  max-height: 74px;
   padding: 8px 6px;
   gap: 5px;
   border-radius: 8px;
@@ -2557,8 +2658,9 @@
 }
 
 .layer-action-btn.layer-action-btn-icon-only {
-  min-height: 50px;
-  height: 52px;
+  min-height: 74px;
+  height: 74px;
+  max-height: 74px;
   padding: 6px;
   border-radius: 8px;
 }
@@ -2578,12 +2680,13 @@
 .shape-controller-layout {
   grid-template-columns: 44px 1fr;
   height: 224px;
-  min-height: 220px;
+  min-height: 224px;
+  max-height: 224px;
 }
 
 /* Blend & Overlay Subview Inner UI */
 .blend-work-area {
-  padding: 6px 10px 18px 8px;
+  padding: 6px 10px 14px 8px;
   gap: 5px;
 }
 
@@ -2631,8 +2734,8 @@
 
 /* Volume & Audio FX Subview Inner UI */
 .volume-work-area {
-  padding: 8px 10px 10px 8px;
-  gap: 8px;
+  padding: 6px 10px 8px 8px;
+  gap: 6px;
 }
 
 .volume-work-area .effects-param-pill.jog-wheel-container {
@@ -2669,9 +2772,14 @@
   font-size: 11px;
 }
 
-/* Speed & Time Remap Subview Inner UI */
+/* Speed & Time Remap Subview Inner UI — Compact, non-stretching, fits both Speed & Time Remap in 224px */
 .speed-work-area {
-  padding: 8px 10px 10px 8px;
+  justify-content: flex-start;
+  padding: 6px 10px 8px 8px;
+  gap: 6px;
+}
+
+.speed-mode-panel {
   gap: 6px;
 }
 
@@ -2694,7 +2802,7 @@
 }
 
 .speed-option-group {
-  gap: 5px;
+  gap: 4px;
 }
 
 .speed-option-title {
@@ -2702,7 +2810,7 @@
 }
 
 .speed-toggle-row {
-  padding: 6px 10px;
+  padding: 5px 10px;
 }
 
 .speed-toggle-name {
@@ -2725,4 +2833,356 @@
   height: 28px;
   min-height: 28px;
   margin: 0;
+}
+
+/* Convert Preset Shape to Vector Button inside Edit Shape */
+.vector-convert-shape-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  background-color: var(--bg-panel-inner);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.vector-convert-shape-btn:hover,
+.vector-convert-shape-btn:active {
+  background-color: var(--bg-panel-inner-hover);
+  border-color: var(--color-primary);
+}
+
+.vector-convert-shape-btn .fticon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+}
+
+.vector-tools-col .transform-tool-btn .fticon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+}
+
+/* ==========================================================================
+   SUBVIEW 14: EDIT VECTOR CONTROLLER UI
+   ========================================================================== */
+#vector-controller.transform-controller {
+  grid-template-columns: 44px 1fr 44px;
+  height: 224px;
+  min-height: 224px;
+  max-height: 224px;
+}
+
+.vector-edit-split {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+.vector-swipe-pad {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 8px 10px;
+  box-sizing: border-box;
+}
+
+.vector-values-header {
+  gap: 6px;
+  margin-bottom: 4px !important;
+}
+
+.vector-values-header .transform-val-card.is-dual {
+  flex: 0 1 180px;
+  min-width: 0;
+}
+
+.vector-touchpad-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  cursor: crosshair;
+  user-select: none;
+  touch-action: none;
+}
+
+/* Touchpad-styled Vertical Zig-Zag Slide Pad (Right of Touchpad) */
+.vector-slide-pad {
+  flex: 0 0 54px;
+  width: 54px;
+  height: 100%;
+  position: relative;
+  background-color: var(--bg-canvas);
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: ns-resize;
+  user-select: none;
+  touch-action: none;
+  box-sizing: border-box;
+}
+
+.vector-slide-pad .pad-corner {
+  width: 8px;
+  height: 8px;
+}
+
+.vector-slide-pad .pad-corner.tl {
+  top: 6px;
+  left: 6px;
+}
+
+.vector-slide-pad .pad-corner.tr {
+  top: 6px;
+  right: 6px;
+}
+
+.vector-slide-pad .pad-corner.bl {
+  bottom: 6px;
+  left: 6px;
+}
+
+.vector-slide-pad .pad-corner.br {
+  bottom: 6px;
+  right: 6px;
+}
+
+.vector-slide-pad.is-dragging .pad-corner {
+  border-color: var(--color-primary);
+}
+
+.vector-slide-viewport {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  z-index: 2;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.2) 15%,
+    #000 32%,
+    #000 68%,
+    rgba(0, 0, 0, 0.2) 85%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, 0.2) 15%,
+    #000 32%,
+    #000 68%,
+    rgba(0, 0, 0, 0.2) 85%,
+    transparent 100%
+  );
+}
+
+.vector-slide-track {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 0;
+  overflow: visible;
+}
+
+.vector-zigzag-svg {
+  position: absolute;
+  top: -240px;
+  left: 0;
+  width: 54px;
+  height: 480px;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 1;
+}
+
+.vector-zigzag-seg {
+  stroke: var(--text-muted);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  opacity: 0.72;
+}
+
+.vector-zigzag-seg.is-dashed {
+  stroke-dasharray: 4 3.5;
+  opacity: 0.55;
+}
+
+.vector-zigzag-seg.is-active-seg {
+  stroke: var(--color-primary);
+  stroke-width: 2;
+  opacity: 1;
+}
+
+.vector-zigzag-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  transition: background-color 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.vector-zigzag-node.is-point-node {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background-color: var(--bg-canvas);
+  border: 1.8px solid var(--text-muted);
+}
+
+.vector-zigzag-node.is-point-node.is-active {
+  width: 12px;
+  height: 12px;
+  background-color: var(--color-primary);
+  border-color: var(--text-primary);
+}
+
+.vector-zigzag-node.is-plus-node {
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  background-color: var(--bg-canvas);
+  border: 1.6px dashed var(--text-muted);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.vector-zigzag-node.is-plus-node.is-active {
+  border-style: solid;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background-color: var(--bg-panel-inner);
+}
+
+.vector-zigzag-cursor-dot {
+  position: absolute;
+  top: 0;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: var(--color-primary);
+  border: 1.6px solid var(--text-primary);
+  color: var(--bg-canvas);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9.5px;
+  font-weight: 800;
+  line-height: 1;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* Pane 2: Vector Stroke Settings Panel */
+.vector-stroke-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-canvas);
+  border-radius: 8px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+}
+
+.vector-stroke-panel .effects-control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+  width: 100%;
+}
+
+.vector-stroke-panel .effects-param-label-col {
+  flex: 0 0 64px;
+  min-width: 64px;
+}
+
+.vector-stroke-panel .effects-param-val-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.vector-stroke-panel #jog-vector-stroke-width {
+  width: 100%;
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  margin: 0;
+  border-radius: 6px;
+}
+
+.vector-stroke-panel #vector-stroke-cap-switch {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  background-color: var(--bg-panel-inner);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 2px;
+  gap: 2px;
+  box-sizing: border-box;
+}
+
+.vector-stroke-panel #vector-stroke-cap-switch .segmented-switch-item {
+  flex: 1 1 50%;
+  height: 100%;
+  border-radius: 4px;
+  border: none;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 0 8px;
+}
+
+.vector-stroke-panel #btn-vector-stroke-color {
+  width: 100%;
+  height: 30px;
+  min-height: 30px;
+  max-height: 30px;
+  padding: 0 10px;
+  justify-content: flex-start;
+  background-color: var(--bg-panel-inner);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.vector-tool-delete-btn:disabled,
+.vector-tool-delete-btn.is-disabled {
+  opacity: 0.35;
+  pointer-events: none;
 }

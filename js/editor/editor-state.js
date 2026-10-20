@@ -102,6 +102,7 @@
       setupEditorResLink('btn-link-res', 'custom-res-w', 'custom-res-h', 'new');
       setupEditorResLink('settings-btn-link-res', 'settings-custom-res-w', 'settings-custom-res-h', 'settings');
     }
+    window.initEditorResLinks = initEditorResLinks;
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', initEditorResLinks);
     } else {
@@ -140,6 +141,11 @@
       Object.defineProperty(window, 'currentProjectState', {
         get() { return _currentProjectState; },
         set(v) { if (v && typeof v === 'object') _currentProjectState = v; },
+        configurable: true
+      });
+      Object.defineProperty(window, 'beatmarks', {
+        get() { return (_currentProjectState && Array.isArray(_currentProjectState.beatmarks)) ? _currentProjectState.beatmarks : []; },
+        set(v) { if (_currentProjectState && Array.isArray(v)) _currentProjectState.beatmarks = v; },
         configurable: true
       });
       Object.defineProperty(window, 'compositionStack', {
@@ -486,6 +492,7 @@
       if (Math.abs(n - Math.round(n)) < 0.01) return Math.round(n).toString();
       return n.toFixed(1);
     }
+    window.formatTransformNumber = formatTransformNumber;
     function findSnapTarget(val, targets, threshold) {
       if (typeof window.findSnapTarget === 'function' && window.findSnapTarget !== findSnapTarget) {
         return window.findSnapTarget(val, targets, threshold);
@@ -502,6 +509,7 @@
       }
       return closest;
     }
+    window.findSnapTarget = findSnapTarget;
     function renderMediaGrid(...args) {
       if (typeof window.renderMediaGrid === 'function' && window.renderMediaGrid !== renderMediaGrid) {
         return window.renderMediaGrid.apply(this, args);
@@ -1030,6 +1038,13 @@
       if (eff.volume !== undefined) layer.volume = eff.volume;
       if (eff.speed !== undefined) layer.speed = eff.speed;
       if (eff.timeRemap !== undefined) layer.timeRemap = eff.timeRemap;
+      if (Array.isArray(eff.vectorPoints) && layer.type === 'shape' && layer.shapeType === 'vector') {
+        if (!layer.shapeProps) layer.shapeProps = {};
+        layer.shapeProps.points = eff.vectorPoints.map(pt => ({ ...pt }));
+        if (typeof window.syncVectorLayerBounds === 'function') {
+          window.syncVectorLayerBounds(layer, eff.scaleW === undefined && eff.scaleH === undefined);
+        }
+      }
       if (Array.isArray(eff.effects) && Array.isArray(layer.effects)) {
         layer.effects.forEach(fx => {
           const effFx = eff.effects.find(f => f.id === fx.id);

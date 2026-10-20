@@ -2656,13 +2656,60 @@
   box-sizing: border-box;
 }
 
+.fill-media-fit-bar {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 2px;
+  margin: 8px 10px 0 10px;
+  height: 30px;
+  min-height: 30px;
+  flex-shrink: 0;
+  background-color: var(--bg-panel-inner);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.fill-media-fit-btn {
+  height: 100%;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-brand);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
+  outline: none;
+  user-select: none;
+  transition: background-color 0.12s ease, color 0.12s ease;
+  box-sizing: border-box;
+}
+
+.fill-media-fit-btn:hover {
+  background-color: var(--bg-panel-hover);
+  color: var(--text-primary);
+}
+
+.fill-media-fit-btn.is-active {
+  background-color: var(--color-primary);
+  color: var(--bg-canvas);
+}
+
 .fill-media-pool-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
   gap: 8px;
-  padding: 10px;
+  padding: 8px 10px 10px 10px;
   width: 100%;
   height: 100%;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   box-sizing: border-box;
   align-content: start;
@@ -3122,19 +3169,22 @@
 .graph-controller {
   grid-template-columns: 44px 1fr 44px;
   height: 224px;
-  min-height: 220px;
+  min-height: 224px;
+  max-height: 224px;
 }
 
 .camera-controller-layout,
 .beatmark-controller-layout {
   grid-template-columns: 44px 1fr;
   height: 224px;
-  min-height: 220px;
+  min-height: 224px;
+  max-height: 224px;
 }
 
 .fill-controller-layout {
   height: 224px;
-  min-height: 220px;
+  min-height: 224px;
+  max-height: 224px;
   padding: 6px 10px 8px;
   gap: 6px;
 }
@@ -3243,6 +3293,14 @@
 
 .transform-dual-rulers {
   gap: 5px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#pane-transform-scale .jog-wheel-container,
+#pane-transform-skew .jog-wheel-container {
+  min-height: 0;
+  margin: 1px 0;
 }
 
 /* 2. Graph Editor Subview Inner UI */
@@ -3432,10 +3490,20 @@
   gap: 8px;
 }
 
+.fill-media-fit-bar {
+  margin: 6px 8px 0 8px;
+  height: 26px;
+  min-height: 26px;
+}
+
+.fill-media-fit-btn {
+  font-size: 10.5px;
+}
+
 .fill-media-pool-grid {
   grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
   gap: 6px;
-  padding: 8px;
+  padding: 6px 8px 8px 8px;
 }
 
 /* 5. Audio Beatmark Subview Inner UI */

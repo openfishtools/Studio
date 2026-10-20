@@ -12,6 +12,10 @@ function initTimelineOperations() {
 
       function selectTimelineLayer(layerId, isMulti = false, keepKeyframes = false) {
         if (!layerId) return;
+        if (window._layerDrawerResetTimer) {
+          clearTimeout(window._layerDrawerResetTimer);
+          window._layerDrawerResetTimer = null;
+        }
         if (window.activeSnapGuides) {
           window.activeSnapGuides = null;
           if (window.CanvasOverlay) window.CanvasOverlay.scheduleRedraw();
@@ -59,6 +63,7 @@ function initTimelineOperations() {
         const btnBeatmark = document.getElementById('btn-layer-beatmark');
         const btnEditGroup = document.getElementById('btn-layer-edit-group');
         const btnEditShape = document.getElementById('btn-layer-edit-shape');
+        const btnEditVector = document.getElementById('btn-layer-edit-vector');
         const btnEditText = document.getElementById('btn-layer-edit-text');
         const actionGrid = document.getElementById('layer-action-btn-grid');
 
@@ -71,14 +76,18 @@ function initTimelineOperations() {
         if (btnEditGroup) {
           btnEditGroup.style.display = (layer && layer.type === 'precomp') ? 'inline-flex' : 'none';
         }
-        const canEditShape = layer && (
+        const isVectorShape = Boolean(layer && layer.type === 'shape' && layer.shapeType === 'vector');
+        const canEditShape = Boolean(layer && !isVectorShape && (
           layer.type === 'shape' ||
           layer.type === 'image' ||
           layer.type === 'video' ||
           (layer.type === 'precomp' && !layer.collapseTransformations)
-        );
+        ));
         if (btnEditShape) {
           btnEditShape.style.display = canEditShape ? 'inline-flex' : 'none';
+        }
+        if (btnEditVector) {
+          btnEditVector.style.display = isVectorShape ? 'inline-flex' : 'none';
         }
         if (btnEditText) {
           btnEditText.style.display = (layer && layer.type === 'text') ? 'inline-flex' : 'none';
@@ -95,7 +104,7 @@ function initTimelineOperations() {
           if (fxGal && fxGal.classList.contains('is-active')) {
             closeEffectsGalleryDrawer(false);
           }
-          if (currentDrawerSubview === 'transform' || currentDrawerSubview === 'graph' || currentDrawerSubview === 'fill' || currentDrawerSubview === 'blend' || currentDrawerSubview === 'effects' || currentDrawerSubview === 'shape' || currentDrawerSubview === 'camera' || currentDrawerSubview === 'text') {
+          if (currentDrawerSubview === 'transform' || currentDrawerSubview === 'graph' || currentDrawerSubview === 'fill' || currentDrawerSubview === 'blend' || currentDrawerSubview === 'effects' || currentDrawerSubview === 'shape' || currentDrawerSubview === 'vector' || currentDrawerSubview === 'camera' || currentDrawerSubview === 'text') {
             switchLayerDrawerSubview('main');
           }
         } else if (layer && layer.type === 'camera') {
@@ -112,7 +121,7 @@ function initTimelineOperations() {
           if (fxGal && fxGal.classList.contains('is-active')) {
             closeEffectsGalleryDrawer(false);
           }
-          if (currentDrawerSubview === 'fill' || currentDrawerSubview === 'blend' || currentDrawerSubview === 'effects' || currentDrawerSubview === 'shape' || currentDrawerSubview === 'beatmark') {
+          if (currentDrawerSubview === 'fill' || currentDrawerSubview === 'blend' || currentDrawerSubview === 'effects' || currentDrawerSubview === 'shape' || currentDrawerSubview === 'vector' || currentDrawerSubview === 'beatmark') {
             switchLayerDrawerSubview('main');
           }
         } else {
@@ -123,7 +132,7 @@ function initTimelineOperations() {
           if (btnBlend) btnBlend.style.display = '';
           if (btnEffects) btnEffects.style.display = '';
           if (actionGrid) actionGrid.classList.remove('is-camera-mode');
-          if (currentDrawerSubview === 'camera' || currentDrawerSubview === 'beatmark' || (currentDrawerSubview === 'shape' && !canEditShape)) {
+          if (currentDrawerSubview === 'camera' || currentDrawerSubview === 'beatmark' || (currentDrawerSubview === 'shape' && !canEditShape) || (currentDrawerSubview === 'vector' && !isVectorShape)) {
             switchLayerDrawerSubview('main');
           }
         }
@@ -209,6 +218,8 @@ function initTimelineOperations() {
             if (typeof updateSpeedKeyframeBtnState === 'function') updateSpeedKeyframeBtnState();
           } else if (layer && layer.type === 'shape' && currentDrawerSubview === 'shape' && typeof syncShapeControllerUI === 'function') {
             syncShapeControllerUI();
+          } else if (layer && layer.type === 'shape' && layer.shapeType === 'vector' && currentDrawerSubview === 'vector' && typeof syncVectorControllerUI === 'function') {
+            syncVectorControllerUI();
           } else if (layer && layer.type === 'text' && currentDrawerSubview === 'text' && typeof syncTextControllerUI === 'function') {
             syncTextControllerUI();
           }
@@ -334,24 +345,38 @@ function initTimelineOperations() {
             document.querySelectorAll('.editor-timeline.has-drawer-open').forEach(t => t.classList.remove('has-drawer-open'));
           }
         }
-        if (typeof switchLayerDrawerSubview === 'function') {
-          switchLayerDrawerSubview('main');
-        }
-        const btnCameraSettings = document.getElementById('btn-layer-camera-settings');
-        const btnFill = document.getElementById('btn-layer-fill');
-        const btnBlend = document.getElementById('btn-layer-blend');
-        const btnEffects = document.getElementById('btn-layer-effects');
-        const btnEditShape = document.getElementById('btn-layer-edit-shape');
-        const btnEditText = document.getElementById('btn-layer-edit-text');
-        const actionGrid = document.getElementById('layer-action-btn-grid');
-        if (btnCameraSettings) btnCameraSettings.style.display = 'none';
-        if (btnEditShape) btnEditShape.style.display = 'none';
-        if (btnEditText) btnEditText.style.display = 'none';
-        if (btnFill) btnFill.style.display = '';
-        if (btnBlend) btnBlend.style.display = '';
-        if (btnEffects) btnEffects.style.display = '';
-        if (actionGrid) {
-          actionGrid.classList.remove('is-solo-mode', 'is-2-items', 'is-3-items', 'is-4-items', 'is-5-items', 'is-6-items', 'is-camera-mode');
+        const resetDrawerSubviewsToMain = () => {
+          window._layerDrawerResetTimer = null;
+          if (window.selectedLayerId || (window.selectedLayerIds && window.selectedLayerIds.size > 0)) return;
+          if (typeof switchLayerDrawerSubview === 'function') {
+            switchLayerDrawerSubview('main');
+          }
+          const btnCameraSettings = document.getElementById('btn-layer-camera-settings');
+          const btnFill = document.getElementById('btn-layer-fill');
+          const btnBlend = document.getElementById('btn-layer-blend');
+          const btnEffects = document.getElementById('btn-layer-effects');
+          const btnEditShape = document.getElementById('btn-layer-edit-shape');
+          const btnEditVector = document.getElementById('btn-layer-edit-vector');
+          const btnEditText = document.getElementById('btn-layer-edit-text');
+          const actionGrid = document.getElementById('layer-action-btn-grid');
+          if (btnCameraSettings) btnCameraSettings.style.display = 'none';
+          if (btnEditShape) btnEditShape.style.display = 'none';
+          if (btnEditVector) btnEditVector.style.display = 'none';
+          if (btnEditText) btnEditText.style.display = 'none';
+          if (btnFill) btnFill.style.display = '';
+          if (btnBlend) btnBlend.style.display = '';
+          if (btnEffects) btnEffects.style.display = '';
+          if (actionGrid) {
+            actionGrid.classList.remove('is-solo-mode', 'is-2-items', 'is-3-items', 'is-4-items', 'is-5-items', 'is-6-items', 'is-camera-mode');
+          }
+        };
+
+        const isDesktop = Boolean(document.querySelector('.desktop-workstation, .desktop-viewport'));
+        if (isDesktop) {
+          resetDrawerSubviewsToMain();
+        } else {
+          if (window._layerDrawerResetTimer) clearTimeout(window._layerDrawerResetTimer);
+          window._layerDrawerResetTimer = setTimeout(resetDrawerSubviewsToMain, 280);
         }
 
         if (selectedLayerIds.size === 0 && !selectedLayerId && !isSelectorMode) {

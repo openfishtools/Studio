@@ -230,6 +230,28 @@
           ctx.stroke();
           ctx.restore();
 
+        } else if (bounds.shapeType === 'vector') {
+          // C1. Vector Shape: Draw tight bounding quad connecting handles + open/closed vector contour
+          if (bounds.corners && bounds.corners.length === 4) {
+            ctx.beginPath();
+            ctx.moveTo(bounds.corners[0].x, bounds.corners[0].y);
+            for (let i = 1; i < bounds.corners.length; i++) {
+              ctx.lineTo(bounds.corners[i].x, bounds.corners[i].y);
+            }
+            ctx.closePath();
+            ctx.stroke();
+          }
+          if (bounds.shapeContour && Array.isArray(bounds.shapeContour) && bounds.shapeContour.length >= 2) {
+            ctx.beginPath();
+            ctx.moveTo(bounds.shapeContour[0].x, bounds.shapeContour[0].y);
+            for (let i = 1; i < bounds.shapeContour.length; i++) {
+              ctx.lineTo(bounds.shapeContour[i].x, bounds.shapeContour[i].y);
+            }
+            if (bounds.shapeProps && bounds.shapeProps.closed) {
+              ctx.closePath();
+            }
+            ctx.stroke();
+          }
         } else {
           // C. Standard 3D Quad or Shape Contour
           ctx.beginPath();

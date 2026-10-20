@@ -180,8 +180,19 @@
         if (!child._shapeBufferCanvas || !(child._shapeBufferCanvas instanceof HTMLCanvasElement) || typeof child._shapeBufferCanvas.getContext !== 'function') {
           child._shapeBufferCanvas = document.createElement('canvas');
         }
-        const spW = Math.max(1, Math.round(Math.abs((child.shapeProps && child.shapeProps.sizeX) || 300)));
-        const spH = Math.max(1, Math.round(Math.abs((child.shapeProps && child.shapeProps.sizeY) || 300)));
+        const isVecChild = (child.shapeType === 'vector');
+        if (isVecChild && typeof window.syncVectorLayerBounds === 'function') {
+          window.syncVectorLayerBounds(child, !window.isTransformInteracting);
+        }
+        const vBounds = (isVecChild && typeof window.getVectorLocalBounds === 'function')
+          ? window.getVectorLocalBounds(child.shapeProps || {})
+          : null;
+        const spW = vBounds
+          ? vBounds.bufferW
+          : Math.max(1, Math.round(Math.abs((child.shapeProps && child.shapeProps.sizeX) || 300)));
+        const spH = vBounds
+          ? vBounds.bufferH
+          : Math.max(1, Math.round(Math.abs((child.shapeProps && child.shapeProps.sizeY) || 300)));
         if (child._shapeBufferCanvas.width !== spW || child._shapeBufferCanvas.height !== spH) {
           child._shapeBufferCanvas.width = spW;
           child._shapeBufferCanvas.height = spH;
@@ -189,8 +200,8 @@
         if (typeof renderShapeToCanvas === 'function') {
           renderShapeToCanvas(child, child._shapeBufferCanvas, spW, spH);
         }
-        child.mediaWidth = spW;
-        child.mediaHeight = spH;
+        child.mediaWidth = vBounds ? vBounds.width : spW;
+        child.mediaHeight = vBounds ? vBounds.height : spH;
         return child._shapeBufferCanvas;
       } else {
         const isNativeMedia = (child.type === 'video' || child.type === 'image');
@@ -216,6 +227,11 @@
               pixelsPerSecond: pps
             });
             el = res.el;
+          }
+          if (typeof window.getFittedMediaElement === 'function') {
+            const cw = Math.abs(childEff.scaleW !== undefined ? childEff.scaleW : (child.mediaWidth || 1920));
+            const ch = Math.abs(childEff.scaleH !== undefined ? childEff.scaleH : (child.mediaHeight || 1080));
+            el = window.getFittedMediaElement(child, el, cw, ch);
           }
           return el;
         }
@@ -618,6 +634,7 @@
       eff._rawCamera = cam;
       return eff;
     }
+    window.getPrecompInnerCameraEff = getPrecompInnerCameraEff;
 
     // Render Precompose Layer onto offscreen canvas buffer
 
@@ -742,8 +759,19 @@
           if (!child._shapeBufferCanvas || !(child._shapeBufferCanvas instanceof HTMLCanvasElement) || typeof child._shapeBufferCanvas.getContext !== 'function') {
             child._shapeBufferCanvas = document.createElement('canvas');
           }
-          const spW = Math.max(1, Math.round(Math.abs((child.shapeProps && child.shapeProps.sizeX) || 300)));
-          const spH = Math.max(1, Math.round(Math.abs((child.shapeProps && child.shapeProps.sizeY) || 300)));
+          const isVecChild = (child.shapeType === 'vector');
+          if (isVecChild && typeof window.syncVectorLayerBounds === 'function') {
+            window.syncVectorLayerBounds(child, !window.isTransformInteracting);
+          }
+          const vBounds = (isVecChild && typeof window.getVectorLocalBounds === 'function')
+            ? window.getVectorLocalBounds(child.shapeProps || {})
+            : null;
+          const spW = vBounds
+            ? vBounds.bufferW
+            : Math.max(1, Math.round(Math.abs((child.shapeProps && child.shapeProps.sizeX) || 300)));
+          const spH = vBounds
+            ? vBounds.bufferH
+            : Math.max(1, Math.round(Math.abs((child.shapeProps && child.shapeProps.sizeY) || 300)));
           if (child._shapeBufferCanvas.width !== spW || child._shapeBufferCanvas.height !== spH) {
             child._shapeBufferCanvas.width = spW;
             child._shapeBufferCanvas.height = spH;
@@ -752,8 +780,8 @@
             renderShapeToCanvas(child, child._shapeBufferCanvas, spW, spH);
           }
           childEl = child._shapeBufferCanvas;
-          child.mediaWidth = spW;
-          child.mediaHeight = spH;
+          child.mediaWidth = vBounds ? vBounds.width : spW;
+          child.mediaHeight = vBounds ? vBounds.height : spH;
         } else {
           const isNativeMedia = (child.type === 'video' || child.type === 'image');
           const effectiveFill = child.fillType || (isNativeMedia ? 'media' : (child.fillColor ? 'color' : 'none'));
@@ -786,6 +814,9 @@
         const cy = (childEff.posY !== undefined ? childEff.posY : (ph / 2));
         let bw = (childEff.scaleW !== undefined ? childEff.scaleW : (child.mediaWidth || pw));
         let bh = (childEff.scaleH !== undefined ? childEff.scaleH : (child.mediaHeight || ph));
+        if ((child.type === 'image' || child.type === 'video') && (!child.fillType || child.fillType === 'media') && typeof window.getFittedMediaElement === 'function') {
+          childEl = window.getFittedMediaElement(child, childEl, bw, bh);
+        }
 
         if (child.type === 'shape') {
           if (bw === undefined || isNaN(bw)) {
@@ -824,10 +855,18 @@
             window.FishEffects.applyToContext(targetCtx, animChild);
           }
 
+          let childPadRatioW = 1;
+          let childPadRatioH = 1;
+          if (targetChild.type === 'shape' && targetChild.shapeType === 'vector' && targetChild.shapeProps && typeof window.getVectorLocalBounds === 'function') {
+            const vb = window.getVectorLocalBounds(targetChild.shapeProps);
+            childPadRatioW = (targetEl.width || vb.bufferW || 24) / Math.max(1, vb.width || 24);
+            childPadRatioH = (targetEl.height || vb.bufferH || 24) / Math.max(1, vb.height || 24);
+          }
+
           const curCx = (eff.posX !== undefined ? eff.posX : (baseW / 2)) * (pw / baseW);
           const curCy = (eff.posY !== undefined ? eff.posY : (baseH / 2)) * (ph / baseH);
-          const curBw = (eff.scaleW !== undefined ? eff.scaleW : (child.mediaWidth || baseW)) * (pw / baseW);
-          const curBh = (eff.scaleH !== undefined ? eff.scaleH : (child.mediaHeight || baseH)) * (ph / baseH);
+          const curBw = (eff.scaleW !== undefined ? eff.scaleW : (child.mediaWidth || baseW)) * (pw / baseW) * childPadRatioW;
+          const curBh = (eff.scaleH !== undefined ? eff.scaleH : (child.mediaHeight || baseH)) * (ph / baseH) * childPadRatioH;
           const curRotZ = eff.rotZ !== undefined ? eff.rotZ : (eff.rotation || 0);
           const curRotX = eff.rotX || 0;
           const curRotY = eff.rotY || 0;
@@ -848,8 +887,9 @@
             const animChild = Object.assign({}, targetChild, eff, {
               posX: eff.posX !== undefined ? eff.posX : (baseW / 2),
               posY: eff.posY !== undefined ? eff.posY : (baseH / 2),
-              scaleW: eff.scaleW !== undefined ? eff.scaleW : (child.mediaWidth || baseW),
-              scaleH: eff.scaleH !== undefined ? eff.scaleH : (child.mediaHeight || baseH),
+              scaleW: (eff.scaleW !== undefined ? eff.scaleW : (child.mediaWidth || baseW)) * childPadRatioW,
+              scaleH: (eff.scaleH !== undefined ? eff.scaleH : (child.mediaHeight || baseH)) * childPadRatioH,
+              _isVectorRenderPass: targetChild.type === 'shape' && targetChild.shapeType === 'vector',
               rotZ: curRotZ,
               rotX: curRotX,
               rotY: curRotY,
@@ -1711,12 +1751,39 @@
           if (!layer._shapeBufferCanvas || !(layer._shapeBufferCanvas instanceof HTMLCanvasElement) || typeof layer._shapeBufferCanvas.getContext !== 'function') {
             layer._shapeBufferCanvas = document.createElement('canvas');
           }
-          const pw = Math.max(1, Math.round(Math.abs((layer.shapeProps && layer.shapeProps.sizeX) || 300)));
-          const ph = Math.max(1, Math.round(Math.abs((layer.shapeProps && layer.shapeProps.sizeY) || 300)));
+          const isVecShape = (layer.shapeType === 'vector');
+          if (isVecShape) {
+            if (
+              layer.keyframes &&
+              Array.isArray(layer.keyframes.vectorPoints) &&
+              layer.keyframes.vectorPoints.length > 0 &&
+              !(window._vectorEditorState && window._vectorEditorState.isDraggingPad)
+            ) {
+              const effVec = (typeof getLayerEffectivePropsAtTime === 'function')
+                ? getLayerEffectivePropsAtTime(layer, currentSec)
+                : null;
+              if (effVec && Array.isArray(effVec.vectorPoints)) {
+                if (!layer.shapeProps) layer.shapeProps = {};
+                layer.shapeProps.points = effVec.vectorPoints.map(pt => ({ ...pt }));
+              }
+            }
+            if (typeof window.syncVectorLayerBounds === 'function') {
+              window.syncVectorLayerBounds(layer, !window.isTransformInteracting);
+            }
+          }
+          const vBounds = (isVecShape && typeof window.getVectorLocalBounds === 'function')
+            ? window.getVectorLocalBounds(layer.shapeProps || {})
+            : null;
+          const pw = vBounds
+            ? vBounds.bufferW
+            : Math.max(1, Math.round(Math.abs((layer.shapeProps && layer.shapeProps.sizeX) || 300)));
+          const ph = vBounds
+            ? vBounds.bufferH
+            : Math.max(1, Math.round(Math.abs((layer.shapeProps && layer.shapeProps.sizeY) || 300)));
           renderShapeToCanvas(layer, layer._shapeBufferCanvas, pw, ph);
           el = layer._shapeBufferCanvas;
-          layer.mediaWidth = pw;
-          layer.mediaHeight = ph;
+          layer.mediaWidth = vBounds ? vBounds.width : pw;
+          layer.mediaHeight = vBounds ? vBounds.height : ph;
         } else if (effectiveFill === 'none') {
           el = null;
         } else if (effectiveFill === 'color' || effectiveFill === 'gradient' || (!isNativeMedia && effectiveFill === 'media')) {
@@ -2150,6 +2217,9 @@
             const signY = Math.sign(bh) || 1;
             const absW = Math.abs(bw);
             const absH = Math.abs(bh);
+            if ((layer.type === 'image' || layer.type === 'video') && (!layer.fillType || layer.fillType === 'media') && typeof window.getFittedMediaElement === 'function') {
+              el = window.getFittedMediaElement(layer, el, absW, absH);
+            }
 
             // Calculate Camera Depth of Field blur if camera blur is enabled (3D layers only)
             let layerDofBlur = 0;
@@ -2198,7 +2268,7 @@
                 animLayer.effects = layer.effects.map(fx => Object.assign({}, fx));
               }
 
-              // 1. Compute wireframe bounds on unpadded animLayer so wireframe stays tight on text metrics (like AE)
+              // 1. Compute wireframe bounds on unpadded animLayer so wireframe stays tight on text/vector metrics (like AE)
               layer._canvasBounds = engine.getBounds(animLayer, bufferScale, camEff, w, h);
 
               // 2. Expand render quad for padded canvas so texture renders 1:1 without squish or stretch
@@ -2211,6 +2281,19 @@
                 renderAnimLayer = Object.assign(renderAnimLayer, {
                   scaleW: animLayer.scaleW * padRatioW,
                   scaleH: animLayer.scaleH * padRatioH
+                });
+              } else if (isShape && layer.shapeType === 'vector' && el && el.width && el.height) {
+                const vBounds = (typeof window.getVectorLocalBounds === 'function')
+                  ? window.getVectorLocalBounds(layer.shapeProps || {})
+                  : null;
+                const natW = vBounds ? vBounds.width : (Number(layer.shapeProps && layer.shapeProps.sizeX) || el.width);
+                const natH = vBounds ? vBounds.height : (Number(layer.shapeProps && layer.shapeProps.sizeY) || el.height);
+                const padRatioW = el.width / Math.max(1, natW);
+                const padRatioH = el.height / Math.max(1, natH);
+                renderAnimLayer = Object.assign(renderAnimLayer, {
+                  scaleW: animLayer.scaleW * padRatioW,
+                  scaleH: animLayer.scaleH * padRatioH,
+                  _isVectorRenderPass: true
                 });
               }
               layersToRender.push({ el, layer, animLayer: renderAnimLayer });
@@ -2269,10 +2352,27 @@
                 if (Array.isArray(effProps.effects)) animLayerPost.effects = effProps.effects;
                 else if (Array.isArray(layer.effects)) animLayerPost.effects = layer.effects;
 
-                // Text layers with animation padding: draw canvas WITHOUT squishing.
+                // Text or Vector layers with expanded buffer padding: draw canvas WITHOUT squishing.
                 if (isText && layer._textPadY > 0 && el instanceof HTMLCanvasElement) {
                   const natW = layer._textNaturalW || (el.width - 2 * layer._textPadX);
                   const natH = layer._textNaturalH || (el.height - 2 * layer._textPadY);
+                  const padRatioW = el.width / Math.max(1, natW);
+                  const padRatioH = el.height / Math.max(1, natH);
+                  const drawW = absW * padRatioW;
+                  const drawH = absH * padRatioH;
+                  const drawX = -drawW / 2 - ax;
+                  const drawY = -drawH / 2 - ay;
+                  if (window.FishEffects && typeof window.FishEffects.renderLayer === 'function') {
+                    window.FishEffects.renderLayer(ctx, el, animLayerPost, { x: drawX, y: drawY, w: drawW, h: drawH, bufferScale: bufferScale, unitScale: bufferScale }, currentSec);
+                  } else {
+                    ctx.drawImage(el, drawX, drawY, drawW, drawH);
+                  }
+                } else if (isShape && layer.shapeType === 'vector' && el instanceof HTMLCanvasElement) {
+                  const vBounds = (typeof window.getVectorLocalBounds === 'function')
+                    ? window.getVectorLocalBounds(layer.shapeProps || {})
+                    : null;
+                  const natW = vBounds ? vBounds.width : (Number(layer.shapeProps && layer.shapeProps.sizeX) || el.width);
+                  const natH = vBounds ? vBounds.height : (Number(layer.shapeProps && layer.shapeProps.sizeY) || el.height);
                   const padRatioW = el.width / Math.max(1, natW);
                   const padRatioH = el.height / Math.max(1, natH);
                   const drawW = absW * padRatioW;
@@ -2891,6 +2991,23 @@
         if (!isMultiSelect && selectedLayer && selectedLayer._canvasBounds && window.CanvasWireframe) {
           const b = selectedLayer._canvasBounds;
           const hitTolerance = Math.max(12, Math.round(12 * coords.dprScale));
+
+          if (window.currentDrawerSubview === 'vector' && selectedLayer.type === 'shape' && selectedLayer.shapeType === 'vector' && window.CanvasOverlay && typeof window.CanvasOverlay.hitTestVectorOverlay === 'function') {
+            const vecHit = window.CanvasOverlay.hitTestVectorOverlay(selectedLayer, coords.x, coords.y, Math.max(14, hitTolerance));
+            if (vecHit) {
+              activeCanvasEl.style.cursor = vecHit.cursor || 'pointer';
+              return;
+            }
+          }
+
+          if (window.CanvasOverlay && typeof window.CanvasOverlay.hitTestRoundnessHandle === 'function') {
+            const roundHit = window.CanvasOverlay.hitTestRoundnessHandle(selectedLayer, coords.x, coords.y, Math.max(13, hitTolerance));
+            if (roundHit) {
+              activeCanvasEl.style.cursor = roundHit.cursor || 'nwse-resize';
+              return;
+            }
+          }
+
           const h = window.CanvasWireframe.hitTestHandle(b, coords.x, coords.y, hitTolerance, isAnchorMode);
           if (h && (h.type !== 'anchor' || isAnchorMode)) {
             activeCanvasEl.style.cursor = (h.type === 'anchor') ? 'crosshair' : (h.cursor || 'pointer');
@@ -2925,7 +3042,24 @@
         activeCanvasEl.style.cursor = 'default';
       });
 
-      // Pointerdown: Start Move, Scale, or Layer Selection
+      // Double-click on canvas to enter Vector or Shape editing mode directly
+      activeCanvasEl.addEventListener('dblclick', (e) => {
+        if (window.isTimelinePlaying) return;
+        const layers = currentProjectState.layers || [];
+        const selectedLayer = layers.find(l => l.id === window.selectedLayerId);
+        if (!selectedLayer || selectedLayer.hidden || selectedLayer.locked) return;
+        if (selectedLayer.type === 'shape' && selectedLayer.shapeType === 'vector') {
+          if (window.currentDrawerSubview !== 'vector' && typeof window.switchLayerDrawerSubview === 'function') {
+            window.switchLayerDrawerSubview('vector');
+          }
+        } else if (selectedLayer.type === 'shape') {
+          if (window.currentDrawerSubview !== 'shape' && typeof window.switchLayerDrawerSubview === 'function') {
+            window.switchLayerDrawerSubview('shape');
+          }
+        }
+      });
+
+      // Pointerdown: Start Move, Scale, Vector Edit, Roundness, or Layer Selection
       activeCanvasEl.addEventListener('pointerdown', (e) => {
         if (window.isTimelinePlaying) return;
         if (e.button !== 0) return; // Primary click only
@@ -2937,10 +3071,135 @@
         const isAnchorMode = typeof window.isAnchorMode === 'function' ? window.isAnchorMode() : (window.moveAnchorSubmode === 'anchor');
         const isMultiSelect = !!(window.selectedLayerIds && window.selectedLayerIds.size > 1);
 
-        // A. If single layer selected, check handle click first (scaling)
+        // A0. If in Vector Edit Subview, handle direct Vector Points / Bezier Curve Handles / Segments / New Point on Canvas
+        if (!isMultiSelect && window.currentDrawerSubview === 'vector' && selectedLayer && selectedLayer.type === 'shape' && selectedLayer.shapeType === 'vector' && window.CanvasOverlay && typeof window.CanvasOverlay.hitTestVectorOverlay === 'function') {
+          const hitTolerance = Math.max(14, Math.round(14 * coords.dprScale));
+          const vecHit = window.CanvasOverlay.hitTestVectorOverlay(selectedLayer, coords.x, coords.y, hitTolerance);
+          if (vecHit) {
+            if (!selectedLayer.shapeProps) selectedLayer.shapeProps = {};
+            if (!Array.isArray(selectedLayer.shapeProps.points)) selectedLayer.shapeProps.points = [];
+            const pts = selectedLayer.shapeProps.points;
+            const vt = window.CanvasOverlay.getVectorTransform(selectedLayer, activeCanvasEl.width, activeCanvasEl.height);
+            if (vt) {
+              const startLocal = vt.toLocal(coords.x, coords.y);
+              const vState = window._vectorEditorState || (window._vectorEditorState = { target: 'new', scrubberPos: 0, tool: 'point', curveSubMode: 'both', cursorX: 0, cursorY: 0, isDraggingPad: false, isScrubbing: false });
+              vState.isDraggingPad = true;
+              window.isTransformInteracting = true;
+
+              activeOp = vecHit.type;
+              window._activeCanvasOp = activeOp;
+              activeHandleType = vecHit.type;
+              targetLayer = selectedLayer;
+              startPointer = { x: coords.x, y: coords.y };
+              hasMoved = false;
+
+              if (vecHit.type === 'vector-handle-out' || vecHit.type === 'vector-handle-in') {
+                const pointIndex = vecHit.pointIndex;
+                vState.target = pointIndex;
+                vState.scrubberPos = pointIndex;
+                const pt = pts[pointIndex] || { x: 0, y: 0, inX: 0, inY: 0, outX: 0, outY: 0 };
+                startLayerState = {
+                  vt,
+                  startLocal,
+                  pointIndex,
+                  initX: Number(pt.x) || 0,
+                  initY: Number(pt.y) || 0,
+                  initInX: Number(pt.inX) || 0,
+                  initInY: Number(pt.inY) || 0,
+                  initOutX: Number(pt.outX) || 0,
+                  initOutY: Number(pt.outY) || 0
+                };
+                if (typeof window.syncVectorControllerUI === 'function') window.syncVectorControllerUI();
+              } else if (vecHit.type === 'vector-point') {
+                const pointIndex = vecHit.pointIndex;
+                const wasAlreadySelected = (vState.target === pointIndex);
+                vState.target = pointIndex;
+                vState.scrubberPos = pointIndex;
+                const pt = pts[pointIndex] || { x: 0, y: 0, inX: 0, inY: 0, outX: 0, outY: 0 };
+                let didAutoRoundOnSelect = false;
+                if (vState.tool === 'curve' && typeof window.ensureVectorPointAutoCurve === 'function') {
+                  didAutoRoundOnSelect = window.ensureVectorPointAutoCurve(pts, pointIndex, !!selectedLayer.shapeProps.closed);
+                  if (didAutoRoundOnSelect && typeof window.commitVectorChange === 'function') {
+                    window.commitVectorChange(selectedLayer, false);
+                  }
+                }
+                startLayerState = {
+                  vt,
+                  startLocal,
+                  pointIndex,
+                  wasAlreadySelected,
+                  didAutoRoundOnSelect,
+                  initX: Number(pt.x) || 0,
+                  initY: Number(pt.y) || 0,
+                  initInX: Number(pt.inX) || 0,
+                  initInY: Number(pt.inY) || 0,
+                  initOutX: Number(pt.outX) || 0,
+                  initOutY: Number(pt.outY) || 0
+                };
+                if (typeof window.syncVectorControllerUI === 'function') window.syncVectorControllerUI();
+              } else if (vecHit.type === 'vector-seg-mid' || vecHit.type === 'vector-segment') {
+                const p0 = pts[vecHit.segStart];
+                const p1 = pts[vecHit.segEnd];
+                startLayerState = {
+                  vt,
+                  startLocal,
+                  segStart: vecHit.segStart,
+                  segEnd: vecHit.segEnd,
+                  t: vecHit.t,
+                  insertedPointIndex: null,
+                  p0InitOutX: Number(p0 && p0.outX) || 0,
+                  p0InitOutY: Number(p0 && p0.outY) || 0,
+                  p1InitInX: Number(p1 && p1.inX) || 0,
+                  p1InitInY: Number(p1 && p1.inY) || 0
+                };
+              } else if (vecHit.type === 'vector-new-point') {
+                vState.cursorX = Math.round(startLocal.x);
+                vState.cursorY = Math.round(startLocal.y);
+                startLayerState = {
+                  vt,
+                  startLocal,
+                  newPointIndex: null
+                };
+                if (typeof window.syncVectorControllerUI === 'function') window.syncVectorControllerUI();
+              }
+
+              activeCanvasEl.setPointerCapture(e.pointerId);
+              activeCanvasEl.style.cursor = vecHit.cursor || 'pointer';
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+          }
+        }
+
+        // A. If single layer selected, check Roundness handle or Scale handle click first
         if (!isMultiSelect && selectedLayer && selectedLayer._canvasBounds && window.CanvasWireframe) {
           const b = selectedLayer._canvasBounds;
           const hitTolerance = Math.max(12, Math.round(12 * coords.dprScale));
+
+          if (window.CanvasOverlay && typeof window.CanvasOverlay.hitTestRoundnessHandle === 'function') {
+            const roundHit = window.CanvasOverlay.hitTestRoundnessHandle(selectedLayer, coords.x, coords.y, Math.max(13, hitTolerance));
+            if (roundHit) {
+              window.isTransformInteracting = true;
+              syncLayerWithEffectiveProps(selectedLayer);
+
+              activeOp = 'roundness';
+              window._activeCanvasOp = 'roundness';
+              activeHandleType = 'roundness';
+              targetLayer = selectedLayer;
+              startPointer = { x: coords.x, y: coords.y };
+              startBounds = { ...b };
+              hasMoved = false;
+              startLayerState = { ...roundHit };
+
+              activeCanvasEl.setPointerCapture(e.pointerId);
+              activeCanvasEl.style.cursor = roundHit.cursor || 'nwse-resize';
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+          }
+
           const hitH = window.CanvasWireframe.hitTestHandle(b, coords.x, coords.y, hitTolerance, isAnchorMode);
 
           if (hitH && hitH.type !== 'anchor') {
@@ -3609,9 +3868,16 @@
           let newPosY = startLayerState.posY;
 
           if (!isCenterScale) {
-            // Center shifts by half the scale difference along the local transformed axes
-            const localShiftX = factorX * (newW - startLayerState.scaleW) / 2;
-            const localShiftY = factorY * (newH - startLayerState.scaleH) / 2;
+            // Center shifts along the local transformed axes so the opposite edge remains pinned
+            let localShiftX = factorX * (newW - startLayerState.scaleW) / 2;
+            let localShiftY = factorY * (newH - startLayerState.scaleH) / 2;
+            if (targetLayer.type === 'shape' && targetLayer.shapeType === 'vector' && typeof window.getVectorLocalBounds === 'function') {
+              const vBounds = window.getVectorLocalBounds(targetLayer.shapeProps || {});
+              const dScaleX = (newW - startLayerState.scaleW) / Math.max(1, vBounds.width);
+              const dScaleY = (newH - startLayerState.scaleH) / Math.max(1, vBounds.height);
+              localShiftX = factorX > 0 ? (-vBounds.minX * dScaleX) : (factorX < 0 ? (-vBounds.maxX * dScaleX) : 0);
+              localShiftY = factorY > 0 ? (-vBounds.minY * dScaleY) : (factorY < 0 ? (-vBounds.maxY * dScaleY) : 0);
+            }
 
             const rotZ = targetLayer.rotZ !== undefined ? targetLayer.rotZ : (targetLayer.rotation || 0);
             const rotX = targetLayer.rotX || 0;
@@ -3656,7 +3922,13 @@
           targetLayer.normX = (targetLayer.posX - targetLayer.scaleW / 2) / baseW;
           targetLayer.normY = (targetLayer.posY - targetLayer.scaleH / 2) / baseH;
 
-          if (targetLayer.type === 'shape') {
+          if (targetLayer.type === 'shape' && targetLayer.shapeType === 'vector') {
+            const vBounds = (typeof window.getVectorLocalBounds === 'function')
+              ? window.getVectorLocalBounds(targetLayer.shapeProps || {})
+              : { width: 120, height: 120 };
+            targetLayer.transformScaleX = Math.abs(targetLayer.scaleW) / Math.max(1, vBounds.width);
+            targetLayer.transformScaleY = Math.abs(targetLayer.scaleH) / Math.max(1, vBounds.height);
+          } else if (targetLayer.type === 'shape') {
             if (!targetLayer.shapeProps) targetLayer.shapeProps = {};
             targetLayer.shapeProps.sizeX = Math.round(Math.abs(targetLayer.scaleW));
             targetLayer.shapeProps.sizeY = Math.round(Math.abs(targetLayer.scaleH));
@@ -3682,6 +3954,177 @@
           }
           if (typeof syncTransformControllerValues === 'function') syncTransformControllerValues();
           requestCanvasRedraw();
+        } else if (activeOp === 'roundness' && targetLayer && startLayerState) {
+          const projDeltaPx = deltaX * startLayerState.dirX + deltaY * startLayerState.dirY;
+          const startRatio = startLayerState.curRound / Math.max(1, startLayerState.maxR);
+          const newRatio = Math.max(0, Math.min(1, startRatio + (projDeltaPx / Math.max(1, startLayerState.travelSpanPx))));
+          const newRound = Math.round(newRatio * startLayerState.maxR);
+          if (typeof window.updateShapeOtherProp === 'function') {
+            window.updateShapeOtherProp(targetLayer, 'roundness', newRound, false);
+          } else {
+            if (targetLayer.type === 'shape') {
+              if (!targetLayer.shapeProps) targetLayer.shapeProps = {};
+              targetLayer.shapeProps.roundness = newRound;
+              targetLayer._shapeDirty = true;
+              targetLayer._fillDirty = true;
+            } else {
+              targetLayer.roundness = newRound;
+            }
+            requestCanvasRedraw();
+          }
+          if (typeof window.syncShapeControllerUI === 'function') window.syncShapeControllerUI();
+        } else if ((activeOp === 'vector-handle-out' || activeOp === 'vector-handle-in') && targetLayer && startLayerState && startLayerState.vt) {
+          const curLocal = startLayerState.vt.toLocal(coords.x, coords.y);
+          const dLocalX = curLocal.x - startLayerState.startLocal.x;
+          const dLocalY = curLocal.y - startLayerState.startLocal.y;
+          const pts = (targetLayer.shapeProps && Array.isArray(targetLayer.shapeProps.points)) ? targetLayer.shapeProps.points : [];
+          const pt = pts[startLayerState.pointIndex];
+          const vState = window._vectorEditorState;
+          if (pt) {
+            if (activeOp === 'vector-handle-out') {
+              pt.outX = Math.round(startLayerState.initOutX + dLocalX);
+              pt.outY = Math.round(startLayerState.initOutY + dLocalY);
+              if (!e.altKey && (!vState || vState.curveSubMode !== 'out')) {
+                pt.inX = -pt.outX;
+                pt.inY = -pt.outY;
+              }
+            } else {
+              pt.inX = Math.round(startLayerState.initInX + dLocalX);
+              pt.inY = Math.round(startLayerState.initInY + dLocalY);
+              if (!e.altKey && (!vState || vState.curveSubMode !== 'in')) {
+                pt.outX = -pt.inX;
+                pt.outY = -pt.inY;
+              }
+            }
+            if (typeof window.commitVectorChange === 'function') {
+              window.commitVectorChange(targetLayer, false);
+            } else {
+              requestCanvasRedraw();
+            }
+          }
+        } else if (activeOp === 'vector-point' && targetLayer && startLayerState && startLayerState.vt) {
+          const curLocal = startLayerState.vt.toLocal(coords.x, coords.y);
+          const dLocalX = curLocal.x - startLayerState.startLocal.x;
+          const dLocalY = curLocal.y - startLayerState.startLocal.y;
+          const pts = (targetLayer.shapeProps && Array.isArray(targetLayer.shapeProps.points)) ? targetLayer.shapeProps.points : [];
+          const pt = pts[startLayerState.pointIndex];
+          if (pt) {
+            if (e.altKey) {
+              pt.outX = Math.round(dLocalX);
+              pt.outY = Math.round(dLocalY);
+              pt.inX = -pt.outX;
+              pt.inY = -pt.outY;
+            } else {
+              pt.x = Math.round(startLayerState.initX + dLocalX);
+              pt.y = Math.round(startLayerState.initY + dLocalY);
+            }
+            if (typeof window.commitVectorChange === 'function') {
+              window.commitVectorChange(targetLayer, false);
+            } else {
+              requestCanvasRedraw();
+            }
+          }
+        } else if ((activeOp === 'vector-seg-mid' || activeOp === 'vector-segment') && targetLayer && startLayerState && startLayerState.vt) {
+          const curLocal = startLayerState.vt.toLocal(coords.x, coords.y);
+          const dLocalX = curLocal.x - startLayerState.startLocal.x;
+          const dLocalY = curLocal.y - startLayerState.startLocal.y;
+          const pts = (targetLayer.shapeProps && Array.isArray(targetLayer.shapeProps.points)) ? targetLayer.shapeProps.points : [];
+          const vState = window._vectorEditorState;
+          if (activeOp === 'vector-segment' && vState && vState.tool === 'curve') {
+            const p0 = pts[startLayerState.segStart];
+            const p1 = pts[startLayerState.segEnd];
+            if (p0 && p1) {
+              p0.outX = Math.round(startLayerState.p0InitOutX + dLocalX * 1.35);
+              p0.outY = Math.round(startLayerState.p0InitOutY + dLocalY * 1.35);
+              p1.inX = Math.round(startLayerState.p1InitInX + dLocalX * 1.35);
+              p1.inY = Math.round(startLayerState.p1InitInY + dLocalY * 1.35);
+              if (typeof window.commitVectorChange === 'function') {
+                window.commitVectorChange(targetLayer, false);
+              } else {
+                requestCanvasRedraw();
+              }
+            }
+          } else if (hasMoved) {
+            if (startLayerState.insertedPointIndex === null && typeof window.subdivideVectorSegment === 'function') {
+              const p0 = pts[startLayerState.segStart];
+              const p1 = pts[startLayerState.segEnd];
+              if (p0 && p1) {
+                const sub = window.subdivideVectorSegment(p0, p1, startLayerState.t || 0.5);
+                const midPt = sub.midPoint || sub;
+                const insertIdx = startLayerState.segStart + 1;
+                pts.splice(insertIdx, 0, {
+                  x: Math.round(midPt.x),
+                  y: Math.round(midPt.y),
+                  inX: Math.round(midPt.inX || 0),
+                  inY: Math.round(midPt.inY || 0),
+                  outX: Math.round(midPt.outX || 0),
+                  outY: Math.round(midPt.outY || 0)
+                });
+                startLayerState.insertedPointIndex = insertIdx;
+                startLayerState.insertedInitX = Math.round(midPt.x);
+                startLayerState.insertedInitY = Math.round(midPt.y);
+                if (vState) {
+                  vState.target = insertIdx;
+                  vState.scrubberPos = insertIdx;
+                  if (vState.tool === 'curve' && typeof window.ensureVectorPointAutoCurve === 'function') {
+                    window.ensureVectorPointAutoCurve(pts, insertIdx, !!targetLayer.shapeProps.closed);
+                  }
+                }
+              }
+            }
+            if (startLayerState.insertedPointIndex !== null) {
+              const insPt = pts[startLayerState.insertedPointIndex];
+              if (insPt) {
+                insPt.x = Math.round(startLayerState.insertedInitX + dLocalX);
+                insPt.y = Math.round(startLayerState.insertedInitY + dLocalY);
+                if (typeof window.commitVectorChange === 'function') {
+                  window.commitVectorChange(targetLayer, false);
+                } else {
+                  requestCanvasRedraw();
+                }
+              }
+            }
+          }
+        } else if (activeOp === 'vector-new-point' && targetLayer && startLayerState && startLayerState.vt) {
+          const curLocal = startLayerState.vt.toLocal(coords.x, coords.y);
+          const dLocalX = curLocal.x - startLayerState.startLocal.x;
+          const dLocalY = curLocal.y - startLayerState.startLocal.y;
+          const pts = (targetLayer.shapeProps && Array.isArray(targetLayer.shapeProps.points)) ? targetLayer.shapeProps.points : [];
+          const vState = window._vectorEditorState;
+          if (hasMoved) {
+            if (startLayerState.newPointIndex === null) {
+              pts.push({
+                x: Math.round(startLayerState.startLocal.x),
+                y: Math.round(startLayerState.startLocal.y),
+                inX: 0,
+                inY: 0,
+                outX: 0,
+                outY: 0
+              });
+              startLayerState.newPointIndex = pts.length - 1;
+            }
+            const newPt = pts[startLayerState.newPointIndex];
+            if (newPt) {
+              if (e.altKey || (vState && vState.tool === 'curve')) {
+                newPt.outX = Math.round(dLocalX);
+                newPt.outY = Math.round(dLocalY);
+                newPt.inX = -newPt.outX;
+                newPt.inY = -newPt.outY;
+              } else {
+                newPt.x = Math.round(curLocal.x);
+                newPt.y = Math.round(curLocal.y);
+                if (vState) {
+                  vState.cursorX = newPt.x;
+                  vState.cursorY = newPt.y;
+                }
+              }
+              if (typeof window.commitVectorChange === 'function') {
+                window.commitVectorChange(targetLayer, false);
+              } else {
+                requestCanvasRedraw();
+              }
+            }
+          }
         }
       });
 
@@ -3697,13 +4140,93 @@
         try { activeCanvasEl.releasePointerCapture(e.pointerId); } catch (_) {}
         const didMove = hasMoved;
         const finishedLayer = targetLayer;
+        const finishedOp = activeOp;
+        const finishedStartState = startLayerState;
         activeOp = null;
+        window._activeCanvasOp = null;
         activeHandleType = null;
         targetLayer = null;
         startLayerState = null;
         hasMoved = false;
         window.activeSnapGuides = null;
         window.isTransformInteracting = false;
+        if (window._vectorEditorState) {
+          window._vectorEditorState.isDraggingPad = false;
+        }
+
+        if (finishedLayer && finishedOp && finishedOp.startsWith('vector-')) {
+          const pts = (finishedLayer.shapeProps && Array.isArray(finishedLayer.shapeProps.points)) ? finishedLayer.shapeProps.points : [];
+          const vState = window._vectorEditorState;
+          if (!didMove && finishedStartState) {
+            if (finishedOp === 'vector-seg-mid' || (finishedOp === 'vector-segment' && (!vState || vState.tool !== 'curve'))) {
+              if (typeof window.subdivideVectorSegment === 'function') {
+                const p0 = pts[finishedStartState.segStart];
+                const p1 = pts[finishedStartState.segEnd];
+                if (p0 && p1) {
+                  const sub = window.subdivideVectorSegment(p0, p1, finishedStartState.t || 0.5);
+                  const midPt = sub.midPoint || sub;
+                  const insertIdx = finishedStartState.segStart + 1;
+                  pts.splice(insertIdx, 0, {
+                    x: Math.round(midPt.x),
+                    y: Math.round(midPt.y),
+                    inX: Math.round(midPt.inX || 0),
+                    inY: Math.round(midPt.inY || 0),
+                    outX: Math.round(midPt.outX || 0),
+                    outY: Math.round(midPt.outY || 0)
+                  });
+                  if (vState) {
+                    vState.target = insertIdx;
+                    vState.scrubberPos = insertIdx;
+                    if (vState.tool === 'curve' && typeof window.ensureVectorPointAutoCurve === 'function') {
+                      window.ensureVectorPointAutoCurve(pts, insertIdx, !!finishedLayer.shapeProps.closed);
+                    }
+                  }
+                  if (typeof window.commitVectorChange === 'function') {
+                    window.commitVectorChange(finishedLayer, true);
+                  }
+                }
+              }
+            } else if (finishedOp === 'vector-new-point') {
+              pts.push({
+                x: Math.round(finishedStartState.startLocal.x),
+                y: Math.round(finishedStartState.startLocal.y),
+                inX: 0,
+                inY: 0,
+                outX: 0,
+                outY: 0
+              });
+              if (vState && vState.tool === 'curve' && typeof window.ensureVectorPointAutoCurve === 'function') {
+                window.ensureVectorPointAutoCurve(pts, pts.length - 1, !!finishedLayer.shapeProps.closed);
+              }
+              if (vState) {
+                vState.target = 'new';
+                vState.scrubberPos = pts.length;
+              }
+              if (typeof window.commitVectorChange === 'function') {
+                window.commitVectorChange(finishedLayer, true);
+              }
+            } else if (finishedOp === 'vector-point' && finishedStartState.didAutoRoundOnSelect) {
+              if (typeof window.commitVectorChange === 'function') {
+                window.commitVectorChange(finishedLayer, true);
+              }
+            }
+          } else if (didMove) {
+            if (finishedOp === 'vector-new-point' && vState) {
+              vState.target = 'new';
+              vState.scrubberPos = pts.length;
+            }
+            if (typeof window.commitVectorChange === 'function') {
+              window.commitVectorChange(finishedLayer, true);
+            }
+          }
+          if (typeof window.syncVectorControllerUI === 'function') window.syncVectorControllerUI();
+        } else if (finishedLayer && finishedOp === 'roundness' && didMove) {
+          const curVal = finishedLayer.type === 'shape' ? finishedLayer.shapeProps?.roundness : finishedLayer.roundness;
+          if (typeof window.updateShapeOtherProp === 'function') {
+            window.updateShapeOtherProp(finishedLayer, 'roundness', curVal, true);
+          }
+        }
+
         if (finishedLayer && didMove) {
           invalidatePreviewCacheForLayer(finishedLayer);
         }

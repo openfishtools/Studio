@@ -84,18 +84,24 @@ class DrawerManager {
   }
 
   /**
-   * Interactive Pointer-Event Drag Handle Resizer
+   * Interactive Pointer-Event Drag Handle Resizer & Magnetic Sheet Drag-to-Close
    */
   initDragHandleListeners() {
     let isDragging = false;
     let startY = 0;
     let startHeight = 0;
+    let currentOffsetY = 0;
+    let rawDownDist = 0;
+    let isMagnetDetached = false;
+    let lastY = 0;
+    let lastTime = 0;
+    let velocityY = 0;
     let dragZoom = 1;
     let currentHandle = null;
     let currentCard = null;
     let currentContainer = null;
+    let currentBackdrop = null;
     let currentIsFlexible = false;
-    let currentIsFixed = false;
     let maxAllowedHeight = 0;
     let minAllowedHeight = 60;
 
@@ -107,25 +113,40 @@ class DrawerManager {
       const container = handle.closest('.drawer-container');
       if (!card || !container) return;
 
+      if (card._dragSpringTimer) {
+        clearTimeout(card._dragSpringTimer);
+        card._dragSpringTimer = null;
+      }
+      if (card._magnetSnapTimer) {
+        clearTimeout(card._magnetSnapTimer);
+        card._magnetSnapTimer = null;
+      }
+
       isDragging = true;
       currentHandle = handle;
       currentCard = card;
       currentContainer = container;
+      currentBackdrop = container.querySelector('.drawer-backdrop');
       startY = e.clientY;
-      startHeight = card.getBoundingClientRect().height;
+      lastY = e.clientY;
+      lastTime = performance.now();
+      velocityY = 0;
+      currentOffsetY = 0;
+      rawDownDist = 0;
+      isMagnetDetached = false;
+
       // UI-scale zoom compensation: pointer + rects report visual px, but
       // card heights live in layout px — convert once here.
       dragZoom = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || 1;
+      startHeight = card.getBoundingClientRect().height / dragZoom;
 
       // Effects Gallery is flexible and allowed to expand all the way up to topLimit (full screen)
       const isEffectsGallery = Boolean(
         container.id === 'drawer-effects-gallery' ||
+        container.getAttribute('data-subview') === 'effects-gallery' ||
         card.classList.contains('is-effects-gallery')
       );
 
-      // 1. Boundary: Container top boundary (mentok ke atas viewport untuk effects gallery di mobile, atau ke atas area timeline di tablet)
-      // innerHeight reports visual px → divide by zoom to get layout px
-      // (clientHeight/scrollHeight already report layout px).
       const isTablet = window.innerWidth >= 601;
       const containerH = (isEffectsGallery && isTablet)
         ? (container.clientHeight || (window.innerHeight / dragZoom - 44))
@@ -134,59 +155,120 @@ class DrawerManager {
             : (container.clientHeight || window.innerHeight / dragZoom));
       const topLimit = Math.max(80, containerH - 16);
 
-      // In timeline-layer-drawer, all subviews have fixed size. Handle CANNOT be dragged upwards (prevents empty "kopong" space).
-      // Can only be dragged downwards to dismiss/close or back up to original height.
-      const isFixedSubview = (container.id === 'timeline-layer-drawer');
-
       currentIsFlexible = isEffectsGallery;
-      currentIsFixed = isFixedSubview;
 
       if (isEffectsGallery) {
         maxAllowedHeight = topLimit;
         minAllowedHeight = Math.min(220, topLimit);
-      } else if (isFixedSubview) {
-        // Strict boundary: Never allow dragging higher than initial natural height
-        maxAllowedHeight = startHeight;
-        minAllowedHeight = 50;
       } else {
-        // Generic drawer (e.g. timeline-add-drawer)
-        const prevHeight = card.style.height;
-        const prevMaxHeight = card.style.maxHeight;
-        card.style.height = 'auto';
-        card.style.maxHeight = 'none';
-        let contentHeight = card.scrollHeight;
-
-        const scrollableBody = card.querySelector('.media-pool-body');
-        if (scrollableBody) {
-          const extraScroll = scrollableBody.scrollHeight - scrollableBody.clientHeight;
-          if (extraScroll > 0) {
-            contentHeight += extraScroll;
-          }
-        }
-
-        card.style.height = prevHeight;
-        card.style.maxHeight = prevMaxHeight;
-
-        maxAllowedHeight = Math.min(topLimit, contentHeight);
-        minAllowedHeight = 50;
+        // Timeline drawers (#timeline-layer-drawer and #timeline-add-drawer) follow
+        // a locked Transform height and slide downward via translate3d when dragged to close.
+        maxAllowedHeight = startHeight;
+        minAllowedHeight = startHeight;
       }
 
+      container.style.pointerEvents = '';
+      card._closingFromDrag = false;
       handle.classList.add('is-dragging');
+      handle.classList.remove('is-magnet-detached');
       card.style.transition = 'none';
-      handle.setPointerCapture(e.pointerId);
+      card.style.willChange = 'transform';
+      if (currentBackdrop) {
+        currentBackdrop.style.transition = 'none';
+      }
+      try {
+        handle.setPointerCapture(e.pointerId);
+      } catch (_) {}
       e.preventDefault();
     });
 
     document.addEventListener('pointermove', (e) => {
       if (!isDragging || !currentCard) return;
 
-      const deltaY = (startY - e.clientY) / dragZoom; // Dragging up increases height
-      let targetHeight = startHeight / dragZoom + deltaY;
+      const now = performance.now();
+      const dt = now - lastTime;
+      if (dt > 0) {
+        const instVy = ((e.clientY - lastY) / dragZoom) / dt; // px/ms, positive = dragging down
+        velocityY = velocityY * 0.4 + instVy * 0.6;
+        lastY = e.clientY;
+        lastTime = now;
+      }
 
-      // Clamp strictly within [minAllowedHeight, maxAllowedHeight]
-      targetHeight = Math.max(minAllowedHeight, Math.min(maxAllowedHeight, targetHeight));
+      const rawDownY = (e.clientY - startY) / dragZoom; // positive = dragging downward
+      rawDownDist = Math.max(0, rawDownY);
 
-      currentCard.style.height = `${targetHeight}px`;
+      if (currentIsFlexible) {
+        const deltaUp = -rawDownY;
+        const rawTargetHeight = startHeight + deltaUp;
+        if (rawTargetHeight >= minAllowedHeight) {
+          const targetHeight = Math.min(maxAllowedHeight, rawTargetHeight);
+          currentCard.style.height = `${targetHeight}px`;
+          currentCard.style.transform = 'translate3d(0, 0, 0)';
+          currentOffsetY = 0;
+          isMagnetDetached = false;
+          if (currentHandle) currentHandle.classList.remove('is-magnet-detached');
+          if (currentBackdrop) {
+            currentBackdrop.style.opacity = '';
+          }
+        } else {
+          // Below minAllowedHeight: magnetic hold then slide downward
+          currentCard.style.height = `${minAllowedHeight}px`;
+          const pullBelow = Math.max(0, minAllowedHeight - rawTargetHeight);
+          const magnetThreshold = 68;
+          const nextDetached = pullBelow >= magnetThreshold;
+          if (nextDetached !== isMagnetDetached) {
+            isMagnetDetached = nextDetached;
+            if (currentHandle) currentHandle.classList.toggle('is-magnet-detached', isMagnetDetached);
+            currentCard.style.transition = 'transform 0.11s cubic-bezier(0.22, 1, 0.36, 1)';
+            if (currentCard._magnetSnapTimer) clearTimeout(currentCard._magnetSnapTimer);
+            const cRef = currentCard;
+            currentCard._magnetSnapTimer = setTimeout(() => {
+              if (isDragging && cRef === currentCard) cRef.style.transition = 'none';
+            }, 115);
+          }
+          if (!isMagnetDetached) {
+            const ratio = pullBelow / magnetThreshold;
+            currentOffsetY = magnetThreshold * 0.46 * Math.pow(ratio, 0.85);
+          } else {
+            currentOffsetY = (magnetThreshold * 0.46) + (pullBelow - magnetThreshold) * 0.92;
+          }
+          currentCard.style.transform = `translate3d(0, ${currentOffsetY.toFixed(2)}px, 0)`;
+          if (currentBackdrop) {
+            const progress = Math.min(1, currentOffsetY / Math.max(140, minAllowedHeight));
+            currentBackdrop.style.opacity = String(Math.max(0, 1 - progress * 0.85));
+          }
+        }
+      } else {
+        // Fixed timeline drawers: two-zone magnetic hold at top + smooth slide-down beyond magnet threshold
+        const magnetThreshold = Math.min(82, Math.max(60, startHeight * 0.30));
+        const nextDetached = rawDownDist >= magnetThreshold;
+
+        if (nextDetached !== isMagnetDetached) {
+          isMagnetDetached = nextDetached;
+          if (currentHandle) currentHandle.classList.toggle('is-magnet-detached', isMagnetDetached);
+          currentCard.style.transition = 'transform 0.11s cubic-bezier(0.22, 1, 0.36, 1)';
+          if (currentCard._magnetSnapTimer) clearTimeout(currentCard._magnetSnapTimer);
+          const cRef = currentCard;
+          currentCard._magnetSnapTimer = setTimeout(() => {
+            if (isDragging && cRef === currentCard) cRef.style.transition = 'none';
+          }, 115);
+        }
+
+        if (!isMagnetDetached) {
+          // Zone 1 (Top Magnet Hold): strong magnetic tension holding drawer near the top
+          const ratio = rawDownDist / magnetThreshold;
+          currentOffsetY = magnetThreshold * 0.46 * Math.pow(ratio, 0.85);
+        } else {
+          // Zone 2 (Magnet Detached): breaks free of top magnet and tracks finger downward
+          currentOffsetY = (magnetThreshold * 0.46) + (rawDownDist - magnetThreshold) * 0.94;
+        }
+
+        currentCard.style.transform = `translate3d(0, ${currentOffsetY.toFixed(2)}px, 0)`;
+        if (currentBackdrop) {
+          const progress = Math.min(1, currentOffsetY / Math.max(140, startHeight));
+          currentBackdrop.style.opacity = String(Math.max(0, 1 - progress * 0.85));
+        }
+      }
     });
 
     const endDrag = (e) => {
@@ -194,36 +276,99 @@ class DrawerManager {
       isDragging = false;
 
       if (currentHandle) {
-        currentHandle.classList.remove('is-dragging');
+        currentHandle.classList.remove('is-dragging', 'is-magnet-detached');
         try {
           currentHandle.releasePointerCapture(e.pointerId);
         } catch (_) {}
       }
 
       if (currentCard) {
-        currentCard.style.transition = '';
-        const currentH = currentCard.getBoundingClientRect().height / dragZoom;
+        const cardRef = currentCard;
+        const backdropRef = currentBackdrop;
+        const containerRef = currentContainer;
 
-        if (currentIsFixed) {
-          // If dragged down by 45px or more, smoothly dismiss the drawer
-          const dismissThreshold = Math.max(minAllowedHeight + 10, startHeight / dragZoom - 45);
-          if (currentH <= dismissThreshold) {
-            this.close();
-          } else {
-            // Nudged slightly: snap back smoothly to fixed natural height
-            currentCard.style.transition = 'height 0.18s cubic-bezier(0.16, 1, 0.3, 1)';
-            currentCard.style.height = '';
-            setTimeout(() => {
-              if (currentCard) currentCard.style.transition = '';
-            }, 200);
+        if (cardRef._magnetSnapTimer) {
+          clearTimeout(cardRef._magnetSnapTimer);
+          cardRef._magnetSnapTimer = null;
+        }
+
+        // If user held finger stationary before lifting, decay flick velocity
+        if (performance.now() - lastTime > 65) {
+          velocityY = 0;
+        }
+
+        const effectiveH = currentIsFlexible
+          ? (cardRef.getBoundingClientRect().height / dragZoom)
+          : startHeight;
+
+        // Dismiss only when pulled past the magnetic detachment threshold OR Deliberate fast downward flick
+        const shouldDismiss = isMagnetDetached || (velocityY > 0.85 && rawDownDist > 38);
+
+        if (shouldDismiss) {
+          // Bottom magnet sucks the drawer smoothly all the way down off-screen BEFORE deactivating .is-active
+          const targetCloseY = Math.ceil(effectiveH + 28);
+          const remainingPx = Math.max(36, targetCloseY - currentOffsetY);
+          const durationMs = velocityY > 0.85
+            ? Math.max(190, Math.min(250, Math.round(remainingPx / Math.min(2.2, velocityY))))
+            : 260;
+
+          cardRef._closingFromDrag = true;
+          if (containerRef) {
+            containerRef.style.pointerEvents = 'none';
           }
+          cardRef.style.transition = `transform ${durationMs}ms cubic-bezier(0.32, 0.72, 0, 1)`;
+          if (backdropRef) {
+            backdropRef.style.transition = `opacity ${durationMs}ms cubic-bezier(0.32, 0.72, 0, 1)`;
+            backdropRef.style.opacity = '0';
+          }
+          void cardRef.offsetHeight;
+          cardRef.style.transform = `translate3d(0, ${targetCloseY}px, 0)`;
+
+          cardRef._dragSpringTimer = setTimeout(() => {
+            this.close(containerRef || true);
+            cardRef._closingFromDrag = false;
+            cardRef.style.transition = '';
+            cardRef.style.transform = '';
+            cardRef.style.willChange = '';
+            if (containerRef) {
+              containerRef.style.pointerEvents = '';
+            }
+            if (backdropRef) {
+              backdropRef.style.transition = '';
+              backdropRef.style.opacity = '';
+            }
+            cardRef._dragSpringTimer = null;
+          }, durationMs);
+        } else if (currentOffsetY > 0) {
+          // Top magnet pulls drawer back up into place with a tactile magnetic spring
+          cardRef.style.transition = 'transform 0.34s cubic-bezier(0.18, 1.20, 0.32, 1)';
+          if (backdropRef) {
+            backdropRef.style.transition = 'opacity 0.28s cubic-bezier(0.22, 1, 0.36, 1)';
+            backdropRef.style.opacity = '';
+          }
+          void cardRef.offsetHeight;
+          cardRef.style.transform = 'translate3d(0, 0, 0)';
+
+          cardRef._dragSpringTimer = setTimeout(() => {
+            cardRef.style.transition = '';
+            cardRef.style.transform = '';
+            cardRef.style.willChange = '';
+            if (backdropRef) {
+              backdropRef.style.transition = '';
+            }
+            cardRef._dragSpringTimer = null;
+          }, 350);
         } else {
-          // Flexible views (Effects Gallery / Add Drawer)
-          if (currentH <= minAllowedHeight + 10) {
-            this.close();
-          } else if (currentContainer && currentContainer.id === 'timeline-layer-drawer') {
+          cardRef.style.transition = '';
+          cardRef.style.transform = '';
+          cardRef.style.willChange = '';
+          if (backdropRef) {
+            backdropRef.style.transition = '';
+            backdropRef.style.opacity = '';
+          }
+          if (currentIsFlexible && containerRef && containerRef.id === 'timeline-layer-drawer') {
             const mainTl = document.getElementById('main-editor-timeline');
-            if (mainTl) mainTl.style.setProperty('--timeline-drawer-height', `${Math.round(currentH)}px`);
+            if (mainTl) mainTl.style.setProperty('--timeline-drawer-height', `${Math.round(effectiveH)}px`);
             if (typeof window.centerSelectedTimelineLayer === 'function') {
               window.centerSelectedTimelineLayer(true);
             }
@@ -234,8 +379,11 @@ class DrawerManager {
       currentHandle = null;
       currentCard = null;
       currentContainer = null;
+      currentBackdrop = null;
       currentIsFlexible = false;
-      currentIsFixed = false;
+      currentOffsetY = 0;
+      rawDownDist = 0;
+      isMagnetDetached = false;
     };
 
     document.addEventListener('pointerup', endDrag);
@@ -292,6 +440,16 @@ class DrawerManager {
     const card = el.querySelector('.drawer-card');
     if (card) {
       card.style.height = '';
+      if (!card._closingFromDrag) {
+        card.style.transform = '';
+        card.style.transition = '';
+        card.style.willChange = '';
+      }
+    }
+    const backdrop = el.querySelector('.drawer-backdrop');
+    if (backdrop && (!card || !card._closingFromDrag)) {
+      backdrop.style.opacity = '';
+      backdrop.style.transition = '';
     }
   }
 
@@ -362,10 +520,28 @@ class DrawerManager {
       this.setContent(el, content);
     }
 
-    // Reset height to natural content height
+    // Reset height and drag styles to natural content state
+    el.style.pointerEvents = '';
     const card = el.querySelector('.drawer-card');
     if (card) {
+      if (card._dragSpringTimer) {
+        clearTimeout(card._dragSpringTimer);
+        card._dragSpringTimer = null;
+      }
+      if (card._magnetSnapTimer) {
+        clearTimeout(card._magnetSnapTimer);
+        card._magnetSnapTimer = null;
+      }
+      card._closingFromDrag = false;
       card.style.height = '';
+      card.style.transform = '';
+      card.style.transition = '';
+      card.style.willChange = '';
+    }
+    const backdrop = el.querySelector('.drawer-backdrop');
+    if (backdrop) {
+      backdrop.style.opacity = '';
+      backdrop.style.transition = '';
     }
 
     this.activeDrawer = el;
@@ -428,6 +604,11 @@ class DrawerManager {
     const closingCard = closingDrawer.querySelector('.drawer-card');
     if (closingCard) {
       closingCard.style.height = '';
+      closingCard.style.transform = '';
+      if (!closingCard._closingFromDrag) {
+        closingCard.style.transition = '';
+        closingCard.style.willChange = '';
+      }
     }
 
     if (closingDrawer.id === 'drawer-effects-gallery' && this.parentDrawer && (this.parentDrawer.classList.contains('is-active') || this.isOpen(this.parentDrawer))) {

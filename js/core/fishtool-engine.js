@@ -1281,6 +1281,30 @@
         isBehindCamera = (posZ >= maxZ) || [pTL, pTR, pBR, pBL].every(p => !p || p.isBehind);
       }
 
+      if (!layer._isVectorRenderPass && layer.type === 'shape' && layer.shapeType === 'vector' && typeof projectLocalPoint === 'function' && typeof window !== 'undefined' && typeof window.getVectorLocalBounds === 'function') {
+        const vBounds = window.getVectorLocalBounds(layer.shapeProps || {});
+        const scaleX = absW / Math.max(1, vBounds.width);
+        const scaleY = absH / Math.max(1, vBounds.height);
+        const minLX = vBounds.minX * scaleX;
+        const maxLX = vBounds.maxX * scaleX;
+        const minLY = vBounds.minY * scaleY;
+        const maxLY = vBounds.maxY * scaleY;
+        const midLX = (minLX + maxLX) / 2;
+        const midLY = (minLY + maxLY) / 2;
+
+        pTL = projectLocalPoint(minLX, minLY, 0);
+        pTR = projectLocalPoint(maxLX, minLY, 0);
+        pBR = projectLocalPoint(maxLX, maxLY, 0);
+        pBL = projectLocalPoint(minLX, maxLY, 0);
+
+        pN  = projectLocalPoint(midLX, minLY, 0);
+        pE  = projectLocalPoint(maxLX, midLY, 0);
+        pS  = projectLocalPoint(midLX, maxLY, 0);
+        pW  = projectLocalPoint(minLX, midLY, 0);
+
+        isBehindCamera = (posZ >= maxZ) || [pTL, pTR, pBR, pBL].every(p => !p || p.isBehind);
+      }
+
       const corners = [pTL, pTR, pBR, pBL];
       let backCorners = null;
       let apexPoint = null;

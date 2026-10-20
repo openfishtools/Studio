@@ -2987,6 +2987,7 @@
       window.FishBgRemovalEngine.addProgressListener(updateUI);
       updateUI(window.FishBgRemovalEngine.getActiveTasks());
     }
+    window.initPreviewMattingWidget = initPreviewMattingWidget;
 
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', initPreviewMattingWidget);

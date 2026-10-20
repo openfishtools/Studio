@@ -98,6 +98,11 @@
       layer._fillBufferCanvas.height = 0;
       layer._fillBufferCanvas = null;
     }
+    if (layer._mediaFitCanvas) {
+      layer._mediaFitCanvas.width = 0;
+      layer._mediaFitCanvas.height = 0;
+      layer._mediaFitCanvas = null;
+    }
 
     // Invalidate effective animated properties cache for this layer
     if (typeof window.invalidateEffectivePropsCache === 'function') {
@@ -513,6 +518,7 @@
       getOrLoadLayerMedia(item);
       redrawComposition('setActivePreviewMedia');
     }
+    window.setActivePreviewMedia = setActivePreviewMedia;
 
     // Ultra-Fast Flat Placeholder Canvas Generator for unready video layers
     let _unreadyPlaceholderCanvas = null;
@@ -617,8 +623,84 @@
     function getFillRenderKey(layer) {
       if (!layer) return '';
       const stopsKey = Array.isArray(layer.fillGradStops) ? layer.fillGradStops.map(s => `${s.offset}_${s.color}`).join(';') : '';
-      return `${layer.fillType || 'none'}:${layer.fillColor || ''}:${layer.fillGradType || ''}:${layer.fillGradAngle || ''}:${stopsKey}:${layer.fillGradColor1 || ''}:${layer.fillGradColor2 || ''}:${layer.fillMediaId || ''}:${layer.fillMediaUrl || layer.dataUrl || ''}:${layer.mediaWidth || ''}:${layer.mediaHeight || ''}`;
+      return `${layer.fillType || 'none'}:${layer.fillColor || ''}:${layer.fillGradType || ''}:${layer.fillGradAngle || ''}:${stopsKey}:${layer.fillGradColor1 || ''}:${layer.fillGradColor2 || ''}:${layer.fillMediaId || ''}:${layer.fillMediaUrl || layer.dataUrl || ''}:${layer.mediaWidth || ''}:${layer.mediaHeight || ''}:${layer.fillMediaFit || 'fill'}`;
     }
+
+    // Draw image/video element into a target box using fitMode ('fill' | 'fit' | 'stretch')
+    function drawElementWithMediaFit(ctx, el, boxX, boxY, boxW, boxH, fitMode) {
+      if (!ctx || !el) return;
+      const iw = el.videoWidth || el.naturalWidth || el.width || boxW;
+      const ih = el.videoHeight || el.naturalHeight || el.height || boxH;
+      if (!iw || !ih || !boxW || !boxH) return;
+      const mode = fitMode || 'fill';
+      if (mode === 'stretch') {
+        ctx.drawImage(el, boxX, boxY, boxW, boxH);
+        return;
+      }
+      if (mode === 'fit') {
+        const scale = Math.min(boxW / iw, boxH / ih);
+        const dw = iw * scale;
+        const dh = ih * scale;
+        const dx = boxX + (boxW - dw) / 2;
+        const dy = boxY + (boxH - dh) / 2;
+        ctx.drawImage(el, dx, dy, dw, dh);
+        return;
+      }
+      // Default: 'fill' (aspect-ratio-preserving cover crop)
+      const scale = Math.max(boxW / iw, boxH / ih);
+      const dw = iw * scale;
+      const dh = ih * scale;
+      const dx = boxX + (boxW - dw) / 2;
+      const dy = boxY + (boxH - dh) / 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(boxX, boxY, boxW, boxH);
+      ctx.clip();
+      ctx.drawImage(el, dx, dy, dw, dh);
+      ctx.restore();
+    }
+    window.drawElementWithMediaFit = drawElementWithMediaFit;
+
+    // Return fitted canvas element for native image/video layers when aspect ratio differs and fitMode is 'fill' or 'fit'
+    function getFittedMediaElement(layer, el, boxW, boxH) {
+      if (!layer || !el || (layer.type !== 'image' && layer.type !== 'video')) return el;
+      if (el === _unreadyPlaceholderCanvas) return el;
+      const fitMode = layer.fillMediaFit || 'fill';
+      if (fitMode === 'stretch') return el;
+      const iw = el.videoWidth || el.naturalWidth || el.width || 0;
+      const ih = el.videoHeight || el.naturalHeight || el.height || 0;
+      const bw = Math.abs(Number(boxW) || 0);
+      const bh = Math.abs(Number(boxH) || 0);
+      if (iw <= 0 || ih <= 0 || bw <= 0 || bh <= 0) return el;
+      const srcRatio = iw / ih;
+      const dstRatio = bw / bh;
+      if (Math.abs(srcRatio - dstRatio) < 0.005) return el;
+
+      const maxSide = Math.min(2048, Math.max(iw, ih, Math.round(bw), Math.round(bh)));
+      const cw = dstRatio >= 1 ? maxSide : Math.max(1, Math.round(maxSide * dstRatio));
+      const ch = dstRatio >= 1 ? Math.max(1, Math.round(maxSide / dstRatio)) : maxSide;
+
+      if (!layer._mediaFitCanvas || !(layer._mediaFitCanvas instanceof HTMLCanvasElement)) {
+        layer._mediaFitCanvas = document.createElement('canvas');
+      }
+      const fc = layer._mediaFitCanvas;
+      const isVideo = el.tagName === 'VIDEO';
+      const fitKey = isVideo ? '' : `${fitMode}:${cw}x${ch}:${iw}x${ih}:${layer.mediaId || ''}:${layer.fillMediaId || ''}:${el.src || ''}:${layer._contentVersion || 0}`;
+      if (!isVideo && fc._lastFitKey === fitKey && fc.width === cw && fc.height === ch) {
+        return fc;
+      }
+      if (fc.width !== cw || fc.height !== ch) {
+        fc.width = cw;
+        fc.height = ch;
+      }
+      const fctx = fc.getContext('2d');
+      if (!fctx) return el;
+      fctx.clearRect(0, 0, cw, ch);
+      drawElementWithMediaFit(fctx, el, 0, 0, cw, ch, fitMode);
+      fc._lastFitKey = isVideo ? null : fitKey;
+      return fc;
+    }
+    window.getFittedMediaElement = getFittedMediaElement;
 
     // Dynamic Fill Canvas Generator (No Fill, Solid Color, Project Media, Linear/Radial Gradient)
     function getOrUpdateLayerFillCanvas(layer, width = 1920, height = 1080) {
@@ -691,10 +773,25 @@
       } else if (fillType === 'media') {
         const mediaUrl = layer.fillMediaUrl || layer.thumbUrl || (layer.dataUrl && !layer.dataUrl.startsWith('data:video') ? layer.dataUrl : '');
         const cachedEntry = window.layerMediaCache ? (window.layerMediaCache.get(layer.id) || (layer.mediaId ? window.layerMediaCache.get(layer.mediaId) : null) || (layer.fillMediaId ? window.layerMediaCache.get(layer.fillMediaId) : null)) : null;
+        const fitMode = layer.fillMediaFit || 'fill';
+        let boxX = 0;
+        let boxY = 0;
+        let boxW = targetW;
+        let boxH = targetH;
+        const getVecBoundsFn = window.getVectorLocalBounds || window.computeVectorPathTightBounds;
+        if (layer.type === 'shape' && layer.shapeType === 'vector' && typeof getVecBoundsFn === 'function') {
+          const vBounds = getVecBoundsFn(layer.shapeProps || {});
+          if (vBounds && vBounds.width > 0.5 && vBounds.height > 0.5) {
+            boxW = vBounds.width;
+            boxH = vBounds.height;
+            boxX = (targetW / 2) + vBounds.minX;
+            boxY = (targetH / 2) + vBounds.minY;
+          }
+        }
         if (cachedEntry && cachedEntry.el && cachedEntry.isReady && cachedEntry.el.tagName === 'IMG') {
-          fctx.drawImage(cachedEntry.el, 0, 0, targetW, targetH);
+          drawElementWithMediaFit(fctx, cachedEntry.el, boxX, boxY, boxW, boxH, fitMode);
         } else if (layer._fillMediaImg && layer._fillMediaImg.complete && layer._fillMediaImg.naturalWidth > 0 && layer._fillMediaImg.src === mediaUrl) {
-          fctx.drawImage(layer._fillMediaImg, 0, 0, targetW, targetH);
+          drawElementWithMediaFit(fctx, layer._fillMediaImg, boxX, boxY, boxW, boxH, fitMode);
         } else if (mediaUrl && !mediaUrl.startsWith('data:video')) {
           if (!layer._fillMediaImg || layer._fillMediaImg.src !== mediaUrl) {
             const img = new Image();
@@ -731,6 +828,7 @@
     function getSelectedLayerForFill() {
       return (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
     }
+    window.getSelectedLayerForFill = getSelectedLayerForFill;
 
     function getLayerDefaultFillType(layer) {
       if (!layer) return 'none';
@@ -744,6 +842,7 @@
       }
       return 'none';
     }
+    window.getLayerDefaultFillType = getLayerDefaultFillType;
 
     async function applyFlexibleMediaReplacement(targetLayerInput, item) {
       if (!targetLayerInput || !item) return;
@@ -760,11 +859,13 @@
       }
 
       targetL.fillType = 'media';
+      targetL.fillMediaFit = targetL.fillMediaFit || 'fill';
       targetL.fillMediaId = item.id;
       targetL.fillMediaName = item.name || 'Media';
       targetL.fillMediaUrl = item.thumbUrl || item.dataUrl || '';
       targetL._fillMediaImg = null;
       targetL._fillDirty = true;
+      if (targetL._mediaFitCanvas) targetL._mediaFitCanvas._lastFitKey = null;
 
       const oldType = targetL.type;
 
@@ -798,6 +899,10 @@
       const newType = item.type || (item.layers ? 'precomp' : (isAudio ? 'audio' : (isVideo ? 'video' : 'image')));
 
       if (!isShape) {
+        if (typeof targetL.scaleW === 'number' && Math.abs(targetL.scaleW) > 0 &&
+            typeof targetL.scaleH === 'number' && Math.abs(targetL.scaleH) > 0) {
+          targetL._userResized = true;
+        }
         targetL.fillType = 'media';
         targetL.type = newType;
         targetL.mediaId = item.id;
@@ -1109,6 +1214,7 @@
       const toHex = n => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0').toUpperCase();
       return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
     }
+    window.interpolateHexColor = interpolateHexColor;
 
     let activeGradStopIndex = 0;
 
@@ -1128,12 +1234,14 @@
       layer.fillGradColor2 = layer.fillGradStops[layer.fillGradStops.length - 1].color;
       return layer.fillGradStops;
     }
+    window.ensureLayerGradStops = ensureLayerGradStops;
 
     function getTrackGradientCss(stops) {
       const sorted = [...stops].sort((a, b) => a.offset - b.offset);
       const stopsStr = sorted.map(s => `${s.color} ${Math.round(s.offset * 100)}%`).join(', ');
       return `linear-gradient(90deg, ${stopsStr})`;
     }
+    window.getTrackGradientCss = getTrackGradientCss;
 
     function renderGradHandles(layer) {
       const container = document.getElementById('fill-grad-handles-container');
@@ -1306,6 +1414,7 @@
         container.appendChild(handle);
       });
     }
+    window.renderGradHandles = renderGradHandles;
 
     function initGradTrackAdd(trackBar) {
       if (!trackBar) return;
@@ -1361,6 +1470,7 @@
         renderGradHandles(layer);
       });
     }
+    window.initGradTrackAdd = initGradTrackAdd;
 
     function syncFillControllerUI() {
       const layer = getSelectedLayerForFill();
@@ -1400,7 +1510,17 @@
         window.inlineFillColorPicker.setColor(currentColor, false, currentOpacity);
       }
 
-      // 4. Sync Media UI (Direct Media Pool)
+      // 4. Sync Media UI (Direct Media Pool + Media Fit Mode)
+      const activeFitLayer = (layer.type === 'precomp' && Array.isArray(layer.layers) && layer.layers.length > 0)
+        ? (layer.layers.find(l => l.type === 'image' || l.type === 'video' || l.fillType === 'media') || layer)
+        : layer;
+      const currentFitMode = activeFitLayer.fillMediaFit || layer.fillMediaFit || 'fill';
+      const mediaFitBtns = document.querySelectorAll('#fill-media-fit-bar .fill-media-fit-btn');
+      mediaFitBtns.forEach(btn => {
+        const isActive = (btn.dataset.mediaFit === currentFitMode);
+        btn.classList.toggle('is-active', isActive);
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
       renderFillMediaPool();
 
       // 5. Sync Gradient UI (Multi-stop track & types)
@@ -1435,6 +1555,7 @@
         });
       }
     }
+    window.openFillColorPicker = openFillColorPicker;
 
     (function initFillController() {
       // 1. Layer Action Grid Fill Button
@@ -1503,6 +1624,42 @@
             if (typeof updateCutBarRowState === 'function') updateCutBarRowState();
             if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers(true);
             if (typeof redrawComposition === 'function') redrawComposition('fill-tab-switch');
+          }
+          syncFillControllerUI();
+        });
+      });
+
+      // 3b. Media Fit Mode Switch (Stretch, Fit, Fill)
+      const mediaFitBtns = document.querySelectorAll('#fill-media-fit-bar .fill-media-fit-btn');
+      mediaFitBtns.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const fitMode = btn.dataset.mediaFit;
+          if (!fitMode) return;
+          const layer = getSelectedLayerForFill();
+          if (layer) {
+            layer.fillMediaFit = fitMode;
+            layer._fillDirty = true;
+            if (layer.type === 'shape' && layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
+            if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
+            if (layer._mediaFitCanvas) layer._mediaFitCanvas._lastFitKey = null;
+            if (layer.type === 'precomp' && Array.isArray(layer.layers)) {
+              delete layer._precompBufferCanvas;
+              layer.layers.forEach(innerL => {
+                if (innerL.type === 'image' || innerL.type === 'video' || innerL.fillType === 'media') {
+                  innerL.fillMediaFit = fitMode;
+                  innerL._fillDirty = true;
+                  if (innerL._shapeBufferCanvas) innerL._shapeBufferCanvas._lastShapeKey = null;
+                  if (innerL._fillBufferCanvas) innerL._fillBufferCanvas._lastRenderKey = null;
+                  if (innerL._mediaFitCanvas) innerL._mediaFitCanvas._lastFitKey = null;
+                  innerL._contentVersion = (innerL._contentVersion || 0) + 1;
+                }
+              });
+            }
+            layer._contentVersion = (layer._contentVersion || 0) + 1;
+            if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers(true);
+            if (typeof redrawComposition === 'function') redrawComposition('fill-media-fit');
           }
           syncFillControllerUI();
         });
@@ -3141,6 +3298,7 @@
         }
       } catch (_) {}
     }
+    window.initEditorVersion = initEditorVersion;
     initEditorVersion();
 
     // Apply persisted UI scale immediately (Editor/Desktop default 100%).

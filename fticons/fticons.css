@@ -1,6 +1,6 @@
 @font-face {
     font-family: "fticons";
-    src: url("./fticons.woff2?1decc2e03c8d3fcfaa25af4be56938ed") format("woff2");
+    src: url("./fticons.woff2?98958e8a8157e45481d44c0330a93cb6") format("woff2");
 }
 
 .fticon,
@@ -634,4 +634,19 @@
 }
 .fticon-z-position-ruler:before {
     content: "\e0c7";
+}
+.fticon-edit-vector:before {
+    content: "\e0cd";
+}
+.fticon-vector-point:before {
+    content: "\e0ce";
+}
+.fticon-vector-curve:before {
+    content: "\e0cf";
+}
+.fticon-vector-close-path:before {
+    content: "\e0d0";
+}
+.fticon-vector-stroke:before {
+    content: "\e0d1";
 }

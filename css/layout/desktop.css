@@ -753,13 +753,23 @@
   padding-bottom: 0 !important;
 }
 
-.desktop-panel-left .drawer-body {
+.desktop-panel-left .drawer-body,
+.desktop-panel-left #timeline-add-drawer .drawer-body {
   flex: 1 !important;
+  height: 100% !important;
   min-height: 0 !important;
+  max-height: none !important;
   overflow-y: auto !important;
   padding: 0 !important;
   display: flex !important;
   flex-direction: column !important;
+}
+
+.desktop-panel-left .add-layer-grid {
+  flex: 1 !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
 }
 
 /* --- 3B. Center Panel: Preview Canvas & Controller --- */
@@ -1207,9 +1217,12 @@
   display: none !important;
 }
 
-.desktop-panel-right .drawer-body {
+.desktop-panel-right .drawer-body,
+.desktop-panel-right #timeline-layer-drawer .drawer-body {
   flex: 1 !important;
+  height: 100% !important;
   min-height: 0 !important;
+  max-height: none !important;
   overflow-y: auto !important;
   padding: 0 !important;
   display: flex !important;
@@ -1282,6 +1295,7 @@
 /* Strictly hide buttons marked as display: none by editor.js for layer-specific action sets */
 #desktop-panel-inspector .layer-action-btn-grid #btn-layer-edit-group[style*="display: none"],
 #desktop-panel-inspector .layer-action-btn-grid #btn-layer-edit-shape[style*="display: none"],
+#desktop-panel-inspector .layer-action-btn-grid #btn-layer-edit-vector[style*="display: none"],
 #desktop-panel-inspector .layer-action-btn-grid #btn-layer-edit-text[style*="display: none"],
 #desktop-panel-inspector .layer-action-btn-grid #btn-layer-transform[style*="display: none"],
 #desktop-panel-inspector .layer-action-btn-grid #btn-layer-camera-settings[style*="display: none"],
@@ -1709,6 +1723,14 @@
   flex-shrink: 0;
 }
 
+.desktop-panel-right .vector-tools-col .transform-tool-btn .fticon,
+#desktop-panel-inspector .vector-tools-col .transform-tool-btn .fticon {
+  margin: 0 !important;
+  width: 16px !important;
+  height: 16px !important;
+  font-size: 16px !important;
+}
+
 .desktop-panel-right .transform-tool-btn,
 #desktop-panel-inspector .transform-tool-btn {
   width: 100% !important;
@@ -1985,6 +2007,39 @@
 
 .desktop-panel-right .transform-swipe-pad:hover .pad-corner,
 .desktop-panel-right .transform-swipe-pad.is-dragging .pad-corner {
+  border-color: var(--color-primary) !important;
+}
+
+.desktop-panel-right #pane-vector-edit.is-active {
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.desktop-panel-right .vector-edit-split {
+  flex: 1 !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 200px !important;
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 6px !important;
+  align-items: stretch !important;
+}
+
+.desktop-panel-right .vector-slide-pad {
+  flex: 0 0 54px !important;
+  width: 54px !important;
+  min-height: 200px !important;
+  height: auto !important;
+  align-self: stretch !important;
+  background-color: var(--bg-canvas) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--desktop-radius) !important;
+}
+
+.desktop-panel-right .vector-slide-pad:hover .pad-corner,
+.desktop-panel-right .vector-slide-pad.is-dragging .pad-corner {
   border-color: var(--color-primary) !important;
 }
 
@@ -4074,8 +4129,59 @@
   overflow: hidden !important;
   display: flex !important;
   flex-direction: column !important;
+  gap: 10px !important;
   box-sizing: border-box !important;
   flex: 1 !important;
+}
+
+.desktop-panel-right .fill-media-fit-bar,
+#desktop-panel-inspector .fill-media-fit-bar {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 2px !important;
+  padding: 2px !important;
+  margin: 0 !important;
+  width: 100% !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  background-color: var(--bg-panel-inner) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--desktop-radius-sm) !important;
+  box-sizing: border-box !important;
+  flex-shrink: 0 !important;
+}
+
+.desktop-panel-right .fill-media-fit-btn,
+#desktop-panel-inspector .fill-media-fit-btn {
+  height: 100% !important;
+  border: none !important;
+  border-radius: 3px !important;
+  background: transparent !important;
+  color: var(--text-secondary) !important;
+  font-family: var(--font-brand) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 8px !important;
+  transition: background-color 0.08s ease, color 0.08s ease !important;
+  box-sizing: border-box !important;
+}
+
+.desktop-panel-right .fill-media-fit-btn:hover,
+#desktop-panel-inspector .fill-media-fit-btn:hover {
+  background-color: var(--bg-panel-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.desktop-panel-right .fill-media-fit-btn.is-active,
+#desktop-panel-inspector .fill-media-fit-btn.is-active {
+  background-color: var(--color-primary) !important;
+  color: var(--bg-canvas) !important;
+  font-weight: 700 !important;
 }
 
 .desktop-panel-right .fill-media-pool-grid,
@@ -4518,6 +4624,129 @@
 .desktop-panel-right .segmented-switch-item.is-active {
   background-color: var(--color-primary) !important;
   color: var(--bg-canvas) !important;
+}
+
+/* Vector Stroke Settings Subview Precision (Desktop) */
+.desktop-panel-right #pane-vector-stroke,
+#desktop-panel-inspector #pane-vector-stroke {
+  height: auto !important;
+  min-height: 0 !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+}
+
+.desktop-panel-right .vector-stroke-panel,
+#desktop-panel-inspector .vector-stroke-panel {
+  width: 100% !important;
+  height: auto !important;
+  min-height: 0 !important;
+  justify-content: flex-start !important;
+  background-color: var(--bg-panel) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--desktop-radius) !important;
+  padding: 12px !important;
+  gap: 10px !important;
+  box-sizing: border-box !important;
+}
+
+.desktop-panel-right .vector-stroke-panel .effects-control-row,
+#desktop-panel-inspector .vector-stroke-panel .effects-control-row {
+  display: grid !important;
+  grid-template-columns: 76px 1fr !important;
+  align-items: center !important;
+  gap: 10px !important;
+  min-height: 28px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.desktop-panel-right .vector-stroke-panel .effects-param-label-col,
+#desktop-panel-inspector .vector-stroke-panel .effects-param-label-col {
+  flex: none !important;
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+.desktop-panel-right .vector-stroke-panel .effects-param-val-col,
+#desktop-panel-inspector .vector-stroke-panel .effects-param-val-col {
+  width: 100% !important;
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: stretch !important;
+}
+
+.desktop-panel-right .vector-stroke-panel #jog-vector-stroke-width,
+#desktop-panel-inspector .vector-stroke-panel #jog-vector-stroke-width {
+  width: 100% !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  background-color: var(--bg-panel-inner) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--desktop-radius-sm) !important;
+  padding: 0 8px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.desktop-panel-right .vector-stroke-panel #vector-stroke-cap-switch,
+#desktop-panel-inspector .vector-stroke-panel #vector-stroke-cap-switch {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  align-items: center !important;
+  width: 100% !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  background-color: var(--bg-panel-inner) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--desktop-radius-sm) !important;
+  padding: 2px !important;
+  gap: 2px !important;
+  box-sizing: border-box !important;
+}
+
+.desktop-panel-right .vector-stroke-panel #vector-stroke-cap-switch .segmented-switch-item,
+#desktop-panel-inspector .vector-stroke-panel #vector-stroke-cap-switch .segmented-switch-item {
+  width: 100% !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  max-height: 22px !important;
+  border-radius: 3px !important;
+  border: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  padding: 0 8px !important;
+  box-sizing: border-box !important;
+}
+
+.desktop-panel-right .vector-stroke-panel #btn-vector-stroke-color,
+#desktop-panel-inspector .vector-stroke-panel #btn-vector-stroke-color {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 8px !important;
+  width: 100% !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  background-color: var(--bg-panel-inner) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--desktop-radius-sm) !important;
+  padding: 0 8px !important;
+  box-sizing: border-box !important;
+}
+
+.desktop-panel-right .vector-stroke-panel #btn-vector-stroke-color:hover,
+#desktop-panel-inspector .vector-stroke-panel #btn-vector-stroke-color:hover {
+  background-color: var(--bg-panel-hover) !important;
+  border-color: var(--color-primary) !important;
+  color: var(--text-primary) !important;
 }
 
 /* Beatmark Subview */

@@ -711,6 +711,10 @@
       }
     }
 
+    clearCompCache(compId = null) {
+      this.clearAll('current', compId || this.activeCompId);
+    }
+
     /**
      * Automatic state-change detection and cache synchronization with project state.
      * Detects project-level changes (dimensions, fps, bgColor) and layer-level modifications.

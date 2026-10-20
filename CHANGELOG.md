@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-20
+
+### Added
+- **Direct On-Canvas Vector & Corner Roundness Controls (`js/core/canvas-overlay.js`, `js/editor/editor-canvas.js`, `js/editor/editor-layers.js`)**: Added interactive on-canvas Corner Roundness handles for roundable shapes and media layers, plus direct on-canvas Vector Path editing (moving anchor points, dragging symmetric or independent `in`/`out` Bézier curve handles, clicking/dragging segments or `+` midpoints to subdivide/bend, and clicking/dragging on the canvas in `+ NEW` mode to place points).
+- **Fill Media Fit Modes (`Stretch`, `Fit`, `Fill`) (`desktop.html`, `editor.html`, `js/editor/editor-media.js`, `js/editor/editor-canvas.js`, `css/panels/transform-controller.css`, `css/layout/desktop.css`)**: Added a compact `Stretch`, `Fit`, and `Fill` segmented control inside the Fill -> Media panel across both Desktop and Mobile Editor. Media replacements and shape/vector media fills default to `Fill` (aspect-ratio-preserving cover crop) so replacing photos or videos never stretches the image.
+- **Native Vector Icon Glyph in `fticons` Font (`fticons/fticons.woff2`, `fticons/fticons.ttf`, `fticons/fticons.svg`, `fticons/fticons.css`, `desktop.html`, `editor.html`)**: Designed and compiled a dedicated Bézier curve & handle vector glyph (`\ea4f`, `.fti-vector-shape`) into `fticons.woff2` and replaced inline SVG vector icons across Desktop and Mobile Editor.
+
+### Improved
+- **Instant Curve Mode Auto-Rounding (`js/plugins/shapes/vector.js`, `js/editor/editor-layers.js`, `js/editor/editor-canvas.js`)**: Implemented `ensureVectorPointAutoCurve()` so activating Curve Mode (`#btn-vector-tool-curve`) or selecting a sharp vector node in Curve Mode immediately generates smooth Catmull-Rom / bisector Bézier handles and rounds the corner without requiring a manual touchpad drag first.
+- **Unbounded Vector Canvas Rendering & Tight Wireframe Bounds (`js/editor/editor-canvas.js`, `js/editor/editor-inspector.js`)**: Removed fixed canvas clipping boundaries for vector shape layers via dynamic buffer expansion (`_vectorCanvasMult`) and implemented `computeVectorPathTightBounds()` (sampling cubic Bézier segments and stroke width) so selection wireframes, handles, and hit-testing track the exact vector geometry.
+
+### Fixed
+- **Desktop Vector Stroke Settings Panel Precision (`css/components/drawer.css`, `css/layout/desktop.css`)**: Unified row heights (`28px` on Desktop, `30px` on Mobile), full-width column sizing, `1px solid var(--border-subtle)` borders, and top-aligned card layout across `Stroke`, `Rounded`, and `Color` controls in `#pane-vector-stroke`.
+- **Desktop Toolbar & Inspector Icon Centering (`css/layout/desktop.css`, `fticons/fticons.css`)**: Normalized `i[class^="fti-"]` flex centering, line-height, and button padding across Desktop toolbars and inspector buttons to eliminate icon offset.
+
 ## [0.6.2] - 2026-10-18
 
 ### Improved

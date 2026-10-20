@@ -54,7 +54,7 @@
         <h1 class="brand-title">FishTools</h1>
         <div class="brand-subtitle-row">
           <span class="brand-subtitle">Studio</span>
-          <span class="badge-pre-alpha" id="studio-version-badge">0.6.2</span>
+          <span class="badge-pre-alpha" id="studio-version-badge">0.6.3</span>
         </div>
 
         <!-- Desktop Folders Shelf in Photo 2 area -->
@@ -782,7 +782,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">FishTools Studio</h3>
-          <span class="welcome-badge">v0.6.2</span>
+          <span class="welcome-badge">v0.6.3</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
@@ -818,11 +818,68 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.3 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.3</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Oct 20, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Direct On-Canvas Vector &amp; Corner Roundness Controls (`js/core/canvas-overlay.js`, `js/editor/editor-canvas.js`, `js/editor/editor-layers.js`)</span>
+                  <span class="changelog-item-desc">Added interactive on-canvas Corner Roundness handles for roundable shapes and media layers, plus direct on-canvas Vector Path editing (moving anchor points, dragging symmetric or independent `in`/`out` Bézier curve handles, clicking/dragging segments or `+` midpoints to subdivide/bend, and clicking/dragging on the canvas in `+ NEW` mode to place points).</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Instant Curve Mode Auto-Rounding (`js/plugins/shapes/vector.js`, `js/editor/editor-layers.js`, `js/editor/editor-canvas.js`)</span>
+                  <span class="changelog-item-desc">Implemented `ensureVectorPointAutoCurve()` so activating Curve Mode (`#btn-vector-tool-curve`) or selecting a sharp vector node in Curve Mode immediately generates smooth Catmull-Rom / bisector Bézier handles and rounds the corner without requiring a manual touchpad drag first.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Fill Media Fit Modes (`Stretch`, `Fit`, `Fill`) (`desktop.html`, `editor.html`, `js/editor/editor-media.js`, `js/editor/editor-canvas.js`, `css/panels/transform-controller.css`, `css/layout/desktop.css`)</span>
+                  <span class="changelog-item-desc">Added a compact `Stretch`, `Fit`, and `Fill` segmented control inside the Fill -&gt; Media panel across both Desktop and Mobile Editor. Media replacements and shape/vector media fills default to `Fill` (aspect-ratio-preserving cover crop) so replacing photos or videos never stretches the image.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Native Vector Icon Glyph in `fticons` Font (`fticons/fticons.woff2`, `fticons/fticons.ttf`, `fticons/fticons.svg`, `fticons/fticons.css`, `desktop.html`, `editor.html`)</span>
+                  <span class="changelog-item-desc">Designed and compiled a dedicated Bézier curve &amp; handle vector glyph (`\ea4f`, `.fti-vector-shape`) into `fticons.woff2` and replaced inline SVG vector icons across Desktop and Mobile Editor.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Unbounded Vector Canvas Rendering &amp; Tight Wireframe Bounds (`js/editor/editor-canvas.js`, `js/editor/editor-inspector.js`)</span>
+                  <span class="changelog-item-desc">Removed fixed canvas clipping boundaries for vector shape layers via dynamic buffer expansion (`_vectorCanvasMult`) and implemented `computeVectorPathTightBounds()` (sampling cubic Bézier segments and stroke width) so selection wireframes, handles, and hit-testing track the exact vector geometry.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Desktop Vector Stroke Settings Panel Precision (`css/components/drawer.css`, `css/layout/desktop.css`)</span>
+                  <span class="changelog-item-desc">Unified row heights (`28px` on Desktop, `30px` on Mobile), full-width column sizing, `1px solid var(--border-subtle)` borders, and top-aligned card layout across `Stroke`, `Rounded`, and `Color` controls in `#pane-vector-stroke`.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Desktop Toolbar &amp; Inspector Icon Centering (`css/layout/desktop.css`, `fticons/fticons.css`)</span>
+                  <span class="changelog-item-desc">Normalized `i[class^="fti-"]` flex centering, line-height, and button padding across Desktop toolbars and inspector buttons to eliminate icon offset.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.2 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.2</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Oct 18, 2026</span>
               </div>
               <div class="welcome-changelog-item">

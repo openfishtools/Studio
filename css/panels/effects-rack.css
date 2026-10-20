@@ -2250,7 +2250,8 @@ body .effects-rack-main .effects-control-row .effects-param-value-btn {
 .effects-rack-layout {
   grid-template-columns: 44px 1fr;
   height: 224px;
-  min-height: 220px;
+  min-height: 224px;
+  max-height: 224px;
 }
 
 .effects-rack-header {

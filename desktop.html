@@ -34,11 +34,11 @@
 
   <!-- CSS: Theme (Colors & Variables, Cal Sans Font), Editor Layout, and Modular Modal / Popover / Drawer / Switch -->
   <link rel="stylesheet" href="css/tokens/theme.css">
-  <link rel="stylesheet" href="fticons/fticons.css?v=3">
+  <link rel="stylesheet" href="fticons/fticons.css?v=5">
   <link rel="stylesheet" href="css/layout/editor.css">
   <link rel="stylesheet" href="css/components/modal.css">
   <link rel="stylesheet" href="css/components/popover.css">
-  <link rel="stylesheet" href="css/components/drawer.css">
+  <link rel="stylesheet" href="css/components/drawer.css?v=vector-zigzag-4">
   <link rel="stylesheet" href="css/components/switch.css">
   <link rel="stylesheet" href="css/panels/text-format.css">
   <link rel="stylesheet" href="css/components/segmented-button.css">
@@ -48,7 +48,7 @@
   <link rel="stylesheet" href="css/components/color-picker.css">
   <link rel="stylesheet" href="css/panels/template-editor.css">
   <link rel="stylesheet" href="css/fixes/safari.css">
-  <link rel="stylesheet" href="css/layout/desktop.css?v=unlink-pro-v2">
+  <link rel="stylesheet" href="css/layout/desktop.css?v=vector-zigzag-4">
   <link rel="stylesheet" href="css/panels/extensions.css">
   <script src="js/ui/sync-height.js"></script>
   <script>
@@ -398,6 +398,11 @@
                           <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
                         </svg>
                       </button>
+
+                      <!-- 8. Vector / Pen Path Button -->
+                      <button type="button" class="layer-action-btn layer-action-btn-icon-only" id="btn-add-shape-vector" title="Vector / Pen Path" aria-label="Vector">
+                        <i class="fticon fticon-edit-vector layer-action-icon shape-render-icon" aria-hidden="true"></i>
+                      </button>
                     </div>
                   </div>
 
@@ -557,6 +562,10 @@
                       <button type="button" class="layer-action-btn" id="btn-layer-edit-shape" title="Edit Shape" style="display: none;">
                         <i class='fticon fticon-edit-shape layer-action-icon' aria-hidden='true'></i>
                         <span class="layer-action-label">Edit Shape</span>
+                      </button>
+                      <button type="button" class="layer-action-btn" id="btn-layer-edit-vector" title="Edit Vector" style="display: none;">
+                        <i class='fticon fticon-edit-vector layer-action-icon' aria-hidden='true'></i>
+                        <span class="layer-action-label">Edit Vector</span>
                       </button>
                       <button type="button" class="layer-action-btn" id="btn-layer-edit-text" title="Edit Text" style="display: none;">
                         <i class='fticon fticon-edit-text layer-action-icon' aria-hidden='true'></i>
@@ -1602,6 +1611,11 @@
                     <!-- 4. Media Panel (Direct Media Pool) -->
                     <div class="fill-panel-view" id="fill-view-media">
                       <div class="fill-media-pool-card">
+                        <div class="fill-media-fit-bar" id="fill-media-fit-bar" role="tablist" aria-label="Media Fit Mode">
+                          <button type="button" class="fill-media-fit-btn" data-media-fit="stretch" role="tab" aria-selected="false">Stretch</button>
+                          <button type="button" class="fill-media-fit-btn" data-media-fit="fit" role="tab" aria-selected="false">Fit</button>
+                          <button type="button" class="fill-media-fit-btn is-active" data-media-fit="fill" role="tab" aria-selected="true">Fill</button>
+                        </div>
                         <div class="fill-media-pool-grid" id="fill-media-pool-grid">
                           <!-- Rendered dynamically by renderFillMediaPool() -->
                         </div>
@@ -1895,6 +1909,19 @@
                               <span class="effects-param-pill-val" id="val-shape-inner-radius" title="Click to edit Inner Depth">40%</span>
                             </div>
                           </div>
+                        </div>
+                      </div>
+
+                      <!-- 5. Convert Preset Shape to Editable Vector Path -->
+                      <div class="effects-control-row" id="shape-section-convert-vector">
+                        <div class="effects-param-label-col">
+                          <span class="effects-param-label">Vector Path</span>
+                        </div>
+                        <div class="effects-param-val-col">
+                          <button type="button" class="vector-convert-shape-btn" id="btn-convert-shape-to-vector" title="Convert preset shape into editable Vector points">
+                            <i class='fticon fticon-edit-vector' aria-hidden='true'></i>
+                            <span>Convert to Vector</span>
+                          </button>
                         </div>
                       </div>
 
@@ -2229,6 +2256,134 @@
                         </button>
                       </div>
                     </main>
+                  </div>
+                </div>
+
+                <!-- Subview 14: Edit Vector Controller UI -->
+                <div class="drawer-subview" id="layer-drawer-vector-view">
+                  <div class="transform-controller vector-controller" id="vector-controller">
+                    <!-- Left Navigation Column -->
+                    <aside class="transform-nav-col">
+                      <div class="transform-nav-group-top">
+                        <button type="button" class="transform-nav-btn" id="btn-vector-back" title="Back to Layer Actions" aria-label="Back">
+                          <i class='fticon fticon-back' aria-hidden='true'></i>
+                        </button>
+                        <button type="button" class="transform-nav-btn" id="btn-vector-keyframe" title="Add / Toggle Vector Morph Keyframe" aria-label="Keyframe">
+                          <i class='fticon fticon-keyframe' aria-hidden='true'></i>
+                        </button>
+                        <button type="button" class="transform-nav-btn" id="btn-vector-graph" title="Easing Curve Graph" aria-label="Graph">
+                          <i class='fticon fticon-graph' aria-hidden='true'></i>
+                        </button>
+                        <button type="button" class="transform-nav-btn vector-tool-delete-btn" id="btn-vector-tool-delete" title="Delete Selected Point" aria-label="Delete Point">
+                          <i class='fticon fticon-delete-beatmark' aria-hidden='true'></i>
+                        </button>
+                      </div>
+                    </aside>
+
+                    <!-- Center Work Area -->
+                    <main class="transform-work-area vector-work-area">
+                      <!-- PANE 1: POINT / CURVE TOUCHPAD + RIGHT VERTICAL SLIDE PAD -->
+                      <div class="transform-pane is-active" id="pane-vector-edit">
+                        <div class="vector-edit-split">
+                          <!-- Left: Main Touchpad -->
+                          <div class="transform-swipe-pad vector-swipe-pad" id="pad-vector-touch">
+                            <span class="pad-corner tl"></span>
+                            <span class="pad-corner tr"></span>
+                            <span class="pad-corner bl"></span>
+                            <span class="pad-corner br"></span>
+                            <header class="transform-values-header vector-values-header">
+                              <div class="transform-val-card is-dual">
+                                <div class="transform-val-group" id="card-vector-x" title="Click to edit X coordinate">
+                                  <span class="transform-val-num" id="val-vector-x">0</span>
+                                  <span class="transform-val-label" id="lbl-vector-x">X</span>
+                                </div>
+                                <div class="transform-val-group" id="card-vector-y" title="Click to edit Y coordinate">
+                                  <span class="transform-val-num" id="val-vector-y">0</span>
+                                  <span class="transform-val-label" id="lbl-vector-y">Y</span>
+                                </div>
+                              </div>
+                            </header>
+                            <div class="transform-unified-body">
+                              <div class="transform-swipe-xy-area vector-touchpad-area" id="vector-touchpad-area">
+                                <span class="transform-swipe-prompt" id="lbl-vector-touchpad-prompt">Swipe to aim &bull; Tap to add</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <!-- Right (Outside Touchpad): Touchpad-styled Vertical Slide Bar with Top/Bottom Fade -->
+                          <div class="vector-slide-pad" id="jog-vector-scrubber" title="Slide up/down to select point or midpoint" aria-label="Vector Point Selector">
+                            <span class="pad-corner tl"></span>
+                            <span class="pad-corner tr"></span>
+                            <span class="pad-corner bl"></span>
+                            <span class="pad-corner br"></span>
+                            <div class="vector-slide-viewport">
+                              <div class="vector-slide-track" id="vector-scrubber-detents"></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- PANE 2: STROKE SETTINGS (Ruler Slider + Rounded Toggle + Stroke Color) -->
+                      <div class="transform-pane" id="pane-vector-stroke">
+                        <div class="vector-stroke-panel">
+                          <div class="effects-control-row">
+                            <div class="effects-param-label-col">
+                              <span class="effects-param-label-static">Stroke</span>
+                            </div>
+                            <div class="effects-param-val-col">
+                              <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-vector-stroke-width" title="Slide to adjust Stroke Width">
+                                <div class="jog-wheel-track-viewport">
+                                  <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width:480px;--tape-offset:0px" data-tape-width="480"></div>
+                                </div>
+                                <div class="jog-wheel-needle"></div>
+                                <span class="effects-param-pill-val" id="val-vector-stroke">6px</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="effects-control-row">
+                            <div class="effects-param-label-col">
+                              <span class="effects-param-label-static">Rounded</span>
+                            </div>
+                            <div class="effects-param-val-col">
+                              <div class="segmented-switch is-compact" id="vector-stroke-cap-switch" role="tablist" aria-label="Stroke Cap and Join">
+                                <button type="button" class="segmented-switch-item is-active" data-stroke-cap="round">Round</button>
+                                <button type="button" class="segmented-switch-item" data-stroke-cap="butt">Sharp</button>
+                                <button type="button" class="segmented-switch-item" data-stroke-cap="square">Square</button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="effects-control-row">
+                            <div class="effects-param-label-col">
+                              <span class="effects-param-label-static">Color</span>
+                            </div>
+                            <div class="effects-param-val-col">
+                              <button type="button" class="color-swatch-trigger" id="btn-vector-stroke-color" title="Stroke Color" aria-label="Stroke Color">
+                                <span class="color-swatch-chip" id="chip-vector-stroke-color"></span>
+                                <span class="color-swatch-hex" id="hex-vector-stroke-color">#FFFFFF</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </main>
+
+                    <!-- Right Tools Column -->
+                    <nav class="transform-tools-col vector-tools-col">
+                      <button type="button" class="transform-tool-btn is-active" id="btn-vector-tool-point" data-vector-tool="point" title="Point Mode (Add / Move Points)" aria-label="Point Mode">
+                        <i class='fticon fticon-vector-point' aria-hidden='true'></i>
+                      </button>
+                      <button type="button" class="transform-tool-btn" id="btn-vector-tool-curve" data-vector-tool="curve" title="Curve Mode (Swipe to bend curve, tap again to switch Symmetric / Out / In)" aria-label="Curve Mode">
+                        <i class='fticon fticon-vector-curve' aria-hidden='true'></i>
+                      </button>
+                      <button type="button" class="transform-tool-btn" id="btn-vector-tool-close" title="Close Path Toggle" aria-label="Close Path">
+                        <i class='fticon fticon-vector-close-path' aria-hidden='true'></i>
+                      </button>
+                      <button type="button" class="transform-tool-btn" id="btn-vector-tool-stroke" data-vector-tool="stroke" title="Stroke Settings (Width, Rounded, Color)" aria-label="Stroke Settings">
+                        <i class='fticon fticon-vector-stroke' aria-hidden='true'></i>
+                      </button>
+                    </nav>
                   </div>
                 </div>
 
@@ -3762,7 +3917,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.6.2</span>
+          <span class="welcome-badge">v0.6.3</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3792,11 +3947,54 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.3 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.3</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Oct 20, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Fill Media Fit Modes (`Stretch`, `Fit`, `Fill`) (`desktop.html`, `editor.html`, `js/editor/editor-media.js`, `js/editor/editor-canvas.js`, `css/panels/transform-controller.css`, `css/layout/desktop.css`)</span>
+                  <span class="changelog-item-desc">Added a compact `Stretch`, `Fit`, and `Fill` segmented control inside the Fill -&gt; Media panel across both Desktop and Mobile Editor. Media replacements and shape/vector media fills default to `Fill` (aspect-ratio-preserving cover crop) so replacing photos or videos never stretches the image.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Native Vector Icon Glyph in `fticons` Font (`fticons/fticons.woff2`, `fticons/fticons.ttf`, `fticons/fticons.svg`, `fticons/fticons.css`, `desktop.html`, `editor.html`)</span>
+                  <span class="changelog-item-desc">Designed and compiled a dedicated Bézier curve &amp; handle vector glyph (`\ea4f`, `.fti-vector-shape`) into `fticons.woff2` and replaced inline SVG vector icons across Desktop and Mobile Editor.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Unbounded Vector Canvas Rendering &amp; Tight Wireframe Bounds (`js/editor/editor-canvas.js`, `js/editor/editor-inspector.js`)</span>
+                  <span class="changelog-item-desc">Removed fixed canvas clipping boundaries for vector shape layers via dynamic buffer expansion (`_vectorCanvasMult`) and implemented `computeVectorPathTightBounds()` (sampling cubic Bézier segments and stroke width) so selection wireframes, handles, and hit-testing track the exact vector geometry.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Desktop Vector Stroke Settings Panel Precision (`css/components/drawer.css`, `css/layout/desktop.css`)</span>
+                  <span class="changelog-item-desc">Unified row heights (`28px` on Desktop, `30px` on Mobile), full-width column sizing, `1px solid var(--border-subtle)` borders, and top-aligned card layout across `Stroke`, `Rounded`, and `Color` controls in `#pane-vector-stroke`.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Desktop Toolbar &amp; Inspector Icon Centering (`css/layout/desktop.css`, `fticons/fticons.css`)</span>
+                  <span class="changelog-item-desc">Normalized `i[class^="fti-"]` flex centering, line-height, and button padding across Desktop toolbars and inspector buttons to eliminate icon offset.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.2 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.2</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Oct 18, 2026</span>
               </div>
               <div class="welcome-changelog-item">
@@ -6343,10 +6541,11 @@
   <script src="js/storage/db.js"></script>
   <script src="js/ui/modal.js"></script>
   <script src="js/ui/popover.js?v=4"></script>
+  <script src="js/ui/context-menu.js"></script>
   <script src="js/ui/drawer.js"></script>
   <script src="js/ui/switch.js"></script>
   <script src="js/core/wireframe.js?v=4"></script>
-  <script src="js/core/canvas-overlay.js"></script>
+  <script src="js/core/canvas-overlay.js?v=vector-zigzag-3"></script>
   <script src="js/plugins/shapes.js"></script>
   <script src="js/plugins/shapes/rectangle.js"></script>
   <script src="js/plugins/shapes/triangle.js"></script>
@@ -6355,6 +6554,7 @@
   <script src="js/plugins/shapes/polygon.js"></script>
   <script src="js/plugins/shapes/capsule.js"></script>
   <script src="js/plugins/shapes/heart.js"></script>
+  <script src="js/plugins/shapes/vector.js?v=vector-zigzag-3"></script>
   <script src="js/ui/elements/number-input.js"></script>
   <script src="js/ui/elements/slider.js"></script>
   <script src="js/ui/elements/dropdown.js"></script>
@@ -6381,8 +6581,8 @@
   <script src="js/editor/editor-media.js"></script>
   <script src="js/editor/editor-animation.js"></script>
   <script src="js/editor/editor-canvas.js"></script>
-  <script src="js/editor/editor-inspector.js"></script>
-  <script src="js/editor/editor-layers.js"></script>
+  <script src="js/editor/editor-inspector.js?v=vector-zigzag-3"></script>
+  <script src="js/editor/editor-layers.js?v=vector-zigzag-3"></script>
   <script src="js/editor/editor-effects.js"></script>
   <script src="js/editor/editor-timeline-core.js"></script>
   <script src="js/editor/editor-timeline-ops.js"></script>
