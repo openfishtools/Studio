@@ -4369,7 +4369,7 @@
         });
       }
 
-      // Helper: Initialize Time Remap with 2 boundary AE keyframes (clip start & clip end)
+      // Helper: Initialize Time Remap with 2 boundary AE keyframes (true media start & true media end)
       function initTimeRemapForLayer(layer, forceReset = false) {
         if (!layer) return;
         layer.speedMode = 'time_remap';
@@ -4379,18 +4379,28 @@
           const pps = window.currentPixelsPerSecond || 80;
           const clipStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
           const clipDurSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
+          const rawMediaDur = (typeof getLayerMediaDuration === 'function') ? getLayerMediaDuration(layer) : null;
+          const totalMediaDur = (rawMediaDur && isFinite(rawMediaDur) && rawMediaDur > 0)
+            ? rawMediaDur
+            : ((layer.mediaDuration && isFinite(layer.mediaDuration) && layer.mediaDuration > 0) ? layer.mediaDuration : clipDurSec);
           const srcOffset = layer.sourceOffsetSec || 0;
-          const endVal = srcOffset + clipDurSec;
+          const spd = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+
+          // True start and end of the underlying media on the timeline (AE-style Time Remap):
+          // Even if the video was split in the middle (srcOffset > 0), keyframe 1 is at the true start of the video (0s)
+          // and keyframe 2 is at the true end of the video (totalMediaDur).
+          const trueStartSec = clipStartSec - (srcOffset / spd);
+          const trueEndSec = trueStartSec + (totalMediaDur / spd);
 
           layer.keyframes.timeRemap = [
             {
-              time: Number(clipStartSec.toFixed(3)),
-              value: { timeRemap: Number(srcOffset.toFixed(3)) },
+              time: Number(trueStartSec.toFixed(3)),
+              value: { timeRemap: 0 },
               easing: [0.0, 0.0, 1.0, 1.0]
             },
             {
-              time: Number((clipStartSec + clipDurSec).toFixed(3)),
-              value: { timeRemap: Number(endVal.toFixed(3)) },
+              time: Number(trueEndSec.toFixed(3)),
+              value: { timeRemap: Number(totalMediaDur.toFixed(3)) },
               easing: [0.0, 0.0, 1.0, 1.0]
             }
           ];
@@ -4480,6 +4490,22 @@
           if (!layer) return;
           layer.speedMode = 'speed';
           window.activeKeyframeProperty = 'speed';
+
+          // In normal Speed mode, clamp layer duration so it cannot exceed native media duration
+          if (layer.type === 'video' || layer.type === 'audio') {
+            const totalMediaDur = (typeof getLayerMediaDuration === 'function') ? getLayerMediaDuration(layer) : layer.mediaDuration;
+            if (totalMediaDur && isFinite(totalMediaDur) && totalMediaDur > 0) {
+              const pps = window.currentPixelsPerSecond || 80;
+              const spd = (layer.speed && layer.speed > 0) ? layer.speed : 1.0;
+              const srcOff = layer.sourceOffsetSec || 0;
+              const maxAllowedDur = Math.max(0.05, (totalMediaDur - srcOff) / spd);
+              if (layer.durationSec > maxAllowedDur + 0.01) {
+                layer.durationSec = maxAllowedDur;
+                layer.widthPx = Math.max(10, Math.round(maxAllowedDur * pps));
+              }
+            }
+          }
+
           syncSpeedControllerValues();
           updateSpeedKeyframeBtnState();
           if (typeof updateTimelineKeyframeMarkersHighlight === 'function') updateTimelineKeyframeMarkersHighlight();
@@ -4568,6 +4594,26 @@
         const roundedVal = Math.max(0.1, Math.min(8.0, Number(Number(speedVal).toFixed(2))));
         layer.speed = roundedVal;
         lastSpeedVal = roundedVal;
+
+        // In normal Speed mode (without speed keyframes), clamp clip duration so it never exceeds available media duration
+        const hasSpeedKfs = !!(layer.keyframes && Array.isArray(layer.keyframes.speed) && layer.keyframes.speed.length > 0);
+        if (layer.speedMode !== 'time_remap' && !hasSpeedKfs && (layer.type === 'video' || layer.type === 'audio')) {
+          const totalMediaDur = (typeof getLayerMediaDuration === 'function') ? getLayerMediaDuration(layer) : layer.mediaDuration;
+          if (totalMediaDur && isFinite(totalMediaDur) && totalMediaDur > 0) {
+            const pps = window.currentPixelsPerSecond || 80;
+            const srcOff = layer.sourceOffsetSec || 0;
+            const maxAllowedDur = Math.max(0.05, (totalMediaDur - srcOff) / roundedVal);
+            if (!layer._userTrimmed || layer.durationSec > maxAllowedDur + 0.01) {
+              layer.durationSec = maxAllowedDur;
+              layer.widthPx = Math.max(10, Math.round(maxAllowedDur * pps));
+              layer.isDurationExplicit = true;
+              const clipEl = document.querySelector(`.timeline-clip-block[data-layer-id="${layer.id}"]`);
+              if (clipEl) {
+                clipEl.style.width = `${layer.widthPx}px`;
+              }
+            }
+          }
+        }
 
         const ratio = Math.max(0, Math.min(1, speedToRatio(roundedVal)));
         const pct = (ratio * 100).toFixed(2);

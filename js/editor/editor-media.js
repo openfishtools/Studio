@@ -286,19 +286,33 @@
               window.FishAudioEngine.applyAudioEffects(vidAudio, layer.audioEffects);
             }
             if (isFinite(vidAudio.duration) && vidAudio.duration > 0) {
-              layer.mediaDuration = vidAudio.duration;
+              const trueDur = vidAudio.duration;
+              layer.mediaDuration = trueDur;
+              if (window._activeMediaMap && layer.mediaId && window._activeMediaMap.has(layer.mediaId)) {
+                const mItem = window._activeMediaMap.get(layer.mediaId);
+                mItem.duration = trueDur;
+                mItem._durationVerified = true;
+              }
               const layers = currentProjectState.layers || [];
               let updated = false;
+              const pps = window.currentPixelsPerSecond || 80;
               layers.forEach(l => {
-                const matchesMedia = (l.id === layer.id || l.mediaId === layer.mediaId || l.mediaId === layer.id || (l.name && layer.name && l.name === layer.name));
+                const matchesMedia = (l.id === layer.id || (layer.mediaId && l.mediaId === layer.mediaId) || l.mediaId === layer.id || (l.name && layer.name && l.name === layer.name));
                 if (matchesMedia) {
-                  l.mediaDuration = vidAudio.duration;
-                }
-                if (matchesMedia && !l._userResized && (!l.durationSec || l.durationSec < vidAudio.duration)) {
-                  l.durationSec = vidAudio.duration;
-                  l.widthPx = Math.round(vidAudio.duration * (window.currentPixelsPerSecond || 80));
-                  l.isDurationExplicit = true;
-                  updated = true;
+                  l.mediaDuration = trueDur;
+                  const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
+                  const srcOff = l.sourceOffsetSec || 0;
+                  const targetDur = Math.max(0.05, (trueDur - srcOff) / spd);
+                  if (!l._userTrimmed && (!l.durationSec || Math.abs(l.durationSec - targetDur) > 0.01)) {
+                    l.durationSec = targetDur;
+                    l.widthPx = Math.max(10, Math.round(targetDur * pps));
+                    l.isDurationExplicit = true;
+                    updated = true;
+                  } else if (l._userTrimmed && l.speedMode !== 'time_remap' && l.durationSec > targetDur + 0.01) {
+                    l.durationSec = targetDur;
+                    l.widthPx = Math.max(10, Math.round(targetDur * pps));
+                    updated = true;
+                  }
                 }
               });
               if (updated) {
@@ -350,12 +364,40 @@
             window.FishAudioEngine.applyAudioEffects(audio, layer.audioEffects);
           }
           if (isFinite(audio.duration) && audio.duration > 0) {
-            layer.mediaDuration = audio.duration;
+            const trueDur = audio.duration;
+            layer.mediaDuration = trueDur;
+            if (window._activeMediaMap && layer.mediaId && window._activeMediaMap.has(layer.mediaId)) {
+              const mItem = window._activeMediaMap.get(layer.mediaId);
+              mItem.duration = trueDur;
+              mItem._durationVerified = true;
+            }
             const layers = currentProjectState.layers || [];
+            let updated = false;
+            const pps = window.currentPixelsPerSecond || 80;
             layers.forEach(l => {
-              const matchesMedia = (l.id === layer.id || l.mediaId === layer.mediaId || l.mediaId === layer.id);
-              if (matchesMedia) l.mediaDuration = audio.duration;
+              const matchesMedia = (l.id === layer.id || (layer.mediaId && l.mediaId === layer.mediaId) || l.mediaId === layer.id);
+              if (matchesMedia) {
+                l.mediaDuration = trueDur;
+                const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
+                const srcOff = l.sourceOffsetSec || 0;
+                const targetDur = Math.max(0.05, (trueDur - srcOff) / spd);
+                if (!l._userTrimmed && (!l.durationSec || Math.abs(l.durationSec - targetDur) > 0.01)) {
+                  l.durationSec = targetDur;
+                  l.widthPx = Math.max(10, Math.round(targetDur * pps));
+                  l.isDurationExplicit = true;
+                  updated = true;
+                } else if (l._userTrimmed && l.speedMode !== 'time_remap' && l.durationSec > targetDur + 0.01) {
+                  l.durationSec = targetDur;
+                  l.widthPx = Math.max(10, Math.round(targetDur * pps));
+                  updated = true;
+                }
+              }
             });
+            if (updated) {
+              if (typeof window.renderTimelineLayers === 'function') window.renderTimelineLayers();
+              if (typeof window.updateTimelineDuration === 'function') window.updateTimelineDuration(true);
+              saveCurrentProjectLayers();
+            }
           }
           entry.isReady = true;
         };
@@ -2552,6 +2594,7 @@
               buffer: null,
               thumbUrl: (mediaType === 'image' ? blobUrl : ''),
               duration: defaultDur,
+              _durationVerified: (mediaType === 'image'),
               fps: null,
               width: null,
               height: null,
@@ -2615,23 +2658,44 @@
                     if (meta.fps && meta.fps > 0) mediaItem.fps = meta.fps;
                     if (meta.duration && meta.duration > 0) {
                       mediaItem.duration = meta.duration;
+                      mediaItem._durationVerified = true;
+                      if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getSourceCache === 'function') {
+                        const src = window.VideoFrameExtractor.getSourceCache(mediaItem.id);
+                        if (src) {
+                          src.duration = meta.duration;
+                          src._durationVerified = true;
+                        }
+                      }
                       const layers = (currentProjectState && currentProjectState.layers) || [];
+                      const pps = window.currentPixelsPerSecond || 80;
                       layers.forEach(l => {
-                        if (l.mediaId === mediaItem.id && !l._userResized) {
-                          l.durationSec = meta.duration;
+                        if (l.mediaId === mediaItem.id) {
                           l.mediaDuration = meta.duration;
-                          const pps = window.currentPixelsPerSecond || 80;
-                          l.widthPx = Math.max(80, Math.round(meta.duration * pps));
-                          if (meta.duration > (currentProjectState.defaultDuration || 5)) {
-                            currentProjectState.defaultDuration = Math.ceil(meta.duration);
-                            if (typeof window.updateTimelineDuration === 'function') {
-                              window.updateTimelineDuration(true);
-                            }
+                          if (meta.fps && meta.fps > 0 && !l.mediaFps) l.mediaFps = meta.fps;
+                          if (meta.width > 0 && !l.mediaWidth) l.mediaWidth = meta.width;
+                          if (meta.height > 0 && !l.mediaHeight) l.mediaHeight = meta.height;
+                          const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
+                          const srcOff = l.sourceOffsetSec || 0;
+                          const targetDur = Math.max(0.05, (meta.duration - srcOff) / spd);
+                          if (!l._userTrimmed) {
+                            l.durationSec = targetDur;
+                            l.widthPx = Math.max(10, Math.round(targetDur * pps));
+                            l.isDurationExplicit = true;
+                          } else if (l.speedMode !== 'time_remap' && l.durationSec > targetDur + 0.01) {
+                            l.durationSec = targetDur;
+                            l.widthPx = Math.max(10, Math.round(targetDur * pps));
                           }
                         }
                       });
+                      if (meta.duration > (currentProjectState.defaultDuration || 5)) {
+                        currentProjectState.defaultDuration = Math.ceil(meta.duration);
+                      }
+                      if (typeof window.updateTimelineDuration === 'function') {
+                        window.updateTimelineDuration(true);
+                      }
                       if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
                       if (typeof redrawComposition === 'function') redrawComposition();
+                      if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
                     }
                   }
                 } catch (_) {}
@@ -2663,22 +2727,33 @@
                   });
                   if (isFinite(a.duration) && a.duration > 0) {
                     mediaItem.duration = a.duration;
+                    mediaItem._durationVerified = true;
                     const layers = (currentProjectState && currentProjectState.layers) || [];
+                    const pps = window.currentPixelsPerSecond || 80;
                     layers.forEach(l => {
-                      if (l.mediaId === mediaItem.id && !l._userResized) {
-                        l.durationSec = a.duration;
+                      if (l.mediaId === mediaItem.id) {
                         l.mediaDuration = a.duration;
-                        const pps = window.currentPixelsPerSecond || 80;
-                        l.widthPx = Math.max(80, Math.round(a.duration * pps));
-                        if (a.duration > (currentProjectState.defaultDuration || 5)) {
-                          currentProjectState.defaultDuration = Math.ceil(a.duration);
-                          if (typeof window.updateTimelineDuration === 'function') {
-                            window.updateTimelineDuration(true);
-                          }
+                        const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
+                        const srcOff = l.sourceOffsetSec || 0;
+                        const targetDur = Math.max(0.05, (a.duration - srcOff) / spd);
+                        if (!l._userTrimmed) {
+                          l.durationSec = targetDur;
+                          l.widthPx = Math.max(10, Math.round(targetDur * pps));
+                          l.isDurationExplicit = true;
+                        } else if (l.speedMode !== 'time_remap' && l.durationSec > targetDur + 0.01) {
+                          l.durationSec = targetDur;
+                          l.widthPx = Math.max(10, Math.round(targetDur * pps));
                         }
                       }
                     });
+                    if (a.duration > (currentProjectState.defaultDuration || 5)) {
+                      currentProjectState.defaultDuration = Math.ceil(a.duration);
+                    }
+                    if (typeof window.updateTimelineDuration === 'function') {
+                      window.updateTimelineDuration(true);
+                    }
                     if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
+                    if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
                   }
                 } catch (_) {}
               }

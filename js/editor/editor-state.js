@@ -3218,8 +3218,10 @@
           if (resolved) return;
           resolved = true;
           cleanup();
+          const vidDur = (isFinite(video.duration) && video.duration > 0) ? video.duration : null;
+          const finalDur = vidDur || ((detectedDuration && isFinite(detectedDuration) && detectedDuration > 0) ? detectedDuration : null);
           const finalMeta = {
-            duration: (detectedDuration && isFinite(detectedDuration) && detectedDuration > 0) ? detectedDuration : (isFinite(video.duration) && video.duration > 0 ? video.duration : null),
+            duration: finalDur,
             fps: (detectedFps && isFinite(detectedFps) && detectedFps > 0) ? detectedFps : null,
             width: width || (video.videoWidth > 0 ? video.videoWidth : 0),
             height: height || (video.videoHeight > 0 ? video.videoHeight : 0),
@@ -3229,8 +3231,8 @@
           resolve(finalMeta);
         }
 
-        // Fast fail-safe timeout (max 450ms, never hangs)
-        timeoutTimer = setTimeout(finish, 450);
+        // Fast fail-safe timeout (max 1200ms so tablet/mobile decoders finish loadedmetadata)
+        timeoutTimer = setTimeout(finish, 1200);
 
         function captureThumb() {
           if (thumbUrl) return;
@@ -3255,7 +3257,7 @@
         video.onloadedmetadata = () => {
           if (video.videoWidth > 0) width = video.videoWidth;
           if (video.videoHeight > 0) height = video.videoHeight;
-          if (!detectedDuration && isFinite(video.duration) && video.duration > 0) {
+          if (isFinite(video.duration) && video.duration > 0) {
             detectedDuration = video.duration;
           }
           captureThumb();

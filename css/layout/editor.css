@@ -1982,7 +1982,7 @@ body.has-active-drawer .timeline-layers-viewport {
   font-size: 11.5px;
   font-weight: 700;
   cursor: pointer;
-  overflow: hidden;
+  overflow: visible;
   white-space: nowrap;
   text-overflow: ellipsis;
   transition: opacity 0.12s ease, filter 0.12s ease, background-color 0.12s ease, color 0.12s ease;
@@ -2079,7 +2079,7 @@ body.has-active-drawer .timeline-layers-viewport {
   color: var(--bg-canvas);
   outline: none;
   position: absolute;
-  overflow: hidden;
+  overflow: visible;
 }
 .timeline-clip-block.clip-audio .timeline-clip-tag,
 .timeline-clip-block.clip-audio .clip-label {
@@ -2096,6 +2096,8 @@ body.has-active-drawer .timeline-layers-viewport {
   left: 0;
   width: 100%;
   height: 100%;
+  border-radius: inherit;
+  overflow: hidden;
   pointer-events: none;
   z-index: 1;
   transition: opacity 0.12s ease;

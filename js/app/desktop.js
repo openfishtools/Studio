@@ -3553,8 +3553,12 @@
     const btnAddBm = document.getElementById('editor-btn-add-beatmark');
     if (btnAddBm && !btnAddBm._bound) {
       btnAddBm._bound = true;
-      btnAddBm.addEventListener('click', (e) => {
-        e.preventDefault();
+      let lastBmClick = 0;
+      const triggerDesktopBeatmark = (e) => {
+        const now = performance.now();
+        if (now - lastBmClick < 80) return;
+        lastBmClick = now;
+        if (e.cancelable) e.preventDefault();
         e.stopPropagation();
         btnAddBm.blur();
         btnAddBm.classList.add('is-pressed');
@@ -3563,7 +3567,9 @@
           window.toggleBeatmarkAtCurrentTime();
         }
         syncDesktopMarkerLabels();
-      });
+      };
+      btnAddBm.addEventListener('pointerdown', triggerDesktopBeatmark);
+      btnAddBm.addEventListener('click', triggerDesktopBeatmark);
     }
 
     // 1b. Wire Dedicated Toolbar Magnet Snapping Button

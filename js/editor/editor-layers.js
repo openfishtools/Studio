@@ -4714,8 +4714,14 @@
         // 5. Giant center button to add beatmark
         const btnAddGiant = document.getElementById('btn-add-beatmark-giant');
         if (btnAddGiant) {
+          let lastTriggerTime = 0;
           const triggerAddBeatmark = (e) => {
-            e.preventDefault();
+            const now = performance.now();
+            // Prevent duplicate triggers from pointerdown followed by click event
+            if (now - lastTriggerTime < 80) return;
+            lastTriggerTime = now;
+
+            if (e.cancelable) e.preventDefault();
             e.stopPropagation();
 
             btnAddGiant.classList.add('is-pressed');
@@ -4729,9 +4735,37 @@
               toggleBeatmarkAtCurrentTime();
             }
 
-            syncBeatmarkDrawerUI();
+            // If actively playing, update badge count and pin without expensive canvas redraw
+            if (typeof getIsTimelinePlaying === 'function' && getIsTimelinePlaying()) {
+              const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+              const layerStart = layer && layer.startSec !== undefined ? layer.startSec : 0;
+              const layerDur = layer && layer.durationSec !== undefined ? layer.durationSec : (layer ? (layer.mediaDuration || 5) : 5);
+              const layerEnd = layerStart + layerDur;
+              const beatmarks = Array.isArray(currentProjectState.beatmarks) ? currentProjectState.beatmarks : [];
+              const layerBeatmarks = beatmarks.filter(b => b >= layerStart - 0.01 && b <= layerEnd + 0.01);
+              const countBadgeEl = document.getElementById('beatmark-count-badge');
+              if (countBadgeEl) {
+                countBadgeEl.textContent = `${layerBeatmarks.length} beatmark${layerBeatmarks.length === 1 ? '' : 's'}`;
+              }
+              const pinsContainer = document.getElementById('beatmark-waveform-pins');
+              if (pinsContainer) {
+                const frag = document.createDocumentFragment();
+                layerBeatmarks.forEach(bm => {
+                  const pct = (layerDur > 0) ? Math.max(0, Math.min(100, ((bm - layerStart) / layerDur) * 100)) : 0;
+                  const pin = document.createElement('div');
+                  pin.className = 'beatmark-wf-pin';
+                  pin.style.left = `${pct}%`;
+                  pin.title = `Beatmark: ${formatTimecodeStr(bm)}`;
+                  frag.appendChild(pin);
+                });
+                pinsContainer.replaceChildren(frag);
+              }
+            } else {
+              syncBeatmarkDrawerUI();
+            }
           };
 
+          btnAddGiant.addEventListener('pointerdown', triggerAddBeatmark);
           btnAddGiant.addEventListener('click', triggerAddBeatmark);
           btnAddGiant.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {

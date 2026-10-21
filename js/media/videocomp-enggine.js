@@ -68,7 +68,7 @@
       if (layer.speedMode === 'time_remap') {
         timeInClip = Math.max(0, (effProps && effProps.timeRemap !== undefined)
           ? effProps.timeRemap
-          : ((currentSec - start) * (layer.speed || 1.0)));
+          : (effOffset + (currentSec - start) * (layer.speed || 1.0)));
       } else if (typeof window !== 'undefined' && typeof window.getLayerIntegratedSpeedTime === 'function') {
         timeInClip = window.getLayerIntegratedSpeedTime(layer, currentSec);
       } else {

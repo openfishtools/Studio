@@ -1138,7 +1138,17 @@
           currentProjectState.beatmarks = [];
         }
         const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
-        const currentSec = Math.max(0, -panX / pps);
+        let currentSec = Math.max(0, -panX / pps);
+
+        // When playing with audio, capture the instantaneous master audio clock so beatmarks land exactly on beat
+        if (isPlaying && window.FishAudioEngine) {
+          const layers = currentProjectState.layers || [];
+          const audioSec = window.FishAudioEngine.getMasterAudioTime(layers, currentSec, pps);
+          if (audioSec !== null && !isNaN(audioSec) && Number.isFinite(audioSec) && audioSec >= 0) {
+            currentSec = audioSec;
+          }
+        }
+
         const roundedSec = Math.round(currentSec * 1000) / 1000;
         const tolerance = 0.05;
 
@@ -1162,8 +1172,22 @@
         if (typeof window.syncDesktopMarkerLabels === 'function') {
           window.syncDesktopMarkerLabels();
         }
+
+        // Defer heavy Undo snapshot during playback to prevent dropping frames on tablets/touch devices
         if (window.UndoRedoManager && !window.UndoRedoManager.isApplying) {
-          window.UndoRedoManager.recordSnapshot();
+          if (isPlaying) {
+            if (window._pendingBeatmarkUndoTimer) {
+              clearTimeout(window._pendingBeatmarkUndoTimer);
+            }
+            window._pendingBeatmarkUndoTimer = setTimeout(() => {
+              window._pendingBeatmarkUndoTimer = null;
+              if (window.UndoRedoManager && !window.UndoRedoManager.isApplying) {
+                window.UndoRedoManager.recordSnapshot();
+              }
+            }, 600);
+          } else {
+            window.UndoRedoManager.recordSnapshot();
+          }
         }
         saveCurrentProjectBeatmarks();
       }
@@ -1390,15 +1414,20 @@
       // Event Listeners for Badge & Beatmarks
       const timeBadgeEl = document.getElementById('timeline-time-badge');
       if (timeBadgeEl) {
-        timeBadgeEl.addEventListener('click', (e) => {
-          e.preventDefault();
+        let lastBadgeTime = 0;
+        const triggerBadgeBeatmark = (e) => {
+          const now = performance.now();
+          if (now - lastBadgeTime < 80) return;
+          lastBadgeTime = now;
+          if (e.cancelable) e.preventDefault();
           e.stopPropagation();
           toggleBeatmarkAtCurrentTime();
-        });
+        };
+        timeBadgeEl.addEventListener('pointerdown', triggerBadgeBeatmark);
+        timeBadgeEl.addEventListener('click', triggerBadgeBeatmark);
         timeBadgeEl.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') {
-            e.preventDefault();
-            toggleBeatmarkAtCurrentTime();
+            triggerBadgeBeatmark(e);
           }
         });
       }
@@ -2471,6 +2500,8 @@
 
         const pps = window.currentPixelsPerSecond || (typeof pixelsPerSecond !== 'undefined' ? pixelsPerSecond : 80);
         const clipStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
+        const clipW = layer.widthPx || 320;
+        const clipDurSec = layer.durationSec !== undefined ? layer.durationSec : (clipW / pps);
         const activeProp = window.activeKeyframeProperty || 'move';
         const isPropActive = (typeof window.isPropertyEditorActive === 'function') ? window.isPropertyEditorActive() : false;
         const isSelectedLayer = (layer.id === window.selectedLayerId);
@@ -2482,14 +2513,11 @@
           list.forEach(kf => {
             const relSec = kf.time - clipStartSec;
             const relPx = relSec * pps;
-            const clipW = layer.widthPx || 320;
-            if (relPx < -5 || relPx > clipW + 5) return;
-
-            const clampedPx = Math.max(0, Math.min(clipW, relPx));
+            const isOutOfBounds = (relSec < -0.001) || (relSec > clipDurSec + 0.001);
 
             const marker = document.createElement('div');
-            marker.className = `timeline-keyframe-marker ${isActiveProp ? 'is-active-prop' : 'is-other-prop'}`;
-            marker.style.left = `${clampedPx.toFixed(1)}px`;
+            marker.className = `timeline-keyframe-marker ${isActiveProp ? 'is-active-prop' : 'is-other-prop'}${isOutOfBounds ? ' is-out-of-bounds' : ''}`;
+            marker.style.left = `${relPx.toFixed(1)}px`;
             const propLabel = prop.includes(':') ? prop.split(':')[1].toUpperCase() : prop.toUpperCase();
             marker.title = `${propLabel} Keyframe: ${kf.time.toFixed(2)}s`;
             marker.dataset.prop = prop;
@@ -2507,9 +2535,13 @@
             marker.addEventListener('pointerdown', (e) => {
               const currentActiveProp = window.activeKeyframeProperty;
               const isPropActiveNow = (typeof window.isPropertyEditorActive === 'function') ? window.isPropertyEditorActive() : false;
-              const canDrag = isPropActiveNow && (layer.id === window.selectedLayerId) && !!(currentActiveProp && prop === currentActiveProp);
+              const isOobNow = marker.classList.contains('is-out-of-bounds');
+              const canDrag = (layer.id === window.selectedLayerId) && (
+                (isPropActiveNow && !!(currentActiveProp && prop === currentActiveProp)) ||
+                (isOobNow && (!isPropActiveNow || !currentActiveProp || prop === currentActiveProp))
+              );
 
-              // Strictly ignore if not the active keyframe mode/prop - let pointer event bubble cleanly to clip
+              // Strictly ignore if not the active keyframe mode/prop (and not an out-of-bounds keyframe on selected layer) - let pointer event bubble cleanly to clip
               if (!canDrag) return;
 
               e.stopPropagation();
@@ -2575,11 +2607,12 @@
                 }
                 const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
                 const fps = (typeof getProjectFps === 'function') ? getProjectFps() : 60;
-                const clipDurSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
+                const curClipStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
+                const curClipDurSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
 
                 const relPx = ev.clientX - cachedClipLeft;
                 let targetRelSec = relPx / pps;
-                let absTime = clipStartSec + targetRelSec;
+                let absTime = curClipStartSec + targetRelSec;
 
                 if (window.isTimelineSnapEnabled !== false) {
                   const curP = (typeof window.getCurrentPlayheadTime === 'function') ? window.getCurrentPlayheadTime() : (window.currentSec || 0);
@@ -2606,29 +2639,31 @@
                       }
                     }
                   }
-                  targetRelSec = absTime - clipStartSec;
+                  targetRelSec = absTime - curClipStartSec;
                 }
 
                 // Snap to frame
                 targetRelSec = Math.round(targetRelSec * fps) / fps;
-                // Clamp within clip
-                targetRelSec = Math.max(0, Math.min(clipDurSec, targetRelSec));
+                // Allow dragging inside or outside clip freely (only clamp at timeline 0s)
+                targetRelSec = Math.max(-curClipStartSec, targetRelSec);
 
-                const newTime = Number((clipStartSec + targetRelSec).toFixed(4));
+                const newTime = Number(Math.max(0, curClipStartSec + targetRelSec).toFixed(4));
                 const deltaTime = newTime - kfInitialTime;
 
                 if (multiDragItems && multiDragItems.length > 1) {
                   multiDragItems.forEach(({ item, initTime }) => {
-                    const shifted = Number(Math.max(0, Math.min(clipStartSec + clipDurSec, initTime + deltaTime)).toFixed(4));
+                    const shifted = Number(Math.max(0, initTime + deltaTime).toFixed(4));
                     if (item.kf) item.kf.time = shifted;
                     item.time = shifted;
                     if (item.marker) {
                       item.marker.dataset.time = shifted;
-                      const rPx = (shifted - clipStartSec) * pps;
                       const targetLayer = item.layer || layer;
-                      const clipW = targetLayer.widthPx || (clipDurSec * pps);
-                      const clampedPx = Math.max(0, Math.min(clipW, rPx));
-                      item.marker.style.left = `${clampedPx.toFixed(1)}px`;
+                      const tStartSec = targetLayer.startSec !== undefined ? targetLayer.startSec : ((targetLayer.startPx || 0) / pps);
+                      const tDurSec = targetLayer.durationSec !== undefined ? targetLayer.durationSec : ((targetLayer.widthPx || 320) / pps);
+                      const rSec = shifted - tStartSec;
+                      const rPx = rSec * pps;
+                      item.marker.style.left = `${rPx.toFixed(1)}px`;
+                      item.marker.classList.toggle('is-out-of-bounds', rSec < -0.001 || rSec > tDurSec + 0.001);
                       const pl = item.prop.includes(':') ? item.prop.split(':')[1].toUpperCase() : item.prop.toUpperCase();
                       item.marker.title = `${pl} Keyframe: ${shifted.toFixed(2)}s`;
                     }
@@ -2636,10 +2671,11 @@
                 } else {
                   kf.time = newTime;
                   marker.dataset.time = newTime;
-                  const clipW = layer.widthPx || (clipDurSec * pps);
-                  const clampedPx = Math.max(0, Math.min(clipW, targetRelSec * pps));
-                  marker.style.left = `${clampedPx.toFixed(1)}px`;
-                  marker.title = `${prop.toUpperCase()} Keyframe: ${newTime.toFixed(2)}s`;
+                  const rPx = targetRelSec * pps;
+                  marker.style.left = `${rPx.toFixed(1)}px`;
+                  marker.classList.toggle('is-out-of-bounds', targetRelSec < -0.001 || targetRelSec > curClipDurSec + 0.001);
+                  const pl = prop.includes(':') ? prop.split(':')[1].toUpperCase() : prop.toUpperCase();
+                  marker.title = `${pl} Keyframe: ${newTime.toFixed(2)}s`;
                   if (window.selectedKeyframes) {
                     const sItem = window.selectedKeyframes.find(it => it.kf === kf);
                     if (sItem) sItem.time = newTime;
@@ -3461,6 +3497,10 @@
           }
         });
 
+        const clipStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
+        const clipDurSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
+        const clipEndSec = clipStartSec + clipDurSec;
+
         catRows.forEach(cat => {
           const catTrack = document.createElement('div');
           catTrack.className = 'desktop-kf-track-cat-row';
@@ -3484,8 +3524,9 @@
 
             // Render diamond keyframes
             (p.keyframes || []).forEach(kf => {
+              const isOutOfBounds = (kf.time < clipStartSec - 0.001) || (kf.time > clipEndSec + 0.001);
               const diamond = document.createElement('div');
-              diamond.className = 'desktop-kf-diamond';
+              diamond.className = `desktop-kf-diamond${isOutOfBounds ? ' is-out-of-bounds' : ''}`;
               const leftPx = kf.time * pps;
               diamond.style.left = `${leftPx.toFixed(1)}px`;
               diamond.dataset.time = kf.time;
@@ -3623,6 +3664,12 @@
                       s.marker.style.left = `${(shifted * pps).toFixed(1)}px`;
                       s.marker.dataset.time = shifted;
                       s.marker.title = `${s.prop}: ${shifted.toFixed(2)}s`;
+                      const tLayer = s.layer || layer;
+                      if (tLayer) {
+                        const tStart = tLayer.startSec !== undefined ? tLayer.startSec : ((tLayer.startPx || 0) / pps);
+                        const tDur = tLayer.durationSec !== undefined ? tLayer.durationSec : ((tLayer.widthPx || 320) / pps);
+                        s.marker.classList.toggle('is-out-of-bounds', shifted < tStart - 0.001 || shifted > tStart + tDur + 0.001);
+                      }
                     }
                   });
 

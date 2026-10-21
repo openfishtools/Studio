@@ -1852,7 +1852,7 @@
             const clipStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pixelsPerSecond);
             let innerSec = 0;
             if (layer.speedMode === 'time_remap') {
-              innerSec = Math.max(0, effProps.timeRemap !== undefined ? effProps.timeRemap : ((currentSec - clipStart) * (layer.speed || 1.0)));
+              innerSec = Math.max(0, effProps.timeRemap !== undefined ? effProps.timeRemap : ((layer.sourceOffsetSec || 0) + (currentSec - clipStart) * (layer.speed || 1.0)));
             } else {
               innerSec = (typeof getLayerIntegratedSpeedTime === 'function')
                 ? getLayerIntegratedSpeedTime(layer, currentSec)
@@ -2059,7 +2059,7 @@
               const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
                 ? getLayerEffectivePropsAtTime(layer, currentSec)
                 : layer;
-              innerSec = Math.max(0, effProps.timeRemap !== undefined ? effProps.timeRemap : ((currentSec - clipStart) * (layer.speed || 1.0)));
+              innerSec = Math.max(0, effProps.timeRemap !== undefined ? effProps.timeRemap : ((layer.sourceOffsetSec || 0) + (currentSec - clipStart) * (layer.speed || 1.0)));
             } else {
               innerSec = (typeof getLayerIntegratedSpeedTime === 'function')
                 ? getLayerIntegratedSpeedTime(layer, currentSec)

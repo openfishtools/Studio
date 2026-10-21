@@ -2342,17 +2342,29 @@
       if (!source || source.isPrecomp || !(source.duration > 0) || typeof window === 'undefined' || !window.currentProjectState || !Array.isArray(window.currentProjectState.layers)) {
         return;
       }
+      if (window._activeMediaMap && source.sourceKey && window._activeMediaMap.has(source.sourceKey)) {
+        const mItem = window._activeMediaMap.get(source.sourceKey);
+        mItem.duration = source.duration;
+        mItem._durationVerified = true;
+      }
       let layerChanged = false;
+      const pps = window.currentPixelsPerSecond || 80;
       const allVideoLayers = this._collectMatchingLayers(l => l.type === 'video');
       allVideoLayers.forEach(l => {
         const matches = (this._getSourceKey(l) === source.sourceKey || l.mediaId === source.sourceKey || l.id === source.sourceKey || (l.name && source.name && l.name === source.name));
         if (matches) {
           l.mediaDuration = source.duration;
-          if (!l._userResized && (!l.durationSec || l.durationSec < source.duration)) {
-            l.durationSec = source.duration;
-            const pps = window.currentPixelsPerSecond || 80;
-            l.widthPx = Math.round(source.duration * pps);
+          const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
+          const srcOff = l.sourceOffsetSec || 0;
+          const targetDur = Math.max(0.05, (source.duration - srcOff) / spd);
+          if (!l._userTrimmed && (!l.durationSec || Math.abs(l.durationSec - targetDur) > 0.01)) {
+            l.durationSec = targetDur;
+            l.widthPx = Math.max(10, Math.round(targetDur * pps));
             l.isDurationExplicit = true;
+            layerChanged = true;
+          } else if (l._userTrimmed && l.speedMode !== 'time_remap' && l.durationSec > targetDur + 0.01) {
+            l.durationSec = targetDur;
+            l.widthPx = Math.max(10, Math.round(targetDur * pps));
             layerChanged = true;
           }
         }
@@ -2472,8 +2484,9 @@
 
       source._cachedArrayBuffer = arrayBuffer;
 
-      if (track.duration > 0 && (!source.duration || source.duration <= 0)) {
+      if (track.duration > 0) {
         source.duration = track.duration;
+        source._durationVerified = true;
         this._syncSourceDurationToLayers(source);
       }
 
@@ -2954,7 +2967,10 @@
         if (decodingStarted) return;
         decodingStarted = true;
 
-        if ((!source.duration || source.duration <= 0) && (!isFinite(video.duration) || video.duration <= 0)) {
+        if (isFinite(video.duration) && video.duration > 0) {
+          source.duration = video.duration;
+          source._durationVerified = true;
+        } else if (!source.duration || source.duration <= 0) {
           try {
             video.currentTime = 1e101;
             await new Promise(r => {
@@ -2964,11 +2980,10 @@
             });
             if (isFinite(video.currentTime) && video.currentTime > 0) {
               source.duration = video.currentTime;
+              source._durationVerified = true;
             }
             video.currentTime = 0;
           } catch (_) {}
-        } else if (!source.duration || source.duration <= 0) {
-          source.duration = video.duration;
         }
 
         this._syncSourceDurationToLayers(source);

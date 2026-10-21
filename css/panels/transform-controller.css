@@ -1430,11 +1430,23 @@
   border-radius: 1.5px;
   pointer-events: none;
   box-sizing: border-box;
-  transition: transform 0.1s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.1s ease;
+  transition: transform 0.1s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.1s ease, background-color 0.1s ease;
   z-index: 5;
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
+}
+
+/* Tactile Hit Target Extension for Keyframe Markers */
+.timeline-keyframe-marker::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: -7px;
+  right: -7px;
+  bottom: -7px;
+  border-radius: 2px;
+  pointer-events: inherit;
 }
 
 /* Other Property Keyframe (Hollow Outline Only) - High Contrast Against Any Layer Color */
@@ -1456,15 +1468,39 @@
   z-index: 6;
 }
 
+/* Out-of-Bounds Keyframe (Outside Layer Start/End Area: Hollow Outline Diamond & Draggable) */
+.timeline-keyframe-marker.is-out-of-bounds {
+  background-color: transparent !important;
+  border: 1.5px solid var(--color-primary, #c8ff8c) !important;
+  opacity: 0.92;
+  z-index: 18;
+}
+
+.timeline-keyframe-marker.is-other-prop.is-out-of-bounds {
+  background-color: transparent !important;
+  border: 1.5px solid var(--kf-default-border, #a5b39a) !important;
+  opacity: 0.78;
+}
+
+.timeline-clip-block.is-selected .timeline-keyframe-marker.is-out-of-bounds,
+.timeline-keyframe-marker.is-active-prop.is-out-of-bounds {
+  background-color: transparent !important;
+  border: 1.5px solid var(--color-primary, #c8ff8c) !important;
+  opacity: 1;
+  pointer-events: auto !important;
+  cursor: grab !important;
+  z-index: 22;
+}
+
 /* On unselected (bright) layer blocks: invert active keyframe so it does not camouflage on bright layers */
-.timeline-clip-block:not(.is-selected) .timeline-keyframe-marker.is-active-prop {
+.timeline-clip-block:not(.is-selected) .timeline-keyframe-marker.is-active-prop:not(.is-out-of-bounds) {
   background-color: var(--bg-canvas);
   border: 1.5px solid #ffffff;
   pointer-events: none !important;
   cursor: default !important;
 }
 
-.timeline-clip-block:not(.is-selected) .timeline-keyframe-marker.is-other-prop {
+.timeline-clip-block:not(.is-selected) .timeline-keyframe-marker.is-other-prop:not(.is-out-of-bounds) {
   background-color: var(--bg-canvas);
   border: 1.5px solid rgba(255, 255, 255, 0.6);
   pointer-events: none !important;
@@ -1486,6 +1522,11 @@
   opacity: 1 !important;
   z-index: 25 !important;
   cursor: grab !important;
+}
+
+.timeline-keyframe-marker.is-selected-kf.is-out-of-bounds {
+  background-color: transparent !important;
+  border: 1.5px solid #ffffff !important;
 }
 
 .timeline-keyframe-marker.is-selected-kf::after {

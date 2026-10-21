@@ -4142,7 +4142,7 @@ function initTimelineOperations() {
 
             function onClipPointerDown(e) {
               justTappedInPointerUp = false;
-              if (e.target.closest('.timeline-clip-handle') || e.target.closest('.timeline-keyframe-marker.is-active-prop') || e.target.closest('.text-anim-marker')) return;
+              if (e.target.closest('.timeline-clip-handle') || e.target.closest('.timeline-keyframe-marker.is-active-prop') || e.target.closest('.timeline-keyframe-marker.is-out-of-bounds') || e.target.closest('.text-anim-marker')) return;
               if (e.button !== undefined && e.button !== 0) return;
 
               startPointerX = e.clientX;
@@ -4340,7 +4340,7 @@ function initTimelineOperations() {
                         kfs.forEach((initKf, idx) => {
                           const curKf = m.layer.keyframes[p][idx];
                           if (curKf) {
-                            curKf.time = Number(Math.max(0, initKf.time + mDeltaSec).toFixed(4));
+                            curKf.time = Number((initKf.time + mDeltaSec).toFixed(4));
                           }
                         });
                       }
@@ -4410,7 +4410,7 @@ function initTimelineOperations() {
                       kfs.forEach((initKf, idx) => {
                         const curKf = layer.keyframes[p][idx];
                         if (curKf) {
-                          curKf.time = Number(Math.max(0, initKf.time + deltaSec).toFixed(4));
+                          curKf.time = Number((initKf.time + deltaSec).toFixed(4));
                         }
                       });
                     }
@@ -4569,7 +4569,7 @@ function initTimelineOperations() {
             clipEl.addEventListener('pointerdown', onClipPointerDown);
 
             clipEl.addEventListener('click', (e) => {
-              if (e.target.closest('.timeline-clip-handle')) return;
+              if (e.target.closest('.timeline-clip-handle') || e.target.closest('.timeline-keyframe-marker.is-active-prop') || e.target.closest('.timeline-keyframe-marker.is-out-of-bounds')) return;
               if (hasMenuOpened || justFinishedSlide || isPanPassthrough) {
                 e.stopPropagation();
                 e.preventDefault();
@@ -4652,9 +4652,13 @@ function initTimelineOperations() {
                     window._lastTrimSnapPx = null;
                   }
 
-                  // Never expand before 00:00:00 of original media
-                  if (totalMediaDur !== null) {
-                    const maxExtendLeftPx = Math.round(initialOffsetSec * activePps);
+                  const isTimeRemap = (layer.speedMode === 'time_remap');
+                  const effSpeed = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+
+                  // Never expand before 00:00:00 of original media in normal Speed mode
+                  if (!isTimeRemap && totalMediaDur !== null) {
+                    const maxExtendLeftSec = initialOffsetSec / effSpeed;
+                    const maxExtendLeftPx = Math.round(maxExtendLeftSec * activePps);
                     const minAllowedStartPx = Math.max(0, initialStartPx - maxExtendLeftPx);
                     newStartPx = Math.max(minAllowedStartPx, newStartPx);
                   } else {
@@ -4671,8 +4675,8 @@ function initTimelineOperations() {
                   const minDurSec = 1 / safeFps;
                   const fixedRightSec = Math.round((fixedRightPx / activePps) * safeFps) / safeFps;
                   let minAllowedSec = 0;
-                  if (totalMediaDur !== null) {
-                    minAllowedSec = Math.max(0, initialStartSec - initialOffsetSec);
+                  if (!isTimeRemap && totalMediaDur !== null) {
+                    minAllowedSec = Math.max(0, initialStartSec - (initialOffsetSec / effSpeed));
                   }
                   let targetStartSec = Math.max(minAllowedSec, Math.round((newStartPx / activePps) * safeFps) / safeFps);
                   if (targetStartSec > fixedRightSec - minDurSec) {
@@ -4683,16 +4687,24 @@ function initTimelineOperations() {
                   layer.startPx = Math.round(layer.startSec * activePps);
                   layer.widthPx = Math.max(minWidth, Math.round((layer.startSec + layer.durationSec) * activePps) - layer.startPx);
                   layer.isDurationExplicit = true;
+                  layer._userTrimmed = true;
 
                   if (totalMediaDur !== null) {
-                    const shiftedSec = (layer.startPx - initialStartPx) / activePps;
-                    layer.sourceOffsetSec = Math.max(0, Math.min(totalMediaDur - layer.durationSec, initialOffsetSec + shiftedSec));
+                    const shiftedSec = layer.startSec - initialStartSec;
+                    layer.sourceOffsetSec = Math.max(0, Math.min(totalMediaDur, initialOffsetSec + shiftedSec * effSpeed));
                   }
 
                   clipEl.style.left = `${layer.startPx}px`;
                   clipEl.style.width = `${layer.widthPx}px`;
                   if (!isDesktop || !layer._kfExpanded) {
                     renderLayerKeyframes(layer, clipEl);
+                  } else {
+                    const curStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / activePps);
+                    const curEnd = curStart + (layer.durationSec || 0);
+                    lane.querySelectorAll('.desktop-kf-diamond').forEach(d => {
+                      const t = Number(d.dataset.time);
+                      d.classList.toggle('is-out-of-bounds', t < curStart - 0.001 || t > curEnd + 0.001);
+                    });
                   }
                   if (layer.type === 'audio') renderAudioClipWaveform(layer, clipEl);
                   if (typeof renderTimelineLinkConnectors === 'function') renderTimelineLinkConnectors();
@@ -4756,11 +4768,8 @@ function initTimelineOperations() {
                 const initialWidthPx = layer.widthPx || 320;
                 const currentOffsetSec = layer.sourceOffsetSec || 0;
                 const totalMediaDur = (layer.type === 'video' || layer.type === 'audio') ? getLayerMediaDuration(layer) : null;
-                let maxAllowedWidthPx = Infinity;
-                if (totalMediaDur !== null) {
-                  const maxAvailableDurSec = Math.max(0.1, totalMediaDur - currentOffsetSec);
-                  maxAllowedWidthPx = Math.round(maxAvailableDurSec * curPps);
-                }
+                const isTimeRemap = (layer.speedMode === 'time_remap');
+                const effSpeed = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
 
                 const initialStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / curPps);
                 const initialDurSec = layer.durationSec !== undefined ? layer.durationSec : (initialWidthPx / curPps);
@@ -4794,17 +4803,25 @@ function initTimelineOperations() {
                   if (targetEndSec < curStartSec + minDurSec) {
                     targetEndSec = curStartSec + minDurSec;
                   }
-                  if (totalMediaDur !== null) {
-                    const maxAllowedEndSec = curStartSec + (totalMediaDur - currentOffsetSec);
+                  if (!isTimeRemap && totalMediaDur !== null) {
+                    const maxAvailableDurSec = Math.max(minDurSec, (totalMediaDur - currentOffsetSec) / effSpeed);
+                    const maxAllowedEndSec = curStartSec + maxAvailableDurSec;
                     targetEndSec = Math.min(maxAllowedEndSec, targetEndSec);
                   }
                   layer.durationSec = Math.max(minDurSec, Math.round((targetEndSec - curStartSec) * safeFps) / safeFps);
                   layer.widthPx = Math.max(minWidth, Math.round((curStartSec + layer.durationSec) * activePps) - (layer.startPx || 0));
                   layer.isDurationExplicit = true;
+                  layer._userTrimmed = true;
 
                   clipEl.style.width = `${layer.widthPx}px`;
                   if (!isDesktop || !layer._kfExpanded) {
                     renderLayerKeyframes(layer, clipEl);
+                  } else {
+                    const curEnd = curStartSec + (layer.durationSec || 0);
+                    lane.querySelectorAll('.desktop-kf-diamond').forEach(d => {
+                      const t = Number(d.dataset.time);
+                      d.classList.toggle('is-out-of-bounds', t < curStartSec - 0.001 || t > curEnd + 0.001);
+                    });
                   }
                   if (layer.type === 'audio') renderAudioClipWaveform(layer, clipEl);
                   const curTrimEndSec = (layer.startSec !== undefined ? layer.startSec : (layer.startPx / activePps)) + (layer.durationSec || 0);
@@ -5800,13 +5817,22 @@ function initTimelineOperations() {
         }
 
         let dur = defaultDur;
+        let isVerifiedMediaDur = false;
         if (item.type === 'video' || item.type === 'audio') {
-          if (isFinite(item.duration) && item.duration > 0) {
+          if (item._durationVerified !== false && isFinite(item.duration) && item.duration > 0) {
             dur = item.duration;
+            isVerifiedMediaDur = true;
           } else {
             const media = layerMediaCache ? layerMediaCache.get(item.id) : null;
             if (media && media.el && isFinite(media.el.duration) && media.el.duration > 0) {
               dur = media.el.duration;
+              isVerifiedMediaDur = true;
+            } else if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getSourceCache === 'function') {
+              const src = window.VideoFrameExtractor.getSourceCache(item.id);
+              if (src && isFinite(src.duration) && src.duration > 0) {
+                dur = src.duration;
+                isVerifiedMediaDur = true;
+              }
             }
           }
         }
@@ -5817,7 +5843,7 @@ function initTimelineOperations() {
             window.updateTimelineDuration(true);
           }
         }
-        const widthPx = Math.max(80, Math.round(dur * pixelsPerSecond));
+        const widthPx = Math.max(10, Math.round(dur * pixelsPerSecond));
         const startPx = Math.round(currentSec * pixelsPerSecond);
 
         const newLayer = {
@@ -5831,12 +5857,13 @@ function initTimelineOperations() {
           widthPx: widthPx,
           dataUrl: item.dataUrl || '',
           thumbUrl: item.thumbUrl || (item.type === 'image' ? (item.dataUrl || '') : ''),
-          mediaDuration: (item.type === 'video' || item.type === 'audio') ? dur : null,
+          mediaDuration: ((item.type === 'video' || item.type === 'audio') && isVerifiedMediaDur) ? dur : null,
           mediaFps: item.fps || null,
           mediaWidth: item.width || null,
           mediaHeight: item.height || null,
           isDurationExplicit: true,
-          _userResized: false
+          _userResized: false,
+          _userTrimmed: false
         };
 
         // Proportional Aspect Fit: If media width/height known, fit to canvas without stretching
@@ -6377,6 +6404,15 @@ function initTimelineOperations() {
         return { layer, playheadPx, startPx, widthPx, endPx, pps, fps };
       }
 
+      function computeLayerSourceOffsetAtTime(layer, targetSec, startSec) {
+        const baseOffset = layer.sourceOffsetSec || 0;
+        const spd = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+        if (layer.speedMode !== 'time_remap' && typeof getLayerIntegratedSpeedTime === 'function') {
+          return Math.max(0, getLayerIntegratedSpeedTime(layer, targetSec));
+        }
+        return Math.max(0, baseOffset + Math.max(0, targetSec - startSec) * spd);
+      }
+
       // 1. Cut Left: Trim start of layer to current playhead
       function executeCutLeft() {
         const info = getSelectedLayerForCut();
@@ -6393,8 +6429,8 @@ function initTimelineOperations() {
         const minDuration = 1 / fps;
         if (currentSec <= startSec + (minDuration * 0.5) || currentSec >= endSec) return;
 
-        const trimmedSec = Math.round((currentSec - startSec) * fps) / fps;
         const remainingDurSec = Math.max(minDuration, Math.round((endSec - currentSec) * fps) / fps);
+        const newSourceOffsetSec = computeLayerSourceOffsetAtTime(layer, currentSec, startSec);
 
         // Invalidate original span BEFORE redrawing
         invalidatePreviewCacheForLayer(layer, startSec, endSec);
@@ -6403,8 +6439,9 @@ function initTimelineOperations() {
         layer.durationSec = remainingDurSec;
         layer.startPx = Math.round(currentSec * pps);
         layer.widthPx = Math.round((currentSec + remainingDurSec) * pps) - layer.startPx;
-        layer.sourceOffsetSec = (layer.sourceOffsetSec || 0) + trimmedSec;
+        layer.sourceOffsetSec = newSourceOffsetSec;
         layer.isDurationExplicit = true;
+        layer._userTrimmed = true;
         layer.sourceLayerId = layer.sourceLayerId || layer.id;
         layer._cachedStartSec = currentSec;
         layer._cachedEndSec = endSec;
@@ -6469,7 +6506,8 @@ function initTimelineOperations() {
           });
         }
 
-        // Split keyframes cleanly between left and right pieces
+        // Preserve all keyframes across both split pieces so out-of-bounds keyframes remain visible (outline style) and draggable,
+        // and Bezier/Time Remap curves are 100% preserved across the split point
         let leftKeyframes = {};
         let rightKeyframes = {};
 
@@ -6489,74 +6527,8 @@ function initTimelineOperations() {
               }
             }
 
-            const leftList = [];
-            const rightList = [];
-
-            list.forEach(kf => {
-              if (kf.time <= currentSec) {
-                leftList.push((window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(kf) : (Array.isArray(kf) ? [] : {})));
-              }
-              if (kf.time >= currentSec) {
-                rightList.push((window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(kf) : (Array.isArray(kf) ? [] : {})));
-              }
-            });
-
-            // Boundary interpolation if animation spans across cut position
-            const hasExactLeft = leftList.some(k => Math.abs(k.time - currentSec) < 0.001);
-            const hasExactRight = rightList.some(k => Math.abs(k.time - currentSec) < 0.001);
-            const hasPreceding = list.some(k => k.time < currentSec);
-            const hasSucceeding = list.some(k => k.time > currentSec);
-
-            if (hasPreceding && hasSucceeding && (!hasExactLeft || !hasExactRight)) {
-              let boundaryVal = null;
-              let boundaryEasing = [0, 0, 1, 1];
-              let boundaryEasingConfig = null;
-              const sorted = [...list].sort((a, b) => a.time - b.time);
-              for (let i = 0; i < sorted.length - 1; i++) {
-                const k0 = sorted[i];
-                const k1 = sorted[i + 1];
-                if (currentSec >= k0.time && currentSec <= k1.time) {
-                  const span = k1.time - k0.time;
-                  const tNorm = span > 0 ? ((currentSec - k0.time) / span) : 0;
-                  const easing = k0.easing || [0, 0, 1, 1];
-                  const factor = typeof evaluateKeyframeEasing === 'function'
-                    ? evaluateKeyframeEasing(k0, tNorm, easing)
-                    : (typeof evaluateCubicBezier === 'function'
-                      ? evaluateCubicBezier(easing[0], easing[1], easing[2], easing[3], tNorm)
-                      : tNorm);
-                  const pId = prop.includes(':') ? prop.slice(prop.indexOf(':') + 1) : prop;
-                  if (typeof interpolatePropertyValues === 'function') {
-                    boundaryVal = interpolatePropertyValues(pId, k0.value, k1.value, factor);
-                  } else {
-                    boundaryVal = k0.value;
-                  }
-                  boundaryEasing = k0.easing ? [...k0.easing] : [0, 0, 1, 1];
-                  if (k0.easingConfig) boundaryEasingConfig = cloneEasingConfig(k0.easingConfig);
-                  break;
-                }
-              }
-
-              if (boundaryVal) {
-                if (!hasExactLeft) {
-                  const leftBoundaryKf = {
-                    time: Number(currentSec.toFixed(3)),
-                    value: (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(boundaryVal) : (Array.isArray(boundaryVal) ? [] : {})),
-                    easing: [...boundaryEasing]
-                  };
-                  if (boundaryEasingConfig) leftBoundaryKf.easingConfig = cloneEasingConfig(boundaryEasingConfig);
-                  leftList.push(leftBoundaryKf);
-                }
-                if (!hasExactRight) {
-                  const rightBoundaryKf = {
-                    time: Number(currentSec.toFixed(3)),
-                    value: (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(boundaryVal) : (Array.isArray(boundaryVal) ? [] : {})),
-                    easing: [...boundaryEasing]
-                  };
-                  if (boundaryEasingConfig) rightBoundaryKf.easingConfig = cloneEasingConfig(boundaryEasingConfig);
-                  rightList.push(rightBoundaryKf);
-                }
-              }
-            }
+            const leftList = list.map(kf => (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(kf) : JSON.parse(JSON.stringify(kf))));
+            const rightList = list.map(kf => (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(kf) : JSON.parse(JSON.stringify(kf))));
 
             if (leftList.length > 0) {
               leftList.sort((a, b) => a.time - b.time);
@@ -6601,16 +6573,24 @@ function initTimelineOperations() {
         const effAnchorY = effProps.anchorY !== undefined ? effProps.anchorY : (layer.anchorY || 0);
         const effAnchorZ = effProps.anchorZ !== undefined ? effProps.anchorZ : (layer.anchorZ || 0);
 
+        // Compute right piece's sourceOffsetSec BEFORE modifying layer
+        const rightStartSec = startSec + leftDurSec;
+        const rightSourceOffsetSec = computeLayerSourceOffsetAtTime(layer, rightStartSec, startSec);
+        const resolvedMediaDuration = layer.mediaDuration || getLayerMediaDuration(layer) || null;
+        if (resolvedMediaDuration && !layer.mediaDuration) {
+          layer.mediaDuration = resolvedMediaDuration;
+        }
+
         // Ensure left piece (layer) has completely independent state
         layer.effects = Array.isArray(layer.effects) ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(layer.effects) : (Array.isArray(layer.effects) ? [] : {})) : [];
         layer.audioEffects = Array.isArray(layer.audioEffects) ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(layer.audioEffects) : (Array.isArray(layer.audioEffects) ? [] : {})) : [];
         layer.keyframes = leftKeyframes;
         layer._userResized = true;
+        layer._userTrimmed = true;
         if (layer.textStyle) layer.textStyle = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(layer.textStyle) : (Array.isArray(layer.textStyle) ? [] : {}));
         if (layer.shapeProps) layer.shapeProps = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(layer.shapeProps) : (Array.isArray(layer.shapeProps) ? [] : {}));
 
         // Potongan kanan (setelah playhead)
-        const rightStartSec = startSec + leftDurSec;
         const newLayer = {
           ...layer,
           id: newLayerId,
@@ -6619,8 +6599,8 @@ function initTimelineOperations() {
           widthPx: rightWidthPx,
           startSec: rightStartSec,
           durationSec: rightDurSec,
-          sourceOffsetSec: (layer.sourceOffsetSec || 0) + leftDurSec,
-          mediaDuration: layer.mediaDuration || getLayerMediaDuration(layer) || null,
+          sourceOffsetSec: rightSourceOffsetSec,
+          mediaDuration: resolvedMediaDuration,
           isDurationExplicit: true,
           posX: effPosX,
           posY: effPosY,
@@ -6642,6 +6622,7 @@ function initTimelineOperations() {
           normX: (effPosX - effScaleW / 2) / baseW,
           normY: (effPosY - effScaleH / 2) / baseH,
           _userResized: true,
+          _userTrimmed: true,
           effects: clonedEffects,
           audioEffects: clonedAudioEffects,
           keyframes: rightKeyframes,
@@ -6806,6 +6787,7 @@ function initTimelineOperations() {
         layer.startPx = Math.round(startSec * pps);
         layer.widthPx = Math.round((startSec + remainingDurSec) * pps) - layer.startPx;
         layer.isDurationExplicit = true;
+        layer._userTrimmed = true;
         layer.sourceLayerId = layer.sourceLayerId || layer.id;
         layer._cachedStartSec = startSec;
         layer._cachedEndSec = startSec + remainingDurSec;
@@ -6832,8 +6814,9 @@ function initTimelineOperations() {
 
         let newDurSec = currentSec - startSec;
         const totalMediaDur = (layer.type === 'video' || layer.type === 'audio') ? getLayerMediaDuration(layer) : null;
-        if (totalMediaDur !== null) {
-          const maxDurSec = Math.max(0.2, totalMediaDur - (layer.sourceOffsetSec || 0));
+        if (layer.speedMode !== 'time_remap' && totalMediaDur !== null) {
+          const effSpeed = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+          const maxDurSec = Math.max(0.05, (totalMediaDur - (layer.sourceOffsetSec || 0)) / effSpeed);
           newDurSec = Math.min(newDurSec, maxDurSec);
         }
 
@@ -6842,6 +6825,7 @@ function initTimelineOperations() {
         layer.durationSec = newDurSec;
         layer.widthPx = Math.round(newDurSec * pps);
         layer.isDurationExplicit = true;
+        layer._userTrimmed = true;
         layer._cachedStartSec = startSec;
         layer._cachedEndSec = startSec + newDurSec;
 
@@ -6880,7 +6864,7 @@ function initTimelineOperations() {
           Object.values(layer.keyframes).forEach(list => {
             if (Array.isArray(list)) {
               list.forEach(kf => {
-                kf.time = Number(Math.max(0, kf.time + deltaSec).toFixed(4));
+                kf.time = Number((kf.time + deltaSec).toFixed(4));
               });
             }
           });
@@ -6921,7 +6905,7 @@ function initTimelineOperations() {
           Object.values(layer.keyframes).forEach(list => {
             if (Array.isArray(list)) {
               list.forEach(kf => {
-                kf.time = Number(Math.max(0, kf.time + deltaSec).toFixed(4));
+                kf.time = Number((kf.time + deltaSec).toFixed(4));
               });
             }
           });
@@ -6949,17 +6933,18 @@ function initTimelineOperations() {
 
         const extendSec = startSec - currentSec;
         const totalMediaDur = (layer.type === 'video' || layer.type === 'audio') ? getLayerMediaDuration(layer) : null;
+        const effSpeed = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
 
         let actualStartSec = Math.max(0, currentSec);
         let actualDurSec = endSec - actualStartSec;
 
-        if (totalMediaDur !== null) {
+        if (layer.speedMode !== 'time_remap' && totalMediaDur !== null) {
           const currentOffset = layer.sourceOffsetSec || 0;
-          const maxExtend = Math.max(0, currentOffset);
+          const maxExtend = Math.max(0, currentOffset / effSpeed);
           const actualExtend = Math.min(extendSec, maxExtend);
-          actualStartSec = startSec - actualExtend;
+          actualStartSec = Math.max(0, startSec - actualExtend);
           actualDurSec = endSec - actualStartSec;
-          layer.sourceOffsetSec = Math.max(0, currentOffset - actualExtend);
+          layer.sourceOffsetSec = Math.max(0, currentOffset - actualExtend * effSpeed);
         }
 
         invalidatePreviewCacheForLayer(layer, startSec, endSec);
@@ -6969,6 +6954,7 @@ function initTimelineOperations() {
         layer.durationSec = actualDurSec;
         layer.widthPx = Math.round(actualDurSec * pps);
         layer.isDurationExplicit = true;
+        layer._userTrimmed = true;
         layer._cachedStartSec = actualStartSec;
         layer._cachedEndSec = endSec;
 
@@ -7028,6 +7014,7 @@ function initTimelineOperations() {
           const startSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
           const durSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
           const endSec = startSec + durSec;
+          const effSpeed = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
 
           invalidatePreviewCacheForLayer(layer, startSec, endSec);
 
@@ -7038,13 +7025,13 @@ function initTimelineOperations() {
             let actualStartSec = Math.max(0, currentSec);
             let actualDurSec = endSec - actualStartSec;
 
-            if (totalMediaDur !== null) {
+            if (layer.speedMode !== 'time_remap' && totalMediaDur !== null) {
               const currentOffset = layer.sourceOffsetSec || 0;
-              const maxExtend = Math.max(0, currentOffset);
+              const maxExtend = Math.max(0, currentOffset / effSpeed);
               const actualExtend = Math.min(extendSec, maxExtend);
-              actualStartSec = startSec - actualExtend;
+              actualStartSec = Math.max(0, startSec - actualExtend);
               actualDurSec = endSec - actualStartSec;
-              layer.sourceOffsetSec = Math.max(0, currentOffset - actualExtend);
+              layer.sourceOffsetSec = Math.max(0, currentOffset - actualExtend * effSpeed);
             }
 
             layer.startSec = actualStartSec;
@@ -7052,18 +7039,20 @@ function initTimelineOperations() {
             layer.durationSec = actualDurSec;
             layer.widthPx = Math.round(actualDurSec * pps);
             layer.isDurationExplicit = true;
+            layer._userTrimmed = true;
             layer._cachedStartSec = actualStartSec;
             layer._cachedEndSec = endSec;
           } else if (currentSec > startSec && currentSec < endSec) {
             // Playhead inside layer: trim start
-            const trimmedSec = currentSec - startSec;
             const remainingDurSec = endSec - currentSec;
+            const newSourceOffsetSec = computeLayerSourceOffsetAtTime(layer, currentSec, startSec);
             layer.startSec = currentSec;
             layer.durationSec = remainingDurSec;
             layer.startPx = Math.round(currentSec * pps);
             layer.widthPx = Math.round(remainingDurSec * pps);
-            layer.sourceOffsetSec = (layer.sourceOffsetSec || 0) + trimmedSec;
+            layer.sourceOffsetSec = newSourceOffsetSec;
             layer.isDurationExplicit = true;
+            layer._userTrimmed = true;
             layer.sourceLayerId = layer.sourceLayerId || layer.id;
             layer._cachedStartSec = currentSec;
             layer._cachedEndSec = endSec;
@@ -7075,6 +7064,7 @@ function initTimelineOperations() {
             layer.durationSec = minDur;
             layer.widthPx = Math.round(minDur * pps);
             layer.isDurationExplicit = true;
+            layer._userTrimmed = true;
             layer._cachedStartSec = currentSec;
             layer._cachedEndSec = currentSec + minDur;
           }
@@ -7117,13 +7107,15 @@ function initTimelineOperations() {
             // Playhead after or at end: expand right towards playhead
             let newDurSec = currentSec - startSec;
             const totalMediaDur = (layer.type === 'video' || layer.type === 'audio') ? getLayerMediaDuration(layer) : null;
-            if (totalMediaDur !== null) {
-              const maxDurSec = Math.max(0.2, totalMediaDur - (layer.sourceOffsetSec || 0));
+            if (layer.speedMode !== 'time_remap' && totalMediaDur !== null) {
+              const effSpeed = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+              const maxDurSec = Math.max(0.05, (totalMediaDur - (layer.sourceOffsetSec || 0)) / effSpeed);
               newDurSec = Math.min(newDurSec, maxDurSec);
             }
             layer.durationSec = newDurSec;
             layer.widthPx = Math.round(newDurSec * pps);
             layer.isDurationExplicit = true;
+            layer._userTrimmed = true;
             layer._cachedStartSec = startSec;
             layer._cachedEndSec = startSec + newDurSec;
           } else if (currentSec > startSec && currentSec < endSec) {
@@ -7132,6 +7124,7 @@ function initTimelineOperations() {
             layer.durationSec = remainingDurSec;
             layer.widthPx = Math.round(remainingDurSec * pps);
             layer.isDurationExplicit = true;
+            layer._userTrimmed = true;
             layer.sourceLayerId = layer.sourceLayerId || layer.id;
             layer._cachedStartSec = startSec;
             layer._cachedEndSec = currentSec;
@@ -7144,6 +7137,7 @@ function initTimelineOperations() {
             layer.durationSec = minDur;
             layer.widthPx = Math.round(minDur * pps);
             layer.isDurationExplicit = true;
+            layer._userTrimmed = true;
             layer._cachedStartSec = newStart;
             layer._cachedEndSec = currentSec;
           }

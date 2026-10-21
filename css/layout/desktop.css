@@ -7424,6 +7424,16 @@
   z-index: 55;
 }
 
+/* Out-of-Bounds Desktop Keyframe Diamond (Outside Layer Area: Hollow Outline Diamond) */
+.desktop-kf-diamond.is-out-of-bounds {
+  background-color: transparent !important;
+  border: 1.5px solid var(--kf-default-border, #a5b39a) !important;
+}
+
+.desktop-kf-diamond.is-out-of-bounds::before {
+  display: none !important;
+}
+
 /* Selected Keyframe: 12px + 2px solid theme primary selection border (AE Match) */
 .desktop-kf-diamond.is-selected-kf,
 .desktop-kf-diamond.is-dragging,
@@ -7438,12 +7448,20 @@
   z-index: 60 !important;
 }
 
+.desktop-kf-diamond.is-out-of-bounds.is-selected-kf,
+.desktop-kf-diamond.is-out-of-bounds.is-dragging,
+.desktop-kf-diamond.is-out-of-bounds.is-marquee-candidate {
+  background-color: transparent !important;
+  border: 2px solid var(--color-primary) !important;
+}
+
 .desktop-kf-diamond.is-selected-kf:hover {
   border-color: var(--color-primary-hover) !important;
 }
 
 /* Desktop Keyframe Markers on Clip Blocks elevated above playhead needle */
-.desktop-timeline-wrapper .timeline-keyframe-marker.is-active-prop {
+.desktop-timeline-wrapper .timeline-keyframe-marker.is-active-prop,
+.desktop-timeline-wrapper .timeline-keyframe-marker.is-out-of-bounds {
   z-index: 50 !important;
 }
 
