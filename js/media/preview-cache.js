@@ -938,10 +938,16 @@
         const dur = l.durationSec !== undefined ? Number(l.durationSec) : ((l.widthPx || 240) / pps);
         if (sec >= start && sec < start + dur) {
           if (l.type === 'video' || l.mediaType === 'video') {
-            // Background idle cache must never seek active <video> elements
-            return false;
+            if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isVideoFrameReady === 'function') {
+              if (!window.VideoFrameExtractor.isVideoFrameReady(l, sec)) return false;
+            } else {
+              return false;
+            }
           }
           if (l.type === 'precomp' && Array.isArray(l.layers)) {
+            if (!l.collapseTransformations && window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isVideoFrameReady === 'function') {
+              if (window.VideoFrameExtractor.isVideoFrameReady(l, sec)) continue;
+            }
             const precompTime = (sec - start) * (l.speed || 1.0) + (l.sourceOffsetSec || 0);
             for (let j = 0; j < l.layers.length; j++) {
               const sub = l.layers[j];
@@ -949,7 +955,13 @@
               const subStart = sub.startSec !== undefined ? Number(sub.startSec) : 0;
               const subDur = sub.durationSec !== undefined ? Number(sub.durationSec) : 5;
               if (precompTime >= subStart && precompTime < subStart + subDur) {
-                if (sub.type === 'video' || sub.mediaType === 'video') return false;
+                if (sub.type === 'video' || sub.mediaType === 'video') {
+                  if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isVideoFrameReady === 'function') {
+                    if (!window.VideoFrameExtractor.isVideoFrameReady(sub, precompTime)) return false;
+                  } else {
+                    return false;
+                  }
+                }
               }
             }
           }

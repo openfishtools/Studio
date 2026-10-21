@@ -108,6 +108,9 @@
     if (typeof window.invalidateEffectivePropsCache === 'function') {
       window.invalidateEffectivePropsCache(layer.id);
     }
+    if ((layer.type === 'video' || layer.type === 'precomp') && window.VideoFrameExtractor) {
+      window.VideoFrameExtractor.clearLayer(layer);
+    }
   }
   window.releaseLayerMediaElement = releaseLayerMediaElement;
 
@@ -117,6 +120,13 @@
       if (!layer) return null;
       if (layer.mediaDuration && isFinite(layer.mediaDuration) && layer.mediaDuration > 0) {
         return layer.mediaDuration;
+      }
+      if (layer.type === 'video' && window.VideoFrameExtractor) {
+        const src = window.VideoFrameExtractor.getSourceCache(window.VideoFrameExtractor._getSourceKey(layer));
+        if (src && isFinite(src.duration) && src.duration > 0) {
+          layer.mediaDuration = src.duration;
+          return src.duration;
+        }
       }
       const media = layerMediaCache.get(layer.mediaId || layer.id);
       if (media && media.el && isFinite(media.el.duration) && media.el.duration > 0) {
@@ -132,6 +142,9 @@
       if (layer.type === 'precomp') {
         if (!layer._precompBufferCanvas || !(layer._precompBufferCanvas instanceof HTMLCanvasElement) || typeof layer._precompBufferCanvas.getContext !== 'function') {
           layer._precompBufferCanvas = document.createElement('canvas');
+        }
+        if (window.VideoFrameExtractor && !layer._extractComplete && !layer._dirty) {
+          window.VideoFrameExtractor.extractLayerRange(layer);
         }
         return {
           type: 'precomp',
@@ -157,6 +170,19 @@
       const key = (layer.type === 'video' || layer.type === 'audio') ? layer.id : (layer.mediaId || layer.id);
       if (layerMediaCache.has(key)) {
         const cachedEntry = layerMediaCache.get(key);
+        if (layer.type === 'video') {
+          if (layer.isMuted && cachedEntry.el) {
+            try {
+              cachedEntry.el.pause();
+              cachedEntry.el.removeAttribute('src');
+              if (typeof cachedEntry.el.load === 'function') cachedEntry.el.load();
+            } catch (_) {}
+            cachedEntry.el = null;
+          }
+          if (window.VideoFrameExtractor && !layer._extractComplete) {
+            window.VideoFrameExtractor.extractLayerRange(layer);
+          }
+        }
         if (cachedEntry && cachedEntry.el && layer.dataUrl) {
           const curSrc = cachedEntry.el.getAttribute('src') || cachedEntry.el.src || '';
           if (!curSrc || curSrc !== layer.dataUrl) {
@@ -234,22 +260,6 @@
         }
         entry.el = img;
       } else if (layer.type === 'video') {
-        const video = document.createElement('video');
-        video.muted = !!layer.isMuted; // Muted if audio was extracted or layer muted
-        video.loop = false;
-        video.playsInline = true;
-        video.preload = 'auto';
-        video.style.cssText = 'position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; opacity: 0.001; z-index: 0;';
-        const mountPool = document.getElementById('editor-video-mount-pool') || document.body;
-        if (mountPool) {
-          mountPool.appendChild(video);
-        } else {
-          document.addEventListener('DOMContentLoaded', () => {
-            const mp = document.getElementById('editor-video-mount-pool') || document.body;
-            if (mp && !video.parentNode) mp.appendChild(video);
-          });
-        }
-
         if (layer.thumbUrl) {
           const poster = new Image();
           poster.onload = () => {
@@ -259,114 +269,74 @@
           entry.poster = poster;
         }
 
-        video.addEventListener('error', () => {
-          console.warn(`[FishVideo:Error] key=${key}`, video.error);
-          if (layer.mediaId && window.FishDatabase && typeof window.FishDatabase.getMedia === 'function') {
-            window.FishDatabase.getMedia(layer.mediaId).then(m => {
-              if (m && m.dataUrl && m.dataUrl !== video.src) {
-                layer.dataUrl = m.dataUrl;
-                video.src = m.dataUrl;
-                video.load();
-              }
-            }).catch(() => {});
-          }
-        });
-
-        video.onloadedmetadata = () => {
-          const hasFx = Array.isArray(layer.audioEffects) && layer.audioEffects.some(fx => !fx.disabled);
-          if (window.FishAudioEngine && !layer.isMuted && hasFx) {
-            window.FishAudioEngine.attachMediaElement(video);
-            window.FishAudioEngine.applyAudioEffects(video, layer.audioEffects);
-          }
-          if (video.videoWidth > 0 && video.videoHeight > 0) {
-            layer.mediaWidth = video.videoWidth;
-            layer.mediaHeight = video.videoHeight;
-            const layers = currentProjectState.layers || [];
-            layers.forEach(l => {
-              if (l.id === layer.id || l.mediaId === layer.mediaId || l.mediaId === layer.id) {
-                l.mediaWidth = video.videoWidth;
-                l.mediaHeight = video.videoHeight;
-                if (!l._userResized) {
-                  const curAspect = (l.scaleW && l.scaleH) ? (l.scaleW / l.scaleH) : null;
-                  const vidAspect = video.videoWidth / video.videoHeight;
-                  if (!curAspect || Math.abs(curAspect - vidAspect) > 0.02) {
-                    fitLayerToComposition(l, video.videoWidth, video.videoHeight);
-                    if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
-                    if (typeof redrawComposition === 'function') redrawComposition();
-                    if (typeof syncTransformControllerValues === 'function') syncTransformControllerValues();
-                  }
-                }
-              }
-            });
-          }
-          if (isFinite(video.duration) && video.duration > 0) {
-            layer.mediaDuration = video.duration;
-            const layers = currentProjectState.layers || [];
-            let updated = false;
-            layers.forEach(l => {
-              const matchesMedia = (l.id === layer.id || l.mediaId === layer.mediaId || l.mediaId === layer.id || (l.name && layer.name && l.name === layer.name));
-              if (matchesMedia) {
-                l.mediaDuration = video.duration;
-              }
-              if (matchesMedia && !l._userResized && (!l.durationSec || l.durationSec < video.duration)) {
-                l.durationSec = video.duration;
-                l.widthPx = Math.round(video.duration * (window.currentPixelsPerSecond || 80));
-                l.isDurationExplicit = true;
-                updated = true;
-              }
-            });
-            if (updated) {
-              if (typeof window.renderTimelineLayers === 'function') window.renderTimelineLayers();
-              if (typeof window.updateTimelineDuration === 'function') window.updateTimelineDuration(true);
-              saveCurrentProjectLayers();
-            }
-          }
-          try { video.currentTime = 0.001; } catch (_) {}
-        };
-
-        const snapshotFreezeCanvas = () => {
-          if (video.readyState >= 2 && video.videoWidth > 0) {
-            if (!entry.freezeCanvas) {
-              entry.freezeCanvas = document.createElement('canvas');
-            }
-            if (entry.freezeCanvas.width !== video.videoWidth || entry.freezeCanvas.height !== video.videoHeight) {
-              entry.freezeCanvas.width = video.videoWidth;
-              entry.freezeCanvas.height = video.videoHeight;
-            }
-            const fctx = entry.freezeCanvas.getContext('2d');
-            if (fctx) {
-              try {
-                fctx.drawImage(video, 0, 0);
-                entry.hasFreezeFrame = true;
-              } catch (_) {}
-            }
-          }
-        };
-        entry.snapshotFreezeCanvas = snapshotFreezeCanvas;
-
-        video.onseeked = () => {
-          window.VideoCompEngine.handleVideoSeeked(video, entry);
-        };
-
-        video.onloadeddata = () => {
-          snapshotFreezeCanvas();
-          if (!entry.isReady) {
-            entry.isReady = true;
-            if (!window.isExporting) redrawComposition('video:onloadeddata');
-          }
-        };
-
-        video.oncanplay = () => {
-          snapshotFreezeCanvas();
+        // Visual frames are rendered exclusively via VideoFrameExtractor ImageBitmap sequences.
+        // Only create a lightweight <audio> element if the video layer is unmuted.
+        if (layer.isMuted) {
+          entry.el = null;
           entry.isReady = true;
-          if (!window.isExporting) redrawComposition('video:oncanplay');
-        };
+        } else {
+          const vidAudio = document.createElement('audio');
+          vidAudio.muted = false;
+          vidAudio.loop = false;
+          vidAudio.preload = 'auto';
 
-        if (layer.dataUrl) {
-          video.src = layer.dataUrl;
-          video.load();
+          vidAudio.onloadedmetadata = () => {
+            if (window.FishAudioEngine) {
+              window.FishAudioEngine.attachMediaElement(vidAudio);
+              window.FishAudioEngine.applyAudioEffects(vidAudio, layer.audioEffects);
+            }
+            if (isFinite(vidAudio.duration) && vidAudio.duration > 0) {
+              layer.mediaDuration = vidAudio.duration;
+              const layers = currentProjectState.layers || [];
+              let updated = false;
+              layers.forEach(l => {
+                const matchesMedia = (l.id === layer.id || l.mediaId === layer.mediaId || l.mediaId === layer.id || (l.name && layer.name && l.name === layer.name));
+                if (matchesMedia) {
+                  l.mediaDuration = vidAudio.duration;
+                }
+                if (matchesMedia && !l._userResized && (!l.durationSec || l.durationSec < vidAudio.duration)) {
+                  l.durationSec = vidAudio.duration;
+                  l.widthPx = Math.round(vidAudio.duration * (window.currentPixelsPerSecond || 80));
+                  l.isDurationExplicit = true;
+                  updated = true;
+                }
+              });
+              if (updated) {
+                if (typeof window.renderTimelineLayers === 'function') window.renderTimelineLayers();
+                if (typeof window.updateTimelineDuration === 'function') window.updateTimelineDuration(true);
+                saveCurrentProjectLayers();
+              }
+            }
+            entry.isReady = true;
+          };
+
+          vidAudio.oncanplay = () => {
+            entry.isReady = true;
+          };
+
+          vidAudio.onerror = () => {
+            if (layer.mediaId && window.FishDatabase && typeof window.FishDatabase.getMedia === 'function') {
+              window.FishDatabase.getMedia(layer.mediaId).then(m => {
+                if (m && m.dataUrl && m.dataUrl !== vidAudio.src) {
+                  layer.dataUrl = m.dataUrl;
+                  vidAudio.src = m.dataUrl;
+                  vidAudio.load();
+                }
+              }).catch(() => {});
+            }
+          };
+
+          if (layer.dataUrl) {
+            vidAudio.src = layer.dataUrl;
+            vidAudio.load();
+          }
+          entry.el = vidAudio;
         }
-        entry.el = video;
+
+        const isRawMediaPoolItem = layer.id && String(layer.id).startsWith('med_') && !layer.mediaId && layer.startSec === undefined && layer.startPx === undefined;
+        if (window.VideoFrameExtractor && !isRawMediaPoolItem) {
+          window.VideoFrameExtractor.extractLayerRange(layer);
+        }
       } else if (layer.type === 'audio') {
         const audio = document.createElement('audio');
         audio.muted = !!layer.isMuted;
@@ -498,6 +468,10 @@
               entry.el.src = m.dataUrl;
               if (typeof entry.el.load === 'function') entry.el.load();
             }
+            const isPoolOnly = layer.id && String(layer.id).startsWith('med_') && !layer.mediaId && layer.startSec === undefined && layer.startPx === undefined;
+            if ((layer.type === 'video' || layer.type === 'precomp') && window.VideoFrameExtractor && !isPoolOnly) {
+              window.VideoFrameExtractor.extractLayerRange(layer);
+            }
             if (typeof redrawComposition === 'function') {
               redrawComposition('mediaHydrated');
             }
@@ -515,7 +489,9 @@
         redrawComposition('setActivePreviewMedia:null');
         return;
       }
-      getOrLoadLayerMedia(item);
+      if (item.startSec !== undefined || item.startPx !== undefined || item.mediaId) {
+        getOrLoadLayerMedia(item);
+      }
       redrawComposition('setActivePreviewMedia');
     }
     window.setActivePreviewMedia = setActivePreviewMedia;

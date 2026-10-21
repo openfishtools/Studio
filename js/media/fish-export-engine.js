@@ -212,14 +212,28 @@
 
   // ── Video Frame Cache Helpers ──────────────────────────────────────────────────
   async function ensureVideosCached(onProgress) {
+    if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.ensureLayersCached === 'function') {
+      var ps = window.currentProjectState || {};
+      return await window.VideoFrameExtractor.ensureLayersCached(
+        ps.layers || [],
+        function(pct, label) {
+          updateProgress(Math.round(pct * 0.12), label || 'Extracting frames...', onProgress);
+        },
+        function() { return isCancelled; }
+      );
+    }
     return true;
   }
 
   async function prepareFrameAtTime(t, videoLayers, pps) {
-    if (!videoLayers || videoLayers.length === 0) return;
+    if (!window.VideoFrameExtractor) return;
+    var ps = window.currentProjectState || {};
+    var allLayers = (videoLayers && videoLayers.length > 0) ? videoLayers : (ps.layers || []);
     var fetches = [];
-    for (var i = 0; i < videoLayers.length; i++) {
-      var vl = videoLayers[i];
+    for (var i = 0; i < allLayers.length; i++) {
+      var vl = allLayers[i];
+      if (!vl || vl.hidden) continue;
+      if (vl.type !== 'video' && vl.type !== 'precomp') continue;
       var start = vl.startSec !== undefined ? vl.startSec : ((vl.startPx || 0) / pps);
       var dur   = vl.durationSec !== undefined ? vl.durationSec : ((vl.widthPx || 400) / pps);
       if (t < start || t >= start + dur) continue;
@@ -238,11 +252,11 @@
       }
       vl._lastExportClipTime = clip;
 
-      if (window.getOrLoadLayerMedia) {
-        var media = window.getOrLoadLayerMedia(vl);
-        if (media && media.el && media.el.tagName === 'VIDEO') {
-          fetches.push(seekVideoToTime(media.el, clip));
-        }
+      if (!window.VideoFrameExtractor.getFrame(vl, clip)) {
+        fetches.push(window.VideoFrameExtractor.fetchFrameFromDBAsync(vl, clip));
+      }
+      if (vl.type === 'precomp' && Array.isArray(vl.layers)) {
+        fetches.push(prepareFrameAtTime(clip, vl.layers, pps));
       }
     }
     if (fetches.length) {
@@ -251,27 +265,6 @@
         new Promise(function(resolve) { setTimeout(resolve, 600); })
       ]);
     }
-  }
-
-  function seekVideoToTime(video, target) {
-    if (!video || !isFinite(target) || isNaN(target)) return Promise.resolve();
-    var dur = isFinite(video.duration) && video.duration > 0 ? video.duration : Infinity;
-    var t = Math.max(0, Math.min(dur - 0.001, target));
-    if (Math.abs(video.currentTime - t) < 0.005) return Promise.resolve();
-    return new Promise(function(resolve) {
-      var done = false;
-      var timer = setTimeout(function() { if (!done) { done = true; resolve(); } }, window.isExporting ? 150 : 1200);
-      var finish = function() {
-        if (done) return; done = true;
-        clearTimeout(timer);
-        video.removeEventListener('seeked', finish);
-        video.removeEventListener('error', finish);
-        resolve();
-      };
-      video.addEventListener('seeked', finish, { once: true });
-      video.addEventListener('error', finish, { once: true });
-      try { video.currentTime = t; } catch (_) { finish(); }
-    });
   }
 
   // ── Standalone Pure PCM 16-Bit WAV Encoder ───────────────────────────────────

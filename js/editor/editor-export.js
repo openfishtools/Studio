@@ -117,28 +117,6 @@
       // 1.5 Video Cache & Preview Restoration Helpers
       function restoreVideoPreviewAfterExport() {
         try {
-          const pps = window.currentPixelsPerSecond || 80;
-          const curSec = (typeof window.getCurrentPlayheadTime === 'function')
-            ? window.getCurrentPlayheadTime()
-            : ((Math.abs(window.timelinePanX || 0)) / pps);
-          const vLayers = (currentProjectState.layers || []).filter(l => l.type === 'video');
-          for (const vl of vLayers) {
-            const media = getOrLoadLayerMedia(vl);
-            if (media && media.el && media.el.tagName === 'VIDEO') {
-              try {
-                media.el.pause();
-                media.el.playbackRate = 1.0;
-                const start = vl.startSec !== undefined ? vl.startSec : ((vl.startPx || 0) / pps);
-                const dur = vl.durationSec !== undefined ? vl.durationSec : ((vl.widthPx || 400) / pps);
-                if (curSec >= start && curSec <= start + dur) {
-                  const vlEff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(vl, curSec) : vl;
-                  const effSpeed = (vlEff && vlEff.speed !== undefined) ? vlEff.speed : (vl.speed !== undefined && vl.speed > 0 ? vl.speed : 1);
-                  const timeInClip = Math.max(0, (vl.sourceOffsetSec || 0) + (curSec - start) * effSpeed);
-                  media.el.currentTime = timeInClip;
-                }
-              } catch (_) {}
-            }
-          }
           if (typeof window.redrawComposition === 'function') {
             window.redrawComposition('exportFinished');
           }
@@ -146,105 +124,49 @@
       }
 
       async function ensureAllVideosCached() {
+        if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.ensureLayersCached === 'function') {
+          return await window.VideoFrameExtractor.ensureLayersCached(
+            currentProjectState.layers || [],
+            (pct, label) => updateExportProgress(Math.round(pct * 0.15), label || 'Extracting frames...'),
+            () => isExportCancelled || window.isExportCancelled
+          );
+        }
         return true;
       }
 
       async function prepareVideoFramesForTime(t, videoLayers, pps) {
-        if (!videoLayers || videoLayers.length === 0) return;
+        if (!window.VideoFrameExtractor) return;
+        const allLayers = (videoLayers && videoLayers.length > 0) ? videoLayers : (currentProjectState.layers || []);
         const frameFetches = [];
-        for (const vl of videoLayers) {
+        for (const vl of allLayers) {
+          if (!vl || vl.hidden) continue;
+          if (vl.type !== 'video' && vl.type !== 'precomp') continue;
           const start = vl.startSec !== undefined ? vl.startSec : ((vl.startPx || 0) / pps);
           const dur = vl.durationSec !== undefined ? vl.durationSec : ((vl.widthPx || 400) / pps);
           if (t >= start && t < start + dur) {
             const vlEff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(vl, t) : vl;
             const effSpeed = (vlEff && vlEff.speed !== undefined) ? vlEff.speed : (vl.speed !== undefined && vl.speed > 0 ? vl.speed : 1);
             let timeInClip = 0;
-            if (vl.speedMode === 'time_remap') {
+            if (window.VideoCompEngine && typeof window.VideoCompEngine.computeLayerClipTime === 'function') {
+              timeInClip = window.VideoCompEngine.computeLayerClipTime(vl, t, start, effSpeed, vl.sourceOffsetSec || 0);
+            } else if (vl.speedMode === 'time_remap') {
               timeInClip = Math.max(0, vlEff && vlEff.timeRemap !== undefined ? vlEff.timeRemap : ((t - start) * effSpeed));
             } else if (typeof getLayerIntegratedSpeedTime === 'function') {
               timeInClip = getLayerIntegratedSpeedTime(vl, t);
             } else {
               timeInClip = Math.max(0, (vl.sourceOffsetSec || 0) + (t - start) * effSpeed);
             }
-            const media = getOrLoadLayerMedia(vl);
-            if (media && media.el && media.el.tagName === 'VIDEO') {
-              frameFetches.push(seekVideoToTime(media.el, timeInClip));
+            if (!window.VideoFrameExtractor.getFrame(vl, timeInClip)) {
+              frameFetches.push(window.VideoFrameExtractor.fetchFrameFromDBAsync(vl, timeInClip));
+            }
+            if (vl.type === 'precomp' && Array.isArray(vl.layers)) {
+              frameFetches.push(prepareVideoFramesForTime(timeInClip, vl.layers, pps));
             }
           }
         }
         if (frameFetches.length > 0) {
           await Promise.all(frameFetches);
         }
-      }
-
-      // 2. Video Element Frame Seeker Helper (Precise Keyframe-Safe Frame Seeker)
-      async function seekVideoToTime(video, targetTime) {
-        if (!video || !isFinite(targetTime) || isNaN(targetTime)) return;
-        const dur = (isFinite(video.duration) && video.duration > 0) ? video.duration : Infinity;
-        const clampedTarget = Math.max(0, Math.min(dur, targetTime));
-        if (Math.abs(video.currentTime - clampedTarget) < 0.002 && !video.seeking) return;
-
-        return new Promise((resolve) => {
-          let done = false;
-          let timer = null;
-
-          const finish = () => {
-            if (done) return;
-            done = true;
-            if (timer) clearTimeout(timer);
-            video.removeEventListener('seeked', onSeeked);
-            video.removeEventListener('error', finish);
-
-            // Snapshot fresh non-black frame to freezeCanvas to guarantee non-black fallback (preview/scrubbing only - skipped on export to prevent duplicate 1080p GPU canvas draw overhead)
-            if (!window.isExporting) {
-              try {
-                if (video.readyState >= 2 && video.videoWidth > 0) {
-                  for (const media of layerMediaCache.values()) {
-                    if (media && media.el === video) {
-                      if (!media.freezeCanvas) media.freezeCanvas = document.createElement('canvas');
-                      if (media.freezeCanvas.width !== video.videoWidth || media.freezeCanvas.height !== video.videoHeight) {
-                        media.freezeCanvas.width = video.videoWidth;
-                        media.freezeCanvas.height = video.videoHeight;
-                      }
-                      const fctx = media.freezeCanvas.getContext('2d', { alpha: false });
-                      if (fctx) {
-                        fctx.drawImage(video, 0, 0);
-                        media.hasFreezeFrame = true;
-                      }
-                      break;
-                    }
-                  }
-                }
-              } catch (_) {}
-            }
-
-            resolve();
-          };
-
-          const onSeeked = () => {
-            // Seeked confirmed by decoder: wait 1 presentation tick to ensure GPU frame buffer is ready on preview, resolve immediately on export
-            if (!window.isExporting && typeof video.requestVideoFrameCallback === 'function') {
-              try {
-                video.requestVideoFrameCallback(() => finish());
-                setTimeout(finish, 35);
-                return;
-              } catch (_) {}
-            }
-            finish();
-          };
-
-          video.addEventListener('seeked', onSeeked, { once: true });
-          video.addEventListener('error', finish, { once: true });
-
-          // Safety timeout: ensures complex GOP keyframe decodes never hang
-          timer = setTimeout(finish, window.isExporting ? 1200 : 2500);
-
-          try {
-            video.currentTime = clampedTarget;
-          } catch (_) {
-            finish();
-          }
-        });
       }
 
       // 3. Web Audio API Offline Audio Mixdown Helper
@@ -2866,7 +2788,7 @@
       const list = document.getElementById('matting-widget-list');
       const closeBtn = document.getElementById('matting-widget-close');
 
-      if (!widget || !window.FishBgRemovalEngine) return;
+      if (!widget) return;
 
       let isExpanded = false;
 
@@ -2880,7 +2802,6 @@
       }
 
       function collapseWidget(fromPopstate = false) {
-        if (!isExpanded) return;
         isExpanded = false;
         widget.classList.remove('is-expanded');
         if (!fromPopstate && history.state && history.state.mattingWidgetOpen) {
@@ -2900,7 +2821,12 @@
       if (closeBtn) {
         closeBtn.addEventListener('click', (e) => {
           e.stopPropagation();
+          if (hideTimeout) {
+            clearTimeout(hideTimeout);
+            hideTimeout = null;
+          }
           collapseWidget();
+          widget.classList.add('hidden');
         });
       }
 
@@ -2916,28 +2842,69 @@
         }
       });
 
-      function updateUI(activeTasks) {
-        if (!activeTasks || activeTasks.length === 0) {
+      let hideTimeout = null;
+
+      function getAllActiveTasks() {
+        const bgTasks = (window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.getActiveTasks === 'function')
+          ? window.FishBgRemovalEngine.getActiveTasks().filter(t => !t.cancelled)
+          : [];
+        const bakeTasks = (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getAllBakingTasks === 'function')
+          ? window.VideoFrameExtractor.getAllBakingTasks().filter(t => !t.cancelled)
+          : ((window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getActiveTasks === 'function')
+            ? window.VideoFrameExtractor.getActiveTasks().filter(t => !t.cancelled)
+            : []);
+        return [...bakeTasks, ...bgTasks];
+      }
+
+      function updateUI() {
+        const activeTasks = getAllActiveTasks();
+        const inProgressTasks = activeTasks.filter(t => {
+          return !t.cancelled && t.percent < 100 && t.status !== 'done' && t.status !== 'Ready' && !String(t.status).includes('100% Ready');
+        });
+
+        if (activeTasks.length === 0) {
           widget.classList.add('hidden');
           if (isExpanded) collapseWidget();
           return;
         }
 
-        widget.classList.remove('hidden');
+        // If no tasks in progress and widget is already hidden, keep it hidden
+        if (inProgressTasks.length === 0 && widget.classList.contains('hidden')) {
+          return;
+        }
 
-        const totalPct = activeTasks.reduce((sum, t) => sum + (t.percent || 0), 0);
-        const avgPct = Math.round(totalPct / activeTasks.length);
+        // Auto-dismiss when everything is 100% complete
+        if (inProgressTasks.length === 0) {
+          if (!hideTimeout) {
+            hideTimeout = setTimeout(() => {
+              collapseWidget();
+              widget.classList.add('hidden');
+              hideTimeout = null;
+            }, 3000);
+          }
+        } else {
+          if (hideTimeout) {
+            clearTimeout(hideTimeout);
+            hideTimeout = null;
+          }
+          widget.classList.remove('hidden');
+        }
+
+        const displayPct = inProgressTasks.length > 0
+          ? Math.round(inProgressTasks.reduce((sum, t) => sum + (t.percent || 0), 0) / inProgressTasks.length)
+          : 100;
+
         if (percentEl) {
-          percentEl.textContent = `${avgPct}%`;
+          percentEl.textContent = `${displayPct}%`;
         }
 
         if (ringFill) {
           const circumference = 84.823;
-          const offset = circumference * (1 - Math.max(0, Math.min(100, avgPct)) / 100);
+          const offset = circumference * (1 - Math.max(0, Math.min(100, displayPct)) / 100);
           ringFill.style.strokeDashoffset = offset;
         }
 
-        widget.title = `${activeTasks.length} task(s) processing (${avgPct}%) - Click to expand`;
+        widget.title = `${activeTasks.length} task(s) (${displayPct}%) - Click to expand`;
 
         if (!list) return;
         list.innerHTML = '';
@@ -2946,27 +2913,39 @@
           const row = document.createElement('div');
           row.className = 'matting-task-row';
 
+          const isDone = (task.percent >= 100 || task.status === 'done' || task.status === 'Ready' || String(task.status).includes('100% Ready'));
           let statusText = '';
+
           if (task.status && task.status.startsWith('Downloading model')) {
             statusText = task.status;
           } else if (task.status === 'downloading_model') {
             statusText = 'Downloading model...';
+          } else if (task.type === 'baking' || task.type === 'video_bake') {
+            statusText = isDone ? 'Video Baked (100% Ready)' : (task.status || `Baking frames: ${task.currentFrame || 0}/${task.totalFrames || 0} (${task.percent || 0}%)`);
           } else if (task.type === 'video') {
-            statusText = `Frame ${task.currentFrame || 0}/${task.totalFrames || 0} (${task.percent}%)`;
+            statusText = task.status && task.status.includes('Waiting')
+              ? task.status
+              : (isDone ? 'Background Removed (100% Ready)' : `Removing BG: Frame ${task.currentFrame || 0}/${task.totalFrames || 0} (${task.percent || 0}%)`);
           } else {
-            statusText = task.status === 'done' ? 'Ready' : `Processing (${task.percent}%)`;
+            statusText = isDone ? 'Background Removed (100% Ready)' : `Processing (${task.percent || 0}%)`;
           }
+
+          const actionHtml = isDone
+            ? `<span class="matting-task-done-badge" style="color:var(--color-primary);font-size:12px;display:flex;align-items:center;" title="Complete">
+                 <i class='fticon fticon-check' aria-hidden='true'></i>
+               </span>`
+            : `<button type="button" class="matting-task-cancel" title="Cancel" data-task-id="${task.id}">
+                 <i class='fticon fticon-close' style='width:12px;height:12px;font-size:12px;line-height:1;' aria-hidden='true'></i>
+               </button>`;
 
           row.innerHTML = `
             <div class="matting-task-meta">
               <span class="matting-task-name">${task.layerName || 'Media'}</span>
-              <button type="button" class="matting-task-cancel" title="Cancel" data-task-id="${task.id}">
-                <i class='fticon fticon-close' style='width:12px;height:12px;font-size:12px;line-height:1;' aria-hidden='true'></i>
-              </button>
+              ${actionHtml}
             </div>
             <div class="matting-task-status">${statusText}</div>
             <div class="matting-task-bar">
-              <div class="matting-task-fill" style="width: ${task.percent || 0}%;"></div>
+              <div class="matting-task-fill" style="width: ${isDone ? 100 : (task.percent || 0)}%;"></div>
             </div>
           `;
 
@@ -2974,7 +2953,11 @@
           if (cancelBtn) {
             cancelBtn.addEventListener('click', (e) => {
               e.stopPropagation();
-              if (window.FishBgRemovalEngine) {
+              if (task.type === 'baking' || task.type === 'video_bake') {
+                if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.cancelTask === 'function') {
+                  window.VideoFrameExtractor.cancelTask(task.id);
+                }
+              } else if (window.FishBgRemovalEngine) {
                 window.FishBgRemovalEngine.cancelTask(task.id);
               }
             });
@@ -2984,8 +2967,13 @@
         });
       }
 
-      window.FishBgRemovalEngine.addProgressListener(updateUI);
-      updateUI(window.FishBgRemovalEngine.getActiveTasks());
+      if (window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.addProgressListener === 'function') {
+        window.FishBgRemovalEngine.addProgressListener(updateUI);
+      }
+      if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.addProgressListener === 'function') {
+        window.VideoFrameExtractor.addProgressListener(updateUI);
+      }
+      updateUI();
     }
     window.initPreviewMattingWidget = initPreviewMattingWidget;
 

@@ -233,7 +233,6 @@
       };
 
       const collapseWidget = (fromPopstate = false) => {
-        if (!isExpanded) return;
         isExpanded = false;
         widget.classList.remove('is-expanded');
         if (!fromPopstate && history.state && history.state.templateMattingWidgetOpen) {
@@ -253,7 +252,12 @@
       if (closeBtn) {
         closeBtn.addEventListener('click', (e) => {
           e.stopPropagation();
+          if (hideTimeout) {
+            clearTimeout(hideTimeout);
+            hideTimeout = null;
+          }
           collapseWidget();
+          widget.classList.add('hidden');
         });
       }
 
@@ -269,28 +273,68 @@
         }
       });
 
-      const updateUI = (activeTasks) => {
-        if (!activeTasks || activeTasks.length === 0) {
+      let hideTimeout = null;
+
+      const getAllActiveTasks = () => {
+        const bgTasks = (window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.getActiveTasks === 'function')
+          ? window.FishBgRemovalEngine.getActiveTasks().filter(t => !t.cancelled)
+          : [];
+        const bakeTasks = (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getAllBakingTasks === 'function')
+          ? window.VideoFrameExtractor.getAllBakingTasks().filter(t => !t.cancelled)
+          : ((window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getActiveTasks === 'function')
+            ? window.VideoFrameExtractor.getActiveTasks().filter(t => !t.cancelled)
+            : []);
+        return [...bakeTasks, ...bgTasks];
+      };
+
+      const updateUI = () => {
+        const activeTasks = getAllActiveTasks();
+        const inProgressTasks = activeTasks.filter(t => {
+          return !t.cancelled && t.percent < 100 && t.status !== 'done' && t.status !== 'Ready' && !String(t.status).includes('100% Ready');
+        });
+
+        if (activeTasks.length === 0) {
           widget.classList.add('hidden');
           if (isExpanded) collapseWidget();
           return;
         }
 
-        widget.classList.remove('hidden');
+        // If no tasks in progress and widget is already hidden, keep it hidden
+        if (inProgressTasks.length === 0 && widget.classList.contains('hidden')) {
+          return;
+        }
 
-        const totalPct = activeTasks.reduce((sum, t) => sum + (t.percent || 0), 0);
-        const avgPct = Math.round(totalPct / activeTasks.length);
+        if (inProgressTasks.length === 0) {
+          if (!hideTimeout) {
+            hideTimeout = setTimeout(() => {
+              collapseWidget();
+              widget.classList.add('hidden');
+              hideTimeout = null;
+            }, 3000);
+          }
+        } else {
+          if (hideTimeout) {
+            clearTimeout(hideTimeout);
+            hideTimeout = null;
+          }
+          widget.classList.remove('hidden');
+        }
+
+        const displayPct = inProgressTasks.length > 0
+          ? Math.round(inProgressTasks.reduce((sum, t) => sum + (t.percent || 0), 0) / inProgressTasks.length)
+          : 100;
+
         if (percentEl) {
-          percentEl.textContent = `${avgPct}%`;
+          percentEl.textContent = `${displayPct}%`;
         }
 
         if (ringFill) {
           const circumference = 84.823;
-          const offset = circumference * (1 - Math.max(0, Math.min(100, avgPct)) / 100);
+          const offset = circumference * (1 - Math.max(0, Math.min(100, displayPct)) / 100);
           ringFill.style.strokeDashoffset = offset;
         }
 
-        widget.title = `${activeTasks.length} task(s) processing (${avgPct}%) - Click to expand`;
+        widget.title = `${activeTasks.length} task(s) (${displayPct}%) - Click to expand`;
 
         if (!list) return;
         list.innerHTML = '';
@@ -299,27 +343,39 @@
           const row = document.createElement('div');
           row.className = 'matting-task-row';
 
+          const isDone = (task.percent >= 100 || task.status === 'done' || task.status === 'Ready' || String(task.status).includes('100% Ready'));
           let statusText = '';
+
           if (task.status && task.status.startsWith('Downloading model')) {
             statusText = task.status;
           } else if (task.status === 'downloading_model') {
             statusText = 'Downloading model...';
+          } else if (task.type === 'baking' || task.type === 'video_bake') {
+            statusText = isDone ? 'Video Baked (100% Ready)' : (task.status || `Baking frames: ${task.currentFrame || 0}/${task.totalFrames || 0} (${task.percent || 0}%)`);
           } else if (task.type === 'video') {
-            statusText = `Frame ${task.currentFrame || 0}/${task.totalFrames || 0} (${task.percent}%)`;
+            statusText = task.status && task.status.includes('Waiting')
+              ? task.status
+              : (isDone ? 'Background Removed (100% Ready)' : `Removing BG: Frame ${task.currentFrame || 0}/${task.totalFrames || 0} (${task.percent || 0}%)`);
           } else {
-            statusText = task.status === 'done' ? 'Ready' : `Processing (${task.percent}%)`;
+            statusText = isDone ? 'Background Removed (100% Ready)' : `Processing (${task.percent || 0}%)`;
           }
+
+          const actionHtml = isDone
+            ? `<span class="matting-task-done-badge" style="color:var(--color-primary);font-size:12px;display:flex;align-items:center;" title="Complete">
+                 <i class='fticon fticon-check' aria-hidden='true'></i>
+               </span>`
+            : `<button type="button" class="matting-task-cancel" title="Cancel" data-task-id="${task.id}">
+                 <i class='fticon fticon-close' style='width:12px;height:12px;font-size:12px;line-height:1;' aria-hidden='true'></i>
+               </button>`;
 
           row.innerHTML = `
             <div class="matting-task-meta">
               <span class="matting-task-name">${task.layerName || 'Media'}</span>
-              <button type="button" class="matting-task-cancel" title="Cancel" data-task-id="${task.id}">
-                <i class='fticon fticon-close' style='width:12px;height:12px;font-size:12px;line-height:1;' aria-hidden='true'></i>
-              </button>
+              ${actionHtml}
             </div>
             <div class="matting-task-status">${statusText}</div>
             <div class="matting-task-bar">
-              <div class="matting-task-fill" style="width: ${task.percent || 0}%;"></div>
+              <div class="matting-task-fill" style="width: ${isDone ? 100 : (task.percent || 0)}%;"></div>
             </div>
           `;
 
@@ -327,7 +383,11 @@
           if (cancelBtn) {
             cancelBtn.addEventListener('click', (e) => {
               e.stopPropagation();
-              if (window.FishBgRemovalEngine) {
+              if (task.type === 'baking' || task.type === 'video_bake') {
+                if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.cancelTask === 'function') {
+                  window.VideoFrameExtractor.cancelTask(task.id);
+                }
+              } else if (window.FishBgRemovalEngine) {
                 window.FishBgRemovalEngine.cancelTask(task.id);
               }
             });
@@ -342,8 +402,13 @@
         }
       };
 
-      window.FishBgRemovalEngine.addProgressListener(updateUI);
-      updateUI(window.FishBgRemovalEngine.getActiveTasks());
+      if (window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.addProgressListener === 'function') {
+        window.FishBgRemovalEngine.addProgressListener(updateUI);
+      }
+      if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.addProgressListener === 'function') {
+        window.VideoFrameExtractor.addProgressListener(updateUI);
+      }
+      updateUI();
     },
 
     _bindEvents() {

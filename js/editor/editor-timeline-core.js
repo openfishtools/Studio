@@ -537,7 +537,8 @@
           if (layer.startSec === undefined) layer.startSec = (layer.startPx || 0) / oldPps;
           if (layer.durationSec === undefined) layer.durationSec = (layer.widthPx || 320) / oldPps;
           layer.startPx = Math.round(layer.startSec * newPps);
-          layer.widthPx = Math.max(16, Math.round(layer.durationSec * newPps));
+          const endPx = Math.round((layer.startSec + layer.durationSec) * newPps);
+          layer.widthPx = Math.max(16, endPx - layer.startPx);
         });
 
         // 4. FAST IN-PLACE TIMELINE CLIPS UPDATE (avoids full DOM rebuild lag)
@@ -690,6 +691,9 @@
         if (window.PreviewCacheManager) {
           window.PreviewCacheManager.setFps(currentFps);
         }
+        if (window.VideoFrameExtractor) {
+          window.VideoFrameExtractor.setFps(currentFps);
+        }
         const fpsDropdown = document.getElementById('dropdown-fps');
         if (fpsDropdown) {
           fpsDropdown.dataset.value = String(currentFps);
@@ -724,10 +728,11 @@
 
       // SMPTE Timecode Formatter: 00:MM:SS:FF (Where FF counts 00..FPS-1)
       function formatTimecode(ms) {
-        const frameDurationMs = 1000 / currentFps;
+        const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
+        const frameDurationMs = 1000 / fps;
         const totalFrames = Math.max(0, Math.floor((ms + (frameDurationMs * 0.1)) / frameDurationMs));
-        const frame = totalFrames % currentFps;
-        const totalSec = Math.floor(totalFrames / currentFps);
+        const frame = totalFrames % fps;
+        const totalSec = Math.floor(totalFrames / fps);
         const mins = String(Math.floor(totalSec / 60)).padStart(2, '0');
         const secs = String(totalSec % 60).padStart(2, '0');
         const ff = String(frame).padStart(2, '0');
@@ -1279,13 +1284,16 @@
         }
 
         // 2. Snap ke awal / akhir layer depan / belakang
+        const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || currentFps || 60);
         const layers = Array.isArray(currentProjectState.layers) ? currentProjectState.layers : [];
         for (let i = 0; i < layers.length; i++) {
           const l = layers[i];
           if (excludeLayerId && l.id === excludeLayerId) continue;
-          const startSec = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps);
-          const durSec = l.durationSec !== undefined ? l.durationSec : ((l.widthPx || 320) / pps);
-          const endSec = startSec + durSec;
+          const rawStartSec = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps);
+          const rawDurSec = l.durationSec !== undefined ? l.durationSec : ((l.widthPx || 320) / pps);
+          const startSec = Math.round(rawStartSec * safeFps) / safeFps;
+          const durSec = Math.max(1 / safeFps, Math.round(rawDurSec * safeFps) / safeFps);
+          const endSec = Math.round((startSec + durSec) * safeFps) / safeFps;
 
           addTarget(startSec, 'layer-start', l.name);
           addTarget(endSec, 'layer-end', l.name);
@@ -1293,7 +1301,9 @@
 
         // 3. Current Playhead position (for layer slide & trim)
         if (includePlayhead) {
-          const playheadSec = Math.max(0, -(panX || 0) / pps);
+          const curPan = window.timelinePanX !== undefined ? window.timelinePanX : (panX || 0);
+          const rawPlayheadSec = Math.max(0, -curPan / pps);
+          const playheadSec = Math.round(rawPlayheadSec * safeFps) / safeFps;
           addTarget(playheadSec, 'playhead');
         }
 
@@ -1773,7 +1783,7 @@
           const totalDur = getProjectTotalDuration();
           const clampedSec = Math.min(totalDur, targetSec);
           // Snap playhead to exact frame boundary when scrubbing on ruler
-          const safeFps = window.currentTimelineFps || currentFps || 60;
+          const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
           const snappedSec = Math.round(clampedSec * safeFps) / safeFps;
           const targetPanX = -snappedSec * activePps;
 
@@ -1797,6 +1807,13 @@
         } else if (targetPanX < bounds.min) {
           targetPanX = bounds.min;
         }
+
+        // Quantize scrubbing to exact project FPS frame boundary
+        const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
+        const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
+        const rawSec = Math.max(0, -targetPanX / activePps);
+        const snappedSec = Math.round(rawSec * safeFps) / safeFps;
+        targetPanX = -snappedSec * activePps;
 
         // Pure smooth playhead scrubbing without snapping to beatmarks or layer start/end
         const needle = document.getElementById('timeline-center-needle');
@@ -1842,14 +1859,12 @@
           window.FishAudioEngine.stopScrub();
         }
 
-        // Align exactly to nearest frame when parking after ruler drag
-        if (isRulerDrag) {
-          const rawSec = getCurrentPlayheadTime();
-          const safeFps = window.currentTimelineFps || currentFps || 60;
-          const finalSnappedSec = Math.round(rawSec * safeFps) / safeFps;
-          const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
-          updateTimelinePosition(-finalSnappedSec * pps, true);
-        }
+        // Align exactly to nearest project FPS frame when parking (for both ruler drag and layers drag)
+        const rawSec = getCurrentPlayheadTime();
+        const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
+        const finalSnappedSec = Math.round(rawSec * safeFps) / safeFps;
+        const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
+        updateTimelinePosition(-finalSnappedSec * pps, true);
 
         isRulerDrag = false;
 
@@ -1858,10 +1873,17 @@
         if (rulerViewport) rulerViewport.classList.remove('is-dragging');
         if (layersViewport) layersViewport.classList.remove('is-dragging');
 
-        // Precise park seek on all active audio/video layers
+        // Precise park seek on active unmuted audio streams + frame extractor priority for video/precomp
         const layers = currentProjectState.layers || [];
         layers.forEach(layer => {
-          if (layer.type === 'audio' || layer.type === 'video') {
+          if (layer.type === 'video' || layer.type === 'precomp') {
+            const start = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pixelsPerSecond);
+            const dur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pixelsPerSecond);
+            if (curSec >= start && curSec < start + dur && window.VideoFrameExtractor) {
+              window.VideoFrameExtractor.extractLayerRange(layer);
+            }
+          }
+          if ((layer.type === 'audio' || layer.type === 'video') && !layer.isMuted) {
             const start = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pixelsPerSecond);
             const dur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pixelsPerSecond);
             if (curSec >= start && curSec < start + dur) {

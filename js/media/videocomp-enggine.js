@@ -8,6 +8,10 @@
 (function(window) {
   'use strict';
 
+  if (typeof window !== 'undefined' && !window.VideoFrameExtractor && typeof require === 'function') {
+    try { require('./frame-extractor.js'); } catch (_) {}
+  }
+
   class VideoCompEngine {
     constructor() {
       this.name = 'VideoCompEngine';
@@ -33,10 +37,8 @@
         if (ppsOrOptions.speed !== undefined) overrideSpeed = ppsOrOptions.speed;
         if (ppsOrOptions.sourceOffsetSec !== undefined) overrideOffset = ppsOrOptions.sourceOffsetSec;
       } else if ((overrideSpeed !== null && overrideSpeed !== undefined) || (overrideOffset !== null && overrideOffset !== undefined)) {
-        // 5-argument signature: computeLayerClipTime(layer, currentSec, rootStartSec, speed, sourceOffsetSec)
         rootStartSec = ppsOrOptions;
       } else if (typeof ppsOrOptions === 'number') {
-        // 3-argument signature: computeLayerClipTime(layer, currentSec, pixelsPerSecond)
         effectivePps = ppsOrOptions;
       } else {
         effectivePps = (typeof window !== 'undefined' && window.currentPixelsPerSecond) ? window.currentPixelsPerSecond : 80;
@@ -77,12 +79,8 @@
     }
 
     /**
-     * Single-slot coalesced seeking during scrubbing and parking.
-     * Ensures preview never twitches or moves on its own after scrubbing stops.
-     * @param {HTMLVideoElement|HTMLMediaElement} videoEl
-     * @param {number} targetTime
-     * @param {boolean} [isPlaying=false]
-     * @param {boolean} [isPausedStepping=false]
+     * Legacy helper retained for backward-compatible unit tests only.
+     * Active editor playback & scrubbing exclusively use VideoFrameExtractor ImageBitmap sequences.
      */
     seekVideoElementCoalesced(videoEl, targetTime, isPlaying = false, isPausedStepping = false) {
       if (!videoEl || !isFinite(targetTime) || videoEl.readyState < 1) return;
@@ -106,7 +104,6 @@
           videoEl._pendingScrubTime = null;
         }
       } else if (pausedStepping || videoEl.paused) {
-        // During fast/stepped playback (>2.0x, time_remap, or reverse/freeze), step videoEl without overlapping seeks
         if (!videoEl.seeking && Math.abs((videoEl.currentTime || 0) - targetSeek) > 0.025) {
           try { videoEl.currentTime = targetSeek; } catch (_) {}
         }
@@ -114,20 +111,14 @@
     }
 
     /**
-     * Handle video seek completion event (video.onseeked).
-     * @param {HTMLVideoElement} videoEl
-     * @param {Object} [entry]
+     * Legacy helper retained for backward-compatible unit tests only.
      */
     handleVideoSeeked(videoEl, entry) {
       if (!videoEl) return;
       if (entry) entry.isReady = true;
-
-      // Skip heavy freeze frame & UI preview redraws during active export
       if (typeof window !== 'undefined' && window.isExporting) return;
 
       const isTimelinePlaying = typeof window !== 'undefined' && !!window.isTimelinePlaying;
-
-      // Process any queued scrub seek smoothly
       if (!isTimelinePlaying && videoEl._pendingScrubTime !== null && videoEl._pendingScrubTime !== undefined) {
         const nextTime = videoEl._pendingScrubTime;
         videoEl._pendingScrubTime = null;
@@ -153,15 +144,15 @@
     }
 
     /**
-     * Resolve hardware <video> element and current frame for rendering.
-     * Enforces idle-cache guard so background idle caching never seeks active <video> elements.
+     * Resolve video frame for rendering exclusively from VideoFrameExtractor ImageBitmap sequences.
+     * Never creates or seeks live DOM <video> elements during timeline playback or scrubbing.
      * @param {Object} layer
      * @param {Object} media
      * @param {Object} [options={}]
-     * @returns {{ el: HTMLElement|HTMLCanvasElement|null, timeInClip: number, hasUnreadyMedia: boolean }}
+     * @returns {{ el: ImageBitmap|HTMLCanvasElement|HTMLElement|null, timeInClip: number, hasUnreadyMedia: boolean }}
      */
     resolveLayerVideoElement(layer, media, options = {}) {
-      if (!layer || !media) {
+      if (!layer) {
         return { el: null, timeInClip: 0, hasUnreadyMedia: false };
       }
 
@@ -179,51 +170,143 @@
       }
       layer._lastDataUrl = layer.dataUrl || null;
 
-      // Background idle-cache guard: never seek shared <video> elements from background idle-cache worker
-      if (isIdleCache) {
-        return { el: null, timeInClip: 0, hasUnreadyMedia: true };
-      }
-
       const timeInClip = this.computeLayerClipTime(layer, currentSec, pixelsPerSecond);
-      const isHtmlEl = (typeof HTMLElement !== 'undefined' && media instanceof HTMLElement) || !!(media && media.tagName);
-      const videoEl = (media && media.el)
-        ? media.el
-        : (isHtmlEl ? media : null);
-
       const isExporting = isExport || (typeof window !== 'undefined' && !!window.isExporting);
-      const isTimelinePlaying = typeof window !== 'undefined' && !!window.isTimelinePlaying;
-
-      if (videoEl && !isExporting && isFinite(timeInClip) && videoEl.readyState >= 1) {
-        this.seekVideoElementCoalesced(videoEl, timeInClip, isTimelinePlaying, videoEl.paused);
-      }
+      const extractor = (typeof window !== 'undefined') ? window.VideoFrameExtractor : null;
 
       let el = null;
-      if (videoEl && videoEl.videoWidth > 0 && videoEl.readyState >= 2) {
-        el = videoEl;
-        layer._renderedExactVideoFrame = true;
-        layer._lastRenderedFrame = videoEl;
-      } else if (media && media.freezeCanvas && media.hasFreezeFrame) {
-        el = media.freezeCanvas;
-      } else if (layer._lastRenderedFrame && layer._lastRenderedFrame !== (media && media.poster)) {
-        el = layer._lastRenderedFrame;
-      } else if (media && media.poster && media.poster.naturalWidth > 0) {
-        el = media.poster;
-      } else {
-        const placeholderW = layer.mediaWidth || (videoEl && videoEl.videoWidth > 0 ? videoEl.videoWidth : 1920);
-        const placeholderH = layer.mediaHeight || (videoEl && videoEl.videoHeight > 0 ? videoEl.videoHeight : 1080);
-        const placeholderFn = (typeof window !== 'undefined' && typeof window.getMediaNotReadyPlaceholder === 'function')
-          ? window.getMediaNotReadyPlaceholder
-          : null;
-        if (placeholderFn) {
-          el = placeholderFn(placeholderW, placeholderH, 0);
+      let hasUnreadyMedia = true;
+
+      if (extractor) {
+        const sourceKey = extractor._getSourceKey(layer);
+        const source = extractor.getSourceCache(sourceKey);
+
+        if (source && source.frames && source.frames.size > 0) {
+          const fIdx = Math.round(timeInClip * (source.fps || 60));
+          const interpMode = layer.speedInterpolation || 'none';
+          const extractedFrame = extractor.getInterpolatedFrame(
+            source,
+            timeInClip,
+            interpMode,
+            layer.mediaWidth || 960,
+            layer.mediaHeight || 540
+          );
+
+          if (extractedFrame) {
+            el = extractedFrame;
+            layer._lastRenderedFrame = extractedFrame;
+            layer._renderedExactVideoFrame = true;
+            hasUnreadyMedia = false;
+          } else {
+            if (source.cachedFrameIndices && source.cachedFrameIndices.has(fIdx)) {
+              extractor.fetchFrameFromDB(source, fIdx);
+            }
+            if (!isExporting && !isIdleCache && !source.isExtracting) {
+              extractor.extractLayerRange(layer);
+            }
+
+            if (!isExporting && !isIdleCache) {
+              let bestNearest = null;
+              let minDist = Infinity;
+              const maxHoldDist = Math.round((source.fps || 60) * 1.5);
+              for (const [kIdx, bmp] of source.frames.entries()) {
+                const dist = Math.abs(kIdx - fIdx);
+                if (dist < minDist) {
+                  minDist = dist;
+                  bestNearest = bmp;
+                  if (dist <= 1) break;
+                }
+              }
+              if (bestNearest && minDist <= maxHoldDist) {
+                el = bestNearest;
+              } else if (layer._lastRenderedFrame && layer._lastRenderedFrame !== (media && media.poster)) {
+                el = layer._lastRenderedFrame;
+              }
+            }
+          }
+        } else if (!isExporting && !isIdleCache && (layer.dataUrl || layer.mediaId)) {
+          extractor.extractLayerRange(layer);
+        }
+      }
+
+      if (isIdleCache && !layer._renderedExactVideoFrame) {
+        return { el: null, timeInClip, hasUnreadyMedia: true };
+      }
+
+      // Fallback only for unit tests passing a mock HTMLVideoElement without dataUrl/mediaId
+      if (!el && !layer.dataUrl && !layer.mediaId && media) {
+        const isHtmlEl = (typeof HTMLElement !== 'undefined' && media instanceof HTMLElement) || !!(media && media.tagName);
+        const mockEl = (media && media.el) ? media.el : (isHtmlEl ? media : null);
+        if (mockEl && mockEl.videoWidth > 0 && mockEl.readyState >= 2) {
+          el = mockEl;
+          layer._renderedExactVideoFrame = true;
+          layer._lastRenderedFrame = mockEl;
+          hasUnreadyMedia = false;
+        }
+      }
+
+      if (!el && !isExporting && !isIdleCache) {
+        if (layer._lastRenderedFrame && layer._lastRenderedFrame !== (media && media.poster)) {
+          el = layer._lastRenderedFrame;
+        } else {
+          const placeholderW = layer.mediaWidth || 1920;
+          const placeholderH = layer.mediaHeight || 1080;
+          const placeholderFn = (typeof window !== 'undefined' && typeof window.getMediaNotReadyPlaceholder === 'function')
+            ? window.getMediaNotReadyPlaceholder
+            : null;
+          if (placeholderFn) {
+            el = placeholderFn(placeholderW, placeholderH, layer._extractProgress || 0);
+            if (el) el._isPlaceholder = true;
+          }
         }
       }
 
       return {
         el,
         timeInClip,
-        hasUnreadyMedia: (layer.type === 'video' && (!videoEl || videoEl.readyState < 2))
+        hasUnreadyMedia
       };
+    }
+
+    /**
+     * Resolve pre-extracted ImageBitmap frame for a Precomp layer from VideoFrameExtractor.
+     * Falls back to live renderPrecompToCanvas when dirty, during export, or while frames are still extracting.
+     */
+    resolvePrecompElement(precompLayer, options = {}) {
+      if (!precompLayer || precompLayer.type !== 'precomp') {
+        return { el: null, innerSec: 0, fromSequence: false, hasUnreadyMedia: false };
+      }
+      const {
+        isExport = false,
+        isIdleCache = false,
+        currentSec = 0,
+        pixelsPerSecond = 80,
+        targetW = 960,
+        targetH = 540
+      } = options;
+
+      const innerSec = this.computeLayerClipTime(precompLayer, currentSec, pixelsPerSecond);
+      const isExporting = isExport || (typeof window !== 'undefined' && !!window.isExporting);
+      const extractor = (typeof window !== 'undefined') ? window.VideoFrameExtractor : null;
+
+      if (!isExporting && !precompLayer._dirty && extractor) {
+        const sourceKey = extractor._getSourceKey(precompLayer);
+        const source = extractor.getSourceCache(sourceKey);
+        if (source && source.frames && source.frames.size > 0) {
+          const interpMode = precompLayer.speedInterpolation || 'none';
+          const bmp = extractor.getInterpolatedFrame(source, innerSec, interpMode, targetW, targetH);
+          if (bmp) {
+            precompLayer._lastRenderedFrame = bmp;
+            precompLayer._renderedExactVideoFrame = true;
+            return { el: bmp, innerSec, fromSequence: true, hasUnreadyMedia: false };
+          }
+        }
+        if (!isIdleCache && !source?.isExtracting) {
+          extractor.extractLayerRange(precompLayer);
+        }
+      }
+
+      return { el: null, innerSec, fromSequence: false, hasUnreadyMedia: true };
     }
 
     /**

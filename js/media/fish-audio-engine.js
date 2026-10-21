@@ -604,6 +604,15 @@
 
       flatItems.forEach(item => {
         const { layer, parentLayer, rootStartSec, rootEndSec, sourceOffsetSec, parentOffsetSec, parentSpeed, effectiveSpeed, isMuted, effectiveGain } = item;
+        if (layer.type === 'video' && window.VideoFrameExtractor && currentSec >= rootStartSec && currentSec < rootEndSec) {
+          const sourceKey = window.VideoFrameExtractor._getSourceKey(layer);
+          const source = window.VideoFrameExtractor.getSourceCache(sourceKey);
+          if (source) {
+            const clipTime = Math.max(0, (sourceOffsetSec || 0) + (currentSec - rootStartSec) * (effectiveSpeed || 1.0));
+            const curFIdx = Math.round(clipTime * (source.fps || 60));
+            window.VideoFrameExtractor.ensurePlaybackFrames(source, curFIdx, 180);
+          }
+        }
         const media = window.getOrLoadLayerMedia ? window.getOrLoadLayerMedia(layer) : null;
         if (!media || !media.el) return;
 
@@ -617,9 +626,7 @@
           if (this.pendingMediaElements && this.pendingMediaElements.has(el)) {
             this.pendingMediaElements.delete(el);
           }
-          if (layer.type !== 'video') {
-            return;
-          }
+          return;
         } else {
           // Only attach to Web Audio API graph if layer has enabled audio effects.
           // Clean layers play natively to bypass WebKit AudioSourceProviderAVFObjC ring buffer underruns.
@@ -869,7 +876,17 @@
       const flatItems = this._flattenPlayableLayers(layers, 0, 1.0, false, 1.0, pixelsPerSecond);
 
       flatItems.forEach(item => {
-        const { layer, rootStartSec, rootEndSec, sourceOffsetSec, effectiveSpeed } = item;
+        const { layer, rootStartSec, rootEndSec, sourceOffsetSec, effectiveSpeed, isMuted } = item;
+        if (layer.type === 'video' && window.VideoFrameExtractor && currentSec >= rootStartSec && currentSec < rootEndSec) {
+          const sourceKey = window.VideoFrameExtractor._getSourceKey(layer);
+          const source = window.VideoFrameExtractor.getSourceCache(sourceKey);
+          if (source) {
+            const clipTime = Math.max(0, (sourceOffsetSec || 0) + (currentSec - rootStartSec) * (effectiveSpeed || 1.0));
+            const curFIdx = Math.round(clipTime * (source.fps || 60));
+            window.VideoFrameExtractor.ensurePlaybackFrames(source, curFIdx, 90);
+          }
+        }
+        if (isMuted) return;
         const media = window.getOrLoadLayerMedia ? window.getOrLoadLayerMedia(layer) : null;
         if (!media || !media.el) return;
 

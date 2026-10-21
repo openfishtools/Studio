@@ -877,6 +877,9 @@
           if (parentPrecomp) {
             parentPrecomp._dirty = true;
             if (parentPrecomp._precompBufferCanvas) parentPrecomp._precompBufferCanvas._lastRenderKey = null;
+            if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.invalidatePrecomp === 'function') {
+              window.VideoFrameExtractor.invalidatePrecomp(parentPrecomp);
+            }
           }
           if (layer.type === 'text') {
             layer._textDirty = true;
@@ -885,6 +888,9 @@
           if (layer.type === 'precomp') {
             layer._dirty = true;
             if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
+            if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.invalidatePrecomp === 'function') {
+              window.VideoFrameExtractor.invalidatePrecomp(layer);
+            }
           }
           if (layer.type === 'shape') {
             layer._shapeDirty = true;
@@ -902,6 +908,7 @@
       let maxEnd = -Infinity;
 
       if (customStartSec !== null && customStartSec !== undefined && customEndSec !== null && customEndSec !== undefined) {
+        minStart = Math.min(customStartSec, customStartSec);
         minStart = Math.min(customStartSec, customEndSec);
         maxEnd = Math.max(customStartSec, customEndSec);
       }
@@ -912,6 +919,9 @@
         if (parentPrecomp) {
           parentPrecomp._dirty = true;
           if (parentPrecomp._precompBufferCanvas) parentPrecomp._precompBufferCanvas._lastRenderKey = null;
+          if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.invalidatePrecomp === 'function') {
+            window.VideoFrameExtractor.invalidatePrecomp(parentPrecomp);
+          }
         }
         if (layer.type === 'text') {
           layer._textDirty = true;
@@ -920,6 +930,9 @@
         if (layer.type === 'precomp') {
           layer._dirty = true;
           if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
+          if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.invalidatePrecomp === 'function') {
+            window.VideoFrameExtractor.invalidatePrecomp(layer);
+          }
         }
         if (layer.type === 'shape') {
           layer._shapeDirty = true;
@@ -2880,6 +2893,10 @@
         window.PreviewCacheManager.setDraftMode(isDraftActive);
         window.PreviewCacheManager.setIdleCacheEnabled(savedIdleCache);
       }
+      if (window.VideoFrameExtractor) {
+        window.VideoFrameExtractor.init({ defaultFps: initialFps });
+        window.VideoFrameExtractor.setDraftMode(isDraftActive);
+      }
 
       if (typeof updatePreviewCanvas === 'function') {
         updatePreviewCanvas(
@@ -2922,11 +2939,14 @@
         window.updateTimelinePosition(window.timelinePanX || 0, true);
       }
 
-      // Automatically sanitize 3D effects & start background frame extraction for existing project video layers
+      // Automatically sanitize 3D effects & start background frame extraction for existing project video/precomp layers
       if (Array.isArray(currentProjectState.layers)) {
         currentProjectState.layers.forEach(l => {
           if (typeof sanitizeLayer3DEffects === 'function') {
             sanitizeLayer3DEffects(l);
+          }
+          if ((l.type === 'video' || l.type === 'precomp') && window.VideoFrameExtractor) {
+            window.VideoFrameExtractor.extractLayerRange(l);
           }
         });
       }
@@ -3381,6 +3401,11 @@
           }
         } catch (_) {}
       }
+      if (window.VideoFrameExtractor) {
+        try {
+          window.VideoFrameExtractor.clearAll();
+        } catch (_) {}
+      }
 
       // 10. Effective Props Cache Invalidation
       if (typeof window.invalidateEffectivePropsCache === 'function') {
@@ -3492,6 +3517,9 @@
               delete l._fillMediaImg;
               delete l._fillBufferCanvas;
               if (l._shapeBufferCanvas) l._shapeBufferCanvas._lastShapeKey = null;
+            }
+            if ((l.type === 'video' || l.type === 'precomp') && window.VideoFrameExtractor) {
+              window.VideoFrameExtractor.extractLayerRange(l);
             }
             if (Array.isArray(l.layers)) {
               l.layers.forEach(hydrateLayer);

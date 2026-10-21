@@ -368,6 +368,44 @@ assert.strictEqual(redrawCalls, 1, 'handleVideoSeeked must redraw composition on
 console.log('✓ applyFitOrStretchToComposition verified (canonical selectedLayerId, transformScale reset, and media cache).');
 console.log('✓ handleVideoSeeked coalesced seeking and freeze synchronization verified.');
 
+// 5. Test VideoFrameExtractor (Video + Precomp Frame Sequence Engine & Sample Deduplication)
+const vfe = window.VideoFrameExtractor;
+assert(vfe, 'VideoFrameExtractor must be exported on window');
+const mockBmp = { width: 960, height: 540, closeCalled: 0, close() { this.closeCalled++; } };
+vfe.retainBitmap(mockBmp);
+vfe.retainBitmap(mockBmp);
+assert.strictEqual(mockBmp._refCount, 2, 'retainBitmap must increment _refCount');
+vfe.releaseBitmap(mockBmp);
+assert.strictEqual(mockBmp.closeCalled, 0, 'releaseBitmap must not close bitmap while _refCount > 0');
+vfe.releaseBitmap(mockBmp);
+assert.strictEqual(mockBmp.closeCalled, 1, 'releaseBitmap must close bitmap when _refCount reaches 0');
+
+// Test Precomp Sequence Resolution & Invalidation
+const testPrecompLayer = {
+  id: 'precomp_seq_1',
+  type: 'precomp',
+  startSec: 1.0,
+  durationSec: 4.0,
+  speed: 1.0,
+  sourceOffsetSec: 0,
+  collapseTransformations: false,
+  layers: [{ id: 'child_shape', type: 'shape', startSec: 0, durationSec: 4.0 }]
+};
+const precompSourceKey = vfe._getSourceKey(testPrecompLayer);
+assert.strictEqual(precompSourceKey, 'precomp_precomp_seq_1', 'Precomp sourceKey must use precomp_<id> namespace');
+const precompSource = vfe._getOrCreateSource(precompSourceKey, '', 'Precomp', testPrecompLayer.id, true);
+const mockPrecompFrameBmp = { width: 960, height: 540, close() {} };
+const fIdxAt2Sec = Math.round(1.0 * (precompSource.fps || 60)); // currentSec=2.0 -> timeInClip=1.0
+precompSource.frames.set(fIdxAt2Sec, vfe.retainBitmap(mockPrecompFrameBmp, precompSourceKey));
+assert.strictEqual(vfe.isVideoFrameReady(testPrecompLayer, 2.0), true, 'isVideoFrameReady must return true for extracted precomp frame');
+const resolvedPrecomp = engine.resolvePrecompElement(testPrecompLayer, { currentSec: 2.0 });
+assert.strictEqual(resolvedPrecomp.el, mockPrecompFrameBmp, 'resolvePrecompElement must return extracted ImageBitmap frame');
+assert.strictEqual(resolvedPrecomp.hasUnreadyMedia, false, 'resolvePrecompElement must report hasUnreadyMedia: false');
+
+vfe.invalidatePrecomp(testPrecompLayer);
+assert.strictEqual(precompSource.frames.size, 0, 'invalidatePrecomp must clear precomp extracted frames');
+console.log('✓ VideoFrameExtractor verified (retain/release deduplication, precomp sequence resolution, and invalidation).');
+
 console.log('\n========================================');
 console.log('ALL DEEP VERIFICATION TESTS PASSED! (100%)');
 console.log('========================================\n');

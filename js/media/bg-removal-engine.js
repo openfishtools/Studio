@@ -37,15 +37,11 @@
   const DB_VERSION = 1;
   const STORE_FRAMES = 'matting_frames';
 
-  function yieldToUI() {
-    if (typeof scheduler !== 'undefined' && typeof scheduler.yield === 'function') {
-      return scheduler.yield();
+  function yieldToUI(delayMs = 20) {
+    if (typeof window !== 'undefined' && (window.isTimelinePlaying || window._isScrubbingTimeline)) {
+      return new Promise(resolve => setTimeout(resolve, 60));
     }
-    return new Promise(resolve => {
-      const channel = new MessageChannel();
-      channel.port1.onmessage = () => resolve();
-      channel.port2.postMessage(null);
-    });
+    return new Promise(resolve => setTimeout(resolve, delayMs));
   }
 
   function smoothstepAlpha(raw) {
@@ -255,8 +251,14 @@
       let inferW = meta.w;
       let inferH = meta.h;
       if (meta.type === 'rvm') {
-        inferW = Math.max(256, Math.round(srcW / 64) * 64);
-        inferH = Math.max(256, Math.round(srcH / 64) * 64);
+        // Capping max dimension to 512px drops tensor size by 14x, speeding up RVM from ~4000ms down to ~50ms
+        const maxDim = 512;
+        let scale = 1;
+        if (srcW > maxDim || srcH > maxDim) {
+          scale = maxDim / Math.max(srcW, srcH);
+        }
+        inferW = Math.max(256, Math.round((srcW * scale) / 64) * 64);
+        inferH = Math.max(256, Math.round((srcH * scale) / 64) * 64);
       }
 
       const inputCanvas = document.createElement('canvas');
@@ -647,6 +649,14 @@
       const eff = this.getLayerMattingEffect(layer);
       const modelId = (eff && (eff.model || (eff.params && eff.params.model))) || 'rvm_mobilenetv3';
 
+      let initialTotalFrames = 1;
+      if (isVideo) {
+        const fps = (window.currentProjectState && window.currentProjectState.fps) || 60;
+        const pps = window.currentPixelsPerSecond || 80;
+        const durSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
+        initialTotalFrames = Math.max(1, Math.round(durSec * fps));
+      }
+
       const task = {
         id: taskId,
         layerId: layer.id,
@@ -654,12 +664,48 @@
         layerName: layer.name || (isVideo ? 'Video Clip' : 'Photo Layer'),
         type: isVideo ? 'video' : 'photo',
         thumbUrl: layer.thumbUrl || layer.mediaUrl || layer.dataUrl || '',
-        status: 'queued',
+        status: isVideo ? 'Waiting for video baking...' : 'queued',
         currentFrame: 0,
-        totalFrames: isVideo ? 100 : 1,
+        totalFrames: initialTotalFrames,
         percent: 0,
         cancelled: false
       };
+
+      if (isVideo) {
+        const isBaked = (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isLayerBaked === 'function')
+          ? window.VideoFrameExtractor.isLayerBaked(layer)
+          : !!layer._extractComplete;
+
+        if (!isBaked) {
+          task.status = 'Waiting for video baking...';
+          this._activeTasks.set(taskId, task);
+          this._notifyProgress();
+
+          if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.extractLayerRange === 'function') {
+            window.VideoFrameExtractor.extractLayerRange(layer);
+          }
+
+          const waitTimer = setInterval(() => {
+            if (task.cancelled) {
+              clearInterval(waitTimer);
+              return;
+            }
+            const nowBaked = (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isLayerBaked === 'function')
+              ? window.VideoFrameExtractor.isLayerBaked(layer)
+              : !!layer._extractComplete;
+
+            if (nowBaked) {
+              clearInterval(waitTimer);
+              task.status = 'queued';
+              this._notifyProgress();
+              this._taskQueue.push({ task, layer, sourceKey, modelId });
+              this._runQueue();
+            }
+          }, 150);
+
+          return;
+        }
+      }
 
       this._activeTasks.set(taskId, task);
       this._notifyProgress();
@@ -851,7 +897,9 @@
         this._videoFrameCache.set(sourceKey, frameCache);
       }
 
-      let cachedSource = null;
+      let cachedSource = (window.VideoFrameExtractor && window.VideoFrameExtractor.sources)
+        ? (window.VideoFrameExtractor.sources.get(sourceKey) || (layer.mediaId ? window.VideoFrameExtractor.sources.get(layer.mediaId) : null) || (layer.id ? window.VideoFrameExtractor.sources.get(layer.id) : null))
+        : null;
 
       // Resolve video URL for dedicated decoding element
       let videoUrl = layer.dataUrl || (cachedSource && cachedSource.dataUrl);
@@ -871,7 +919,9 @@
       let offCanvas = null;
       let offCtx = null;
 
-      if (videoUrl) {
+      // Only mount dedicated decoder video if frames are not already baked in cachedSource
+      const hasBakedFrames = cachedSource && ((cachedSource.frames && cachedSource.frames.size > 0) || (cachedSource.cachedFrameIndices && cachedSource.cachedFrameIndices.size > 0));
+      if (!hasBakedFrames && videoUrl) {
         decoderVideo = document.createElement('video');
         decoderVideo.muted = true;
         decoderVideo.playsInline = true;
@@ -920,6 +970,11 @@
         for (let i = 0; i < totalFramesToProcess; i++) {
           if (task.cancelled) break;
 
+          // If user is playing or scrubbing timeline, yield/pause so 60 FPS playback is completely smooth
+          while (typeof window !== 'undefined' && (window.isTimelinePlaying || window._isScrubbingTimeline) && !task.cancelled) {
+            await new Promise(r => setTimeout(r, 80));
+          }
+
           const timeInClip = (layer.sourceOffsetSec || 0) + (i / fps) * effSpeed;
           const fIdx = Math.round(timeInClip * ((cachedSource && cachedSource.fps) || fps));
 
@@ -932,12 +987,14 @@
           }
 
           let rawFrame = null;
-          // Check if previously extracted raw frame exists in RAM
+          // Check if previously extracted raw frame exists in RAM or IndexedDB
           if (cachedSource && cachedSource.frames && cachedSource.frames.has(fIdx)) {
             rawFrame = cachedSource.frames.get(fIdx);
+          } else if (cachedSource && window.VideoFrameExtractor && typeof window.VideoFrameExtractor.fetchFrameFromDBAsync === 'function') {
+            rawFrame = await window.VideoFrameExtractor.fetchFrameFromDBAsync(cachedSource, fIdx);
           }
 
-          // Otherwise seek dedicated decoder video directly to exact timestamp
+          // Otherwise seek dedicated decoder video directly to exact timestamp as fallback
           if (!rawFrame && decoderVideo && decoderVideo.readyState >= 1) {
             const targetTime = Math.min(Math.max(0, (decoderVideo.duration || 3600) - 0.01), Math.max(0, timeInClip));
             await new Promise(resolve => {
@@ -983,13 +1040,6 @@
               const maskCanvas = await this.segmentSource(rawFrame, modelId, sessionObj);
               const cutout = await this.compositeCutout(rawFrame, maskCanvas);
               frameCache.set(fIdx, cutout);
-
-              if (cachedSource) {
-                cachedSource.frames.set(fIdx, cutout);
-                if (!cachedSource.cachedFrameIndices) cachedSource.cachedFrameIndices = new Set();
-                cachedSource.cachedFrameIndices.add(fIdx);
-                cachedSource._hasNewExtractedFrames = true;
-              }
             } catch (segErr) {
               console.warn('[FishBgRemovalEngine] Frame segment error at', fIdx, segErr);
             }
@@ -997,6 +1047,7 @@
 
           task.currentFrame = i + 1;
           task.percent = Math.round(((i + 1) / totalFramesToProcess) * 100);
+          task.status = `Frame ${task.currentFrame}/${task.totalFrames} (${task.percent}%)`;
           layer._extractProgress = (i + 1) / totalFramesToProcess;
           if (i + 1 >= totalFramesToProcess) {
             layer._extractComplete = true;
@@ -1008,12 +1059,12 @@
           }
 
           // Selectively redraw composition to show live cutouts
-          if (typeof window.redrawComposition === 'function' && (i % 3 === 0 || i === totalFramesToProcess - 1)) {
+          if (typeof window.redrawComposition === 'function' && (i % 6 === 0 || i === totalFramesToProcess - 1)) {
             window.redrawComposition('cutoutFrameReady');
           }
 
           // Yield to browser UI loop so scrubbing & playback remain 60 FPS smooth
-          await yieldToUI();
+          await yieldToUI(25);
         }
       } finally {
         if (decoderVideo) {
