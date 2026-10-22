@@ -2274,6 +2274,28 @@ body.has-active-drawer .timeline-layers-viewport {
   --kf-outline-hover-color: var(--color-primary-hover);
   --kf-outline-hover-bg: var(--color-primary);
 }
+
+/* Reversed Layer (Negative Speed) - Diagonal Stripes Texture */
+.timeline-clip-block.is-reverse {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(0, 0, 0, 0.3) 0,
+    rgba(0, 0, 0, 0.3) 8px,
+    rgba(255, 255, 255, 0.14) 8px,
+    rgba(255, 255, 255, 0.14) 16px
+  ) !important;
+}
+
+.timeline-clip-block.is-reverse.is-selected {
+  background-color: var(--bg-canvas) !important;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.18) 0,
+    rgba(255, 255, 255, 0.18) 8px,
+    transparent 8px,
+    transparent 16px
+  ) !important;
+}
 .timeline-clip-block.is-selected .timeline-clip-tag {
   background-color: var(--clip-outline);
   color: var(--bg-canvas);

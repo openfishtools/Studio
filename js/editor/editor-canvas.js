@@ -1856,7 +1856,9 @@
             } else {
               innerSec = (typeof getLayerIntegratedSpeedTime === 'function')
                 ? getLayerIntegratedSpeedTime(layer, currentSec)
-                : Math.max(0, (layer.sourceOffsetSec || 0) + (currentSec - clipStart) * (layer.speed || 1.0));
+                : (layer.speed !== undefined && layer.speed < 0
+                  ? Math.max(0, (layer.sourceOffsetSec || 0) + Math.max(0, (((layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pixelsPerSecond))) - (currentSec - clipStart)) * Math.abs(layer.speed)))
+                  : Math.max(0, (layer.sourceOffsetSec || 0) + (currentSec - clipStart) * (layer.speed || 1.0)));
             }
 
             const pw = Math.round(Math.abs(layer.mediaWidth || layer.scaleW || baseW));
@@ -2063,7 +2065,9 @@
             } else {
               innerSec = (typeof getLayerIntegratedSpeedTime === 'function')
                 ? getLayerIntegratedSpeedTime(layer, currentSec)
-                : Math.max(0, (layer.sourceOffsetSec || 0) + (currentSec - clipStart) * (layer.speed || 1.0));
+                : (layer.speed !== undefined && layer.speed < 0
+                  ? Math.max(0, (layer.sourceOffsetSec || 0) + Math.max(0, (((layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pixelsPerSecond))) - (currentSec - clipStart)) * Math.abs(layer.speed)))
+                  : Math.max(0, (layer.sourceOffsetSec || 0) + (currentSec - clipStart) * (layer.speed || 1.0)));
             }
             renderPrecompToCanvas(layer, layer._precompBufferCanvas, innerSec, pw, ph, triggerSource);
             el = layer._precompBufferCanvas;

@@ -55,10 +55,10 @@
         : layer;
 
       const effSpeed = overrideSpeed !== null
-        ? Math.max(0.01, Number(overrideSpeed) || 1.0)
-        : Math.max(0.01, (effProps && effProps.speed !== undefined)
+        ? (Number(overrideSpeed) || 1.0)
+        : ((effProps && effProps.speed !== undefined)
           ? effProps.speed
-          : (layer.speed !== undefined && layer.speed > 0 ? layer.speed : 1.0));
+          : (layer.speed !== undefined && layer.speed !== 0 ? layer.speed : 1.0));
 
       const effOffset = overrideOffset !== null
         ? (Number(overrideOffset) || 0)
@@ -69,10 +69,18 @@
         timeInClip = Math.max(0, (effProps && effProps.timeRemap !== undefined)
           ? effProps.timeRemap
           : (effOffset + (currentSec - start) * (layer.speed || 1.0)));
-      } else if (typeof window !== 'undefined' && typeof window.getLayerIntegratedSpeedTime === 'function') {
+      } else if (overrideSpeed === null && typeof window !== 'undefined' && typeof window.getLayerIntegratedSpeedTime === 'function') {
         timeInClip = window.getLayerIntegratedSpeedTime(layer, currentSec);
       } else {
-        timeInClip = Math.max(0, effOffset + (currentSec - start) * effSpeed);
+        if (effSpeed < 0) {
+          const dur = (layer.durationSec !== undefined)
+            ? Number(layer.durationSec)
+            : (parseFloat(layer.widthPx) || 320) / effectivePps;
+          const elapsed = Math.max(0, currentSec - start);
+          timeInClip = Math.max(0, effOffset + Math.max(0, (dur - elapsed) * Math.abs(effSpeed)));
+        } else {
+          timeInClip = Math.max(0, effOffset + (currentSec - start) * effSpeed);
+        }
       }
 
       return isFinite(timeInClip) ? Math.max(0, timeInClip) : 0;
@@ -181,7 +189,7 @@
         const sourceKey = extractor._getSourceKey(layer);
         const source = extractor.getSourceCache(sourceKey);
 
-        if (source && source.frames && source.frames.size > 0) {
+        if (source && ((source.frames && source.frames.size > 0) || (source.cachedFrameIndices && source.cachedFrameIndices.size > 0))) {
           const fIdx = Math.round(timeInClip * (source.fps || 60));
           const interpMode = layer.speedInterpolation || 'none';
           const extractedFrame = extractor.getInterpolatedFrame(
@@ -197,12 +205,28 @@
             layer._lastRenderedFrame = extractedFrame;
             layer._renderedExactVideoFrame = true;
             hasUnreadyMedia = false;
+
+            // Proactive streaming prefetch during playback/scrubbing to keep RAM window replenished ahead of playhead
+            if (!isExporting && !isIdleCache && typeof extractor.ensurePlaybackFrames === 'function') {
+              const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+              if (!layer._lastPrefetchMs || (now - layer._lastPrefetchMs) >= 120) {
+                layer._lastPrefetchMs = now;
+                extractor.ensurePlaybackFrames(source, fIdx);
+              }
+            }
           } else {
             if (source.cachedFrameIndices && source.cachedFrameIndices.has(fIdx)) {
               extractor.fetchFrameFromDB(source, fIdx);
+              if (!isExporting && !isIdleCache && typeof extractor.ensurePlaybackFrames === 'function') {
+                extractor.ensurePlaybackFrames(source, fIdx);
+              }
             }
             if (!isExporting && !isIdleCache && !source.isExtracting) {
-              extractor.extractLayerRange(layer);
+              const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+              if (!layer._lastExtractRequestMs || (now - layer._lastExtractRequestMs) >= 1500) {
+                layer._lastExtractRequestMs = now;
+                extractor.extractLayerRange(layer);
+              }
             }
 
             if (!isExporting && !isIdleCache) {
@@ -225,7 +249,11 @@
             }
           }
         } else if (!isExporting && !isIdleCache && (layer.dataUrl || layer.mediaId)) {
-          extractor.extractLayerRange(layer);
+          const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+          if (!layer._lastExtractRequestMs || (now - layer._lastExtractRequestMs) >= 1500) {
+            layer._lastExtractRequestMs = now;
+            extractor.extractLayerRange(layer);
+          }
         }
       }
 
@@ -302,7 +330,11 @@
           }
         }
         if (!isIdleCache && !source?.isExtracting) {
-          extractor.extractLayerRange(precompLayer);
+          const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+          if (!precompLayer._lastExtractRequestMs || (now - precompLayer._lastExtractRequestMs) >= 1500) {
+            precompLayer._lastExtractRequestMs = now;
+            extractor.extractLayerRange(precompLayer);
+          }
         }
       }
 

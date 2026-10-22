@@ -1834,13 +1834,19 @@
       const start = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
       const srcOffset = layer.sourceOffsetSec || 0;
 
-      if (currentSec <= start) return Math.max(0, srcOffset);
-
       const kfs = (layer.keyframes && Array.isArray(layer.keyframes.speed)) ? layer.keyframes.speed : null;
       if (!kfs || kfs.length === 0) {
-        const spd = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+        const spd = (layer.speed !== undefined && layer.speed !== 0) ? layer.speed : 1.0;
+        if (spd < 0) {
+          const dur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
+          const elapsed = Math.max(0, currentSec - start);
+          return Math.max(0, srcOffset + Math.max(0, (dur - elapsed) * Math.abs(spd)));
+        }
+        if (currentSec <= start) return Math.max(0, srcOffset);
         return Math.max(0, srcOffset + (currentSec - start) * spd);
       }
+
+      if (currentSec <= start) return Math.max(0, srcOffset);
 
       let sorted = kfs._sorted;
       if (!sorted || kfs._sortedLen !== kfs.length) {
@@ -2035,9 +2041,9 @@
       checkBtn('btn-volume-graph', 'volume');
       const btnSpeed = document.getElementById('btn-speed-graph');
       if (btnSpeed) {
-        const sKf = (layer && layer.keyframes && layer.keyframes.speed) || [];
-        const tKf = (layer && layer.keyframes && layer.keyframes.timeRemap) || [];
-        const canOpen = sKf.length >= 2 || tKf.length >= 2;
+        const activeSpeedProp = (layer && layer.speedMode === 'time_remap') ? 'timeRemap' : 'speed';
+        const activeKf = (layer && layer.keyframes && layer.keyframes[activeSpeedProp]) || [];
+        const canOpen = activeKf.length >= 2;
         btnSpeed.disabled = !canOpen;
         btnSpeed.classList.toggle('is-disabled', !canOpen);
       }

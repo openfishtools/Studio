@@ -36,7 +36,10 @@ const MIME_TYPES = {
   '.gltf': 'model/gltf+json',
   '.bin': 'application/octet-stream',
   '.hdr': 'image/vnd.radiance',
-  '.ofts': 'application/octet-stream'
+  '.ofts': 'application/octet-stream',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime'
 };
 
 const SSE_INJECTION = `

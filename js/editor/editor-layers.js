@@ -4715,11 +4715,22 @@
         const btnAddGiant = document.getElementById('btn-add-beatmark-giant');
         if (btnAddGiant) {
           let lastTriggerTime = 0;
+          let lastTriggerPointerType = '';
           const triggerAddBeatmark = (e) => {
             const now = performance.now();
-            // Prevent duplicate triggers from pointerdown followed by click event
-            if (now - lastTriggerTime < 80) return;
+            // Suppress synthetic click following touch pointerdown
+            if (e.type === 'click' && lastTriggerPointerType === 'touch' && (now - lastTriggerTime < 450)) {
+              if (e.cancelable) e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+            if (now - lastTriggerTime < 380) {
+              if (e.cancelable) e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
             lastTriggerTime = now;
+            lastTriggerPointerType = e.pointerType || (e.touches ? 'touch' : 'mouse');
 
             if (e.cancelable) e.preventDefault();
             e.stopPropagation();

@@ -2235,7 +2235,7 @@
         onMove: (deltaX) => {
           const { targetL, w, h, z, ratio, baseW, baseH } = scaleLinkedInit;
           if (!targetL) return;
-          let newW = Math.max(1, w + deltaX * 2);
+          let newW = Math.max(1, w - deltaX * 2);
           let newH = ratio !== 0 ? newW / ratio : newW;
 
           // Snap to Grid when Grid Overlay is active
@@ -2345,7 +2345,7 @@
         onMove: (deltaX) => {
           const { targetL, w, baseW } = scaleWInit;
           if (!targetL) return;
-          let newW = Math.max(1, w + deltaX * 2);
+          let newW = Math.max(1, w - deltaX * 2);
 
           // Snap to Grid when Grid Overlay is active
           const gridBtn = document.getElementById('editor-icon-grid');
@@ -2420,7 +2420,7 @@
         onMove: (deltaX) => {
           const { targetL, h, baseH } = scaleHInit;
           if (!targetL) return;
-          let newH = Math.max(1, h + deltaX * 2);
+          let newH = Math.max(1, h - deltaX * 2);
 
           // Snap to Grid when Grid Overlay is active
           const gridBtn = document.getElementById('editor-icon-grid');
@@ -2495,7 +2495,7 @@
         onMove: (deltaX) => {
           const { targetL, z } = scaleZInit;
           if (!targetL) return;
-          let newZ = Math.max(1, Math.round(z + deltaX * 2));
+          let newZ = Math.max(1, Math.round(z - deltaX * 2));
           targetL.scaleZ = newZ;
           recordLayerPropertyChange(targetL, 'scale');
           const valZ = document.getElementById('val-scale-z');
@@ -2520,7 +2520,7 @@
         skewXInit.rafId = 0;
         const { targetL, skewX, pendingDelta, gridOn, valEl } = skewXInit;
         if (!targetL) return;
-        let newSkewX = skewX + pendingDelta * 0.2;
+        let newSkewX = skewX - pendingDelta * 0.2;
         if (gridOn) {
           const snapAngles = [-45, -30, -15, 0, 15, 30, 45];
           const sVal = (window.findSnapTarget || findSnapTarget)(newSkewX, snapAngles, 2.0);
@@ -2578,7 +2578,7 @@
         skewYInit.rafId = 0;
         const { targetL, skewY, pendingDelta, gridOn, valEl } = skewYInit;
         if (!targetL) return;
-        let newSkewY = skewY + pendingDelta * 0.2;
+        let newSkewY = skewY - pendingDelta * 0.2;
         if (gridOn) {
           const snapAngles = [-45, -30, -15, 0, 15, 30, 45];
           const sVal = (window.findSnapTarget || findSnapTarget)(newSkewY, snapAngles, 2.0);
@@ -3572,8 +3572,9 @@
             initOpacityPct = Math.round((layer.opacity !== undefined ? layer.opacity : 1.0) * 100);
             lastOpacityPct = initOpacityPct;
           },
-          onMove: (delta) => {
-            const newPct = Math.max(0, Math.min(100, Math.round(initOpacityPct + delta * 0.4)));
+          onMove: (delta, e) => {
+            const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 2.5 : 1.0);
+            const newPct = Math.max(0, Math.min(100, Math.round(initOpacityPct - (delta / 480) * 100 * speed)));
             applyOpacityValue(newPct, false);
           },
           onEnd: () => {
@@ -3864,8 +3865,9 @@
             initVolPct = Math.round((layer.volume !== undefined ? layer.volume : 1.0) * 100);
             lastVolPct = initVolPct;
           },
-          onMove: (delta) => {
-            const newPct = Math.max(0, Math.min(100, Math.round(initVolPct + delta * 0.4)));
+          onMove: (delta, e) => {
+            const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 2.5 : 1.0);
+            const newPct = Math.max(0, Math.min(100, Math.round(initVolPct - (delta / 480) * 100 * speed)));
             applyVolumeValue(newPct / 100, false);
           },
           onEnd: () => {
@@ -4009,45 +4011,100 @@
 
     function createAudioFxParamRow(label, min, max, step, currentVal, formatFn, onInput) {
       const row = document.createElement('div');
-      row.className = 'audio-fx-param-row';
+      row.className = 'effects-control-row audio-fx-param-row';
 
+      const labelCol = document.createElement('div');
+      labelCol.className = 'effects-param-label-col';
       const labelEl = document.createElement('span');
-      labelEl.className = 'audio-fx-param-label';
+      labelEl.className = 'effects-param-label audio-fx-param-label';
       labelEl.textContent = label;
+      labelCol.appendChild(labelEl);
 
-      const slider = document.createElement('input');
-      slider.type = 'range';
-      slider.className = 'audio-fx-slider';
-      slider.min = min;
-      slider.max = max;
-      slider.step = step;
-      slider.value = currentVal;
+      const valCol = document.createElement('div');
+      valCol.className = 'effects-param-val-col';
+
+      const pill = document.createElement('div');
+      pill.className = 'effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber';
+      pill.setAttribute('role', 'slider');
+      pill.setAttribute('aria-label', label + ' Scrubber');
+      pill.setAttribute('aria-valuemin', min);
+      pill.setAttribute('aria-valuemax', max);
+      pill.setAttribute('aria-valuenow', currentVal);
+
+      const viewport = document.createElement('div');
+      viewport.className = 'jog-wheel-track-viewport';
+
+      const ticks = document.createElement('div');
+      ticks.className = 'jog-wheel-ticks is-bounded-tape';
+      ticks.dataset.tapeWidth = '480';
+      const ratio0 = Math.max(0, Math.min(1, (currentVal - min) / ((max - min) || 1)));
+      ticks.style.cssText = `--tape-width: 480px; --tape-offset: ${-(ratio0 * 480).toFixed(2)}px;`;
+      viewport.appendChild(ticks);
+
+      const needle = document.createElement('div');
+      needle.className = 'jog-wheel-needle';
 
       const valEl = document.createElement('span');
-      valEl.className = 'audio-fx-param-value';
+      valEl.className = 'effects-param-pill-val audio-fx-param-value';
+      valEl.title = 'Click to edit ' + label;
       valEl.textContent = formatFn(currentVal);
+      valEl.style.cursor = 'pointer';
 
-      slider.addEventListener('input', (e) => {
-        const v = parseFloat(e.target.value);
-        valEl.textContent = formatFn(v);
-        onInput(v);
+      pill.appendChild(viewport);
+      pill.appendChild(needle);
+      pill.appendChild(valEl);
+      valCol.appendChild(pill);
+
+      row.appendChild(labelCol);
+      row.appendChild(valCol);
+
+      let activeVal = Number(currentVal);
+      let startVal = activeVal;
+
+      const applyVal = (v, commit = false) => {
+        const decimals = (step < 0.1) ? 2 : ((step < 1) ? 1 : 0);
+        const snapped = Math.round(v / step) * step;
+        const clamped = Math.max(min, Math.min(max, Number(snapped.toFixed(decimals))));
+        activeVal = clamped;
+        valEl.textContent = formatFn(clamped);
+        pill.setAttribute('aria-valuenow', clamped);
+        updateJogScrubberVisuals(pill, clamped, min, max);
+        onInput(clamped);
         if (typeof saveCurrentProjectLayers === 'function') {
-          saveCurrentProjectLayers();
+          saveCurrentProjectLayers(commit);
+        }
+      };
+
+      bindJogWheel(pill, {
+        onStart: () => {
+          startVal = activeVal;
+        },
+        onMove: (delta, e) => {
+          const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 2.5 : 1.0);
+          const next = startVal - (delta / 480) * (max - min) * speed;
+          applyVal(next, false);
+        },
+        onEnd: () => {
+          applyVal(activeVal, true);
         }
       });
 
-      const commitSave = () => {
-        if (typeof saveCurrentProjectLayers === 'function') {
-          saveCurrentProjectLayers(true);
+      valEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (typeof window.openValueInputPopover === 'function') {
+          window.openValueInputPopover(valEl, {
+            title: label,
+            value: activeVal,
+            min: min,
+            max: max,
+            step: step,
+            onCommit: (val) => {
+              applyVal(val, true);
+            }
+          });
         }
-      };
-      slider.addEventListener('change', commitSave);
-      slider.addEventListener('pointerup', commitSave);
-      slider.addEventListener('touchend', commitSave);
+      });
 
-      row.appendChild(labelEl);
-      row.appendChild(slider);
-      row.appendChild(valEl);
       return row;
     }
 
@@ -4177,22 +4234,61 @@
        SPEED CONTROLLER & VIDEO INTERPOLATION (MODULAR & PURE FLAT)
        ========================================================================== */
     function ratioToSpeed(ratio) {
-      if (ratio <= 0.5) {
-        // 0.0 -> 0.1x, 0.5 -> 1.0x
-        return Number((0.1 + (ratio / 0.5) * 0.9).toFixed(2));
+      const r = Math.max(0, Math.min(1, Number(ratio) || 0));
+      if (r < 0.5) {
+        // Negative reverse speed: 0.0 -> -100x, 0.18 -> -8.0x, 0.35 -> -1.0x, 0.5 -> -0.1x
+        if (r <= 0.18) {
+          const t = r / 0.18;
+          return Number((-100.0 + t * 92.0).toFixed(1));
+        } else if (r <= 0.35) {
+          const t = (r - 0.18) / 0.17;
+          return Number((-8.0 + t * 7.0).toFixed(1));
+        } else {
+          const t = (r - 0.35) / 0.15;
+          return Number((-1.0 + t * 0.9).toFixed(2));
+        }
       } else {
-        // 0.5 -> 1.0x, 1.0 -> 8.0x
-        return Number((1.0 + ((ratio - 0.5) / 0.5) * 7.0).toFixed(1));
+        // Positive speed: 0.5 -> 0.1x, 0.65 -> 1.0x, 0.82 -> 8.0x, 1.0 -> 100.0x
+        if (r <= 0.65) {
+          const t = (r - 0.5) / 0.15;
+          return Number((0.1 + t * 0.9).toFixed(2));
+        } else if (r <= 0.82) {
+          const t = (r - 0.65) / 0.17;
+          return Number((1.0 + t * 7.0).toFixed(1));
+        } else {
+          const t = (r - 0.82) / 0.18;
+          return Number((8.0 + t * 92.0).toFixed(1));
+        }
       }
     }
 
     function speedToRatio(speed) {
-      const s = Math.max(0.1, Math.min(8.0, Number(speed) || 1.0));
-      if (s <= 1.0) {
-        return (s - 0.1) / 0.9 * 0.5;
+      const s = Number(speed);
+      if (isNaN(s)) return 0.65; // default 1.0x
+      if (s < 0) {
+        const clamped = Math.max(-100.0, Math.min(-0.1, s));
+        if (clamped <= -8.0) {
+          return ((clamped - (-100.0)) / 92.0) * 0.18;
+        } else if (clamped <= -1.0) {
+          return 0.18 + ((clamped - (-8.0)) / 7.0) * 0.17;
+        } else {
+          return 0.35 + ((clamped - (-1.0)) / 0.9) * 0.15;
+        }
       } else {
-        return 0.5 + ((s - 1.0) / 7.0) * 0.5;
+        const clamped = Math.max(0.1, Math.min(100.0, s));
+        if (clamped <= 1.0) {
+          return 0.5 + ((clamped - 0.1) / 0.9) * 0.15;
+        } else if (clamped <= 8.0) {
+          return 0.65 + ((clamped - 1.0) / 7.0) * 0.17;
+        } else {
+          return 0.82 + ((clamped - 8.0) / 92.0) * 0.18;
+        }
       }
+    }
+
+    // Single source of truth for speed display format (After Effects style: 100% = normal, -100% = reverse).
+    function formatSpeedDisplay(val) {
+      return `${Math.round(val * 100)}%`;
     }
 
     function syncSpeedControllerValues() {
@@ -4239,7 +4335,7 @@
 
         if (fillEl) fillEl.style.width = pct + '%';
         if (thumbEl) thumbEl.style.left = pct + '%';
-        if (badgeEl) badgeEl.textContent = `${spd}x`;
+        if (badgeEl) badgeEl.textContent = formatSpeedDisplay(spd);
         if (containerEl) containerEl.setAttribute('aria-valuenow', spd);
         if (jogSpeed) {
           jogSpeed.setAttribute('aria-valuenow', spd);
@@ -4491,12 +4587,18 @@
           layer.speedMode = 'speed';
           window.activeKeyframeProperty = 'speed';
 
+          // AE-style switch: disabling Time Remap removes all Time Remap keyframes
+          if (layer.keyframes && layer.keyframes.timeRemap) {
+            delete layer.keyframes.timeRemap;
+          }
+          delete layer.timeRemap;
+
           // In normal Speed mode, clamp layer duration so it cannot exceed native media duration
           if (layer.type === 'video' || layer.type === 'audio') {
             const totalMediaDur = (typeof getLayerMediaDuration === 'function') ? getLayerMediaDuration(layer) : layer.mediaDuration;
             if (totalMediaDur && isFinite(totalMediaDur) && totalMediaDur > 0) {
               const pps = window.currentPixelsPerSecond || 80;
-              const spd = (layer.speed && layer.speed > 0) ? layer.speed : 1.0;
+              const spd = (layer.speed && layer.speed !== 0) ? Math.abs(layer.speed) : 1.0;
               const srcOff = layer.sourceOffsetSec || 0;
               const maxAllowedDur = Math.max(0.05, (totalMediaDur - srcOff) / spd);
               if (layer.durationSec > maxAllowedDur + 0.01) {
@@ -4508,6 +4610,7 @@
 
           syncSpeedControllerValues();
           updateSpeedKeyframeBtnState();
+          if (typeof updateAllGraphBtnStates === 'function') updateAllGraphBtnStates();
           if (typeof updateTimelineKeyframeMarkersHighlight === 'function') updateTimelineKeyframeMarkersHighlight();
           if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
           invalidatePreviewCacheForLayer(layer);
@@ -4522,10 +4625,17 @@
           const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
           if (!layer) return;
           layer.speedMode = 'time_remap';
+
+          // AE-style switch: enabling Time Remap clears Speed Multiplier keyframes
+          if (layer.keyframes && layer.keyframes.speed) {
+            delete layer.keyframes.speed;
+          }
+
           initTimeRemapForLayer(layer, false);
           window.activeKeyframeProperty = 'timeRemap';
           syncSpeedControllerValues();
           updateSpeedKeyframeBtnState();
+          if (typeof updateAllGraphBtnStates === 'function') updateAllGraphBtnStates();
           if (typeof updateTimelineKeyframeMarkersHighlight === 'function') updateTimelineKeyframeMarkersHighlight();
           if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
           invalidatePreviewCacheForLayer(layer);
@@ -4591,7 +4701,9 @@
         const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
         if (!layer) return;
 
-        const roundedVal = Math.max(0.1, Math.min(8.0, Number(Number(speedVal).toFixed(2))));
+        let val = Number(Number(speedVal).toFixed(2));
+        if (isNaN(val) || val === 0) val = 1.0;
+        const roundedVal = Math.max(-100.0, Math.min(100.0, val));
         layer.speed = roundedVal;
         lastSpeedVal = roundedVal;
 
@@ -4602,7 +4714,8 @@
           if (totalMediaDur && isFinite(totalMediaDur) && totalMediaDur > 0) {
             const pps = window.currentPixelsPerSecond || 80;
             const srcOff = layer.sourceOffsetSec || 0;
-            const maxAllowedDur = Math.max(0.05, (totalMediaDur - srcOff) / roundedVal);
+            const absSpeed = Math.abs(roundedVal) || 1.0;
+            const maxAllowedDur = Math.max(0.05, (totalMediaDur - srcOff) / absSpeed);
             if (!layer._userTrimmed || layer.durationSec > maxAllowedDur + 0.01) {
               layer.durationSec = maxAllowedDur;
               layer.widthPx = Math.max(10, Math.round(maxAllowedDur * pps));
@@ -4615,12 +4728,17 @@
           }
         }
 
+        const clipEl = document.querySelector(`.timeline-clip-block[data-layer-id="${layer.id}"]`);
+        if (clipEl) {
+          clipEl.classList.toggle('is-reverse', roundedVal < 0);
+        }
+
         const ratio = Math.max(0, Math.min(1, speedToRatio(roundedVal)));
         const pct = (ratio * 100).toFixed(2);
 
         if (sliderFill) sliderFill.style.width = pct + '%';
         if (sliderThumb) sliderThumb.style.left = pct + '%';
-        if (speedBadge) speedBadge.textContent = `${roundedVal}x`;
+        if (speedBadge) speedBadge.textContent = formatSpeedDisplay(roundedVal);
         if (sliderContainer) sliderContainer.setAttribute('aria-valuenow', roundedVal);
         if (jogLayerSpeed) {
           jogLayerSpeed.setAttribute('aria-valuenow', roundedVal);
@@ -4634,7 +4752,8 @@
             try {
               const tlSpeed = (typeof window.timelinePlaybackSpeed === 'number' && window.timelinePlaybackSpeed > 0)
                 ? window.timelinePlaybackSpeed : 1.0;
-              media.el.playbackRate = Math.max(0.0625, Math.min(8.0, roundedVal * tlSpeed));
+              const absSpeed = Math.abs(roundedVal) || 1.0;
+              media.el.playbackRate = Math.max(0.0625, Math.min(8.0, absSpeed * tlSpeed));
               if ('preservesPitch' in media.el) {
                 media.el.preservesPitch = layer.preservePitch !== false;
               }
@@ -4714,9 +4833,10 @@
             initSpeedVal = (layer.speed !== undefined ? layer.speed : 1.0);
             lastSpeedVal = initSpeedVal;
           },
-          onMove: (delta) => {
+          onMove: (delta, e) => {
+            const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 2.5 : 1.0);
             const initRatio = speedToRatio(initSpeedVal);
-            const currentRatio = Math.max(0, Math.min(1, initRatio + delta * 0.0025));
+            const currentRatio = Math.max(0, Math.min(1, initRatio - (delta / 480) * speed));
             const calculatedSpeed = ratioToSpeed(currentRatio);
             applySpeedValue(calculatedSpeed, false);
           },
@@ -4737,22 +4857,22 @@
           const curSpd = layer.speed !== undefined ? layer.speed : 1.0;
           if (typeof window.openValueInputPopover === 'function') {
             window.openValueInputPopover(speedBadge, {
-              title: 'Speed',
-              value: curSpd,
-              defaultValue: 1.0,
-              min: 0.1,
-              max: 8.0,
-              step: 0.1,
+              title: 'Speed (%)',
+              value: Math.round(curSpd * 100),
+              defaultValue: 100,
+              min: -500,
+              max: 500,
+              step: 5,
               onCommit: (val) => {
-                applySpeedValue(val, true);
+                applySpeedValue(val / 100, true);
               }
             });
           } else {
-            const input = prompt('Enter Speed (0.1x to 8.0x):', curSpd);
+            const input = prompt('Enter Speed (-500% to 500%):', Math.round(curSpd * 100));
             if (input !== null) {
               const parsed = parseFloat(input);
-              if (!isNaN(parsed) && parsed > 0) {
-                applySpeedValue(parsed, true);
+              if (!isNaN(parsed) && parsed !== 0) {
+                applySpeedValue(parsed / 100, true);
               }
             }
           }
@@ -4916,11 +5036,12 @@
             initRemapVal = eff.timeRemap !== undefined ? eff.timeRemap : (layer.timeRemap || 0);
             lastRemapVal = initRemapVal;
           },
-          onMove: (delta) => {
+          onMove: (delta, e) => {
+            const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 2.5 : 1.0);
             const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
             const pps = window.currentPixelsPerSecond || 80;
             const maxSec = layer ? Math.max(0.1, layer.mediaDuration || layer.durationSec || ((layer.widthPx || 400) / pps)) : 10;
-            const stepRatio = delta / 250;
+            const stepRatio = -(delta / 480) * speed;
             const newRemap = Math.max(0, Math.min(maxSec, initRemapVal + stepRatio * maxSec));
             applyTimeRemapValue(newRemap, false);
           },

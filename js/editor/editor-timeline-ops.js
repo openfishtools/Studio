@@ -3977,19 +3977,20 @@ function initTimelineOperations() {
           }
 
           // 2. Timeline Track Lane in layersTrack
+          const isReverse = (layer.speed !== undefined && layer.speed < 0);
           const lane = document.createElement('div');
           lane.className = 'timeline-track-lane';
           lane.dataset.layerId = layer.id;
           lane.innerHTML = `
             <div class="track-content-lane">
-              <div class="timeline-clip-block clip-${clipType} ${isSelected ? 'is-selected' : ''} ${isHidden ? 'is-hidden' : ''}" 
+              <div class="timeline-clip-block clip-${clipType} ${isSelected ? 'is-selected' : ''} ${isHidden ? 'is-hidden' : ''} ${isReverse ? 'is-reverse' : ''}" 
                    style="left: ${layer.startPx || 0}px; width: ${layer.widthPx || 320}px;" 
-                   title="${layer.name}${isHidden ? ' (Hidden)' : ''}" 
+                   title="${layer.name}${isReverse ? ' (Reverse ' + layer.speed + 'x)' : ''}${isHidden ? ' (Hidden)' : ''}" 
                    data-layer-id="${layer.id}">
                 <button type="button" class="timeline-clip-handle handle-left" aria-label="Trim / Lengthen Start" title="Drag to trim or lengthen start">
                   <span class="fticon fticon-chevron-left" style="width: 13px; height: 13px;" aria-hidden="true"></span>
                 </button>
-                <span class="timeline-clip-tag">${typeTag}</span>
+                <span class="timeline-clip-tag">${typeTag}${isReverse ? ' ◀' : ''}</span>
                 <span class="clip-label">${layer.name}</span>
                 <button type="button" class="timeline-clip-handle handle-right" aria-label="Trim / Lengthen End" title="Drag to trim or lengthen end">
                   <span class="fticon fticon-chevron-right" style="width: 13px; height: 13px;" aria-hidden="true"></span>
@@ -4653,7 +4654,7 @@ function initTimelineOperations() {
                   }
 
                   const isTimeRemap = (layer.speedMode === 'time_remap');
-                  const effSpeed = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+                  const effSpeed = (layer.speed !== undefined && layer.speed !== 0) ? Math.abs(layer.speed) : 1.0;
 
                   // Never expand before 00:00:00 of original media in normal Speed mode
                   if (!isTimeRemap && totalMediaDur !== null) {
@@ -4690,8 +4691,12 @@ function initTimelineOperations() {
                   layer._userTrimmed = true;
 
                   if (totalMediaDur !== null) {
-                    const shiftedSec = layer.startSec - initialStartSec;
-                    layer.sourceOffsetSec = Math.max(0, Math.min(totalMediaDur, initialOffsetSec + shiftedSec * effSpeed));
+                    if (layer.speed !== undefined && layer.speed < 0) {
+                      layer.sourceOffsetSec = initialOffsetSec;
+                    } else {
+                      const shiftedSec = layer.startSec - initialStartSec;
+                      layer.sourceOffsetSec = Math.max(0, Math.min(totalMediaDur, initialOffsetSec + shiftedSec * effSpeed));
+                    }
                   }
 
                   clipEl.style.left = `${layer.startPx}px`;
@@ -4769,7 +4774,7 @@ function initTimelineOperations() {
                 const currentOffsetSec = layer.sourceOffsetSec || 0;
                 const totalMediaDur = (layer.type === 'video' || layer.type === 'audio') ? getLayerMediaDuration(layer) : null;
                 const isTimeRemap = (layer.speedMode === 'time_remap');
-                const effSpeed = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+                const effSpeed = (layer.speed !== undefined && layer.speed !== 0) ? Math.abs(layer.speed) : 1.0;
 
                 const initialStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / curPps);
                 const initialDurSec = layer.durationSec !== undefined ? layer.durationSec : (initialWidthPx / curPps);
@@ -4808,8 +4813,13 @@ function initTimelineOperations() {
                     const maxAllowedEndSec = curStartSec + maxAvailableDurSec;
                     targetEndSec = Math.min(maxAllowedEndSec, targetEndSec);
                   }
+                  const oldDurSec = initialDurSec;
                   layer.durationSec = Math.max(minDurSec, Math.round((targetEndSec - curStartSec) * safeFps) / safeFps);
                   layer.widthPx = Math.max(minWidth, Math.round((curStartSec + layer.durationSec) * activePps) - (layer.startPx || 0));
+                  if (layer.speed !== undefined && layer.speed < 0 && totalMediaDur !== null) {
+                    const deltaDur = oldDurSec - layer.durationSec;
+                    layer.sourceOffsetSec = Math.max(0, Math.min(totalMediaDur, currentOffsetSec + deltaDur * effSpeed));
+                  }
                   layer.isDurationExplicit = true;
                   layer._userTrimmed = true;
 
@@ -4974,20 +4984,21 @@ function initTimelineOperations() {
               }
 
               // 2. Child Track Lane in layersTrack
+              const isChildReverse = (child.speed !== undefined && child.speed < 0);
               const childLane = document.createElement('div');
               childLane.className = 'timeline-track-lane is-precomp-child';
               childLane.dataset.layerId = child.id;
               childLane.dataset.parentPrecompId = layer.id;
               childLane.innerHTML = `
                 <div class="track-content-lane">
-                  <div class="timeline-clip-block clip-${childClipType} is-precomp-child ${isChildSelected ? 'is-selected' : ''} ${isChildHidden ? 'is-hidden' : ''}" 
+                  <div class="timeline-clip-block clip-${childClipType} is-precomp-child ${isChildSelected ? 'is-selected' : ''} ${isChildHidden ? 'is-hidden' : ''} ${isChildReverse ? 'is-reverse' : ''}" 
                        style="left: ${childGlobalStartPx}px; width: ${childWidthPx}px;" 
-                       title="${child.name}${isChildHidden ? ' (Hidden)' : ''} [${layer.name}]" 
+                       title="${child.name}${isChildReverse ? ' (Reverse ' + child.speed + 'x)' : ''}${isChildHidden ? ' (Hidden)' : ''} [${layer.name}]" 
                        data-layer-id="${child.id}">
                     <button type="button" class="timeline-clip-handle handle-left" aria-label="Trim / Lengthen Start" title="Drag to trim start">
                       <span class="fticon fticon-chevron-left" style="width: 10px; height: 10px;" aria-hidden="true"></span>
                     </button>
-                    <span class="timeline-clip-tag">${childTypeTag}</span>
+                    <span class="timeline-clip-tag">${childTypeTag}${isChildReverse ? ' ◀' : ''}</span>
                     <span class="clip-label">${child.name}</span>
                     <button type="button" class="timeline-clip-handle handle-right" aria-label="Trim / Lengthen End" title="Drag to trim end">
                       <span class="fticon fticon-chevron-right" style="width: 10px; height: 10px;" aria-hidden="true"></span>
@@ -6406,7 +6417,11 @@ function initTimelineOperations() {
 
       function computeLayerSourceOffsetAtTime(layer, targetSec, startSec) {
         const baseOffset = layer.sourceOffsetSec || 0;
-        const spd = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+        const spd = (layer.speed !== undefined && layer.speed !== 0) ? layer.speed : 1.0;
+        if (spd < 0) {
+          // For reverse speed, the right piece after split or the remaining piece after left trim retains baseOffset
+          return baseOffset;
+        }
         if (layer.speedMode !== 'time_remap' && typeof getLayerIntegratedSpeedTime === 'function') {
           return Math.max(0, getLayerIntegratedSpeedTime(layer, targetSec));
         }
@@ -6652,6 +6667,9 @@ function initTimelineOperations() {
         layer.startSec = startSec;
         layer.widthPx = leftWidthPx;
         layer.durationSec = leftDurSec;
+        if (layer.speed !== undefined && layer.speed < 0) {
+          layer.sourceOffsetSec = (layer.sourceOffsetSec || 0) + rightDurSec * Math.abs(layer.speed);
+        }
         layer.isDurationExplicit = true;
         layer._cachedStartSec = startSec;
         layer._cachedEndSec = rightStartSec;
@@ -6786,6 +6804,9 @@ function initTimelineOperations() {
         layer.durationSec = remainingDurSec;
         layer.startPx = Math.round(startSec * pps);
         layer.widthPx = Math.round((startSec + remainingDurSec) * pps) - layer.startPx;
+        if (layer.speed !== undefined && layer.speed < 0) {
+          layer.sourceOffsetSec = (layer.sourceOffsetSec || 0) + (durSec - remainingDurSec) * Math.abs(layer.speed);
+        }
         layer.isDurationExplicit = true;
         layer._userTrimmed = true;
         layer.sourceLayerId = layer.sourceLayerId || layer.id;
@@ -6815,7 +6836,7 @@ function initTimelineOperations() {
         let newDurSec = currentSec - startSec;
         const totalMediaDur = (layer.type === 'video' || layer.type === 'audio') ? getLayerMediaDuration(layer) : null;
         if (layer.speedMode !== 'time_remap' && totalMediaDur !== null) {
-          const effSpeed = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+          const effSpeed = (layer.speed !== undefined && layer.speed !== 0) ? Math.abs(layer.speed) : 1.0;
           const maxDurSec = Math.max(0.05, (totalMediaDur - (layer.sourceOffsetSec || 0)) / effSpeed);
           newDurSec = Math.min(newDurSec, maxDurSec);
         }
@@ -6933,7 +6954,7 @@ function initTimelineOperations() {
 
         const extendSec = startSec - currentSec;
         const totalMediaDur = (layer.type === 'video' || layer.type === 'audio') ? getLayerMediaDuration(layer) : null;
-        const effSpeed = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+        const effSpeed = (layer.speed !== undefined && layer.speed !== 0) ? Math.abs(layer.speed) : 1.0;
 
         let actualStartSec = Math.max(0, currentSec);
         let actualDurSec = endSec - actualStartSec;
@@ -7014,7 +7035,7 @@ function initTimelineOperations() {
           const startSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
           const durSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
           const endSec = startSec + durSec;
-          const effSpeed = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+          const effSpeed = (layer.speed !== undefined && layer.speed !== 0) ? Math.abs(layer.speed) : 1.0;
 
           invalidatePreviewCacheForLayer(layer, startSec, endSec);
 
@@ -7108,7 +7129,7 @@ function initTimelineOperations() {
             let newDurSec = currentSec - startSec;
             const totalMediaDur = (layer.type === 'video' || layer.type === 'audio') ? getLayerMediaDuration(layer) : null;
             if (layer.speedMode !== 'time_remap' && totalMediaDur !== null) {
-              const effSpeed = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+              const effSpeed = (layer.speed !== undefined && layer.speed !== 0) ? Math.abs(layer.speed) : 1.0;
               const maxDurSec = Math.max(0.05, (totalMediaDur - (layer.sourceOffsetSec || 0)) / effSpeed);
               newDurSec = Math.min(newDurSec, maxDurSec);
             }

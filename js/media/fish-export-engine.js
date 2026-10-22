@@ -330,8 +330,8 @@
     var result = [];
     (layers || []).forEach(function(layer) {
       if (layer.hidden) return;
-      var isMuted = parentMuted || !!layer.isMuted || !!layer.muted;
-      var layerSpeed = (layer.speed !== undefined && layer.speed > 0 ? layer.speed : 1.0);
+      var isMuted = parentMuted || !!layer.isMuted || !!layer.muted || (layer.speed !== undefined && layer.speed < 0);
+      var layerSpeed = (layer.speed !== undefined && layer.speed !== 0 ? Math.abs(layer.speed) : 1.0);
       var effectiveSpeed = parentSpeed * layerSpeed;
       var layerVol = (layer.volume !== undefined ? Number(layer.volume) : 1.0);
       var effectiveGain = parentGain * (isFinite(layerVol) ? layerVol : 1.0);

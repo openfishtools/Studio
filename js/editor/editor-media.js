@@ -702,9 +702,9 @@
         layer._mediaFitCanvas = document.createElement('canvas');
       }
       const fc = layer._mediaFitCanvas;
-      const isVideo = el.tagName === 'VIDEO';
-      const fitKey = isVideo ? '' : `${fitMode}:${cw}x${ch}:${iw}x${ih}:${layer.mediaId || ''}:${layer.fillMediaId || ''}:${el.src || ''}:${layer._contentVersion || 0}`;
-      if (!isVideo && fc._lastFitKey === fitKey && fc.width === cw && fc.height === ch) {
+      const isDynamicVideo = (el && el.tagName === 'VIDEO') || layer.type === 'video' || (typeof ImageBitmap !== 'undefined' && el instanceof ImageBitmap && layer.type !== 'image');
+      const fitKey = isDynamicVideo ? '' : `${fitMode}:${cw}x${ch}:${iw}x${ih}:${layer.mediaId || ''}:${layer.fillMediaId || ''}:${el.src || ''}:${layer._contentVersion || 0}`;
+      if (!isDynamicVideo && fc._lastFitKey === fitKey && fc.width === cw && fc.height === ch) {
         return fc;
       }
       if (fc.width !== cw || fc.height !== ch) {
@@ -715,7 +715,7 @@
       if (!fctx) return el;
       fctx.clearRect(0, 0, cw, ch);
       drawElementWithMediaFit(fctx, el, 0, 0, cw, ch, fitMode);
-      fc._lastFitKey = isVideo ? null : fitKey;
+      fc._lastFitKey = isDynamicVideo ? null : fitKey;
       return fc;
     }
     window.getFittedMediaElement = getFittedMediaElement;

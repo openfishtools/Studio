@@ -58,6 +58,51 @@
     return m ? parseInt(m[1], 10) : 0;
   }
 
+  function isMobileOrLowMemDevice() {
+    if (typeof window === 'undefined') return false;
+    const isSmallScreen = window.innerWidth <= 768 || ('ontouchstart' in window && window.innerWidth <= 1024);
+    const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+    const isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+    const devMem = (typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : 8;
+    return isSmallScreen || isMobileUA || devMem <= 4;
+  }
+
+  function getDeviceRamTier() {
+    const mobile = isMobileOrLowMemDevice();
+    const devMem = (typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : (mobile ? 3 : 8);
+    if (mobile || devMem <= 2) {
+      return {
+        isMobile: true,
+        maxRamFramesPerSource: 210,
+        maxTotalRamFrames: 360,
+        maxTargetDim: 640,
+        maxDecodeQueue: 6,
+        maxPendingBitmaps: 4,
+        dbBatchSize: 4
+      };
+    }
+    if (devMem <= 4) {
+      return {
+        isMobile: false,
+        maxRamFramesPerSource: 450,
+        maxTotalRamFrames: 720,
+        maxTargetDim: 800,
+        maxDecodeQueue: 10,
+        maxPendingBitmaps: 8,
+        dbBatchSize: 6
+      };
+    }
+    return {
+      isMobile: false,
+      maxRamFramesPerSource: 1200,
+      maxTotalRamFrames: 2000,
+      maxTargetDim: 960,
+      maxDecodeQueue: 16,
+      maxPendingBitmaps: 12,
+      dbBatchSize: 10
+    };
+  }
+
   function retainBitmap(bmp, sourceKey) {
     if (!bmp) return bmp;
     bmp._refCount = (bmp._refCount || 0) + 1;
@@ -370,7 +415,10 @@
       this.sources = new Map();
       this._targetFps = 60;
       this.isDraftMode = false;
-      this.maxRamFrames = 2400; // ~40s of 60fps frames in RAM
+      const tier = getDeviceRamTier();
+      this._deviceTier = tier;
+      this.maxRamFrames = tier.maxRamFramesPerSource;
+      this.maxTotalRamFrames = tier.maxTotalRamFrames;
       this._activeTasks = new Map(); // taskId -> { id, layerId, sourceKey, layerName, type, percent, status }
       this._progressListeners = new Set();
       this._db = null;
@@ -382,6 +430,8 @@
       this._dbEncodeCtx = null;
       this._flushTimer = null;
       this._rafProgressBarScheduled = false;
+      this._extractionSourceQueue = [];
+      this._isProcessingSourceQueue = false;
 
       this._interpCache = new Map();
       this._ofCanvas0 = null;
@@ -528,6 +578,8 @@
         if (task.sourceKey && this.sources.has(task.sourceKey)) {
           const s = this.sources.get(task.sourceKey);
           s.isExtracting = false;
+          s._queuedForExtraction = false;
+          s._cachedArrayBuffer = null;
         }
         this._activeTasks.delete(taskId);
         this._notifyProgress();
@@ -620,9 +672,11 @@
         const dur = l.durationSec !== undefined ? l.durationSec : ((l.widthPx || 400) / pps);
         if (curSec >= start && curSec <= start + dur) {
           const effSpeed = (typeof window.getLayerEffectivePropsAtTime === 'function')
-            ? (window.getLayerEffectivePropsAtTime(l, curSec).speed || l.speed || 1.0)
-            : (l.speed !== undefined && l.speed > 0 ? l.speed : 1.0);
-          const timeInClip = Math.max(0, (l.sourceOffsetSec || 0) + (curSec - start) * effSpeed);
+            ? (window.getLayerEffectivePropsAtTime(l, curSec).speed ?? l.speed ?? 1.0)
+            : (l.speed !== undefined && l.speed !== 0 ? l.speed : 1.0);
+          const timeInClip = effSpeed < 0
+            ? Math.max(0, (l.sourceOffsetSec || 0) + Math.max(0, (dur - (curSec - start)) * Math.abs(effSpeed)))
+            : Math.max(0, (l.sourceOffsetSec || 0) + (curSec - start) * effSpeed);
           return Math.round(timeInClip * (source.fps || 60));
         }
       }
@@ -631,44 +685,123 @@
         const dur = l.durationSec !== undefined ? l.durationSec : ((l.widthPx || 400) / pps);
         const targetSec = (curSec < start) ? 0 : dur;
         const effSpeed = (typeof window.getLayerEffectivePropsAtTime === 'function')
-          ? (window.getLayerEffectivePropsAtTime(l, curSec).speed || l.speed || 1.0)
-          : (l.speed !== undefined && l.speed > 0 ? l.speed : 1.0);
-        const timeInClip = Math.max(0, (l.sourceOffsetSec || 0) + targetSec * effSpeed);
+          ? (window.getLayerEffectivePropsAtTime(l, curSec).speed ?? l.speed ?? 1.0)
+          : (l.speed !== undefined && l.speed !== 0 ? l.speed : 1.0);
+        const timeInClip = effSpeed < 0
+          ? Math.max(0, (l.sourceOffsetSec || 0) + Math.max(0, (dur - targetSec) * Math.abs(effSpeed)))
+          : Math.max(0, (l.sourceOffsetSec || 0) + targetSec * effSpeed);
         return Math.round(timeInClip * (source.fps || 60));
       }
       return 0;
     }
 
+    _getTotalRamFrameCount() {
+      let total = 0;
+      for (const s of this.sources.values()) {
+        if (s && s.frames) total += s.frames.size;
+      }
+      return total;
+    }
+
     _evictOldestFrame(source, protectIdx = null) {
-      if (!source || !source.frames || source.frames.size <= this.maxRamFrames) return;
+      if (!source || !source.frames) return;
+      const tier = this._deviceTier || getDeviceRamTier();
+      const maxPerSource = this.maxRamFrames || tier.maxRamFramesPerSource;
+      const maxGlobal = this.maxTotalRamFrames || tier.maxTotalRamFrames;
+
+      if (source.frames.size > maxPerSource) {
+        this._evictSingleFromSource(source, protectIdx, maxPerSource);
+      }
+
+      if (this._getTotalRamFrameCount() > maxGlobal) {
+        let largestSource = null;
+        let maxCount = 0;
+        for (const s of this.sources.values()) {
+          if (s && s.frames && s.frames.size > maxCount) {
+            maxCount = s.frames.size;
+            largestSource = s;
+          }
+        }
+        if (largestSource) {
+          this._evictSingleFromSource(largestSource, largestSource === source ? protectIdx : null, 30);
+        }
+      }
+    }
+
+    _isSourceReversePlayback(source) {
+      if (!source || typeof window === 'undefined') return false;
+      const pps = window.currentPixelsPerSecond || 80;
+      const curSec = (typeof window.getCurrentPlayheadTime === 'function')
+        ? window.getCurrentPlayheadTime()
+        : ((Math.abs(window.timelinePanX || 0)) / pps);
+
+      const matchingLayers = this._collectMatchingLayers(l =>
+        (l.type === 'video' || l.type === 'precomp') && !l.hidden && this._getSourceKey(l) === source.sourceKey
+      );
+      for (const l of matchingLayers) {
+        const start = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps);
+        const dur = l.durationSec !== undefined ? l.durationSec : ((l.widthPx || 400) / pps);
+        if (curSec >= start && curSec <= start + dur) {
+          const effSpeed = (typeof window.getLayerEffectivePropsAtTime === 'function')
+            ? (window.getLayerEffectivePropsAtTime(l, curSec).speed ?? l.speed ?? 1.0)
+            : (l.speed !== undefined && l.speed !== 0 ? l.speed : 1.0);
+          return effSpeed < 0;
+        }
+      }
+      return false;
+    }
+
+    _evictSingleFromSource(source, protectIdx = null, capThreshold = 100) {
+      if (!source || !source.frames || source.frames.size <= 1) return;
       const curFIdx = this._getVideoFrameForPlayhead(source);
+      const isReverse = this._isSourceReversePlayback(source);
 
-      let worstIdx = -1;
-      let worstScore = -1;
-      const hardOverflow = source.frames.size > (this.maxRamFrames + 200);
+      const pickVictim = (allowPendingEncode) => {
+        let worstIdx = -1;
+        let worstScore = -1;
+        for (const [fIdx, bmp] of source.frames.entries()) {
+          if (fIdx === protectIdx) continue;
+          if (fIdx === 0 && source.frames.size > 1) continue;
+          if (!allowPendingEncode && bmp && bmp._pendingDbEncode) continue;
 
-      for (const [fIdx, bmp] of source.frames.entries()) {
-        if (fIdx === protectIdx) continue;
-        if (fIdx === 0 && source.frames.size > 1) continue;
-        if (bmp && bmp._pendingDbEncode && !hardOverflow) continue;
+          let score;
+          if (!isReverse) {
+            // Forward playback: curFIdx is advancing forward
+            if (fIdx < curFIdx) {
+              score = (curFIdx - fIdx) + 1000;
+            } else {
+              const aheadDist = fIdx - curFIdx;
+              score = aheadDist > 180 ? (aheadDist + 100) : (aheadDist * 0.1);
+            }
+          } else {
+            // Reverse playback: curFIdx is advancing backward towards 0
+            if (fIdx > curFIdx) {
+              score = (fIdx - curFIdx) + 1000;
+            } else {
+              const aheadDist = curFIdx - fIdx;
+              score = aheadDist > 180 ? (aheadDist + 100) : (aheadDist * 0.1);
+            }
+          }
 
-        let score;
-        if (fIdx < curFIdx) {
-          score = (curFIdx - fIdx) + 1000;
-        } else {
-          const aheadDist = fIdx - curFIdx;
-          score = aheadDist > 240 ? (aheadDist + 100) : (aheadDist * 0.1);
+          if (score > worstScore) {
+            worstScore = score;
+            worstIdx = fIdx;
+          }
         }
+        return worstIdx;
+      };
 
-        if (score > worstScore) {
-          worstScore = score;
-          worstIdx = fIdx;
-        }
+      let worstIdx = pickVictim(false);
+      if (worstIdx === -1 && source.frames.size > capThreshold) {
+        worstIdx = pickVictim(true);
       }
 
       if (worstIdx !== -1) {
         const bmp = source.frames.get(worstIdx);
         source.frames.delete(worstIdx);
+        if (bmp && bmp._pendingDbEncode) {
+          bmp._pendingDbEncode = false;
+        }
         releaseBitmap(bmp);
       }
     }
@@ -690,6 +823,7 @@
       }
       for (const v of videosToClean) {
         try {
+          v.pause();
           v.removeAttribute('src');
           v.load();
           if (v.parentNode) v.parentNode.removeChild(v);
@@ -697,11 +831,12 @@
       }
       source.activeVideo = null;
       source.activeVideos = null;
+      source._cachedArrayBuffer = null;
     }
 
     isAnySourceExtracting() {
       for (const s of this.sources.values()) {
-        if (s.isExtracting) return true;
+        if (s.isExtracting || s._queuedForExtraction) return true;
       }
       return false;
     }
@@ -752,8 +887,11 @@
       }
       this._saveQueue = [];
       this._blobEncodeQueue = [];
+      this._extractionSourceQueue = [];
+      this._isProcessingSourceQueue = false;
       for (const source of this.sources.values()) {
         source.isExtracting = false;
+        source._queuedForExtraction = false;
         this._cleanupSourceDecoders(source);
         if (source.frames) {
           const closedSet = new Set();
@@ -790,6 +928,17 @@
      */
     _queueBitmapForDB(sourceKey, frameIdx, bmp, fps = this.targetFps, isPrecomp = false) {
       if (!sourceKey || !bmp || isPrecomp) return;
+      const tier = this._deviceTier || getDeviceRamTier();
+      const maxQueue = tier.isMobile ? 240 : 1800;
+      while (this._blobEncodeQueue.length >= maxQueue) {
+        const dropped = this._blobEncodeQueue.shift();
+        if (dropped && dropped.bmp) {
+          dropped.bmp._pendingDbEncode = false;
+          if (!dropped.bmp._refCount || dropped.bmp._refCount <= 0) {
+            try { if (typeof dropped.bmp.close === 'function') dropped.bmp.close(); } catch (_) {}
+          }
+        }
+      }
       bmp._pendingDbEncode = true;
       this._blobEncodeQueue.push({
         sourceKey,
@@ -809,16 +958,19 @@
 
       const processNextBatch = async () => {
         try {
+          const tier = this._deviceTier || getDeviceRamTier();
+          const batchSize = tier.dbBatchSize || 6;
           while (this._blobEncodeQueue.length > 0) {
             // Pause DB encoding immediately if new extraction starts or user interacts
             if (this.isAnySourceExtracting()) {
               break;
             }
-            if (this._isUserInteracting() && this._blobEncodeQueue.length < 400) {
-              await new Promise(r => setTimeout(r, 60));
+            if (this._isUserInteracting()) {
+              await new Promise(r => setTimeout(r, 120));
               if (this.isAnySourceExtracting()) break;
+              if (this._isUserInteracting()) continue;
             }
-            const batch = this._blobEncodeQueue.splice(0, 8);
+            const batch = this._blobEncodeQueue.splice(0, batchSize);
             for (const item of batch) {
               const { sourceKey, frameIdx, bmp, fps } = item;
               if (!bmp) continue;
@@ -864,6 +1016,9 @@
               } catch (_) {
               } finally {
                 bmp._pendingDbEncode = false;
+                if (bmp._cachedWebpBlob && (bmp._refCount || 1) <= 1) {
+                  delete bmp._cachedWebpBlob;
+                }
                 if (source && source.frames && !source.frames.has(frameIdx)) {
                   releaseBitmap(bmp);
                 } else if (source && source.frames && source.frames.size > this.maxRamFrames) {
@@ -871,7 +1026,7 @@
                 }
               }
             }
-            await yieldToUI();
+            await yieldToUI(tier.isMobile ? 8 : 0);
           }
         } finally {
           this._isDrainingBlobQueue = false;
@@ -1065,9 +1220,18 @@
       if (!source || source.isPrecomp || !source.cachedFrameIndices || source.cachedFrameIndices.size === 0) return;
       if (source._isStreamingPrefetch) return;
 
+      const tier = this._deviceTier || getDeviceRamTier();
+      const effectiveWin = tier.isMobile ? Math.min(90, windowSize) : windowSize;
+      const isReverse = this._isSourceReversePlayback(source);
       const missing = [];
-      const startFIdx = Math.max(0, currentFIdx - Math.round(windowSize / 3));
-      const endFIdx = currentFIdx + windowSize;
+      let startFIdx, endFIdx;
+      if (!isReverse) {
+        startFIdx = Math.max(0, currentFIdx - Math.round(effectiveWin / 4));
+        endFIdx = currentFIdx + effectiveWin;
+      } else {
+        startFIdx = Math.max(0, currentFIdx - effectiveWin);
+        endFIdx = currentFIdx + Math.round(effectiveWin / 4);
+      }
       for (let f = startFIdx; f <= endFIdx; f++) {
         if (source.cachedFrameIndices.has(f) && (!source.frames || !source.frames.has(f))) {
           if (!source._fetchingFrames || !source._fetchingFrames.has(f)) {
@@ -1078,12 +1242,28 @@
 
       if (missing.length === 0) return;
 
+      if (!isReverse) {
+        // Forward: prioritize upcoming frames (f >= currentFIdx) first
+        missing.sort((a, b) => {
+          const scoreA = a >= currentFIdx ? (a - currentFIdx) : ((currentFIdx - a) + 10000);
+          const scoreB = b >= currentFIdx ? (b - currentFIdx) : ((currentFIdx - b) + 10000);
+          return scoreA - scoreB;
+        });
+      } else {
+        // Reverse: prioritize upcoming decreasing frames (f <= currentFIdx) first
+        missing.sort((a, b) => {
+          const scoreA = a <= currentFIdx ? (currentFIdx - a) : ((a - currentFIdx) + 10000);
+          const scoreB = b <= currentFIdx ? (currentFIdx - b) : ((b - currentFIdx) + 10000);
+          return scoreA - scoreB;
+        });
+      }
+
       source._isStreamingPrefetch = true;
       try {
         const db = await this._getDB();
         if (!db) return;
 
-        const batchSize = Math.min(60, missing.length);
+        const batchSize = Math.min(tier.isMobile ? 24 : 60, missing.length);
         const batch = missing.slice(0, batchSize);
         batch.forEach(idx => {
           if (!source._fetchingFrames) source._fetchingFrames = new Set();
@@ -1199,87 +1379,85 @@
       }
 
       const currentFps = parseInt(source.fps || this.targetFps, 10) || 60;
+      const prefix = `${source.sourceKey}_${currentFps}_`;
+      const tier = this._deviceTier || getDeviceRamTier();
+
       return new Promise((resolve) => {
         try {
           const tx = db.transaction(STORE_NAME, 'readonly');
           const store = tx.objectStore(STORE_NAME);
-          let req;
-          if (store.indexNames.contains('sourceFpsKey')) {
-            const index = store.index('sourceFpsKey');
-            req = index.getAll(IDBKeyRange.only([source.sourceKey, currentFps]));
-          } else if (store.indexNames.contains('sourceKey')) {
-            const index = store.index('sourceKey');
-            req = index.getAll(IDBKeyRange.only(source.sourceKey));
-          } else {
-            req = store.getAll();
+          let keyReq;
+          if (store.indexNames.contains('sourceFpsKey') && typeof store.index('sourceFpsKey').getAllKeys === 'function') {
+            keyReq = store.index('sourceFpsKey').getAllKeys(IDBKeyRange.only([source.sourceKey, currentFps]));
+          } else if (store.indexNames.contains('sourceKey') && typeof store.index('sourceKey').getAllKeys === 'function') {
+            keyReq = store.index('sourceKey').getAllKeys(IDBKeyRange.only(source.sourceKey));
+          } else if (typeof store.getAllKeys === 'function') {
+            keyReq = store.getAllKeys();
           }
 
-          req.onsuccess = async () => {
-            const records = req.result || [];
-            if (records.length > 0) {
-              if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
-              for (const rec of records) {
-                if (rec && rec.frameIdx !== undefined && rec.frameIdx !== null) {
-                  const recFps = parseInt(rec.fps, 10);
-                  if (!recFps || recFps === currentFps) {
-                    source.cachedFrameIndices.add(rec.frameIdx);
-                  }
+          if (keyReq) {
+            keyReq.onsuccess = async () => {
+              const allKeys = keyReq.result || [];
+              const frameIndices = [];
+              for (let i = 0; i < allKeys.length; i++) {
+                const k = String(allKeys[i]);
+                if (k.startsWith(prefix)) {
+                  const fIdx = parseInt(k.substring(prefix.length), 10);
+                  if (!isNaN(fIdx)) frameIndices.push(fIdx);
                 }
               }
 
-              if (source && (!source.duration || source.duration === 0)) {
+              if (frameIndices.length > 0) {
+                frameIndices.sort((a, b) => a - b);
+                if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
                 let maxF = 0;
-                for (const f of source.cachedFrameIndices) {
-                  if (f > maxF) maxF = f;
+                for (let i = 0; i < frameIndices.length; i++) {
+                  const fIdx = frameIndices[i];
+                  source.cachedFrameIndices.add(fIdx);
+                  if (fIdx > maxF) maxF = fIdx;
                 }
-                if (maxF > 0) {
+                if (maxF > 0 && (!source.duration || source.duration === 0)) {
                   source.duration = Math.max(source.duration || 0, (maxF + 1) / currentFps);
                 }
+
+                const playheadFIdx = this._getVideoFrameForPlayhead(source);
+                const initialCap = tier.isMobile ? 60 : 120;
+                const sortedByPlayhead = frameIndices.slice().sort((a, b) => {
+                  const da = a >= playheadFIdx ? (a - playheadFIdx) : (playheadFIdx - a) + 300;
+                  const dbDist = b >= playheadFIdx ? (b - playheadFIdx) : (playheadFIdx - b) + 300;
+                  return da - dbDist;
+                });
+
+                const initialIndices = sortedByPlayhead.slice(0, initialCap);
+                source.isDbLoaded = true;
+                this._notifyLayersForSource(source.sourceKey, true);
+
+                // Hydrate playhead window in small non-blocking chunks without holding all Blobs in memory
+                const chunkSize = tier.isMobile ? 15 : 30;
+                for (let i = 0; i < initialIndices.length; i += chunkSize) {
+                  if (!this.sources.has(source.sourceKey) || parseInt(source.fps, 10) !== currentFps) break;
+                  const chunk = initialIndices.slice(i, i + chunkSize);
+                  await this.ensurePlaybackFrames(source, chunk[0], chunk.length);
+                  await yieldToUI();
+                }
+
+                resolve();
+                this._startBackgroundKeyHydration(source, sortedByPlayhead.slice(initialCap), currentFps);
+                return;
               }
-
-              const initialBatchSize = 150;
-              const prioritized = records
-                .filter(rec => rec && rec.blob && (!rec.fps || parseInt(rec.fps, 10) === currentFps))
-                .sort((a, b) => a.frameIdx - b.frameIdx);
-
-              const initialChunk = prioritized.slice(0, initialBatchSize);
-              const chunkSize = 30;
-              for (let i = 0; i < initialChunk.length; i += chunkSize) {
-                if (!this.sources.has(source.sourceKey)) break;
-                if (parseInt(source.fps, 10) !== currentFps) break;
-                const chunk = initialChunk.slice(i, i + chunkSize);
-                await Promise.all(chunk.map(async (rec) => {
-                  if (rec && rec.blob && !source.frames.has(rec.frameIdx)) {
-                    try {
-                      const bmp = await createImageBitmap(rec.blob);
-                      if (!source.fps || parseInt(source.fps, 10) === currentFps) {
-                        retainBitmap(bmp, source.sourceKey);
-                        source.frames.set(rec.frameIdx, bmp);
-                      } else if (bmp && typeof bmp.close === 'function') {
-                        bmp.close();
-                      }
-                    } catch (_) {}
-                  }
-                }));
-                await yieldToUI();
-              }
-
               source.isDbLoaded = true;
               this._notifyLayersForSource(source.sourceKey, true);
               resolve();
+            };
+            keyReq.onerror = () => {
+              source.isDbLoaded = true;
+              resolve();
+            };
+            return;
+          }
 
-              this._startBackgroundIdleHydration(source, prioritized.slice(initialBatchSize), currentFps);
-              return;
-            }
-            source.isDbLoaded = true;
-            this._notifyLayersForSource(source.sourceKey, true);
-            resolve();
-          };
-
-          req.onerror = () => {
-            source.isDbLoaded = true;
-            resolve();
-          };
+          source.isDbLoaded = true;
+          resolve();
         } catch (_) {
           source.isDbLoaded = true;
           resolve();
@@ -1287,18 +1465,21 @@
       });
     }
 
-    _startBackgroundIdleHydration(source, remainingRecords, currentFps) {
-      if (!remainingRecords || remainingRecords.length === 0) return;
+    _startBackgroundKeyHydration(source, remainingIndices, currentFps) {
+      if (!remainingIndices || remainingIndices.length === 0) return;
       if (source._idleHydrationRunning) return;
       source._idleHydrationRunning = true;
 
+      const tier = this._deviceTier || getDeviceRamTier();
+      const maxPerSource = this.maxRamFrames || tier.maxRamFramesPerSource;
       let currentIndex = 0;
+
       const step = async () => {
         if (!this.sources.has(source.sourceKey) || parseInt(source.fps, 10) !== currentFps) {
           source._idleHydrationRunning = false;
           return;
         }
-        if (currentIndex >= remainingRecords.length || (source.frames && source.frames.size >= this.maxRamFrames)) {
+        if (currentIndex >= remainingIndices.length || (source.frames && source.frames.size >= maxPerSource) || this._getTotalRamFrameCount() >= (this.maxTotalRamFrames || tier.maxTotalRamFrames)) {
           source._idleHydrationRunning = false;
           return;
         }
@@ -1308,23 +1489,42 @@
           return;
         }
 
-        const chunk = remainingRecords.slice(currentIndex, currentIndex + 16);
-        currentIndex += 16;
+        const chunkSize = tier.isMobile ? 8 : 16;
+        const chunk = remainingIndices.slice(currentIndex, currentIndex + chunkSize);
+        currentIndex += chunkSize;
 
-        await Promise.all(chunk.map(async (rec) => {
-          if (rec && rec.blob && (!source.frames || !source.frames.has(rec.frameIdx))) {
-            try {
-              const bmp = await createImageBitmap(rec.blob);
-              if (!source.fps || parseInt(source.fps, 10) === currentFps) {
-                retainBitmap(bmp, source.sourceKey);
-                source.frames.set(rec.frameIdx, bmp);
-                this._evictOldestFrame(source, rec.frameIdx);
-              } else if (bmp && typeof bmp.close === 'function') {
-                bmp.close();
+        const db = await this._getDB();
+        if (db) {
+          try {
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const store = tx.objectStore(STORE_NAME);
+            await Promise.all(chunk.map(fIdx => new Promise(res => {
+              if (source.frames && source.frames.has(fIdx)) {
+                res();
+                return;
               }
-            } catch (_) {}
-          }
-        }));
+              const key = `${source.sourceKey}_${currentFps}_${fIdx}`;
+              const req = store.get(key);
+              req.onsuccess = async () => {
+                const rec = req.result;
+                if (rec && rec.blob && (!source.frames || !source.frames.has(fIdx))) {
+                  try {
+                    const bmp = await createImageBitmap(rec.blob);
+                    if (!source.fps || parseInt(source.fps, 10) === currentFps) {
+                      retainBitmap(bmp, source.sourceKey);
+                      source.frames.set(fIdx, bmp);
+                      this._evictOldestFrame(source, fIdx);
+                    } else if (bmp && typeof bmp.close === 'function') {
+                      bmp.close();
+                    }
+                  } catch (_) {}
+                }
+                res();
+              };
+              req.onerror = () => res();
+            })));
+          } catch (_) {}
+        }
 
         if (typeof requestIdleCallback === 'function') {
           requestIdleCallback(step, { timeout: 350 });
@@ -1370,7 +1570,7 @@
           maxTimeSec = offsetSec + durSec * 4.0;
         }
       } else {
-        const effSpeed = (layer.speed !== undefined && layer.speed > 0) ? layer.speed : 1.0;
+        const effSpeed = (layer.speed !== undefined && layer.speed !== 0) ? Math.abs(layer.speed) : 1.0;
         const videoDurationConsumed = durSec * effSpeed;
         minTimeSec = offsetSec;
         maxTimeSec = offsetSec + videoDurationConsumed;
@@ -1432,7 +1632,9 @@
       } else {
         timeInClip = (typeof window !== 'undefined' && typeof window.getLayerIntegratedSpeedTime === 'function')
           ? window.getLayerIntegratedSpeedTime(layer, currentSec)
-          : Math.max(0, (layer.sourceOffsetSec || 0) + (currentSec - start) * (layer.speed || 1.0));
+          : (layer.speed !== undefined && layer.speed < 0
+            ? Math.max(0, (layer.sourceOffsetSec || 0) + Math.max(0, (((layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pixelsPerSec))) - (currentSec - start)) * Math.abs(layer.speed)))
+            : Math.max(0, (layer.sourceOffsetSec || 0) + (currentSec - start) * (layer.speed || 1.0)));
       }
       const rawFrame = timeInClip * (source.fps || this.targetFps);
 
@@ -1857,7 +2059,9 @@
 
       const missing = [];
       for (let i = startIdx; i <= endIdx; i++) {
-        if (!source.frames.has(i)) {
+        const hasRam = source.frames && source.frames.has(i);
+        const hasCached = source.cachedFrameIndices && source.cachedFrameIndices.has(i);
+        if (!hasRam && !hasCached) {
           missing.push(i);
         }
       }
@@ -1902,7 +2106,8 @@
 
       const baseW = Math.round(Math.abs(precompLayer.mediaWidth || precompLayer.scaleW || (window.currentProjectState && window.currentProjectState.baseW) || 1920));
       const baseH = Math.round(Math.abs(precompLayer.mediaHeight || precompLayer.scaleH || (window.currentProjectState && window.currentProjectState.baseH) || 1080));
-      const maxDim = 960;
+      const tier = this._deviceTier || getDeviceRamTier();
+      const maxDim = tier.maxTargetDim || 960;
       const scale = Math.min(1, maxDim / Math.max(baseW, baseH));
       const targetW = Math.max(160, Math.round(baseW * scale));
       const targetH = Math.max(90, Math.round(baseH * scale));
@@ -1923,14 +2128,14 @@
           continue;
         }
 
-        const batch = this._claimContiguousFrameBatch(source, 12);
+        const batch = this._claimContiguousFrameBatch(source, tier.isMobile ? 8 : 12);
         if (batch.length === 0) break;
 
         const fps = source.fps || this.targetFps || 60;
         for (let i = 0; i < batch.length; i++) {
           const targetIdx = batch[i];
           if (!this.sources.has(source.sourceKey) || !source.isExtracting || precompLayer._dirty) break;
-          if (source.frames.has(targetIdx)) {
+          if (source.frames.has(targetIdx) || (source.cachedFrameIndices && source.cachedFrameIndices.has(targetIdx))) {
             this._notifyLayersForSource(source.sourceKey, false, targetIdx);
             continue;
           }
@@ -1954,11 +2159,11 @@
           } catch (_) {}
 
           this._notifyLayersForSource(source.sourceKey, false, targetIdx);
-          if (i % 3 === 2) {
-            await yieldToUI();
+          if (i % (tier.isMobile ? 2 : 3) === 1) {
+            await yieldToUI(tier.isMobile ? 4 : 0);
           }
         }
-        await yieldToUI();
+        await yieldToUI(tier.isMobile ? 4 : 0);
       }
     }
 
@@ -1980,7 +2185,7 @@
       if (layer._extractComplete) {
         const sourceKey = this._getSourceKey(layer);
         const source = this.sources.get(sourceKey);
-        if (source && source.frames.size > 0) {
+        if (source && (source.frames.size > 0 || (source.cachedFrameIndices && source.cachedFrameIndices.size > 0))) {
           this.updateLayerProgressBar(layer);
           if (typeof window !== 'undefined' && window.FishBgRemovalEngine && window.FishBgRemovalEngine.isLayerMattingActive(layer)) {
             window.FishBgRemovalEngine.processLayer(layer);
@@ -2248,7 +2453,7 @@
 
         for (const [, entry] of sourcesToExtract.entries()) {
           const source = entry.source;
-          if (source.isExtracting) {
+          if (source.isExtracting || (this._extractionSourceQueue && this._extractionSourceQueue.includes(source.sourceKey))) {
             anyExtracting = true;
           }
           for (const idx of entry.neededFrames) {
@@ -2304,7 +2509,7 @@
             cleanup();
             resolve(false);
           }
-        }, 280);
+        }, 180);
 
         const onSeek = () => {
           if (resolved) return;
@@ -2354,7 +2559,7 @@
         const matches = (this._getSourceKey(l) === source.sourceKey || l.mediaId === source.sourceKey || l.id === source.sourceKey || (l.name && source.name && l.name === source.name));
         if (matches) {
           l.mediaDuration = source.duration;
-          const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
+          const spd = (l.speed && l.speed !== 0) ? Math.abs(l.speed) : 1.0;
           const srcOff = l.sourceOffsetSec || 0;
           const targetDur = Math.max(0.05, (source.duration - srcOff) / spd);
           if (!l._userTrimmed && (!l.durationSec || Math.abs(l.durationSec - targetDur) > 0.01)) {
@@ -2388,7 +2593,7 @@
       if (!source.pendingFrames || source.pendingFrames.size === 0) return [];
 
       for (const idx of source.pendingFrames) {
-        if (source.frames && source.frames.has(idx)) {
+        if ((source.frames && source.frames.has(idx)) || (source.cachedFrameIndices && source.cachedFrameIndices.has(idx))) {
           source.pendingFrames.delete(idx);
           this._notifyLayersForSource(source.sourceKey, false, idx);
         }
@@ -2433,7 +2638,8 @@
 
     /**
      * Turbo Hardware-Accelerated WebCodecs Batch Stream Extractor (MP4 / MOV)
-     * Uses parallel zero-copy createImageBitmap(videoFrame) and sample deduplication.
+     * Uses two-phase Playhead-First GOP prioritization, zero-copy createImageBitmap(videoFrame),
+     * sample deduplication, and device-aware backpressure so mobile phones never crash.
      */
     async _tryWebCodecsBatchExtract(source) {
       const safariVer = getSafariMajorVersion();
@@ -2482,17 +2688,16 @@
         return false;
       }
 
-      source._cachedArrayBuffer = arrayBuffer;
-
       if (track.duration > 0) {
         source.duration = track.duration;
         source._durationVerified = true;
         this._syncSourceDurationToLayers(source);
       }
 
+      const tier = this._deviceTier || getDeviceRamTier();
       const vw = track.width || 640;
       const vh = track.height || 360;
-      const maxDim = 960;
+      const maxDim = tier.maxTargetDim || 960;
       const scale = Math.min(1, maxDim / Math.max(vw, vh));
       const targetW = Math.max(160, Math.round(vw * scale));
       const targetH = Math.max(90, Math.round(vh * scale));
@@ -2532,6 +2737,9 @@
       };
 
       let extractedAny = false;
+      const maxDecodeQueue = tier.maxDecodeQueue || 12;
+      const maxPendingBitmaps = tier.maxPendingBitmaps || 10;
+      const drainThreshold = Math.max(2, Math.floor(maxDecodeQueue / 2));
 
       while (source.pendingFrames && source.pendingFrames.size > 0) {
         if (!this.sources.has(source.sourceKey) || !source.isExtracting) break;
@@ -2551,7 +2759,7 @@
         const ptsUsToSampleIdx = new Map();
 
         for (const tIdx of Array.from(source.pendingFrames)) {
-          if (source.frames && source.frames.has(tIdx)) {
+          if ((source.frames && source.frames.has(tIdx)) || (source.cachedFrameIndices && source.cachedFrameIndices.has(tIdx))) {
             source.pendingFrames.delete(tIdx);
             this._notifyLayersForSource(source.sourceKey, false, tIdx);
             continue;
@@ -2570,7 +2778,8 @@
 
         if (sampleTargets.size === 0) break;
 
-        const activeGops = [];
+        const playheadGops = [];
+        const backgroundGops = [];
         for (const gop of gops) {
           let maxNeededDecodeIdx = -1;
           let bestTier = 99;
@@ -2581,8 +2790,8 @@
             if (targets && targets.length > 0) {
               if (sIdx > maxNeededDecodeIdx) maxNeededDecodeIdx = sIdx;
               for (const tIdx of targets) {
-                const tier = this._getFramePriorityTier(source, tIdx, anchorFrame, lookahead, lookbehind);
-                if (tier < bestTier) bestTier = tier;
+                const fTier = this._getFramePriorityTier(source, tIdx, anchorFrame, lookahead, lookbehind);
+                if (fTier < bestTier) bestTier = fTier;
                 if (tIdx < minTargetIdx) minTargetIdx = tIdx;
               }
             }
@@ -2590,19 +2799,28 @@
 
           if (maxNeededDecodeIdx !== -1) {
             const decodeEndIdx = Math.min(gop.endIdx, maxNeededDecodeIdx + 8);
-            activeGops.push({
+            const gopItem = {
               startIdx: gop.startIdx,
               decodeEndIdx,
               bestTier,
               minTargetIdx
-            });
+            };
+            if (bestTier <= 2 && !source._forceExtraction) {
+              playheadGops.push(gopItem);
+            } else {
+              backgroundGops.push(gopItem);
+            }
           }
         }
 
-        if (activeGops.length === 0) break;
+        // Two-Phase Playhead-First GOP Order:
+        // Phase 1: Playhead-adjacent GOPs sorted chronologically among themselves (instant preview!)
+        // Phase 2: Remaining GOPs sorted chronologically
+        playheadGops.sort((a, b) => a.startIdx - b.startIdx);
+        backgroundGops.sort((a, b) => a.startIdx - b.startIdx);
+        const activeGops = playheadGops.concat(backgroundGops);
 
-        // Chronological order is mandatory for hardware VideoDecoder stream decode!
-        activeGops.sort((a, b) => a.startIdx - b.startIdx);
+        if (activeGops.length === 0) break;
 
         let decoderFailed = false;
         let passExtractedCount = 0;
@@ -2734,14 +2952,14 @@
             });
             decoder.decode(chunk);
 
-            if (decoder.decodeQueueSize > 16 || pendingBitmapTasks.size > 16) {
+            if (decoder.decodeQueueSize > maxDecodeQueue || pendingBitmapTasks.size > maxPendingBitmaps) {
               let backpressureWaits = 0;
-              while ((decoder.decodeQueueSize > 8 || pendingBitmapTasks.size > 8) && !decoderFailed && source.isExtracting && backpressureWaits < 20) {
+              while ((decoder.decodeQueueSize > drainThreshold || pendingBitmapTasks.size > drainThreshold) && !decoderFailed && source.isExtracting && backpressureWaits < 25) {
                 backpressureWaits++;
-                await yieldToUI(4);
+                await yieldToUI(tier.isMobile ? 6 : 3);
               }
-            } else if ((sIdx - gopSeg.startIdx) % 16 === 15) {
-              await yieldToUI(0);
+            } else if ((sIdx - gopSeg.startIdx) % (tier.isMobile ? 10 : 20) === (tier.isMobile ? 9 : 19)) {
+              await yieldToUI(tier.isMobile ? 2 : 0);
             }
           }
           lastEndSampleIdx = gopSeg.decodeEndIdx;
@@ -2780,13 +2998,18 @@
                     if (dist <= 1) break;
                   }
                 }
-                if (bestBmp && minDist <= 15) {
+                if (bestBmp) {
                   retainBitmap(bestBmp, source.sourceKey);
                   source.frames.set(remTIdx, bestBmp);
                   if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
                   source.cachedFrameIndices.add(remTIdx);
                   this._queueBitmapForDB(source.sourceKey, remTIdx, bestBmp, source.fps, false);
                   this._notifyLayersForSource(source.sourceKey, false, remTIdx);
+                } else {
+                  if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
+                  source.cachedFrameIndices.add(remTIdx);
+                  if (!source.failedFrameIndices) source.failedFrameIndices = new Set();
+                  source.failedFrameIndices.add(remTIdx);
                 }
               }
             }
@@ -2798,6 +3021,9 @@
         }
       }
 
+      // Free raw MP4 ArrayBuffer immediately after WebCodecs batch completes to save 50-200MB RAM on mobile!
+      source._cachedArrayBuffer = null;
+
       return extractedAny && (!source.pendingFrames || source.pendingFrames.size === 0);
     }
 
@@ -2808,11 +3034,13 @@
       if (typeof document === 'undefined') return;
       source.activeVideos = [primaryVideo];
 
+      const tier = this._deviceTier || getDeviceRamTier();
       const failedAttempts = new Map();
       let offCanvas = null;
       let offCtx = null;
       let lastDecodedTime = -1;
       let lastCreatedBmp = null;
+      let stepCounter = 0;
 
       while (source.pendingFrames && source.pendingFrames.size > 0) {
         if (!this.sources.has(source.sourceKey) || !source.isExtracting) break;
@@ -2822,14 +3050,14 @@
           continue;
         }
 
-        const batch = this._claimContiguousFrameBatch(source, 16);
+        const batch = this._claimContiguousFrameBatch(source, tier.isMobile ? 16 : 24);
         if (batch.length === 0) break;
         batch.sort((a, b) => a - b);
 
         for (const targetIdx of batch) {
           if (!this.sources.has(source.sourceKey) || !source.isExtracting) break;
 
-          if (source.frames.has(targetIdx)) {
+          if (source.frames.has(targetIdx) || (source.cachedFrameIndices && source.cachedFrameIndices.has(targetIdx))) {
             this._notifyLayersForSource(source.sourceKey, false, targetIdx);
             continue;
           }
@@ -2848,9 +3076,9 @@
             failedAttempts.set(targetIdx, attempts);
             if (attempts < 3) {
               source.pendingFrames.add(targetIdx);
+              await yieldToUI(4);
+              continue;
             }
-            await yieldToUI(4);
-            continue;
           }
 
           let bmp = null;
@@ -2892,6 +3120,21 @@
             }
           }
 
+          if (!bmp) {
+            if (lastCreatedBmp) {
+              bmp = lastCreatedBmp;
+            } else if (source.frames.size > 0) {
+              let minDist = Infinity;
+              for (const [kIdx, candBmp] of source.frames.entries()) {
+                const dist = Math.abs(kIdx - targetIdx);
+                if (dist < minDist) {
+                  minDist = dist;
+                  bmp = candBmp;
+                }
+              }
+            }
+          }
+
           if (bmp) {
             retainBitmap(bmp, source.sourceKey);
             source.frames.set(targetIdx, bmp);
@@ -2900,10 +3143,33 @@
             source._hasNewExtractedFrames = true;
             this._queueBitmapForDB(source.sourceKey, targetIdx, bmp, source.fps, false);
             this._evictOldestFrame(source, targetIdx);
+          } else {
+            if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
+            source.cachedFrameIndices.add(targetIdx);
+            if (!source.failedFrameIndices) source.failedFrameIndices = new Set();
+            source.failedFrameIndices.add(targetIdx);
           }
 
           this._notifyLayersForSource(source.sourceKey, false, targetIdx);
-          await yieldToUI(0);
+          stepCounter++;
+          if (tier.isMobile || stepCounter % 3 === 0) {
+            await yieldToUI(tier.isMobile ? 2 : 0);
+          }
+        }
+      }
+    }
+
+    _pumpNextQueuedSourceExtraction() {
+      if (!this._extractionSourceQueue || this._extractionSourceQueue.length === 0) return;
+      for (const s of this.sources.values()) {
+        if (!s.isPrecomp && s.isExtracting) return;
+      }
+      while (this._extractionSourceQueue.length > 0) {
+        const nextKey = this._extractionSourceQueue.shift();
+        const nextSource = this.sources.get(nextKey);
+        if (nextSource && nextSource.pendingFrames && nextSource.pendingFrames.size > 0 && !nextSource.isExtracting) {
+          this._runSourceExtractionNow(nextSource);
+          return;
         }
       }
     }
@@ -2927,31 +3193,75 @@
 
       if (source.isExtracting) return;
 
+      const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+      if (source._lastExtractPassEnd && (now - source._lastExtractPassEnd) < 600 && (source._consecutivePasses || 0) >= 3) {
+        console.warn(`[VideoFrameExtractor] Circuit breaker tripped for source ${source.sourceKey}: stopping rapid extraction loops.`);
+        if (source.pendingFrames && source.pendingFrames.size > 0) {
+          for (const fIdx of source.pendingFrames) {
+            if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
+            source.cachedFrameIndices.add(fIdx);
+          }
+          source.pendingFrames.clear();
+        }
+        this._notifyLayersForSource(source.sourceKey, true);
+        return;
+      }
+
+      // Serialize multi-source video hardware decoding so mobile SoCs never spawn parallel decoders and crash
+      let otherVideoExtracting = false;
+      for (const s of this.sources.values()) {
+        if (!s.isPrecomp && s.isExtracting && s.sourceKey !== source.sourceKey) {
+          otherVideoExtracting = true;
+          break;
+        }
+      }
+      if (otherVideoExtracting) {
+        if (!this._extractionSourceQueue) this._extractionSourceQueue = [];
+        if (!this._extractionSourceQueue.includes(source.sourceKey)) {
+          this._extractionSourceQueue.push(source.sourceKey);
+        }
+        return;
+      }
+
+      this._runSourceExtractionNow(source);
+    }
+
+    _runSourceExtractionNow(source) {
+      if (!source || source.isExtracting) return;
       source.isExtracting = true;
+      source._consecutivePasses = (source._consecutivePasses || 0) + 1;
 
       this._tryWebCodecsBatchExtract(source).then(completedViaWebCodecs => {
         if (!this.sources.has(source.sourceKey) || !source.isExtracting) {
           this._cleanupSourceDecoders(source);
+          this._pumpNextQueuedSourceExtraction();
           return;
         }
         if (completedViaWebCodecs && (!source.pendingFrames || source.pendingFrames.size === 0)) {
           source.isExtracting = false;
+          source._lastExtractPassEnd = (typeof performance !== 'undefined') ? performance.now() : Date.now();
           this._cleanupSourceDecoders(source);
           this._scheduleBlobEncodeDrain();
           this._flushSaveQueue();
           this._notifyLayersForSource(source.sourceKey, true);
+          this._pumpNextQueuedSourceExtraction();
           return;
         }
         this._startVideoElementExtraction(source);
       }).catch(() => {
         if (this.sources.has(source.sourceKey) && source.isExtracting) {
           this._startVideoElementExtraction(source);
+        } else {
+          this._pumpNextQueuedSourceExtraction();
         }
       });
     }
 
     _startVideoElementExtraction(source) {
-      if (!this.sources.has(source.sourceKey) || !source.isExtracting || typeof document === 'undefined') return;
+      if (!this.sources.has(source.sourceKey) || !source.isExtracting || typeof document === 'undefined') {
+        this._pumpNextQueuedSourceExtraction();
+        return;
+      }
 
       const video = document.createElement('video');
       video.muted = true;
@@ -2988,9 +3298,10 @@
 
         this._syncSourceDurationToLayers(source);
 
+        const tier = this._deviceTier || getDeviceRamTier();
         const vw = video.videoWidth || 640;
         const vh = video.videoHeight || 360;
-        const maxDim = 960;
+        const maxDim = tier.maxTargetDim || 960;
         const scale = Math.min(1, maxDim / Math.max(vw, vh));
         const targetW = Math.max(160, Math.round(vw * scale));
         const targetH = Math.max(90, Math.round(vh * scale));
@@ -3000,10 +3311,12 @@
         await this._extractWithVideoPool(source, video, targetW, targetH);
 
         source.isExtracting = false;
+        source._lastExtractPassEnd = (typeof performance !== 'undefined') ? performance.now() : Date.now();
         this._cleanupSourceDecoders(source);
         this._scheduleBlobEncodeDrain();
         this._flushSaveQueue();
         this._notifyLayersForSource(source.sourceKey, true);
+        this._pumpNextQueuedSourceExtraction();
       };
 
       const onVideoReady = () => {
@@ -3059,7 +3372,9 @@
           } catch (_) {}
         }
         source.isExtracting = false;
+        source._lastExtractPassEnd = (typeof performance !== 'undefined') ? performance.now() : Date.now();
         this._cleanupSourceDecoders(source);
+        this._pumpNextQueuedSourceExtraction();
       };
 
       video.src = source.dataUrl;
@@ -3138,6 +3453,18 @@
       if (typeof window === 'undefined') return;
 
       const source = this.sources.get(sourceKey);
+      const curPlayheadFIdx = source ? this._getVideoFrameForPlayhead(source) : 0;
+      const isPlayheadFrame = justExtractedIdx !== null && (Math.abs(justExtractedIdx - curPlayheadFIdx) <= 2 || (source && source.frames.size <= 2));
+      const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+
+      // Throttle heavy O(N * F) layer progress scans during fast batch extraction unless complete or playhead frame
+      if (!isComplete && !isPlayheadFrame && source && source._lastNotifyMs && (now - source._lastNotifyMs) < 65) {
+        return;
+      }
+      if (source) {
+        source._lastNotifyMs = now;
+      }
+
       const allLayers = this._collectMatchingLayers(l => l.type === 'video' || l.type === 'precomp');
       if (allLayers.length > 0) {
         const matchingLayers = [];
@@ -3196,6 +3523,7 @@
           const overallPct = allDone ? 100 : (totalSourceFrames > 0 ? Math.round((cachedSourceFrames / totalSourceFrames) * 100) : 0);
 
           if (allDone) {
+            if (source) source._consecutivePasses = 0;
             if (task) {
               task.percent = 100;
               task.status = 'Video Baked (100% Ready)';
@@ -3258,14 +3586,23 @@
       }
 
       if (typeof window.redrawComposition === 'function' && !this._isUserInteracting()) {
-        const curPlayheadFIdx = source ? this._getVideoFrameForPlayhead(source) : 0;
-        const isPlayheadFrame = justExtractedIdx !== null && (Math.abs(justExtractedIdx - curPlayheadFIdx) <= 2 || (source && source.frames.size <= 2));
         if (isComplete) {
-          window.redrawComposition('frameExtractorComplete');
+          if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => {
+              if (typeof window.redrawComposition === 'function' && !this._isUserInteracting()) {
+                window.redrawComposition('frameExtractorComplete');
+              }
+            });
+          } else {
+            setTimeout(() => {
+              if (typeof window.redrawComposition === 'function' && !this._isUserInteracting()) {
+                window.redrawComposition('frameExtractorComplete');
+              }
+            }, 16);
+          }
         } else if (isPlayheadFrame) {
           window.redrawComposition('frameExtractorPlayheadReady');
         } else {
-          const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
           if (!this._lastProgressRedrawTime || (now - this._lastProgressRedrawTime) >= 120) {
             this._lastProgressRedrawTime = now;
             window.redrawComposition('frameExtractorProgress');

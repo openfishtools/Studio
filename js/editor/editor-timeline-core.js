@@ -1415,10 +1415,22 @@
       const timeBadgeEl = document.getElementById('timeline-time-badge');
       if (timeBadgeEl) {
         let lastBadgeTime = 0;
+        let lastBadgePointerType = '';
         const triggerBadgeBeatmark = (e) => {
           const now = performance.now();
-          if (now - lastBadgeTime < 80) return;
+          // Suppress synthetic click following touch pointerdown (typically 150-350ms delay on mobile)
+          if (e.type === 'click' && lastBadgePointerType === 'touch' && (now - lastBadgeTime < 450)) {
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          if (now - lastBadgeTime < 380) {
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
           lastBadgeTime = now;
+          lastBadgePointerType = e.pointerType || (e.touches ? 'touch' : 'mouse');
           if (e.cancelable) e.preventDefault();
           e.stopPropagation();
           toggleBeatmarkAtCurrentTime();

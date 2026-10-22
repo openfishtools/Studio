@@ -3554,10 +3554,21 @@
     if (btnAddBm && !btnAddBm._bound) {
       btnAddBm._bound = true;
       let lastBmClick = 0;
+      let lastBmPointerType = '';
       const triggerDesktopBeatmark = (e) => {
         const now = performance.now();
-        if (now - lastBmClick < 80) return;
+        if (e.type === 'click' && lastBmPointerType === 'touch' && (now - lastBmClick < 450)) {
+          if (e.cancelable) e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        if (now - lastBmClick < 380) {
+          if (e.cancelable) e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         lastBmClick = now;
+        lastBmPointerType = e.pointerType || (e.touches ? 'touch' : 'mouse');
         if (e.cancelable) e.preventDefault();
         e.stopPropagation();
         btnAddBm.blur();

@@ -445,8 +445,8 @@
       const result = [];
       (layers || []).forEach(layer => {
         if (layer.hidden) return;
-        const isMuted = parentMuted || !!layer.isMuted;
-        const layerSpeed = (layer.speed !== undefined && layer.speed > 0 ? layer.speed : 1.0);
+        const isMuted = parentMuted || !!layer.isMuted || (layer.speed !== undefined && layer.speed < 0);
+        const layerSpeed = (layer.speed !== undefined && layer.speed !== 0 ? Math.abs(layer.speed) : 1.0);
         const effectiveSpeed = parentSpeed * layerSpeed;
         const layerVol = (layer.volume !== undefined ? layer.volume : 1.0);
         const effectiveGain = parentGain * layerVol;
@@ -711,6 +711,10 @@
             currentSpeed = (effProps && effProps.speed !== undefined)
               ? (effProps.speed * (parentSpeed || 1.0))
               : effectiveSpeed;
+            if (currentSpeed < 0 || (layer.speed !== undefined && layer.speed < 0)) {
+              isFreezeOrReverse = true;
+              currentSpeed = 0.0625;
+            }
             targetTime = (typeof window.getLayerIntegratedSpeedTime === 'function')
               ? window.getLayerIntegratedSpeedTime(layer, currentSec)
               : Math.max(0, (sourceOffsetSec || 0) + (currentSec - rootStartSec) * currentSpeed);

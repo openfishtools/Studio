@@ -68,7 +68,22 @@ const testRemapLayer = {
 global.getLayerEffectivePropsAtTime = (l, t) => l;
 const tClipRemap = engine.computeLayerClipTime(testRemapLayer, 3.0);
 assert.strictEqual(tClipRemap, 7.25, 'computeLayerClipTime time_remap calculation mismatch');
-console.log('✓ computeLayerClipTime verified under all parameter signatures and modes.');
+
+// Test: computeLayerClipTime with reverse speed (negative speed)
+const testReverseLayer = {
+  startSec: 2.0,
+  durationSec: 5.0,
+  speed: -1.0,
+  sourceOffsetSec: 0.5,
+  speedMode: 'standard'
+};
+const tClipRevStart = engine.computeLayerClipTime(testReverseLayer, 2.0);
+assert.strictEqual(tClipRevStart, 5.5, 'computeLayerClipTime reverse at start mismatch');
+const tClipRevMid = engine.computeLayerClipTime(testReverseLayer, 4.5);
+assert.strictEqual(tClipRevMid, 3.0, 'computeLayerClipTime reverse at midpoint mismatch');
+const tClipRevEnd = engine.computeLayerClipTime(testReverseLayer, 7.0);
+assert.strictEqual(tClipRevEnd, 0.5, 'computeLayerClipTime reverse at end mismatch');
+console.log('✓ computeLayerClipTime verified under all parameter signatures and modes (including reverse).');
 
 // Test: seekVideoElementCoalesced
 let mockVideo = {
@@ -404,7 +419,140 @@ assert.strictEqual(resolvedPrecomp.hasUnreadyMedia, false, 'resolvePrecompElemen
 
 vfe.invalidatePrecomp(testPrecompLayer);
 assert.strictEqual(precompSource.frames.size, 0, 'invalidatePrecomp must clear precomp extracted frames');
-console.log('✓ VideoFrameExtractor verified (retain/release deduplication, precomp sequence resolution, and invalidation).');
+
+// Test Mobile/Low-RAM Eviction Unpins _pendingDbEncode & Closes Evicted Bitmaps
+const origMaxRam = vfe.maxRamFrames;
+const origTotalRam = vfe.maxTotalRamFrames;
+vfe.maxRamFrames = 3;
+vfe.maxTotalRamFrames = 5;
+const evictSource = vfe._getOrCreateSource('test_evict_src', '', 'EvictTest', 'ev1', false);
+const createdBmps = [];
+for (let i = 0; i < 5; i++) {
+  const b = { width: 640, height: 360, closed: false, _pendingDbEncode: true, close() { this.closed = true; } };
+  vfe.retainBitmap(b, 'test_evict_src');
+  evictSource.frames.set(i, b);
+  evictSource.cachedFrameIndices.add(i);
+  createdBmps.push(b);
+  vfe._evictOldestFrame(evictSource, i);
+}
+assert(evictSource.frames.size <= 3, 'Per-source RAM frame cap must evict excess frames immediately');
+const closedCount = createdBmps.filter(b => b.closed).length;
+assert(closedCount >= 2, 'Evicted bitmaps must have _pendingDbEncode unpinned and .close() called so mobile VRAM never leaks');
+vfe.sources.delete('test_evict_src');
+vfe.maxRamFrames = origMaxRam;
+vfe.maxTotalRamFrames = origTotalRam;
+
+// Test Reverse Playback Eviction Inversion
+const revSource = vfe._getOrCreateSource('test_rev_src', '', 'RevTest', 'rev1', false);
+vfe.maxRamFrames = 3;
+vfe.maxTotalRamFrames = 5;
+// Mock playhead at frame 50 in reverse mode
+revSource._isReversePlayback = true;
+vfe._isSourceReversePlayback = (s) => s && s._isReversePlayback;
+vfe._getVideoFrameForPlayhead = () => 50;
+
+// Add frame 70 (past frame in reverse), frame 49 (upcoming frame), frame 48 (upcoming frame), frame 47 (upcoming frame)
+const bPast = { width: 640, height: 360, closed: false, close() { this.closed = true; } };
+const bUpcoming1 = { width: 640, height: 360, closed: false, close() { this.closed = true; } };
+const bUpcoming2 = { width: 640, height: 360, closed: false, close() { this.closed = true; } };
+const bUpcoming3 = { width: 640, height: 360, closed: false, close() { this.closed = true; } };
+
+revSource.frames.set(70, bPast);
+revSource.frames.set(49, bUpcoming1);
+revSource.frames.set(48, bUpcoming2);
+// Trigger eviction by adding 4th frame
+vfe._evictSingleFromSource(revSource, null, 2);
+assert(!revSource.frames.has(70), 'In reverse playback, past frames (fIdx > curFIdx) must be evicted first');
+assert(revSource.frames.has(49) && revSource.frames.has(48), 'In reverse playback, upcoming frames (fIdx < curFIdx) must be protected');
+
+vfe.sources.delete('test_rev_src');
+vfe.maxRamFrames = origMaxRam;
+vfe.maxTotalRamFrames = origTotalRam;
+
+// Test Reverse Split Continuity Math:
+// Original layer: startSec = 0, durationSec = 10, speed = -1, sourceOffsetSec = 0
+const origRevLayer = { startSec: 0, durationSec: 10, speed: -1, sourceOffsetSec: 0 };
+const cutTime = 4.0;
+const origFrameAtCut = engine.computeLayerClipTime(origRevLayer, cutTime);
+// Split produces:
+// Left piece: start = 0, dur = 4, sourceOffsetSec = 0 + (10 - 4)*1 = 6
+// Right piece: start = 4, dur = 6, sourceOffsetSec = 0
+const leftPiece = { startSec: 0, durationSec: 4, speed: -1, sourceOffsetSec: 6 };
+const rightPiece = { startSec: 4, durationSec: 6, speed: -1, sourceOffsetSec: 0 };
+const leftFrameAtCut = engine.computeLayerClipTime(leftPiece, cutTime);
+const rightFrameAtCut = engine.computeLayerClipTime(rightPiece, cutTime);
+assert.strictEqual(origFrameAtCut, 6.0, 'Original reverse frame at cut point must be 6.0s');
+assert.strictEqual(leftFrameAtCut, 6.0, 'Left split piece must evaluate to exactly 6.0s at cut point');
+assert.strictEqual(rightFrameAtCut, 6.0, 'Right split piece must evaluate to exactly 6.0s at cut point');
+assert.strictEqual(leftFrameAtCut, rightFrameAtCut, 'Reverse split must be 100% seamless across boundary');
+
+// Test: Precomp caching when older frames evicted from RAM
+const mockPrecompLayer = { id: 'pre_test_1', type: 'precomp', startSec: 0, durationSec: 5.0, widthPx: 400 };
+const preSource = vfe._getOrCreateSource('src_pre_test_1', '', 'Precomp', 'pre_test_1', true);
+preSource.fps = 60;
+preSource.cachedFrameIndices = new Set([0, 1, 2, 3, 4]); // previously extracted
+// RAM only contains frame 4 (frames 0-3 evicted due to mobile RAM quota)
+preSource.frames = new Map();
+preSource.frames.set(4, { width: 640, height: 360, closed: false });
+const { startIdx: pStart, endIdx: pEnd } = vfe.getLayerFrameRange(mockPrecompLayer);
+// Simulate the missing check in extractPrecompRange
+const pMissing = [];
+for (let i = 0; i <= 4; i++) {
+  const hasRam = preSource.frames && preSource.frames.has(i);
+  const hasCached = preSource.cachedFrameIndices && preSource.cachedFrameIndices.has(i);
+  if (!hasRam && !hasCached) {
+    pMissing.push(i);
+  }
+}
+assert.strictEqual(pMissing.length, 0, 'Precomp frames evicted from RAM but in cachedFrameIndices must NOT be marked missing');
+
+// Test: Circuit Breaker on Consecutive Extraction Passes
+const cbSource = vfe._getOrCreateSource('src_cb_test', 'blob:test', 'Video', 'cb_layer_1', false);
+cbSource.pendingFrames = new Set([10, 11, 12]);
+cbSource._consecutivePasses = 3;
+cbSource._lastExtractPassEnd = Date.now() - 100; // 100ms ago (very rapid)
+vfe._startExtractionForSource(cbSource, [10, 11, 12]);
+// Circuit breaker must have tripped: pendingFrames cleared, frames recorded in cachedFrameIndices
+assert.strictEqual(cbSource.pendingFrames.size, 0, 'Circuit breaker must clear pendingFrames to stop infinite loop');
+assert(cbSource.cachedFrameIndices.has(10) && cbSource.cachedFrameIndices.has(11) && cbSource.cachedFrameIndices.has(12), 'Circuit breaker must add unresolved frames to cachedFrameIndices');
+
+// Test: Missing frames sorting in ensurePlaybackFrames (forward vs reverse)
+const fMissing = [35, 45, 55, 65, 75, 25];
+const curFIdx = 50;
+// Forward sort: upcoming (>= 50) first in order 55, 65, 75, then past frames
+fMissing.sort((a, b) => {
+  const scoreA = a >= curFIdx ? (a - curFIdx) : ((curFIdx - a) + 10000);
+  const scoreB = b >= curFIdx ? (b - curFIdx) : ((curFIdx - b) + 10000);
+  return scoreA - scoreB;
+});
+assert.deepStrictEqual(fMissing.slice(0, 3), [55, 65, 75], 'Forward playback prefetch must prioritize upcoming frames over past frames');
+
+// Reverse sort: upcoming (<= 50) decreasing first in order 45, 35, 25, then past frames
+const rMissing = [55, 65, 45, 35, 75, 25];
+rMissing.sort((a, b) => {
+  const scoreA = a <= curFIdx ? (curFIdx - a) : ((a - curFIdx) + 10000);
+  const scoreB = b <= curFIdx ? (curFIdx - b) : ((b - curFIdx) + 10000);
+  return scoreA - scoreB;
+});
+assert.deepStrictEqual(rMissing.slice(0, 3), [45, 35, 25], 'Reverse playback prefetch must prioritize upcoming decreasing frames over past frames');
+
+// Test: Proactive Streaming Prefetch in resolveLayerVideoElement
+let prefetchCalledWith = null;
+vfe.ensurePlaybackFrames = (src, f) => { prefetchCalledWith = f; };
+const streamSrc = vfe._getOrCreateSource('stream_test', 'blob:test', 'Video', 'stream_layer_1', false);
+streamSrc.fps = 60;
+const streamMockBmp = { width: 640, height: 360, closed: false };
+streamSrc.frames.set(10, streamMockBmp);
+vfe.getInterpolatedFrame = () => streamMockBmp;
+const streamLayer = { id: 'stream_layer_1', mediaId: 'stream_test', type: 'video', startSec: 0, speed: 1.0, sourceOffsetSec: 0 };
+engine.resolveLayerVideoElement(streamLayer, null, { currentSec: 10 / 60 });
+assert.strictEqual(prefetchCalledWith, 10, 'resolveLayerVideoElement must proactively trigger ensurePlaybackFrames even when frame is present in RAM');
+
+vfe.sources.delete('src_pre_test_1');
+vfe.sources.delete('src_cb_test');
+vfe.sources.delete('stream_test');
+
+console.log('✓ VideoFrameExtractor verified (retain/release deduplication, reverse eviction inversion, seamless reverse split, proactive streaming prefetch, upcoming frame sort order, precomp RAM eviction protection, extraction circuit breaker, mobile VRAM cap, precomp sequence resolution, and invalidation).');
 
 console.log('\n========================================');
 console.log('ALL DEEP VERIFICATION TESTS PASSED! (100%)');

@@ -1069,13 +1069,13 @@
                           </button>
                         </div>
                         <div class="effects-param-val-col">
-                          <div class="blend-slider-container" id="blend-slider-container" role="slider" aria-label="Opacity Slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" tabindex="0">
-                            <div class="blend-slider-track">
-                              <div class="blend-slider-fill" id="blend-slider-fill" style="width: 100%;"></div>
-                              <div class="blend-slider-thumb" id="blend-slider-thumb" style="left: 100%;"></div>
+                          <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-blend-opacity" title="Drag to adjust Opacity" role="slider" aria-label="Opacity Scrubber" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" tabindex="0">
+                            <div class="jog-wheel-track-viewport">
+                              <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: -480px;" data-tape-width="480"></div>
                             </div>
+                            <div class="jog-wheel-needle"></div>
+                            <span class="effects-param-pill-val" id="blend-opacity-badge" title="Click to edit Opacity">100%</span>
                           </div>
-                          <span class="blend-opacity-badge" id="blend-opacity-badge" title="Click to edit Opacity">100%</span>
                         </div>
                       </div>
 
@@ -1326,7 +1326,7 @@
                         <div class="effects-param-val-col">
                           <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-camera-lens" title="Slide horizontally to adjust Camera Lens Focal Length" role="slider" aria-label="Camera Lens Ruler">
                             <div class="jog-wheel-track-viewport">
-                              <div class="jog-wheel-ticks"></div>
+                              <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
                             </div>
                             <div class="jog-wheel-needle"></div>
                             <span class="effects-param-pill-val" id="val-camera-lens" title="Click to edit Focal Length">50 mm</span>
@@ -1342,7 +1342,7 @@
                         <div class="effects-param-val-col">
                           <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-camera-zoom" title="Slide horizontally to adjust Camera Zoom" role="slider" aria-label="Camera Zoom Ruler">
                             <div class="jog-wheel-track-viewport">
-                              <div class="jog-wheel-ticks"></div>
+                              <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
                             </div>
                             <div class="jog-wheel-needle"></div>
                             <span class="effects-param-pill-val" id="val-camera-zoom" title="Click to edit Zoom">100%</span>
@@ -1386,7 +1386,7 @@
                           <div class="effects-param-val-col">
                             <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-camera-focus-dist" title="Slide horizontally to adjust Focus Plane Distance" role="slider" aria-label="Focus Distance Ruler">
                               <div class="jog-wheel-track-viewport">
-                                <div class="jog-wheel-ticks"></div>
+                                <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
                               </div>
                               <div class="jog-wheel-needle"></div>
                               <span class="effects-param-pill-val" id="val-camera-focus-dist" title="Click to edit Focus Distance">0 px</span>
@@ -1420,7 +1420,7 @@
                           <div class="effects-param-val-col">
                             <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-camera-focus-range" title="Slide horizontally to adjust Blur Depth Falloff" role="slider" aria-label="Blur Falloff Ruler">
                               <div class="jog-wheel-track-viewport">
-                                <div class="jog-wheel-ticks"></div>
+                                <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
                               </div>
                               <div class="jog-wheel-needle"></div>
                               <span class="effects-param-pill-val" id="val-camera-focus-range" title="Click to edit Blur Range">600 px</span>
@@ -1436,7 +1436,7 @@
                           <div class="effects-param-val-col">
                             <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-camera-blur-amount" title="Slide horizontally to adjust Blur Intensity" role="slider" aria-label="Blur Amount Ruler">
                               <div class="jog-wheel-track-viewport">
-                                <div class="jog-wheel-ticks"></div>
+                                <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
                               </div>
                               <div class="jog-wheel-needle"></div>
                               <span class="effects-param-pill-val" id="val-camera-blur-amount" title="Click to edit Blur Amount">20 px</span>
@@ -1452,7 +1452,7 @@
                           <div class="effects-param-val-col">
                             <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-camera-blur-balance" title="Slide horizontally to adjust Foreground vs Background blur balance" role="slider" aria-label="Blur Balance Ruler">
                               <div class="jog-wheel-track-viewport">
-                                <div class="jog-wheel-ticks"></div>
+                                <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
                               </div>
                               <div class="jog-wheel-needle"></div>
                               <span class="effects-param-pill-val" id="val-camera-blur-balance" title="Click to edit Blur Balance">0 (Balanced)</span>
@@ -1687,7 +1687,7 @@
                         <div class="effects-param-val-col">
                           <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-layer-volume" title="Drag to adjust Volume" role="slider" aria-label="Volume Scrubber" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
                             <div class="jog-wheel-track-viewport">
-                              <div class="jog-wheel-ticks"></div>
+                              <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
                             </div>
                             <div class="jog-wheel-needle"></div>
                             <span class="effects-param-pill-val" id="volume-slider-badge" title="Click to edit Volume">100%</span>
@@ -1749,12 +1749,12 @@
                             </button>
                           </div>
                           <div class="effects-param-val-col">
-                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-layer-speed" title="Drag to adjust Playback Speed" role="slider" aria-label="Speed Scrubber" aria-valuemin="0.1" aria-valuemax="8.0" aria-valuenow="1.0">
+                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-layer-speed" title="Drag to adjust Playback Speed" role="slider" aria-label="Speed Scrubber" aria-valuemin="-100.0" aria-valuemax="100.0" aria-valuenow="1.0">
                               <div class="jog-wheel-track-viewport">
-                                <div class="jog-wheel-ticks"></div>
+                                <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
                               </div>
                               <div class="jog-wheel-needle"></div>
-                              <span class="effects-param-pill-val" id="speed-slider-badge" title="Click to edit Speed">1.0x</span>
+                              <span class="effects-param-pill-val" id="speed-slider-badge" title="Click to edit Speed">100%</span>
                             </div>
                           </div>
                         </div>
@@ -1772,7 +1772,7 @@
                           <div class="effects-param-val-col">
                             <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-layer-timeremap" title="Drag to adjust Source Time" role="slider" aria-label="Time Remap Scrubber" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0">
                               <div class="jog-wheel-track-viewport">
-                                <div class="jog-wheel-ticks"></div>
+                                <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
                               </div>
                               <div class="jog-wheel-needle"></div>
                               <span class="effects-param-pill-val" id="timeremap-slider-badge" title="Click to edit Source Time">00:00:00</span>
