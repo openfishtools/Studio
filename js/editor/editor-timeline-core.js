@@ -828,9 +828,6 @@
           if (!isActivelyPlaying && typeof updateCutBarRowState === 'function') {
             updateCutBarRowState();
           }
-          if (typeof syncBeatmarkDrawerUI === 'function' && typeof currentDrawerSubview !== 'undefined' && currentDrawerSubview === 'beatmark') {
-            syncBeatmarkDrawerUI();
-          }
         }
         if (typeof updateGraphPlayheadLine === 'function' && typeof currentDrawerSubview !== 'undefined' && currentDrawerSubview === 'graph') {
           updateGraphPlayheadLine();
@@ -1133,7 +1130,7 @@
       }
       window.saveCurrentProjectBeatmarks = saveCurrentProjectBeatmarks;
 
-      function toggleBeatmarkAtCurrentTime() {
+      function toggleBeatmarkAtCurrentTime(mode = 'toggle') {
         if (!Array.isArray(currentProjectState.beatmarks)) {
           currentProjectState.beatmarks = [];
         }
@@ -1150,17 +1147,30 @@
         }
 
         const roundedSec = Math.round(currentSec * 1000) / 1000;
-        const tolerance = 0.05;
+        const tolerance = 0.04;
 
         const existingIdx = currentProjectState.beatmarks.findIndex(b => Math.abs(b - roundedSec) <= tolerance);
         if (existingIdx !== -1) {
-          // Playhead is at beatmark -> delete it
+          // If explicitly adding or actively playing, keep existing beatmark and do not delete
+          if (mode === 'add' || isPlaying) {
+            return currentProjectState.beatmarks[existingIdx];
+          }
+          // Playhead is at beatmark and user toggles while paused -> delete it
           const removed = currentProjectState.beatmarks.splice(existingIdx, 1)[0];
           const rulerBm = rulerTrack.querySelector(`.timeline-beatmark-item[data-time="${removed}"]`);
           if (rulerBm) rulerBm.remove();
           const layerLine = layersTrack.querySelector(`.timeline-layers-beatmark-line[data-time="${removed}"]`);
           if (layerLine) layerLine.remove();
           if (!rulerBm || !layerLine) renderTimelineBeatmarks();
+          updateTimeBadgeBeatmarkState();
+          if (typeof window.syncDesktopMarkerLabels === 'function') {
+            window.syncDesktopMarkerLabels();
+          }
+          if (window.UndoRedoManager && !window.UndoRedoManager.isApplying) {
+            window.UndoRedoManager.recordSnapshot();
+          }
+          saveCurrentProjectBeatmarks();
+          return null;
         } else {
           // Playhead not on beatmark -> add it
           currentProjectState.beatmarks.push(roundedSec);
@@ -1190,6 +1200,7 @@
           }
         }
         saveCurrentProjectBeatmarks();
+        return roundedSec;
       }
       window.toggleBeatmarkAtCurrentTime = toggleBeatmarkAtCurrentTime;
 
@@ -1415,22 +1426,23 @@
       const timeBadgeEl = document.getElementById('timeline-time-badge');
       if (timeBadgeEl) {
         let lastBadgeTime = 0;
-        let lastBadgePointerType = '';
+        let lastBadgePointerDownTime = 0;
         const triggerBadgeBeatmark = (e) => {
           const now = performance.now();
-          // Suppress synthetic click following touch pointerdown (typically 150-350ms delay on mobile)
-          if (e.type === 'click' && lastBadgePointerType === 'touch' && (now - lastBadgeTime < 450)) {
+          if (e.type === 'click' && (now - lastBadgePointerDownTime < 800)) {
             if (e.cancelable) e.preventDefault();
             e.stopPropagation();
             return;
           }
-          if (now - lastBadgeTime < 380) {
+          if (now - lastBadgeTime < 45) {
             if (e.cancelable) e.preventDefault();
             e.stopPropagation();
             return;
           }
           lastBadgeTime = now;
-          lastBadgePointerType = e.pointerType || (e.touches ? 'touch' : 'mouse');
+          if (e.type === 'pointerdown') {
+            lastBadgePointerDownTime = now;
+          }
           if (e.cancelable) e.preventDefault();
           e.stopPropagation();
           toggleBeatmarkAtCurrentTime();
@@ -1438,7 +1450,7 @@
         timeBadgeEl.addEventListener('pointerdown', triggerBadgeBeatmark);
         timeBadgeEl.addEventListener('click', triggerBadgeBeatmark);
         timeBadgeEl.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') {
+          if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) {
             triggerBadgeBeatmark(e);
           }
         });

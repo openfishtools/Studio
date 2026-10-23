@@ -3554,28 +3554,31 @@
     if (btnAddBm && !btnAddBm._bound) {
       btnAddBm._bound = true;
       let lastBmClick = 0;
-      let lastBmPointerType = '';
+      let lastBmPointerDownTime = 0;
       const triggerDesktopBeatmark = (e) => {
         const now = performance.now();
-        if (e.type === 'click' && lastBmPointerType === 'touch' && (now - lastBmClick < 450)) {
+        if (e.type === 'click' && (now - lastBmPointerDownTime < 800)) {
           if (e.cancelable) e.preventDefault();
           e.stopPropagation();
           return;
         }
-        if (now - lastBmClick < 380) {
+        if (now - lastBmClick < 45) {
           if (e.cancelable) e.preventDefault();
           e.stopPropagation();
           return;
         }
         lastBmClick = now;
-        lastBmPointerType = e.pointerType || (e.touches ? 'touch' : 'mouse');
+        if (e.type === 'pointerdown') {
+          lastBmPointerDownTime = now;
+        }
         if (e.cancelable) e.preventDefault();
         e.stopPropagation();
         btnAddBm.blur();
         btnAddBm.classList.add('is-pressed');
         setTimeout(() => btnAddBm.classList.remove('is-pressed'), 180);
         if (typeof window.toggleBeatmarkAtCurrentTime === 'function') {
-          window.toggleBeatmarkAtCurrentTime();
+          const isPlayingNow = (typeof window.getIsTimelinePlaying === 'function' && window.getIsTimelinePlaying());
+          window.toggleBeatmarkAtCurrentTime(isPlayingNow ? 'add' : 'toggle');
         }
         syncDesktopMarkerLabels();
       };

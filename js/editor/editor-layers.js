@@ -4383,6 +4383,8 @@
         return decodePromise;
       }
 
+      let _cachedWaveformColors = null;
+
       function renderBeatmarkWaveform(layer) {
         const canvas = document.getElementById('beatmark-waveform-canvas');
         if (!canvas) return;
@@ -4396,7 +4398,7 @@
           return;
         }
 
-        const dpr = window.devicePixelRatio || 1;
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
         const w = Math.round(rect.width * dpr);
         const h = Math.round(rect.height * dpr);
         if (canvas.width !== w || canvas.height !== h) {
@@ -4415,7 +4417,7 @@
           if (!peaks) {
             peaks = generateProceduralPeaks(layer ? (layer.id || layer.name || 'audio') : 'audio', 120);
           }
-          if (layer) {
+          if (layer && !_audioDecodingPromises.has(cacheKey)) {
             getAudioPeaksForLayer(layer, 800).then(() => {
               if (window.currentDrawerSubview === 'beatmark') {
                 renderBeatmarkWaveform(layer);
@@ -4429,16 +4431,20 @@
         const barWidth = Math.max(2 * dpr, barStep * 0.65);
         const midY = h / 2;
 
-        const computedStyle = getComputedStyle(canvas);
-        const primaryColor = computedStyle.getPropertyValue('--color-primary').trim() || '#98ce7b';
-        const playedColor = computedStyle.getPropertyValue('--track-audio').trim() || primaryColor;
-        const unplayedColor = computedStyle.getPropertyValue('--track-audio-dark').trim() || '#648250';
+        if (!_cachedWaveformColors) {
+          try {
+            const computedStyle = getComputedStyle(canvas);
+            const primaryColor = computedStyle.getPropertyValue('--color-primary').trim() || '#98ce7b';
+            const playedColor = computedStyle.getPropertyValue('--track-audio').trim() || primaryColor;
+            const unplayedColor = computedStyle.getPropertyValue('--track-audio-dark').trim() || '#648250';
+            _cachedWaveformColors = { primaryColor, playedColor, unplayedColor };
+          } catch (_) {
+            _cachedWaveformColors = { primaryColor: '#98ce7b', playedColor: '#98ce7b', unplayedColor: '#648250' };
+          }
+        }
 
-        const currentSec = getTimelineCurrentSec();
-        const layerStart = layer && layer.startSec !== undefined ? layer.startSec : 0;
-        const layerDur = layer && layer.durationSec !== undefined ? layer.durationSec : (layer ? (layer.mediaDuration || 5) : 5);
-        const relProgress = (layerDur > 0) ? (currentSec - layerStart) / layerDur : 0;
-        const activeBarIndex = Math.floor(relProgress * numBars);
+        const barColor = _cachedWaveformColors.playedColor || '#98ce7b';
+        ctx.fillStyle = barColor;
 
         for (let i = 0; i < numBars; i++) {
           const frac = i / numBars;
@@ -4448,7 +4454,6 @@
           const x = i * barStep + (barStep - barWidth) / 2;
           const y = midY - barHeight / 2;
 
-          ctx.fillStyle = (i <= activeBarIndex && relProgress > 0) ? playedColor : unplayedColor;
           ctx.beginPath();
           if (typeof ctx.roundRect === 'function') {
             ctx.roundRect(x, y, barWidth, barHeight, 2 * dpr);
@@ -4543,11 +4548,21 @@
       }
       window.renderAudioClipWaveform = renderAudioClipWaveform;
 
+      let _lastNeedlePlayState = null;
+      let _cachedBeatmarkNeedle = null;
+      let _cachedBeatmarkTimeDisplay = null;
+      let _cachedBeatmarkPlaySvg = null;
+      let _cachedBtnAddGiant = null;
+      let _lastGiantIsNear = null;
+
       function updateBeatmarkPlayheadNeedle() {
-        const needle = document.getElementById('beatmark-waveform-needle');
-        const timeDisplay = document.getElementById('beatmark-time-display');
-        const playSvg = document.getElementById('beatmark-play-icon');
-        if (!needle) return;
+        if (!_cachedBeatmarkNeedle || !_cachedBeatmarkNeedle.isConnected) {
+          _cachedBeatmarkNeedle = document.getElementById('beatmark-waveform-needle');
+          _cachedBeatmarkTimeDisplay = document.getElementById('beatmark-time-display');
+          _cachedBeatmarkPlaySvg = document.getElementById('beatmark-play-icon');
+          _cachedBtnAddGiant = document.getElementById('btn-add-beatmark-giant');
+        }
+        if (!_cachedBeatmarkNeedle) return;
 
         const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
         const currentSec = getTimelineCurrentSec();
@@ -4556,26 +4571,31 @@
         const relSec = currentSec - layerStart;
         const pct = (layerDur > 0) ? Math.max(0, Math.min(100, (relSec / layerDur) * 100)) : 0;
 
-        needle.style.left = `${pct}%`;
+        _cachedBeatmarkNeedle.style.left = `${pct}%`;
 
-        if (timeDisplay) {
-          timeDisplay.textContent = formatTimecodeStr(currentSec);
+        if (_cachedBeatmarkTimeDisplay) {
+          _cachedBeatmarkTimeDisplay.textContent = formatTimecodeStr(currentSec);
         }
 
-        if (playSvg) {
+        if (_cachedBeatmarkPlaySvg) {
           const isPlayingNow = getIsTimelinePlaying();
-          if (isPlayingNow) {
-            playSvg.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
-          } else {
-            playSvg.innerHTML = '<path d="M8 5v14l11-7z"/>';
+          if (isPlayingNow !== _lastNeedlePlayState) {
+            _lastNeedlePlayState = isPlayingNow;
+            if (isPlayingNow) {
+              _cachedBeatmarkPlaySvg.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+            } else {
+              _cachedBeatmarkPlaySvg.innerHTML = '<path d="M8 5v14l11-7z"/>';
+            }
           }
         }
 
-        const btnAddGiant = document.getElementById('btn-add-beatmark-giant');
-        if (btnAddGiant) {
+        if (_cachedBtnAddGiant) {
           const beatmarks = Array.isArray(currentProjectState.beatmarks) ? currentProjectState.beatmarks : [];
-          const isNear = beatmarks.some(b => Math.abs(b - currentSec) <= 0.05);
-          btnAddGiant.classList.toggle('is-active', isNear);
+          const isNear = beatmarks.some(b => Math.abs(b - currentSec) <= 0.04);
+          if (isNear !== _lastGiantIsNear) {
+            _lastGiantIsNear = isNear;
+            _cachedBtnAddGiant.classList.toggle('is-active', isNear);
+          }
         }
       }
       window.updateBeatmarkPlayheadNeedle = updateBeatmarkPlayheadNeedle;
@@ -4714,73 +4734,79 @@
         // 5. Giant center button to add beatmark
         const btnAddGiant = document.getElementById('btn-add-beatmark-giant');
         if (btnAddGiant) {
-          let lastTriggerTime = 0;
-          let lastTriggerPointerType = '';
-          const triggerAddBeatmark = (e) => {
-            const now = performance.now();
-            // Suppress synthetic click following touch pointerdown
-            if (e.type === 'click' && lastTriggerPointerType === 'touch' && (now - lastTriggerTime < 450)) {
-              if (e.cancelable) e.preventDefault();
-              e.stopPropagation();
-              return;
-            }
-            if (now - lastTriggerTime < 380) {
-              if (e.cancelable) e.preventDefault();
-              e.stopPropagation();
-              return;
-            }
-            lastTriggerTime = now;
-            lastTriggerPointerType = e.pointerType || (e.touches ? 'touch' : 'mouse');
+          let lastHandledTime = 0;
+          let lastPointerDownTime = 0;
 
-            if (e.cancelable) e.preventDefault();
-            e.stopPropagation();
+          const executeAdd = (e, source) => {
+            const now = performance.now();
+            // Debounce threshold: 45ms protects against hardware switch/touchscreen bounce,
+            // but fully allows fast spam tapping (up to 20 taps/sec)
+            if (now - lastHandledTime < 45) {
+              return;
+            }
+            lastHandledTime = now;
 
             btnAddGiant.classList.add('is-pressed');
-            setTimeout(() => btnAddGiant.classList.remove('is-pressed'), 120);
+            setTimeout(() => btnAddGiant.classList.remove('is-pressed'), 100);
 
             if (typeof navigator.vibrate === 'function') {
-              try { navigator.vibrate(20); } catch (_) {}
+              try { navigator.vibrate(15); } catch (_) {}
             }
 
+            const isPlayingNow = (typeof getIsTimelinePlaying === 'function' && getIsTimelinePlaying());
+            let addedSec = null;
             if (typeof toggleBeatmarkAtCurrentTime === 'function') {
-              toggleBeatmarkAtCurrentTime();
+              // Always pass 'add' mode during playback so rhythm taps never accidentally delete
+              addedSec = toggleBeatmarkAtCurrentTime(isPlayingNow ? 'add' : 'toggle');
             }
 
-            // If actively playing, update badge count and pin without expensive canvas redraw
-            if (typeof getIsTimelinePlaying === 'function' && getIsTimelinePlaying()) {
+            // High performance pin append during playback (O(1) DOM operation)
+            if (isPlayingNow && typeof addedSec === 'number') {
               const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
               const layerStart = layer && layer.startSec !== undefined ? layer.startSec : 0;
               const layerDur = layer && layer.durationSec !== undefined ? layer.durationSec : (layer ? (layer.mediaDuration || 5) : 5);
-              const layerEnd = layerStart + layerDur;
               const beatmarks = Array.isArray(currentProjectState.beatmarks) ? currentProjectState.beatmarks : [];
-              const layerBeatmarks = beatmarks.filter(b => b >= layerStart - 0.01 && b <= layerEnd + 0.01);
               const countBadgeEl = document.getElementById('beatmark-count-badge');
               if (countBadgeEl) {
-                countBadgeEl.textContent = `${layerBeatmarks.length} beatmark${layerBeatmarks.length === 1 ? '' : 's'}`;
+                countBadgeEl.textContent = `${beatmarks.length} beatmark${beatmarks.length === 1 ? '' : 's'}`;
               }
               const pinsContainer = document.getElementById('beatmark-waveform-pins');
-              if (pinsContainer) {
-                const frag = document.createDocumentFragment();
-                layerBeatmarks.forEach(bm => {
-                  const pct = (layerDur > 0) ? Math.max(0, Math.min(100, ((bm - layerStart) / layerDur) * 100)) : 0;
-                  const pin = document.createElement('div');
-                  pin.className = 'beatmark-wf-pin';
-                  pin.style.left = `${pct}%`;
-                  pin.title = `Beatmark: ${formatTimecodeStr(bm)}`;
-                  frag.appendChild(pin);
-                });
-                pinsContainer.replaceChildren(frag);
+              if (pinsContainer && layerDur > 0) {
+                const pct = Math.max(0, Math.min(100, ((addedSec - layerStart) / layerDur) * 100));
+                const pin = document.createElement('div');
+                pin.className = 'beatmark-wf-pin';
+                pin.style.left = `${pct}%`;
+                pin.title = `Beatmark: ${formatTimecodeStr(addedSec)}`;
+                pinsContainer.appendChild(pin);
               }
             } else {
               syncBeatmarkDrawerUI();
             }
           };
 
-          btnAddGiant.addEventListener('pointerdown', triggerAddBeatmark);
-          btnAddGiant.addEventListener('click', triggerAddBeatmark);
+          btnAddGiant.addEventListener('pointerdown', (e) => {
+            if (e.button !== undefined && e.button !== 0) return;
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            lastPointerDownTime = performance.now();
+            executeAdd(e, 'pointerdown');
+          });
+
+          // Prevent ghost/synthetic clicks on mobile and tablet completely
+          btnAddGiant.addEventListener('click', (e) => {
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+            if (performance.now() - lastPointerDownTime < 800) {
+              return;
+            }
+            executeAdd(e, 'click');
+          });
+
           btnAddGiant.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-              triggerAddBeatmark(e);
+            if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) {
+              if (e.cancelable) e.preventDefault();
+              e.stopPropagation();
+              executeAdd(e, 'keydown');
             }
           });
         }
