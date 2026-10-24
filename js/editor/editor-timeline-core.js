@@ -21,20 +21,26 @@
       const leftPane = document.querySelector('.editor-left-pane');
       if (!mainBody) return;
 
+      function isStackedMobileLayout() {
+        return window.innerWidth <= 600 ||
+          document.documentElement.classList.contains('force-mobile-view') ||
+          (document.body && document.body.classList.contains('force-mobile-view'));
+      }
+
       try {
         const savedWidth = localStorage.getItem('oft_left_pane_width');
-        if (savedWidth && window.innerWidth > 600) {
+        if (savedWidth && !isStackedMobileLayout()) {
           mainBody.style.setProperty('--left-pane-width', savedWidth);
           document.documentElement.style.setProperty('--left-pane-width', savedWidth);
         }
         const savedMobileH = localStorage.getItem('oft_mobile_preview_height');
-        if (savedMobileH && window.innerWidth <= 600) {
+        if (savedMobileH && isStackedMobileLayout()) {
           mainBody.style.setProperty('--mobile-preview-height', savedMobileH);
         }
         syncTimelineAfterSplitResize();
       } catch (_) {}
 
-      // --- Desktop Vertical Split Handle (>= 601px) ---
+      // --- Desktop Vertical Split Handle (>= 601px when not in Always Mobile) ---
       if (handle) {
         let isDragging = false;
         let mainBodyW = 0;
@@ -43,7 +49,7 @@
         let desktopRAF = null;
 
         function onPointerDown(e) {
-          if (window.innerWidth <= 600) return; // Handled by mobileHandle
+          if (isStackedMobileLayout()) return; // Handled by mobileHandle
           isDragging = true;
           const rect = mainBody.getBoundingClientRect();
           mainBodyW = rect.width || 1;
@@ -99,7 +105,7 @@
 
         // Keyboard arrow key support for accessibility
         handle.addEventListener('keydown', (e) => {
-          if (window.innerWidth <= 600) return;
+          if (isStackedMobileLayout()) return;
           const currentStyle = getComputedStyle(mainBody).getPropertyValue('--left-pane-width').trim();
           let currentPercent = parseFloat(currentStyle) || 50;
 
@@ -127,7 +133,7 @@
         });
       }
 
-      // --- Mobile Horizontal Preview Split Handle (<= 600px) ---
+      // --- Mobile Horizontal Preview Split Handle (<= 600px or Always Mobile) ---
       if (mobileHandle) {
         let isMobileDragging = false;
         let startY = 0;
@@ -137,7 +143,7 @@
         let mobileRAF = null;
 
         function onMobilePointerDown(e) {
-          if (window.innerWidth > 600) return;
+          if (!isStackedMobileLayout()) return;
           isMobileDragging = true;
           startY = e.clientY;
           const bodyRect = mainBody.getBoundingClientRect();
@@ -197,7 +203,7 @@
 
         // Keyboard arrow key support for mobile handle
         mobileHandle.addEventListener('keydown', (e) => {
-          if (window.innerWidth > 600) return;
+          if (!isStackedMobileLayout()) return;
           const currentStyle = getComputedStyle(mainBody).getPropertyValue('--mobile-preview-height').trim();
           let currentPercent = parseFloat(currentStyle) || 55;
 
@@ -223,7 +229,7 @@
 
       // Restore layout on viewport change
       window.addEventListener('resize', () => {
-        if (window.innerWidth > 600) {
+        if (!isStackedMobileLayout()) {
           const savedWidth = localStorage.getItem('oft_left_pane_width');
           if (savedWidth) {
             mainBody.style.setProperty('--left-pane-width', savedWidth);

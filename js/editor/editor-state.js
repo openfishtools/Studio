@@ -2086,10 +2086,23 @@
     }
     function applyTabletSplitViewSetting(enabled) {
       const isEnabled = enabled !== false;
-      document.documentElement.classList.toggle('force-mobile-view', !isEnabled);
-      if (document.body) document.body.classList.toggle('force-mobile-view', !isEnabled);
+      const forceMobile = !isEnabled;
+      document.documentElement.classList.toggle('force-mobile-view', forceMobile);
+      if (document.body) document.body.classList.toggle('force-mobile-view', forceMobile);
       try {
         localStorage.setItem('oft_tablet_split_view', isEnabled ? 'true' : 'false');
+        localStorage.setItem('oft_always_mobile', forceMobile ? 'true' : 'false');
+      } catch (_) {}
+      try {
+        if (window.FishDatabase && typeof window.FishDatabase.getSettings === 'function') {
+          window.FishDatabase.getSettings().then(s => {
+            s = s || {};
+            s.config = s.config || {};
+            s.config.alwaysMobile = forceMobile;
+            s.config.tabletSplitView = isEnabled;
+            return window.FishDatabase.saveSettings(s);
+          }).catch(() => {});
+        }
       } catch (_) {}
       const valLabel = document.getElementById('tablet-view-val');
       if (valLabel) valLabel.textContent = isEnabled ? 'Enabled' : 'Disabled';
@@ -2109,12 +2122,23 @@
     }
     window.applyTabletSplitViewSetting = applyTabletSplitViewSetting;
 
-    // Initialize tablet split view preference early
+    // Initialize Always Mobile / Tablet Split View preference early
     try {
+      const savedAlwaysMobile = localStorage.getItem('oft_always_mobile');
       const savedTabletPref = localStorage.getItem('oft_tablet_split_view');
-      if (savedTabletPref === 'false') {
+      const shouldForceMobile = savedAlwaysMobile === 'true' || (savedAlwaysMobile === null && savedTabletPref === 'false');
+      if (shouldForceMobile) {
         document.documentElement.classList.add('force-mobile-view');
         if (document.body) document.body.classList.add('force-mobile-view');
+      } else if (savedAlwaysMobile === null && savedTabletPref === null && window.FishDatabase && typeof window.FishDatabase.getSettings === 'function') {
+        window.FishDatabase.getSettings().then(s => {
+          if (s && s.config) {
+            const fm = s.config.alwaysMobile === true || s.config.tabletSplitView === false;
+            if (fm) {
+              applyTabletSplitViewSetting(false);
+            }
+          }
+        }).catch(() => {});
       }
     } catch (_) {}
 

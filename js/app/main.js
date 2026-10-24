@@ -405,6 +405,10 @@ async function initProjectsFetcher() {
  * Automatically routes mobile/Android/iOS/narrow screens (< 900px) to editor.html.
  */
 function resolveTargetEditorPage() {
+  if (typeof getAlwaysMobileSetting === 'function' && getAlwaysMobileSetting()) {
+    return 'editor.html';
+  }
+
   const ua = navigator.userAgent || '';
   const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|SM-G/i.test(ua) ||
     (window.matchMedia && window.matchMedia('(pointer: coarse) and (max-width: 900px)').matches) ||
@@ -2990,6 +2994,90 @@ function initUiScaleSliders() {
   });
 }
 
+function getAlwaysMobileSetting() {
+  try {
+    const raw = localStorage.getItem('oft_always_mobile');
+    if (raw !== null && raw !== undefined && raw !== '') {
+      return raw === 'true';
+    }
+    const tsv = localStorage.getItem('oft_tablet_split_view');
+    if (tsv !== null && tsv !== undefined && tsv !== '') {
+      return tsv === 'false';
+    }
+  } catch (_) {}
+  return false;
+}
+window.getAlwaysMobileSetting = getAlwaysMobileSetting;
+
+function setAlwaysMobileSetting(enabled) {
+  const isAlwaysMobile = Boolean(enabled);
+  try {
+    localStorage.setItem('oft_always_mobile', isAlwaysMobile ? 'true' : 'false');
+    localStorage.setItem('oft_tablet_split_view', isAlwaysMobile ? 'false' : 'true');
+    if (isAlwaysMobile) {
+      localStorage.setItem('oft_preferred_view', 'mobile');
+    } else if (localStorage.getItem('oft_preferred_view') === 'mobile') {
+      localStorage.removeItem('oft_preferred_view');
+    }
+  } catch (_) {}
+  try {
+    if (window.FishDatabase && typeof window.FishDatabase.getSettings === 'function') {
+      window.FishDatabase.getSettings().then(s => {
+        s = s || {};
+        s.config = s.config || {};
+        s.config.alwaysMobile = isAlwaysMobile;
+        s.config.tabletSplitView = !isAlwaysMobile;
+        return window.FishDatabase.saveSettings(s);
+      }).catch(() => {});
+    }
+  } catch (_) {}
+
+  const sw = document.getElementById('settings-always-mobile-switch');
+  if (sw && sw.checked !== isAlwaysMobile) {
+    sw.checked = isAlwaysMobile;
+  }
+  return isAlwaysMobile;
+}
+window.setAlwaysMobileSetting = setAlwaysMobileSetting;
+
+function initAlwaysMobileSwitch() {
+  const sw = document.getElementById('settings-always-mobile-switch');
+  if (sw) {
+    sw.checked = getAlwaysMobileSetting();
+    if (!sw._oftAlwaysMobileWired) {
+      sw._oftAlwaysMobileWired = true;
+      sw.addEventListener('change', () => {
+        setAlwaysMobileSetting(sw.checked);
+      });
+    }
+  }
+
+  // Hydrate from FishDatabase if localStorage was empty
+  try {
+    if (window.FishDatabase && typeof window.FishDatabase.getSettings === 'function') {
+      const hadLocal = (() => {
+        try {
+          return localStorage.getItem('oft_always_mobile') !== null ||
+            localStorage.getItem('oft_tablet_split_view') !== null;
+        } catch (_) {
+          return true;
+        }
+      })();
+      if (!hadLocal) {
+        window.FishDatabase.getSettings().then(s => {
+          if (s && s.config) {
+            if (typeof s.config.alwaysMobile === 'boolean') {
+              setAlwaysMobileSetting(s.config.alwaysMobile);
+            } else if (typeof s.config.tabletSplitView === 'boolean') {
+              setAlwaysMobileSetting(!s.config.tabletSplitView);
+            }
+          }
+        }).catch(() => {});
+      }
+    }
+  } catch (_) {}
+}
+
 function initSettingsModal() {
   const grid = document.getElementById('settings-theme-grid');
   if (grid) {
@@ -3027,6 +3115,7 @@ function initSettingsModal() {
   }
 
   initUiScaleSliders();
+  initAlwaysMobileSwitch();
 }
 
 function openAppSettingsModal() {

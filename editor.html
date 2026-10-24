@@ -29,6 +29,11 @@
           document.documentElement.classList.add('is-scaled');
         }
       }
+      var _am = localStorage.getItem('oft_always_mobile');
+      var _tsv = localStorage.getItem('oft_tablet_split_view');
+      if (_am === 'true' || (_am === null && _tsv === 'false')) {
+        document.documentElement.classList.add('force-mobile-view');
+      }
     } catch (_) {}
   </script>
 

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Always Mobile Layout Switch (`index.html`, `editor.html`, `js/app/main.js`, `js/editor/editor-state.js`, `js/editor/editor-timeline-core.js`, `css/layout/editor.css`)**: Added an "Always Mobile" toggle switch (`#settings-always-mobile-switch`) in the `index.html` Settings modal (`EDITOR LAYOUT` section). When enabled, opening projects routes to `editor.html` and enforces the stacked mobile layout (`html.force-mobile-view`, preview on top, timeline below, horizontal `#preview-split-handle` resizer active, and side-by-side split disabled) even on large screens (`> 600px`). Persists bidirectionally across `localStorage` (`oft_always_mobile`, `oft_tablet_split_view`) and IndexedDB (`FishDatabase` `settings.config`).
 - **Clean All Beatmarks Button (`editor.html`, `desktop.html`, `js/editor/editor-layers.js`, `js/app/desktop.js`)**: Added a dedicated "Clean All Beatmarks" button (`#btn-beatmark-clean-all`) with `delete_sweep` icon in the beatmark drawer/inspector panel next to the remove beatmark button. Clicking it removes all beatmarks and marker names with an undo/redo history snapshot, live ruler refresh, and toast confirmation.
 
 ### Improved
