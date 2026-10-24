@@ -2875,6 +2875,8 @@
       const baseH = baseDims[1];
       currentProjectState._baseW = baseW;
       currentProjectState._baseH = baseH;
+      currentProjectState.baseW = baseW;
+      currentProjectState.baseH = baseH;
       (currentProjectState.layers || []).forEach(l => {
         if (l.type === 'camera') {
           l.scaleW = baseW;
@@ -3119,6 +3121,7 @@
       activeCanvasEl.addEventListener('pointerdown', (e) => {
         if (window.isTimelinePlaying) return;
         if (e.button !== 0) return; // Primary click only
+        if (window.isCanvasViewportPinching || (window.canvasGestureEndTime && Date.now() - window.canvasGestureEndTime < 300)) return;
 
         const coords = getCanvasBufferCoords(e);
         const layers = currentProjectState.layers || [];
@@ -3634,7 +3637,7 @@
 
       // Pointermove: Execute Live Drag / Scale with requestAnimationFrame Throttling
       window.addEventListener('pointermove', (e) => {
-        if (!activeOp || !targetLayer) return;
+        if (!activeOp || !targetLayer || window.isCanvasViewportPinching) return;
         const coords = getCanvasBufferCoords(e);
         const deltaX = coords.x - startPointer.x;
         const deltaY = coords.y - startPointer.y;
@@ -4298,142 +4301,351 @@
       window.addEventListener('pointerup', onPointerEnd);
       window.addEventListener('pointercancel', onPointerEnd);
       window.addEventListener('blur', onPointerEnd);
+
+      // ==========================================================================
+      // PREVIEW CANVAS VIEWPORT 2-FINGER PINCH ZOOM, PAN & RESET SYSTEM
+      // ==========================================================================
+      let canvasViewportZoom = 1.0;
+      let canvasViewportPanX = 0;
+      let canvasViewportPanY = 0;
+      let isCanvasPinching = false;
+      let isCanvasOutsidePanning = false;
+      let pinchStartDist = 0;
+      let pinchStartCenter = { x: 0, y: 0 };
+      let pinchStartZoom = 1.0;
+      let pinchStartPan = { x: 0, y: 0 };
+      let outsidePanStartPoint = { x: 0, y: 0 };
+      let outsidePanStartPan = { x: 0, y: 0 };
+      let canvasGestureEndTime = 0;
+
+      window.canvasViewportZoom = 1.0;
+      window.canvasViewportPanX = 0;
+      window.canvasViewportPanY = 0;
+      window.isCanvasViewportPinching = false;
+      window.canvasGestureEndTime = 0;
+
+      function applyCanvasViewportTransform(animate = false) {
+        const box = document.getElementById('editor-preview-canvas');
+        const resetBtn = document.getElementById('preview-canvas-reset-btn');
+        if (!box) return;
+
+        const isTransformed = Math.abs(canvasViewportZoom - 1.0) > 0.01 || Math.abs(canvasViewportPanX) > 1 || Math.abs(canvasViewportPanY) > 1;
+
+        if (animate) {
+          box.style.transition = 'transform 0.24s cubic-bezier(0.16, 1, 0.3, 1)';
+        } else {
+          box.style.transition = 'none';
+        }
+
+        if (isTransformed) {
+          box.style.transform = `translate3d(${canvasViewportPanX.toFixed(1)}px, ${canvasViewportPanY.toFixed(1)}px, 0) scale(${canvasViewportZoom.toFixed(3)})`;
+          if (resetBtn) resetBtn.style.display = 'inline-flex';
+        } else {
+          box.style.transform = '';
+          if (resetBtn) resetBtn.style.display = 'none';
+        }
+        window.canvasViewportZoom = canvasViewportZoom;
+        window.canvasViewportPanX = canvasViewportPanX;
+        window.canvasViewportPanY = canvasViewportPanY;
+      }
+      window.applyCanvasViewportTransform = applyCanvasViewportTransform;
+
+      function resetCanvasViewport() {
+        canvasViewportZoom = 1.0;
+        canvasViewportPanX = 0;
+        canvasViewportPanY = 0;
+        applyCanvasViewportTransform(true);
+      }
+      window.resetCanvasViewport = resetCanvasViewport;
+
+      function initCanvasViewportGestures() {
+        const container = document.getElementById('editor-preview-container');
+        const resetBtn = document.getElementById('preview-canvas-reset-btn');
+        if (!container) return;
+
+        if (resetBtn) {
+          resetBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            resetCanvasViewport();
+          });
+        }
+
+        container.addEventListener('touchstart', (e) => {
+          if (e.touches && e.touches.length === 2) {
+            // Cancel active layer transformation
+            if (activeOp || window.isTransformInteracting) {
+              activeOp = null;
+              window._activeCanvasOp = null;
+              targetLayer = null;
+              window.isTransformInteracting = false;
+              if (typeof flushCanvasRedraw === 'function') flushCanvasRedraw();
+            }
+            isCanvasPinching = true;
+            isCanvasOutsidePanning = false;
+            window.isCanvasViewportPinching = true;
+
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            pinchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+            pinchStartCenter = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+            pinchStartZoom = canvasViewportZoom;
+            pinchStartPan = { x: canvasViewportPanX, y: canvasViewportPanY };
+            if (e.cancelable) e.preventDefault();
+          } else if (e.touches && e.touches.length === 1) {
+            const target = e.target;
+            const isOutside = !target.closest('#editor-preview-canvas') && !target.closest('#preview-matting-widget') && !target.closest('#preview-canvas-reset-btn') && !target.closest('#canvas-dropzone-split');
+            if (isOutside) {
+              isCanvasOutsidePanning = true;
+              outsidePanStartPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+              outsidePanStartPan = { x: canvasViewportPanX, y: canvasViewportPanY };
+            }
+          }
+        }, { passive: false });
+
+        container.addEventListener('touchmove', (e) => {
+          if (isCanvasPinching && e.touches && e.touches.length === 2) {
+            if (e.cancelable) e.preventDefault();
+            const t1 = e.touches[0];
+            const t2 = e.touches[1];
+            const currDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+            const currCenter = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+
+            if (pinchStartDist > 5) {
+              const zoomFactor = currDist / pinchStartDist;
+              canvasViewportZoom = Math.max(0.2, Math.min(6.0, pinchStartZoom * zoomFactor));
+              canvasViewportPanX = pinchStartPan.x + (currCenter.x - pinchStartCenter.x);
+              canvasViewportPanY = pinchStartPan.y + (currCenter.y - pinchStartCenter.y);
+              applyCanvasViewportTransform(false);
+            }
+          } else if (isCanvasOutsidePanning && e.touches && e.touches.length === 1) {
+            if (e.cancelable) e.preventDefault();
+            const currPoint = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            canvasViewportPanX = outsidePanStartPan.x + (currPoint.x - outsidePanStartPoint.x);
+            canvasViewportPanY = outsidePanStartPan.y + (currPoint.y - outsidePanStartPoint.y);
+            applyCanvasViewportTransform(false);
+          }
+        }, { passive: false });
+
+        const onTouchEnd = (e) => {
+          if (isCanvasPinching) {
+            if (!e.touches || e.touches.length < 2) {
+              isCanvasPinching = false;
+              window.isCanvasViewportPinching = false;
+              canvasGestureEndTime = Date.now();
+              window.canvasGestureEndTime = canvasGestureEndTime;
+            }
+          }
+          if (!e.touches || e.touches.length === 0) {
+            isCanvasOutsidePanning = false;
+            isCanvasPinching = false;
+            window.isCanvasViewportPinching = false;
+            canvasGestureEndTime = Date.now();
+            window.canvasGestureEndTime = canvasGestureEndTime;
+          }
+        };
+
+        container.addEventListener('touchend', onTouchEnd, { passive: true });
+        container.addEventListener('touchcancel', onTouchEnd, { passive: true });
+
+        // Trackpad pinch-to-zoom on desktop
+        container.addEventListener('wheel', (e) => {
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            const factor = e.deltaY < 0 ? 1.06 : 0.94;
+            canvasViewportZoom = Math.max(0.2, Math.min(6.0, canvasViewportZoom * factor));
+            applyCanvasViewportTransform(false);
+          }
+        }, { passive: false });
+
+        // Double click outside canvas to reset viewport
+        container.addEventListener('dblclick', (e) => {
+          if (!e.target.closest('#editor-preview-canvas')) {
+            resetCanvasViewport();
+          }
+        });
+      }
+
+      initCanvasViewportGestures();
     })();
 
     /**
-     * Fit or stretch selected layer to composition dimensions.
+     * Fit or stretch selected layer(s) to composition dimensions.
+     * Supports all aspect ratios dynamically (16:9, 9:16 portrait, 1:1 square, 4:3, 21:9, custom).
      * @param {'fit'|'stretch'} mode
      */
     function applyFitOrStretchToComposition(mode, explicitLayer = null) {
       const ps = window.currentProjectState;
       if (!ps) return;
-      const compW = ps.baseW || ps.width || 1920;
-      const compH = ps.baseH || ps.height || 1080;
 
-      let layer = explicitLayer || null;
-      if (!layer) {
-        const targetId = window.selectedLayerId || window.currentSelectedLayerId;
-        if (targetId && ps.layers) {
-          layer = ps.layers.find(l => l.id === targetId);
-        }
-        if (!layer && window.selectedLayerIds && window.selectedLayerIds.size > 0 && ps.layers) {
-          const firstId = Array.from(window.selectedLayerIds)[0];
-          layer = ps.layers.find(l => l.id === firstId);
-        }
-        if (!layer && window.currentSelectedLayer) {
-          layer = window.currentSelectedLayer;
-        }
-        if (!layer && ps.layers) {
-          layer = ps.layers.find(l => l.selected);
+      let compW = 0;
+      let compH = 0;
+
+      if (window.currentActivePrecomp) {
+        compW = Math.round(Math.abs(window.currentActivePrecomp.mediaWidth || window.currentActivePrecomp.scaleW || 0));
+        compH = Math.round(Math.abs(window.currentActivePrecomp.mediaHeight || window.currentActivePrecomp.scaleH || 0));
+      }
+      if (!compW || !compH) {
+        if (ps._baseW && ps._baseH) {
+          compW = ps._baseW;
+          compH = ps._baseH;
+        } else if (ps.baseW && ps.baseH) {
+          compW = ps.baseW;
+          compH = ps.baseH;
+        } else if (ps.width && ps.height) {
+          compW = ps.width;
+          compH = ps.height;
+        } else if (typeof window.getProjectDimensions === 'function' && ps.resolution && ps.aspectRatio) {
+          const dims = window.getProjectDimensions(ps.resolution, ps.aspectRatio);
+          if (dims && dims.length >= 2 && dims[0] > 0 && dims[1] > 0) {
+            compW = dims[0];
+            compH = dims[1];
+          }
         }
       }
-      if (!layer) return;
 
-      const isShapeOrFill = (layer.type === 'shape' || layer.type === 'adjustment' || layer.type === 'solid' || layer.fillType === 'color' || layer.fillType === 'gradient');
+      if (!compW || !compH) {
+        if (typeof showEditorToast === 'function') {
+          showEditorToast('Gagal menentukan ukuran komposisi proyek', 2400, 'error');
+        } else if (typeof window.showEditorToast === 'function') {
+          window.showEditorToast('Gagal menentukan ukuran komposisi proyek', 2400, 'error');
+        }
+        return;
+      }
 
-      if (mode === 'fit') {
-        if (isShapeOrFill) {
-          layer.scaleW = compW;
-          layer.scaleH = compH;
-        } else {
-          let srcW = layer.mediaWidth;
-          let srcH = layer.mediaHeight;
-          if (!srcW || !srcH) {
-            if (layer.type === 'text') {
-              const nat = (window.FishTextEngine && window.FishTextEngine.getNaturalSize)
-                ? window.FishTextEngine.getNaturalSize(layer)
-                : { width: 320, height: 100 };
-              srcW = nat.width;
-              srcH = nat.height;
-            } else {
-              const media = (typeof getOrLoadLayerMedia === 'function')
-                ? getOrLoadLayerMedia(layer)
-                : (window.getOrLoadLayerMedia ? window.getOrLoadLayerMedia(layer) : null);
-              if (media) {
-                const el = (media && media.el) ? media.el : media;
-                if (el && el.videoWidth > 0 && el.videoHeight > 0) {
-                  srcW = el.videoWidth;
-                  srcH = el.videoHeight;
-                } else if (el && el.naturalWidth > 0 && el.naturalHeight > 0) {
-                  srcW = el.naturalWidth;
-                  srcH = el.naturalHeight;
-                } else if (media.img && media.img.naturalWidth > 0 && media.img.naturalHeight > 0) {
-                  srcW = media.img.naturalWidth;
-                  srcH = media.img.naturalHeight;
-                } else if (media.naturalWidth > 0 && media.naturalHeight > 0) {
-                  srcW = media.naturalWidth;
-                  srcH = media.naturalHeight;
+      const targetLayers = [];
+      if (explicitLayer) {
+        targetLayers.push(explicitLayer);
+      } else if (window.selectedLayerIds && window.selectedLayerIds.size > 0 && ps.layers) {
+        window.selectedLayerIds.forEach(id => {
+          const found = ps.layers.find(l => l.id === id);
+          if (found && !targetLayers.includes(found)) targetLayers.push(found);
+        });
+      }
+
+      if (targetLayers.length === 0) {
+        const targetId = window.selectedLayerId || window.currentSelectedLayerId;
+        let single = (targetId && ps.layers) ? ps.layers.find(l => l.id === targetId) : null;
+        if (!single && window.currentSelectedLayer) single = window.currentSelectedLayer;
+        if (!single && ps.layers) single = ps.layers.find(l => l.selected);
+        if (single) targetLayers.push(single);
+      }
+
+      if (targetLayers.length === 0) return;
+
+      targetLayers.forEach(layer => {
+        if (!layer || layer.type === 'camera' || layer.type === 'audio') return;
+
+        const isShapeOrFill = (layer.type === 'shape' || layer.type === 'adjustment' || layer.type === 'solid' || layer.fillType === 'color' || layer.fillType === 'gradient');
+
+        if (mode === 'fit') {
+          if (isShapeOrFill) {
+            layer.scaleW = compW;
+            layer.scaleH = compH;
+          } else {
+            let srcW = layer.mediaWidth;
+            let srcH = layer.mediaHeight;
+            if (!srcW || !srcH) {
+              if (layer.type === 'text') {
+                const nat = (window.FishTextEngine && window.FishTextEngine.getNaturalSize)
+                  ? window.FishTextEngine.getNaturalSize(layer)
+                  : { width: 320, height: 100 };
+                srcW = nat.width;
+                srcH = nat.height;
+              } else {
+                const media = (typeof getOrLoadLayerMedia === 'function')
+                  ? getOrLoadLayerMedia(layer)
+                  : (window.getOrLoadLayerMedia ? window.getOrLoadLayerMedia(layer) : null);
+                if (media) {
+                  const el = (media && media.el) ? media.el : media;
+                  if (el && el.videoWidth > 0 && el.videoHeight > 0) {
+                    srcW = el.videoWidth;
+                    srcH = el.videoHeight;
+                  } else if (el && el.naturalWidth > 0 && el.naturalHeight > 0) {
+                    srcW = el.naturalWidth;
+                    srcH = el.naturalHeight;
+                  } else if (media.img && media.img.naturalWidth > 0 && media.img.naturalHeight > 0) {
+                    srcW = media.img.naturalWidth;
+                    srcH = media.img.naturalHeight;
+                  } else if (media.naturalWidth > 0 && media.naturalHeight > 0) {
+                    srcW = media.naturalWidth;
+                    srcH = media.naturalHeight;
+                  }
+                }
+                if (!srcW || !srcH) {
+                  srcW = Math.abs(layer.scaleW) || compW;
+                  srcH = Math.abs(layer.scaleH) || compH;
                 }
               }
-              if (!srcW || !srcH) {
-                srcW = Math.abs(layer.scaleW) || compW;
-                srcH = Math.abs(layer.scaleH) || compH;
-              }
             }
+            if (srcW > 0 && srcH > 0 && (!layer.mediaWidth || !layer.mediaHeight)) {
+              layer.mediaWidth = srcW;
+              layer.mediaHeight = srcH;
+            }
+            const scaleFactor = Math.min(compW / Math.max(1, srcW), compH / Math.max(1, srcH));
+            layer.scaleW = Math.round(srcW * scaleFactor);
+            layer.scaleH = Math.round(srcH * scaleFactor);
           }
-          if (srcW > 0 && srcH > 0 && (!layer.mediaWidth || !layer.mediaHeight)) {
-            layer.mediaWidth = srcW;
-            layer.mediaHeight = srcH;
+        } else if (mode === 'stretch') {
+          layer.scaleW = compW;
+          layer.scaleH = compH;
+          layer.aspectLocked = false;
+        }
+
+        layer.posX = compW / 2;
+        layer.posY = compH / 2;
+        layer.anchorX = 0;
+        layer.anchorY = 0;
+        if (layer.anchorZ !== undefined) layer.anchorZ = 0;
+        layer.normX = (layer.posX - layer.scaleW / 2) / compW;
+        layer.normY = (layer.posY - layer.scaleH / 2) / compH;
+        layer.normW = layer.scaleW / compW;
+        layer.normH = layer.scaleH / compH;
+        layer._userResized = true;
+        layer._userResizedManual = true;
+
+        if (layer.type === 'shape') {
+          if (!layer.shapeProps) layer.shapeProps = {};
+          layer.shapeProps.sizeX = Math.abs(layer.scaleW);
+          layer.shapeProps.sizeY = Math.abs(layer.scaleH);
+          layer.transformScaleX = 1.0;
+          layer.transformScaleY = 1.0;
+          layer.mediaWidth = Math.abs(layer.scaleW);
+          layer.mediaHeight = Math.abs(layer.scaleH);
+          layer._shapeDirty = true;
+          layer._fillDirty = true;
+          if (layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
+          if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
+          if (typeof syncShapeControllerUI === 'function') {
+            syncShapeControllerUI();
+          } else if (typeof window.syncShapeControllerUI === 'function') {
+            window.syncShapeControllerUI();
           }
-          const scaleFactor = Math.max(compW / Math.max(1, srcW), compH / Math.max(1, srcH));
-          layer.scaleW = Math.round(srcW * scaleFactor);
-          layer.scaleH = Math.round(srcH * scaleFactor);
+        } else if (layer.type === 'text') {
+          const nat = (window.FishTextEngine && window.FishTextEngine.getNaturalSize)
+            ? window.FishTextEngine.getNaturalSize(layer)
+            : { width: 320, height: 100 };
+          layer.transformScaleX = Math.abs(layer.scaleW) / Math.max(1, nat.width);
+          layer.transformScaleY = Math.abs(layer.scaleH) / Math.max(1, nat.height);
+          layer._textDirty = true;
+          if (layer._textBufferCanvas) layer._textBufferCanvas._lastRenderKey = null;
+          if (layer._textMbCanvas) layer._textMbCanvas._lastRenderKey = null;
+        } else if (layer.type === 'precomp') {
+          if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
         }
-      } else if (mode === 'stretch') {
-        layer.scaleW = compW;
-        layer.scaleH = compH;
-        layer.aspectLocked = false;
-      }
 
-      layer.posX = compW / 2;
-      layer.posY = compH / 2;
-      layer.anchorX = 0;
-      layer.anchorY = 0;
-      if (layer.anchorZ !== undefined) layer.anchorZ = 0;
-      layer.normX = (layer.posX - layer.scaleW / 2) / compW;
-      layer.normY = (layer.posY - layer.scaleH / 2) / compH;
-      layer.normW = layer.scaleW / compW;
-      layer.normH = layer.scaleH / compH;
-      layer._userResized = true;
-      layer._userResizedManual = true;
-
-      if (layer.type === 'shape') {
-        if (!layer.shapeProps) layer.shapeProps = {};
-        layer.shapeProps.sizeX = Math.abs(layer.scaleW);
-        layer.shapeProps.sizeY = Math.abs(layer.scaleH);
-        layer.transformScaleX = 1.0;
-        layer.transformScaleY = 1.0;
-        layer.mediaWidth = Math.abs(layer.scaleW);
-        layer.mediaHeight = Math.abs(layer.scaleH);
-        layer._shapeDirty = true;
-        layer._fillDirty = true;
-        if (layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
-        if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
-        if (typeof syncShapeControllerUI === 'function') {
-          syncShapeControllerUI();
-        } else if (typeof window.syncShapeControllerUI === 'function') {
-          window.syncShapeControllerUI();
+        if (typeof recordLayerPropertyChange === 'function') {
+          recordLayerPropertyChange(layer, 'scale');
+          recordLayerPropertyChange(layer, 'move');
+        } else if (typeof window.recordLayerPropertyChange === 'function') {
+          window.recordLayerPropertyChange(layer, 'scale');
+          window.recordLayerPropertyChange(layer, 'move');
         }
-      } else if (layer.type === 'text') {
-        const nat = (window.FishTextEngine && window.FishTextEngine.getNaturalSize)
-          ? window.FishTextEngine.getNaturalSize(layer)
-          : { width: 320, height: 100 };
-        layer.transformScaleX = Math.abs(layer.scaleW) / Math.max(1, nat.width);
-        layer.transformScaleY = Math.abs(layer.scaleH) / Math.max(1, nat.height);
-        layer._textDirty = true;
-        if (layer._textBufferCanvas) layer._textBufferCanvas._lastRenderKey = null;
-        if (layer._textMbCanvas) layer._textMbCanvas._lastRenderKey = null;
-      } else if (layer.type === 'precomp') {
-        if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
-      }
 
-      if (typeof recordLayerPropertyChange === 'function') {
-        recordLayerPropertyChange(layer, 'scale');
-        recordLayerPropertyChange(layer, 'move');
-      } else if (typeof window.recordLayerPropertyChange === 'function') {
-        window.recordLayerPropertyChange(layer, 'scale');
-        window.recordLayerPropertyChange(layer, 'move');
-      }
+        if (typeof invalidatePreviewCacheForLayer === 'function') {
+          invalidatePreviewCacheForLayer(layer);
+        }
+      });
 
       if (typeof syncTransformControllerValues === 'function') {
         syncTransformControllerValues();
@@ -4441,9 +4653,7 @@
         window.syncTransformControllerValues();
       }
 
-      if (typeof invalidatePreviewCacheForLayer === 'function') {
-        invalidatePreviewCacheForLayer(layer);
-      } else if (window.PreviewCacheManager && typeof window.PreviewCacheManager.syncStateWithProject === 'function') {
+      if (window.PreviewCacheManager && typeof window.PreviewCacheManager.syncStateWithProject === 'function') {
         window.PreviewCacheManager.syncStateWithProject();
       }
 

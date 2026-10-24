@@ -4591,7 +4591,8 @@
 
         if (_cachedBtnAddGiant) {
           const beatmarks = Array.isArray(currentProjectState.beatmarks) ? currentProjectState.beatmarks : [];
-          const isNear = beatmarks.some(b => Math.abs(b - currentSec) <= 0.04);
+          const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || 60);
+          const isNear = beatmarks.some(b => Math.abs(b - currentSec) <= 0.5 / fps);
           if (isNear !== _lastGiantIsNear) {
             _lastGiantIsNear = isNear;
             _cachedBtnAddGiant.classList.toggle('is-active', isNear);
@@ -4719,7 +4720,8 @@
           btnBeatmarkDelete.addEventListener('click', (e) => {
             e.stopPropagation();
             const currentSec = getTimelineCurrentSec();
-            const tolerance = 0.08;
+            const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || 60);
+            const tolerance = 0.5 / fps;
             const bms = Array.isArray(currentProjectState.beatmarks) ? currentProjectState.beatmarks : [];
             const idx = bms.findIndex(b => Math.abs(b - currentSec) <= tolerance);
             if (idx !== -1) {
@@ -4727,6 +4729,39 @@
               if (typeof renderTimelineBeatmarks === 'function') renderTimelineBeatmarks();
               if (typeof saveCurrentProjectBeatmarks === 'function') saveCurrentProjectBeatmarks();
               syncBeatmarkDrawerUI();
+            }
+          });
+        }
+
+        // 4b. Clean all beatmarks button
+        const btnBeatmarkCleanAll = document.getElementById('btn-beatmark-clean-all');
+        if (btnBeatmarkCleanAll) {
+          btnBeatmarkCleanAll.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const bms = Array.isArray(currentProjectState.beatmarks) ? currentProjectState.beatmarks : [];
+            if (bms.length === 0) {
+              if (typeof showEditorToast === 'function') {
+                showEditorToast('Tidak ada beatmark untuk dibersihkan', 1800, 'info');
+              }
+              return;
+            }
+            currentProjectState.beatmarks = [];
+            currentProjectState.markerNames = {};
+            if (window.currentProjectState) {
+              window.currentProjectState.beatmarks = [];
+              window.currentProjectState.markerNames = {};
+            }
+            if (typeof renderTimelineBeatmarks === 'function') renderTimelineBeatmarks();
+            if (typeof saveCurrentProjectBeatmarks === 'function') saveCurrentProjectBeatmarks(true);
+            if (typeof window.saveDesktopMarkerNames === 'function') window.saveDesktopMarkerNames();
+            if (typeof updateTimeBadgeBeatmarkState === 'function') updateTimeBadgeBeatmarkState();
+            if (typeof syncDesktopMarkerLabels === 'function') syncDesktopMarkerLabels();
+            syncBeatmarkDrawerUI();
+            if (window.UndoRedoManager && !window.UndoRedoManager.isApplying) {
+              window.UndoRedoManager.recordSnapshot();
+            }
+            if (typeof showEditorToast === 'function') {
+              showEditorToast('Semua beatmark berhasil dibersihkan', 1800, 'info');
             }
           });
         }
@@ -4747,7 +4782,8 @@
             lastHandledTime = now;
 
             btnAddGiant.classList.add('is-pressed');
-            setTimeout(() => btnAddGiant.classList.remove('is-pressed'), 100);
+            if (btnAddGiant._pressTimer) clearTimeout(btnAddGiant._pressTimer);
+            btnAddGiant._pressTimer = setTimeout(() => btnAddGiant.classList.remove('is-pressed'), 35);
 
             if (typeof navigator.vibrate === 'function') {
               try { navigator.vibrate(15); } catch (_) {}

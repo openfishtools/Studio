@@ -703,6 +703,20 @@
             item.classList.toggle('is-selected', item.dataset.val === String(currentFps));
           });
         }
+        // Re-quantize existing beatmarks to newly selected FPS and deduplicate
+        if (currentProjectState && Array.isArray(currentProjectState.beatmarks) && currentProjectState.beatmarks.length > 0) {
+          const fps = currentFps;
+          const seen = new Set();
+          currentProjectState.beatmarks = currentProjectState.beatmarks.map(b => Math.round(b * fps) / fps).filter(b => {
+            const key = Math.round(b * fps);
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          }).sort((a, b) => a - b);
+          if (typeof renderTimelineBeatmarks === 'function') {
+            renderTimelineBeatmarks();
+          }
+        }
         generateRulerTicks(currentFps, true);
         const currentMs = Math.round((Math.max(0, -panX) / pixelsPerSecond) * 1000);
         timecodeEl.textContent = formatTimecode(currentMs);
@@ -973,7 +987,9 @@
         }
         const currentSec = Math.max(0, -panX / pixelsPerSecond);
         const beatmarks = currentProjectState.beatmarks || [];
-        const isNear = beatmarks.some(b => Math.abs(b - currentSec) <= 0.05);
+        const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || currentFps || 60);
+        const tolerance = 0.5 / fps;
+        const isNear = beatmarks.some(b => Math.abs(b - currentSec) <= tolerance);
         if (isNear !== _lastBeatmarkNearState) {
           _lastBeatmarkNearState = isNear;
           badge.classList.toggle('has-beatmark', isNear);
@@ -989,7 +1005,9 @@
         if (isNaN(timeVal)) return '';
         if (markerNames[timeVal] !== undefined && markerNames[timeVal] !== '') return markerNames[timeVal];
         if (markerNames[String(timeVal)] !== undefined && markerNames[String(timeVal)] !== '') return markerNames[String(timeVal)];
-        const key = Object.keys(markerNames).find(k => Math.abs(parseFloat(k) - timeVal) <= 0.05);
+        const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || currentFps || 60);
+        const tolerance = 0.5 / fps;
+        const key = Object.keys(markerNames).find(k => Math.abs(parseFloat(k) - timeVal) <= tolerance);
         if (key && markerNames[key]) return markerNames[key];
         return '';
       }
@@ -1146,10 +1164,13 @@
           }
         }
 
-        const roundedSec = Math.round(currentSec * 1000) / 1000;
-        const tolerance = 0.04;
+        // Strictly quantize beatmark timestamp to project FPS frame boundary
+        const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || currentFps || 60);
+        const targetFrame = Math.round(currentSec * fps);
+        const quantizedSec = Math.max(0, targetFrame / fps);
+        const tolerance = 0.5 / fps;
 
-        const existingIdx = currentProjectState.beatmarks.findIndex(b => Math.abs(b - roundedSec) <= tolerance);
+        const existingIdx = currentProjectState.beatmarks.findIndex(b => Math.abs(b - quantizedSec) <= tolerance);
         if (existingIdx !== -1) {
           // If explicitly adding or actively playing, keep existing beatmark and do not delete
           if (mode === 'add' || isPlaying) {
@@ -1173,9 +1194,9 @@
           return null;
         } else {
           // Playhead not on beatmark -> add it
-          currentProjectState.beatmarks.push(roundedSec);
+          currentProjectState.beatmarks.push(quantizedSec);
           currentProjectState.beatmarks.sort((a, b) => a - b);
-          addBeatmarkDOM(roundedSec, pps);
+          addBeatmarkDOM(quantizedSec, pps);
         }
 
         updateTimeBadgeBeatmarkState();
@@ -1200,13 +1221,15 @@
           }
         }
         saveCurrentProjectBeatmarks();
-        return roundedSec;
+        return quantizedSec;
       }
       window.toggleBeatmarkAtCurrentTime = toggleBeatmarkAtCurrentTime;
 
       function deleteBeatmark(sec) {
         if (!Array.isArray(currentProjectState.beatmarks)) return;
-        const idx = currentProjectState.beatmarks.findIndex(b => Math.abs(b - sec) <= 0.05);
+        const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || currentFps || 60);
+        const tolerance = 0.5 / fps;
+        const idx = currentProjectState.beatmarks.findIndex(b => Math.abs(b - sec) <= tolerance);
         if (idx !== -1) {
           const removed = currentProjectState.beatmarks.splice(idx, 1)[0];
           const rulerBm = rulerTrack.querySelector(`.timeline-beatmark-item[data-time="${removed}"]`);
@@ -1256,8 +1279,9 @@
           }
         });
 
-        // 2. Deduplicate keyframes within epsilon tolerance (~0.035s / 1 frame)
-        const DEDUP_EPSILON = 0.035;
+        // 2. Deduplicate keyframes within epsilon tolerance (half-frame tolerance)
+        const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || currentFps || 60);
+        const DEDUP_EPSILON = 0.5 / fps;
         rawKfTimes.sort((a, b) => a - b);
         const uniqueKfTimes = [];
         for (const t of rawKfTimes) {
@@ -1392,6 +1416,8 @@
         if (isPlaying) pausePlayback();
         const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
         const currentSec = Math.max(0, -panX / pps);
+        const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || currentFps || 60);
+        const currentFrame = Math.round(currentSec * fps);
         const stops = getUnifiedTimelineStops();
 
         if (stops.length === 0) {
@@ -1399,21 +1425,21 @@
           return;
         }
 
-        const JUMP_DELTA = 0.005; // 5ms delta prevents re-detecting current standing stop
-
         if (direction > 0) {
-          // Next stop: find first stop ahead of playhead (keyframe or marker)
-          const target = stops.find(s => s > currentSec + JUMP_DELTA);
+          // Next stop: find first stop ahead of playhead's current frame
+          const target = stops.find(s => Math.round(s * fps) > currentFrame);
           if (target !== undefined && target !== null) {
-            seekTimelineToTime(target, true);
+            const targetSec = Math.round(target * fps) / fps;
+            seekTimelineToTime(targetSec, true);
           } else {
             stepFrame(1);
           }
         } else {
-          // Previous stop: find nearest stop behind playhead (keyframe or marker)
-          const target = stops.filter(s => s < currentSec - JUMP_DELTA).pop();
+          // Previous stop: find nearest stop behind playhead's current frame
+          const target = stops.filter(s => Math.round(s * fps) < currentFrame).pop();
           if (target !== undefined && target !== null) {
-            seekTimelineToTime(target, true);
+            const targetSec = Math.round(target * fps) / fps;
+            seekTimelineToTime(targetSec, true);
           } else {
             stepFrame(-1);
           }
@@ -1544,6 +1570,9 @@
         }
         if (window.FishAudioEngine) {
           window.FishAudioEngine.pauseAll();
+          if (typeof window.FishAudioEngine.suppressMediaSession === 'function') {
+            window.FishAudioEngine.suppressMediaSession();
+          }
         }
         const pauseLayerMediaTree = (layerList) => {
           (layerList || []).forEach(layer => {
@@ -1733,9 +1762,19 @@
       let hasTimelineEmptyLpFired = false;
       let timelineTweenRaf = null;
 
+      // Touch 2-finger timeline pinch-to-zoom state
+      let isTimelinePinching = false;
+      let timelinePinchStartDist = 0;
+      let timelinePinchStartPps = 80;
+      let timelinePinchAnchorSec = 0;
+      let timelinePinchEndTime = 0;
+      window.isTimelinePinching = false;
+      window.timelinePinchEndTime = 0;
+
       function onPanStart(e) {
         // On desktop workstation, timeline scrubbing is handled by ruler seek / playhead drag and marquee
         if (document.querySelector('.desktop-workstation, .desktop-viewport')) return;
+        if (isTimelinePinching || window.isTimelinePinching || (timelinePinchEndTime && Date.now() - timelinePinchEndTime < 250)) return;
         if (isPlaying) {
           pausePlayback();
         }
@@ -1799,7 +1838,7 @@
       }
 
       function onPanMove(e) {
-        if (!isPanning) return;
+        if (!isPanning || isTimelinePinching || window.isTimelinePinching) return;
 
         // Safari coalesces pointermove events between frames, adding ~16ms latency.
         // getCoalescedEvents() recovers intermediate positions for silky-smooth scrubbing.
@@ -1891,6 +1930,15 @@
         const needle = document.getElementById('timeline-center-needle');
         if (needle) needle.classList.remove('is-snapped');
         window._lastScrubSnapPx = null;
+
+        if (isTimelinePinching || window.isTimelinePinching || (timelinePinchEndTime && Date.now() - timelinePinchEndTime < 250)) {
+          isPanning = false;
+          window.isTimelinePanning = false;
+          window.isTimelineScrubbing = false;
+          if (rulerViewport) rulerViewport.classList.remove('is-dragging');
+          if (layersViewport) layersViewport.classList.remove('is-dragging');
+          return;
+        }
 
         if (hasTimelineEmptyLpFired) {
           hasTimelineEmptyLpFired = false;
@@ -1994,6 +2042,75 @@
           const zoomFactor = delta < 0 ? 1.15 : 0.87;
           setTimelineZoom(pixelsPerSecond * zoomFactor);
         }, { passive: false });
+
+        // Double-click on Ruler Viewport: Reset timeline zoom to default (80 pps)
+        rulerViewport.addEventListener('dblclick', () => {
+          if (document.querySelector('.desktop-workstation, .desktop-viewport')) return;
+          setTimelineZoom(80);
+        });
+      }
+
+      // Touch 2-Finger Pinch-to-Zoom Gesture on Timeline
+      function onTimelineTouchStart(e) {
+        if (e.touches && e.touches.length === 2) {
+          isTimelinePinching = true;
+          window.isTimelinePinching = true;
+          if (isPanning) {
+            isPanning = false;
+            window.isTimelinePanning = false;
+            window.isTimelineScrubbing = false;
+            if (timelineEmptyLpTimer) {
+              clearTimeout(timelineEmptyLpTimer);
+              timelineEmptyLpTimer = null;
+            }
+            if (window.FishAudioEngine) window.FishAudioEngine.stopScrub();
+            if (rulerViewport) rulerViewport.classList.remove('is-dragging');
+            if (layersViewport) layersViewport.classList.remove('is-dragging');
+          }
+          const t1 = e.touches[0];
+          const t2 = e.touches[1];
+          timelinePinchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+          timelinePinchStartPps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
+          timelinePinchAnchorSec = (typeof getCurrentPlayheadTime === 'function')
+            ? getCurrentPlayheadTime()
+            : (window.currentPlaybackSec || 0);
+          if (e.cancelable) e.preventDefault();
+        }
+      }
+
+      function onTimelineTouchMove(e) {
+        if (isTimelinePinching && e.touches && e.touches.length === 2) {
+          if (e.cancelable) e.preventDefault();
+          const t1 = e.touches[0];
+          const t2 = e.touches[1];
+          const currDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+          if (timelinePinchStartDist > 5) {
+            const zoomRatio = currDist / timelinePinchStartDist;
+            const targetPps = Math.max(20, Math.min(1800, Math.round(timelinePinchStartPps * zoomRatio)));
+            if (targetPps !== pixelsPerSecond) {
+              setTimelineZoom(targetPps, timelinePinchAnchorSec);
+            }
+          }
+        }
+      }
+
+      function onTimelineTouchEnd(e) {
+        if (isTimelinePinching) {
+          if (!e.touches || e.touches.length < 2) {
+            isTimelinePinching = false;
+            window.isTimelinePinching = false;
+            timelinePinchEndTime = Date.now();
+            window.timelinePinchEndTime = timelinePinchEndTime;
+          }
+        }
+      }
+
+      const timelineEl = document.getElementById('main-editor-timeline') || (rulerViewport && rulerViewport.parentElement);
+      if (timelineEl) {
+        timelineEl.addEventListener('touchstart', onTimelineTouchStart, { passive: false });
+        timelineEl.addEventListener('touchmove', onTimelineTouchMove, { passive: false });
+        timelineEl.addEventListener('touchend', onTimelineTouchEnd, { passive: true });
+        timelineEl.addEventListener('touchcancel', onTimelineTouchEnd, { passive: true });
       }
 
       // Wheel on Layers Viewport: Vertical scroll for layers, or Shift+Wheel for horizontal pan
@@ -2006,9 +2123,11 @@
 
         layersViewport.addEventListener('wheel', (e) => {
           if (document.querySelector('.desktop-workstation, .desktop-viewport') || (typeof isDesktopLayout === 'function' && isDesktopLayout())) return;
-          // Block Ctrl+Wheel from accidentally triggering browser zoom or resizing preview window
+          // Trackpad pinch-to-zoom on timeline
           if (e.ctrlKey) {
             e.preventDefault();
+            const zoomFactor = e.deltaY < 0 ? 1.05 : 0.95;
+            setTimelineZoom(pixelsPerSecond * zoomFactor);
             return;
           }
           // Shift + Wheel or horizontal trackpad wheel scrubs timeline horizontally
@@ -2263,6 +2382,9 @@
 
             isPlaying = true;
             window.isTimelinePlaying = true;
+            if (window.FishAudioEngine && typeof window.FishAudioEngine.suppressMediaSession === 'function') {
+              window.FishAudioEngine.suppressMediaSession();
+            }
             if (window.PreviewCacheManager) {
               window.PreviewCacheManager.stopIdleWorker();
             }
@@ -2292,6 +2414,15 @@
           }
         });
       }
+
+      if (window.FishAudioEngine && typeof window.FishAudioEngine.suppressMediaSession === 'function') {
+        window.FishAudioEngine.suppressMediaSession();
+      }
+      document.addEventListener('visibilitychange', () => {
+        if (window.FishAudioEngine && typeof window.FishAudioEngine.suppressMediaSession === 'function') {
+          window.FishAudioEngine.suppressMediaSession();
+        }
+      }, { passive: true });
 
       // =========================================================================
       // Playback Settings Popover Wiring (Loop, Speed, Cache)
@@ -2634,7 +2765,8 @@
                 const curClipStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
                 const curClipDurSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
 
-                const relPx = ev.clientX - cachedClipLeft;
+                const currentZoom = window.__OFT_ZOOM || (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || parseFloat(document.documentElement.style.zoom) || 1;
+                const relPx = (ev.clientX - cachedClipLeft) / currentZoom;
                 let targetRelSec = relPx / pps;
                 let absTime = curClipStartSec + targetRelSec;
 
@@ -3628,8 +3760,9 @@
                     }];
 
                 function onDiamondMove(ev) {
-                  const dx = ev.clientX - startX;
-                  const dy = ev.clientY - startY;
+                  const currentZoom = window.__OFT_ZOOM || (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || parseFloat(document.documentElement.style.zoom) || 1;
+                  const dx = (ev.clientX - startX) / currentZoom;
+                  const dy = (ev.clientY - startY) / currentZoom;
                   if (!hasMoved && Math.hypot(dx, dy) > 3) {
                     hasMoved = true;
                     window.isTransformInteracting = true;

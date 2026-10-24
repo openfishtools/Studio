@@ -31,10 +31,25 @@
       this._frameGen = new Map();
       this._lastKnownCompFingerprints = new Map();
       this._lastKnownLayerSnapshots = new Map();
-      // Adaptive memory buffer: protect low-spec and mobile devices from heap pressure / OOM crashes
+      // Adaptive memory buffer: scale cache capacity to cover up to 1 minute (60s) based on project fps
+      // Prevents premature eviction while adjusting for device memory tiers
       const isMobile = (typeof window !== 'undefined' && (window.innerWidth <= 600 || ('ontouchstart' in window && window.innerWidth <= 900)));
       const devMem = (typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : 4;
-      this.maxFrames = isMobile ? 180 : (devMem <= 2 ? 150 : (devMem <= 4 ? 300 : 600));
+      this._devMem = devMem;
+      this._isMobile = isMobile;
+    }
+
+    get maxFrames() {
+      const fps = this.fps || 60;
+      // 1 minute (60s) duration cap in frames:
+      const oneMinuteFrames = Math.round(60 * fps);
+      const devMem = this._devMem || 4;
+      // Low-end devices (<=2GB): minimum 30s cache (e.g. 1800 frames at 60fps, 900 at 30fps)
+      // Mid-tier & high-end devices: full 1 minute cache (60s * fps)
+      if (devMem <= 2) {
+        return Math.max(900, Math.round(30 * fps));
+      }
+      return Math.max(1800, oneMinuteFrames);
     }
 
     get frames() {
@@ -194,16 +209,20 @@
       const totalDur = (typeof window !== 'undefined' && typeof window.getProjectTotalDuration === 'function')
         ? window.getProjectTotalDuration()
         : 0;
-      const totalProjectFrames = Math.round(totalDur * this.fps);
-      const memCap = this.maxFrames || 360;
-      const effectiveMax = Math.min(memCap, Math.max(60, totalProjectFrames + 15));
+      const currentFps = this.fps || 60;
+      const totalProjectFrames = Math.round(totalDur * currentFps);
+      // Up to 1 minute project duration cached in memory
+      const oneMinuteFrames = Math.round(60 * currentFps);
+      const memCap = this.maxFrames || oneMinuteFrames;
+      // Allow full project cache if project is <= 1 minute, otherwise cap at 1 minute
+      const effectiveMax = Math.min(memCap, Math.max(60, Math.min(totalProjectFrames + 15, oneMinuteFrames)));
       if (pool.size <= effectiveMax) return;
 
       const pps = (typeof window !== 'undefined' && window.currentPixelsPerSecond) ? window.currentPixelsPerSecond : 80;
       const curSec = (typeof window !== 'undefined' && typeof window.getCurrentPlayheadTime === 'function')
         ? window.getCurrentPlayheadTime()
         : ((typeof window !== 'undefined' && window.timelinePanX !== undefined) ? Math.abs(window.timelinePanX) / pps : 0);
-      const curFrame = Math.round(curSec * this.fps);
+      const curFrame = Math.round(curSec * currentFps);
 
       let worstIdx = -1;
       let worstScore = -Infinity;
@@ -728,8 +747,8 @@
       if (!this._lastKnownLayerSnapshots) this._lastKnownLayerSnapshots = new Map();
 
       const fps = ps.fps || 60;
-      const baseW = ps.baseW || ps.width || 1920;
-      const baseH = ps.baseH || ps.height || 1080;
+      const baseW = ps._baseW || ps.baseW || ps.width || (typeof window !== 'undefined' && typeof window.getProjectDimensions === 'function' && ps.resolution && ps.aspectRatio ? window.getProjectDimensions(ps.resolution, ps.aspectRatio)[0] : 0);
+      const baseH = ps._baseH || ps.baseH || ps.height || (typeof window !== 'undefined' && typeof window.getProjectDimensions === 'function' && ps.resolution && ps.aspectRatio ? window.getProjectDimensions(ps.resolution, ps.aspectRatio)[1] : 0);
       const resolution = ps.resolution || `${baseW}x${baseH}`;
       const aspectRatio = ps.aspectRatio || '';
       const bgColor = ps.bgColor || '';
@@ -992,14 +1011,15 @@
       const currentFrame = Math.max(0, Math.min(totalFrames - 1, Math.round((Math.abs(currentPanX) / pps) * this.fps)));
 
       // AE-Style Bidirectional RAM Preview Sweep:
-      // Fill cache OUTWARD from playhead within the active RAM window only.
+      // Fill cache OUTWARD from playhead within the active RAM window (up to 1 minute).
       let targetFrame = -1;
       let fwdIdx = currentFrame;
       let bwdIdx = currentFrame - 1;
       const targetComp = this.activeCompId || 'root';
-      const maxRadius = Math.max(90, Math.floor((this.maxFrames || 360) * 0.65));
+      const maxCap = this.maxFrames || Math.round(60 * this.fps);
+      const maxRadius = Math.max(120, maxCap);
       const maxFwd = Math.min(totalFrames, currentFrame + maxRadius);
-      const minBwd = Math.max(0, currentFrame - Math.floor(maxRadius * 0.35));
+      const minBwd = Math.max(0, currentFrame - Math.floor(maxRadius * 0.5));
 
       while (targetFrame === -1 && (fwdIdx < maxFwd || bwdIdx >= minBwd)) {
         // Check forward first (more useful — user is likely playing forward)

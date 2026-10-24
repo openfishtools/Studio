@@ -345,11 +345,11 @@ global.getOrLoadLayerMedia = (l) => {
 };
 
 // Fit 800x600 image into 1920x1080 composition
-// scaleFactor = max(1920/800, 1080/600) = max(2.4, 1.8) = 2.4
-// scaleW = 800 * 2.4 = 1920; scaleH = 600 * 2.4 = 1440
+// Proportional fit (contain): scaleFactor = min(1920/800, 1080/600) = min(2.4, 1.8) = 1.8
+// scaleW = 800 * 1.8 = 1440; scaleH = 600 * 1.8 = 1080
 window.applyFitOrStretchToComposition('fit');
-assert.strictEqual(mockImgLayer.scaleW, 1920, 'fit mode on image must proportionally scale scaleW to fill');
-assert.strictEqual(mockImgLayer.scaleH, 1440, 'fit mode on image must proportionally scale scaleH to fill');
+assert.strictEqual(mockImgLayer.scaleW, 1440, 'fit mode on image must proportionally scale scaleW to fit inside comp');
+assert.strictEqual(mockImgLayer.scaleH, 1080, 'fit mode on image must proportionally scale scaleH to fit inside comp');
 assert.strictEqual(mockImgLayer.posX, 960, 'fit mode on image must center posX');
 assert.strictEqual(mockImgLayer.posY, 540, 'fit mode on image must center posY');
 assert.strictEqual(mockImgLayer.mediaWidth, 800, 'fit mode must cache resolved mediaWidth');

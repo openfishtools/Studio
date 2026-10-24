@@ -4807,7 +4807,7 @@
   cursor: pointer !important;
   padding: 0 16px !important;
   box-sizing: border-box !important;
-  transition: background-color 0.08s ease, border-color 0.08s ease, color 0.08s ease !important;
+  transition: none !important;
 }
 
 .desktop-panel-right .beatmark-giant-btn:hover {

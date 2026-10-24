@@ -1235,11 +1235,21 @@
       function _editorExecuteFishToolInternal(toolName, ...args) {
         if (!toolName) return false;
 
-        const res = (currentProjectState && currentProjectState.resolution) || '1080p';
-        const aspect = (currentProjectState && currentProjectState.aspectRatio) || '16:9';
-        const baseDims = window.getProjectDimensions ? window.getProjectDimensions(res, aspect) : [1920, 1080];
-        const baseW = (baseDims && (baseDims.width || baseDims[0])) || 1920;
-        const baseH = (baseDims && (baseDims.height || baseDims[1])) || 1080;
+        let baseW = (currentProjectState && (currentProjectState._baseW || currentProjectState.baseW || currentProjectState.width)) || 0;
+        let baseH = (currentProjectState && (currentProjectState._baseH || currentProjectState.baseH || currentProjectState.height)) || 0;
+
+        if (window.currentActivePrecomp) {
+          baseW = Math.round(Math.abs(window.currentActivePrecomp.mediaWidth || window.currentActivePrecomp.scaleW || baseW || 0));
+          baseH = Math.round(Math.abs(window.currentActivePrecomp.mediaHeight || window.currentActivePrecomp.scaleH || baseH || 0));
+        }
+
+        if (!baseW || !baseH) {
+          const res = (currentProjectState && currentProjectState.resolution) || '1080p';
+          const aspect = (currentProjectState && currentProjectState.aspectRatio) || '16:9';
+          const baseDims = window.getProjectDimensions ? window.getProjectDimensions(res, aspect) : [1920, 1080];
+          baseW = (baseDims && (baseDims.width || baseDims[0])) || 1920;
+          baseH = (baseDims && (baseDims.height || baseDims[1])) || 1080;
+        }
 
         switch (toolName) {
           // --- ANCHOR POINT (9-POINT GRID) ---

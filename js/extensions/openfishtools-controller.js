@@ -48,12 +48,21 @@
     const selLayer = layers.find(l => l.id === selId);
     if (!selLayer) return JSON.stringify({ error: true, tool: 'Fit to Comp', type: 'warn', message: 'No layer selected.' });
 
-    const aspect = (window.currentProjectState && window.currentProjectState.aspectRatio) || '16:9';
-    const res = (window.currentProjectState && window.currentProjectState.resolution) || '1080p';
-    const resMap = window.resMap || {};
-    const baseDims = window.getProjectDimensions(res, aspect);
-    const baseW = baseDims[0];
-    const baseH = baseDims[1];
+    let baseW = (window.currentProjectState && (window.currentProjectState._baseW || window.currentProjectState.baseW || window.currentProjectState.width)) || 0;
+    let baseH = (window.currentProjectState && (window.currentProjectState._baseH || window.currentProjectState.baseH || window.currentProjectState.height)) || 0;
+
+    if (window.currentActivePrecomp) {
+      baseW = Math.round(Math.abs(window.currentActivePrecomp.mediaWidth || window.currentActivePrecomp.scaleW || baseW || 0));
+      baseH = Math.round(Math.abs(window.currentActivePrecomp.mediaHeight || window.currentActivePrecomp.scaleH || baseH || 0));
+    }
+
+    if (!baseW || !baseH) {
+      const aspect = (window.currentProjectState && window.currentProjectState.aspectRatio) || '16:9';
+      const res = (window.currentProjectState && window.currentProjectState.resolution) || '1080p';
+      const baseDims = (typeof window.getProjectDimensions === 'function') ? window.getProjectDimensions(res, aspect) : [1920, 1080];
+      baseW = baseDims[0];
+      baseH = baseDims[1];
+    }
 
     if (window.UndoRedoManager && typeof window.UndoRedoManager.recordSnapshot === 'function') {
       window.UndoRedoManager.recordSnapshot();

@@ -243,6 +243,11 @@
             <canvas id="editor-overlay-canvas" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:5;"></canvas>
           </div>
 
+          <!-- Floating Reset Canvas Viewport Button -->
+          <button type="button" class="preview-canvas-reset-btn" id="preview-canvas-reset-btn" style="display: none;" title="Reset Canvas View" aria-label="Reset Canvas Zoom and Location">
+            Reset
+          </button>
+
           <!-- Floating Background Removal Progress Widget (Single Morphing Element) -->
           <div class="preview-matting-widget hidden" id="preview-matting-widget" role="button" tabindex="0" title="Background Removal Progress" aria-label="Background Removal Progress">
             <!-- Collapsed state: circular progress ring -->
@@ -2241,6 +2246,11 @@
                         <button type="button" class="transform-nav-btn" id="btn-beatmark-delete" title="Delete Beatmark at Playhead" aria-label="Delete Beatmark">
                           <i class='fticon fticon-delete-beatmark' aria-hidden='true'></i>
                         </button>
+                        <button type="button" class="transform-nav-btn" id="btn-beatmark-clean-all" title="Clean All Beatmarks" aria-label="Clean All Beatmarks">
+                          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+                            <path d="M15 16h4v2h-4zm0-8h7v2h-7zm0 4h6v2h-6zM3 18c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2V8H3v10zM14 5h-3l-1-1H6L5 5H2v2h12V5z"/>
+                          </svg>
+                        </button>
                       </div>
                     </aside>
 
@@ -2778,6 +2788,22 @@
               <!-- Swatches populated dynamically -->
             </div>
             <div class="settings-scale-list" style="margin-top: 12px;">
+              <div class="settings-scale-row" id="row-settings-tablet-view">
+                <div class="settings-scale-meta">
+                  <span class="settings-scale-name">Tablet Split View</span>
+                  <span class="settings-scale-val" id="tablet-view-val">Enabled</span>
+                </div>
+                <div class="custom-dropdown is-compact" id="dropdown-tablet-view" data-value="true" style="width: 110px;">
+                  <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Tablet Split View">
+                    <span class="custom-dropdown-label">Enabled</span>
+                    <i class='fticon fticon-select-animation-target custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
+                  </button>
+                  <div class="custom-dropdown-menu" role="listbox">
+                    <div class="custom-dropdown-item is-selected" role="option" data-val="true">Enabled</div>
+                    <div class="custom-dropdown-item" role="option" data-val="false">Disabled</div>
+                  </div>
+                </div>
+              </div>
               <div class="settings-scale-row">
                 <div class="settings-scale-meta">
                   <span class="settings-scale-name">UI Scale — Editor</span>

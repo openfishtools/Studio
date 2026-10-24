@@ -1560,11 +1560,21 @@
     function fitLayerToComposition(layer, naturalW, naturalH) {
       if (!layer || !naturalW || !naturalH || layer.type === 'shape' || layer.type === 'text') return;
 
-      const aspect = currentProjectState.aspectRatio || '16:9';
-      const res = currentProjectState.resolution || '1080p';
-      const baseDims = window.getProjectDimensions(res, aspect);
-      const baseW = baseDims[0];
-      const baseH = baseDims[1];
+      let baseW = (window.currentProjectState && (window.currentProjectState._baseW || window.currentProjectState.baseW || window.currentProjectState.width)) || 0;
+      let baseH = (window.currentProjectState && (window.currentProjectState._baseH || window.currentProjectState.baseH || window.currentProjectState.height)) || 0;
+
+      if (window.currentActivePrecomp) {
+        baseW = Math.round(Math.abs(window.currentActivePrecomp.mediaWidth || window.currentActivePrecomp.scaleW || baseW || 0));
+        baseH = Math.round(Math.abs(window.currentActivePrecomp.mediaHeight || window.currentActivePrecomp.scaleH || baseH || 0));
+      }
+
+      if (!baseW || !baseH) {
+        const aspect = (window.currentProjectState && window.currentProjectState.aspectRatio) || '16:9';
+        const res = (window.currentProjectState && window.currentProjectState.resolution) || '1080p';
+        const baseDims = window.getProjectDimensions ? window.getProjectDimensions(res, aspect) : [1920, 1080];
+        baseW = baseDims[0];
+        baseH = baseDims[1];
+      }
 
       const canvasAspect = baseW / baseH;
       const mediaAspect = naturalW / naturalH;
@@ -1778,6 +1788,33 @@
       renderEditorThemePicker();
       try { initEditorUiScaleSlider(); } catch (_) {}
       try { updateEditorStorageUI(); } catch (_) {}
+
+      // Sync Tablet Split View state
+      try {
+        const isTabletSplitActive = !document.documentElement.classList.contains('force-mobile-view');
+        const tabletViewDd = document.getElementById('dropdown-tablet-view');
+        const tabletViewVal = document.getElementById('tablet-view-val');
+        if (tabletViewDd) {
+          tabletViewDd.dataset.value = isTabletSplitActive ? 'true' : 'false';
+          const lbl = tabletViewDd.querySelector('.custom-dropdown-label');
+          if (lbl) lbl.textContent = isTabletSplitActive ? 'Enabled' : 'Disabled';
+          tabletViewDd.querySelectorAll('.custom-dropdown-item').forEach(it => {
+            it.classList.toggle('is-selected', it.dataset.val === (isTabletSplitActive ? 'true' : 'false'));
+          });
+        }
+        if (tabletViewVal) tabletViewVal.textContent = isTabletSplitActive ? 'Enabled' : 'Disabled';
+        if (tabletViewDd && !tabletViewDd._tabletChangeBound) {
+          tabletViewDd._tabletChangeBound = true;
+          tabletViewDd.addEventListener('click', (e) => {
+            const item = e.target.closest('.custom-dropdown-item');
+            if (item) {
+              const val = item.dataset.val !== 'false';
+              if (tabletViewVal) tabletViewVal.textContent = val ? 'Enabled' : 'Disabled';
+              applyTabletSplitViewSetting(val);
+            }
+          });
+        }
+      } catch (_) {}
 
       // 10. Update dynamic summaries on category headers
       updateProjectSettingsSummaries();
@@ -2047,6 +2084,40 @@
         if (statusEl) statusEl.textContent = 'Storage ready';
       }
     }
+    function applyTabletSplitViewSetting(enabled) {
+      const isEnabled = enabled !== false;
+      document.documentElement.classList.toggle('force-mobile-view', !isEnabled);
+      if (document.body) document.body.classList.toggle('force-mobile-view', !isEnabled);
+      try {
+        localStorage.setItem('oft_tablet_split_view', isEnabled ? 'true' : 'false');
+      } catch (_) {}
+      const valLabel = document.getElementById('tablet-view-val');
+      if (valLabel) valLabel.textContent = isEnabled ? 'Enabled' : 'Disabled';
+      const dd = document.getElementById('dropdown-tablet-view');
+      if (dd) {
+        dd.dataset.value = isEnabled ? 'true' : 'false';
+        const labelSpan = dd.querySelector('.custom-dropdown-label');
+        if (labelSpan) labelSpan.textContent = isEnabled ? 'Enabled' : 'Disabled';
+        dd.querySelectorAll('.custom-dropdown-item').forEach(it => {
+          it.classList.toggle('is-selected', it.dataset.val === (isEnabled ? 'true' : 'false'));
+        });
+      }
+      window.dispatchEvent(new Event('resize'));
+      if (typeof fitPreviewCanvasBox === 'function') {
+        fitPreviewCanvasBox();
+      }
+    }
+    window.applyTabletSplitViewSetting = applyTabletSplitViewSetting;
+
+    // Initialize tablet split view preference early
+    try {
+      const savedTabletPref = localStorage.getItem('oft_tablet_split_view');
+      if (savedTabletPref === 'false') {
+        document.documentElement.classList.add('force-mobile-view');
+        if (document.body) document.body.classList.add('force-mobile-view');
+      }
+    } catch (_) {}
+
     window.renderEditorThemePicker = renderEditorThemePicker;
     window.detectEditorUiScalePage = detectEditorUiScalePage;
     window.clampEditorUiScale = clampEditorUiScale;
@@ -2146,6 +2217,10 @@
       try {
         localStorage.setItem('oft_max_undo', String(selectedMaxUndo));
         localStorage.setItem('oft_idle_cache', selectedIdle ? 'true' : 'false');
+        const tabletSplitDdVal = document.getElementById('dropdown-tablet-view')?.dataset.value;
+        if (tabletSplitDdVal !== undefined) {
+          applyTabletSplitViewSetting(tabletSplitDdVal !== 'false');
+        }
       } catch (_) {}
 
       window.currentTimelineFps = selectedFps;

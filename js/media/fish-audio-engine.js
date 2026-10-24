@@ -19,7 +19,26 @@
       this._gestureHandler = null;
       this._impulseCache = new Map();
 
+      this.suppressMediaSession = FishAudioEngine.suppressMediaSession;
       this._bindGestureUnlock();
+      FishAudioEngine.suppressMediaSession();
+    }
+
+    static suppressMediaSession() {
+      if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+      try {
+        navigator.mediaSession.playbackState = 'none';
+        navigator.mediaSession.metadata = null;
+        const actions = [
+          'play', 'pause', 'stop', 'seekbackward', 'seekforward',
+          'seekto', 'previoustrack', 'nexttrack', 'skipad'
+        ];
+        actions.forEach(act => {
+          try {
+            navigator.mediaSession.setActionHandler(act, null);
+          } catch (_) {}
+        });
+      } catch (_) {}
     }
 
     _hasUserActivation(e) {
@@ -272,6 +291,22 @@
     attachMediaElement(mediaEl) {
       if (!mediaEl) return;
       this.knownMediaElements.add(mediaEl);
+      if ('disableRemotePlayback' in mediaEl) {
+        try { mediaEl.disableRemotePlayback = true; } catch (_) {}
+      }
+      try { mediaEl.setAttribute('disableremoteplayback', 'true'); } catch (_) {}
+      try { mediaEl.setAttribute('playsinline', 'true'); } catch (_) {}
+      try { mediaEl.playsInline = true; } catch (_) {}
+
+      if (!mediaEl._hasMediaSessionSuppression) {
+        mediaEl._hasMediaSessionSuppression = true;
+        const suppress = () => {
+          FishAudioEngine.suppressMediaSession();
+        };
+        mediaEl.addEventListener('play', suppress, { passive: true });
+        mediaEl.addEventListener('playing', suppress, { passive: true });
+      }
+
       if (!this.isUnlocked) {
         this.pendingMediaElements.add(mediaEl);
         return;
@@ -588,6 +623,7 @@
     }
 
     syncPlayback(layers, currentSec, pixelsPerSecond = 80, actualSpeedRatio = 1.0) {
+      FishAudioEngine.suppressMediaSession();
       if (!this.isUnlocked) {
         if (this._hasUserActivation()) {
           this.unlock();
@@ -927,6 +963,7 @@
         }
       });
       this.invalidateLayerCache();
+      FishAudioEngine.suppressMediaSession();
     }
   }
 

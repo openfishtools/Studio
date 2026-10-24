@@ -2630,14 +2630,31 @@
   align-content: start;
 }
 
-.layer-action-btn,
-.layer-action-btn.is-solo,
-.layer-action-btn:only-child {
+.layer-action-btn-grid.is-solo-mode {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  align-content: stretch;
+  grid-template-rows: 1fr;
+}
+
+.layer-action-btn {
   min-height: 74px;
   height: 74px;
   max-height: 74px;
   padding: 8px 6px;
   gap: 5px;
+  border-radius: 8px;
+}
+
+.layer-action-btn-grid.is-solo-mode .layer-action-btn,
+.layer-action-btn.is-solo,
+.layer-action-btn:only-child {
+  min-height: 74px;
+  height: 100%;
+  max-height: none;
+  padding: 8px 6px;
+  gap: 6px;
   border-radius: 8px;
 }
 

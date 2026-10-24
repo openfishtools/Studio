@@ -69,24 +69,24 @@
 
   function getDeviceRamTier() {
     const mobile = isMobileOrLowMemDevice();
-    const devMem = (typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : (mobile ? 3 : 8);
-    if (mobile || devMem <= 2) {
+    const devMem = (typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : (mobile ? 4 : 8);
+    if (devMem <= 2) {
       return {
         isMobile: true,
-        maxRamFramesPerSource: 210,
-        maxTotalRamFrames: 360,
+        maxRamFramesPerSource: 900,
+        maxTotalRamFrames: 1800,
         maxTargetDim: 640,
         maxDecodeQueue: 6,
         maxPendingBitmaps: 4,
         dbBatchSize: 4
       };
     }
-    if (devMem <= 4) {
+    if (mobile || devMem <= 4) {
       return {
-        isMobile: false,
-        maxRamFramesPerSource: 450,
-        maxTotalRamFrames: 720,
-        maxTargetDim: 800,
+        isMobile: mobile,
+        maxRamFramesPerSource: 1800,
+        maxTotalRamFrames: 3600,
+        maxTargetDim: 720,
         maxDecodeQueue: 10,
         maxPendingBitmaps: 8,
         dbBatchSize: 6
@@ -94,8 +94,8 @@
     }
     return {
       isMobile: false,
-      maxRamFramesPerSource: 1200,
-      maxTotalRamFrames: 2000,
+      maxRamFramesPerSource: 3600,
+      maxTotalRamFrames: 7200,
       maxTargetDim: 960,
       maxDecodeQueue: 16,
       maxPendingBitmaps: 12,
@@ -2104,8 +2104,10 @@
         await new Promise(r => setTimeout(r, 50));
       }
 
-      const baseW = Math.round(Math.abs(precompLayer.mediaWidth || precompLayer.scaleW || (window.currentProjectState && window.currentProjectState.baseW) || 1920));
-      const baseH = Math.round(Math.abs(precompLayer.mediaHeight || precompLayer.scaleH || (window.currentProjectState && window.currentProjectState.baseH) || 1080));
+      const ps = window.currentProjectState || {};
+      const projDims = (typeof window !== 'undefined' && typeof window.getProjectDimensions === 'function' && ps.resolution && ps.aspectRatio) ? window.getProjectDimensions(ps.resolution, ps.aspectRatio) : null;
+      const baseW = Math.round(Math.abs(precompLayer.mediaWidth || precompLayer.scaleW || ps._baseW || ps.baseW || ps.width || (projDims ? projDims[0] : 0)));
+      const baseH = Math.round(Math.abs(precompLayer.mediaHeight || precompLayer.scaleH || ps._baseH || ps.baseH || ps.height || (projDims ? projDims[1] : 0)));
       const tier = this._deviceTier || getDeviceRamTier();
       const maxDim = tier.maxTargetDim || 960;
       const scale = Math.min(1, maxDim / Math.max(baseW, baseH));

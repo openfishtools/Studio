@@ -4143,6 +4143,7 @@ function initTimelineOperations() {
 
             function onClipPointerDown(e) {
               justTappedInPointerUp = false;
+              if (window.isTimelinePinching || (window.timelinePinchEndTime && Date.now() - window.timelinePinchEndTime < 250)) return;
               if (e.target.closest('.timeline-clip-handle') || e.target.closest('.timeline-keyframe-marker.is-active-prop') || e.target.closest('.timeline-keyframe-marker.is-out-of-bounds') || e.target.closest('.text-anim-marker')) return;
               if (e.button !== undefined && e.button !== 0) return;
 
@@ -4198,6 +4199,13 @@ function initTimelineOperations() {
               }, HOLD_DELAY);
 
               function onClipPointerMove(moveEvent) {
+                if (window.isTimelinePinching) {
+                  if (lpHoldTimer) {
+                    clearTimeout(lpHoldTimer);
+                    lpHoldTimer = null;
+                  }
+                  return;
+                }
                 const dist = Math.hypot(moveEvent.clientX - startPointerX, moveEvent.clientY - startPointerY);
 
                 if (hasMenuOpened) return;
@@ -4633,6 +4641,51 @@ function initTimelineOperations() {
                 const initialEndSec = initialStartSec + initialDurSec;
                 window.isTransformInteracting = true;
 
+                // Support batch trimming for multi-selected layers
+                const isMultiSelectState = (typeof isSelectorMode !== 'undefined' && isSelectorMode) || (window.selectedLayerIds && window.selectedLayerIds.size > 1);
+                const isMultiTrimming = isMultiSelectState && (window.selectedLayerIds ? window.selectedLayerIds.has(layer.id) : false);
+                let multiTrimLayers = [];
+                if (isMultiTrimming) {
+                  const currentLayers = currentProjectState?.layers || [];
+                  multiTrimLayers = currentLayers.filter(l => (typeof isLayerSelected === 'function' ? isLayerSelected(l.id) : window.selectedLayerIds?.has(l.id))).map(l => {
+                    const sInitPx = l.startPx || 0;
+                    const sWidthPx = l.widthPx || 320;
+                    const sInitSec = l.startSec !== undefined ? l.startSec : (sInitPx / curPps);
+                    const sDurSec = l.durationSec !== undefined ? l.durationSec : (sWidthPx / curPps);
+                    const sClipEl = document.querySelector(`.timeline-clip-block[data-layer-id="${l.id}"]`);
+                    const sLane = sClipEl?.closest('.timeline-lane-track');
+                    return {
+                      layer: l,
+                      initialStartPx: sInitPx,
+                      initialWidthPx: sWidthPx,
+                      fixedRightPx: sInitPx + sWidthPx,
+                      initialStartSec: sInitSec,
+                      initialDurSec: sDurSec,
+                      initialEndSec: sInitSec + sDurSec,
+                      initialOffsetSec: l.sourceOffsetSec || 0,
+                      totalMediaDur: (l.type === 'video' || l.type === 'audio') ? getLayerMediaDuration(l) : null,
+                      clipEl: sClipEl,
+                      lane: sLane,
+                      initialKeyframes: l.keyframes ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.keyframes) : (Array.isArray(l.keyframes) ? [] : JSON.parse(JSON.stringify(l.keyframes)))) : null
+                    };
+                  });
+                } else {
+                  multiTrimLayers = [{
+                    layer: layer,
+                    initialStartPx: initialStartPx,
+                    initialWidthPx: initialWidthPx,
+                    fixedRightPx: fixedRightPx,
+                    initialStartSec: initialStartSec,
+                    initialDurSec: initialDurSec,
+                    initialEndSec: initialEndSec,
+                    initialOffsetSec: initialOffsetSec,
+                    totalMediaDur: totalMediaDur,
+                    clipEl: clipEl,
+                    lane: lane,
+                    initialKeyframes: layer.keyframes ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(layer.keyframes) : (Array.isArray(layer.keyframes) ? [] : JSON.parse(JSON.stringify(layer.keyframes)))) : null
+                  }];
+                }
+
                 function onPointerMove(moveEvent) {
                   const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
                   const deltaX = moveEvent.clientX - startPointerX;
@@ -4640,7 +4693,9 @@ function initTimelineOperations() {
 
                   // Snap trimming start to beatmarks, other layers depan/belakang, and playhead
                   const snapTargets = (typeof getTimelineSnapTargets === 'function') ? getTimelineSnapTargets(layer.id, true) : [];
-                  const snap = (typeof findTimelineSnap === 'function') ? findTimelineSnap(newStartPx, snapTargets, 10) : null;
+                  const multiIds = new Set(multiTrimLayers.map(m => m.layer.id));
+                  const filteredSnapTargets = snapTargets.filter(st => !multiIds.has(st.layerId));
+                  const snap = (typeof findTimelineSnap === 'function') ? findTimelineSnap(newStartPx, filteredSnapTargets, 10) : null;
                   if (snap) {
                     newStartPx = snap.px;
                     if (typeof showTimelineSnapGuide === 'function') showTimelineSnapGuide(snap.px);
@@ -4653,10 +4708,13 @@ function initTimelineOperations() {
                     window._lastTrimSnapPx = null;
                   }
 
+                  const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || 60);
+                  const minDurSec = 1 / safeFps;
+
+                  // Calculate primary shift
                   const isTimeRemap = (layer.speedMode === 'time_remap');
                   const effSpeed = (layer.speed !== undefined && layer.speed !== 0) ? Math.abs(layer.speed) : 1.0;
 
-                  // Never expand before 00:00:00 of original media in normal Speed mode
                   if (!isTimeRemap && totalMediaDur !== null) {
                     const maxExtendLeftSec = initialOffsetSec / effSpeed;
                     const maxExtendLeftPx = Math.round(maxExtendLeftSec * activePps);
@@ -4672,8 +4730,6 @@ function initTimelineOperations() {
                     newStartPx = fixedRightPx - minWidth;
                   }
 
-                  const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || 60);
-                  const minDurSec = 1 / safeFps;
                   const fixedRightSec = Math.round((fixedRightPx / activePps) * safeFps) / safeFps;
                   let minAllowedSec = 0;
                   if (!isTimeRemap && totalMediaDur !== null) {
@@ -4683,35 +4739,71 @@ function initTimelineOperations() {
                   if (targetStartSec > fixedRightSec - minDurSec) {
                     targetStartSec = fixedRightSec - minDurSec;
                   }
-                  layer.startSec = Math.max(0, targetStartSec);
-                  layer.durationSec = Math.max(minDurSec, Math.round((fixedRightSec - layer.startSec) * safeFps) / safeFps);
-                  layer.startPx = Math.round(layer.startSec * activePps);
-                  layer.widthPx = Math.max(minWidth, Math.round((layer.startSec + layer.durationSec) * activePps) - layer.startPx);
-                  layer.isDurationExplicit = true;
-                  layer._userTrimmed = true;
+                  const primaryShiftSec = targetStartSec - initialStartSec;
 
-                  if (totalMediaDur !== null) {
-                    if (layer.speed !== undefined && layer.speed < 0) {
-                      layer.sourceOffsetSec = initialOffsetSec;
-                    } else {
-                      const shiftedSec = layer.startSec - initialStartSec;
-                      layer.sourceOffsetSec = Math.max(0, Math.min(totalMediaDur, initialOffsetSec + shiftedSec * effSpeed));
+                  // Apply to all layers in batch (or single)
+                  multiTrimLayers.forEach(m => {
+                    const mLayer = m.layer;
+                    const mIsTimeRemap = (mLayer.speedMode === 'time_remap');
+                    const mEffSpeed = (mLayer.speed !== undefined && mLayer.speed !== 0) ? Math.abs(mLayer.speed) : 1.0;
+                    const mFixedRightSec = Math.round((m.fixedRightPx / activePps) * safeFps) / safeFps;
+
+                    let mMinAllowedSec = 0;
+                    if (!mIsTimeRemap && m.totalMediaDur !== null) {
+                      mMinAllowedSec = Math.max(0, m.initialStartSec - (m.initialOffsetSec / mEffSpeed));
                     }
-                  }
+                    let mTargetStartSec = Math.max(mMinAllowedSec, Math.round((m.initialStartSec + primaryShiftSec) * safeFps) / safeFps);
+                    if (mTargetStartSec > mFixedRightSec - minDurSec) {
+                      mTargetStartSec = mFixedRightSec - minDurSec;
+                    }
 
-                  clipEl.style.left = `${layer.startPx}px`;
-                  clipEl.style.width = `${layer.widthPx}px`;
-                  if (!isDesktop || !layer._kfExpanded) {
-                    renderLayerKeyframes(layer, clipEl);
-                  } else {
-                    const curStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / activePps);
-                    const curEnd = curStart + (layer.durationSec || 0);
-                    lane.querySelectorAll('.desktop-kf-diamond').forEach(d => {
-                      const t = Number(d.dataset.time);
-                      d.classList.toggle('is-out-of-bounds', t < curStart - 0.001 || t > curEnd + 0.001);
-                    });
-                  }
-                  if (layer.type === 'audio') renderAudioClipWaveform(layer, clipEl);
+                    mLayer.startSec = Math.max(0, mTargetStartSec);
+                    mLayer.durationSec = Math.max(minDurSec, Math.round((mFixedRightSec - mLayer.startSec) * safeFps) / safeFps);
+                    mLayer.startPx = Math.round(mLayer.startSec * activePps);
+                    mLayer.widthPx = Math.max(minWidth, Math.round((mLayer.startSec + mLayer.durationSec) * activePps) - mLayer.startPx);
+                    mLayer.isDurationExplicit = true;
+                    mLayer._userTrimmed = true;
+
+                    if (m.totalMediaDur !== null) {
+                      if (mLayer.speed !== undefined && mLayer.speed < 0) {
+                        mLayer.sourceOffsetSec = m.initialOffsetSec;
+                      } else {
+                        const shiftedSec = mLayer.startSec - m.initialStartSec;
+                        mLayer.sourceOffsetSec = Math.max(0, Math.min(m.totalMediaDur, m.initialOffsetSec + shiftedSec * mEffSpeed));
+                      }
+                    }
+
+                    // Shift layer keyframes synchronously with startSec change
+                    if (m.initialKeyframes && mLayer.keyframes) {
+                      const shiftedStartSec = mLayer.startSec - m.initialStartSec;
+                      for (const [p, kfs] of Object.entries(m.initialKeyframes)) {
+                        if (!Array.isArray(kfs) || !Array.isArray(mLayer.keyframes[p])) continue;
+                        kfs.forEach((initKf, idx) => {
+                          const curKf = mLayer.keyframes[p][idx];
+                          if (curKf) {
+                            curKf.time = Math.max(0, Number((initKf.time + shiftedStartSec).toFixed(4)));
+                          }
+                        });
+                      }
+                    }
+
+                    if (m.clipEl) {
+                      m.clipEl.style.left = `${mLayer.startPx}px`;
+                      m.clipEl.style.width = `${mLayer.widthPx}px`;
+                      if (!isDesktop || !mLayer._kfExpanded) {
+                        renderLayerKeyframes(mLayer, m.clipEl);
+                      } else if (m.lane) {
+                        const curStart = mLayer.startSec !== undefined ? mLayer.startSec : ((mLayer.startPx || 0) / activePps);
+                        const curEnd = curStart + (mLayer.durationSec || 0);
+                        m.lane.querySelectorAll('.desktop-kf-diamond').forEach(d => {
+                          const t = Number(d.dataset.time);
+                          d.classList.toggle('is-out-of-bounds', t < curStart - 0.001 || t > curEnd + 0.001);
+                        });
+                      }
+                      if (mLayer.type === 'audio') renderAudioClipWaveform(mLayer, m.clipEl);
+                    }
+                  });
+
                   if (typeof renderTimelineLinkConnectors === 'function') renderTimelineLinkConnectors();
                   redrawComposition();
                   updateTimelinePosition(panX, true);
@@ -4728,24 +4820,30 @@ function initTimelineOperations() {
 
                   const fps = (typeof getProjectFps === 'function') ? getProjectFps() : 60;
                   const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
-                  layer.startSec = Math.round(layer.startSec * fps) / fps;
-                  layer.durationSec = Math.max(1 / fps, Math.round(layer.durationSec * fps) / fps);
-                  layer.startPx = Math.round(layer.startSec * pps);
-                  layer.widthPx = Math.max(minWidth, Math.round((layer.startSec + layer.durationSec) * pps) - layer.startPx);
-                  clipEl.style.left = `${layer.startPx}px`;
-                  clipEl.style.width = `${layer.widthPx}px`;
-                  if (typeof syncLayerKeyframeMarkersInPlace === 'function') {
-                    syncLayerKeyframeMarkersInPlace(layer);
-                  } else {
-                    renderLayerKeyframes(layer, clipEl);
-                  }
-                  if (layer.type === 'audio') renderAudioClipWaveform(layer, clipEl);
-                  if (typeof updateCutBarRowState === 'function') updateCutBarRowState();
 
-                  invalidatePreviewCacheForLayer(layer, initialStartSec, initialEndSec);
-                  if ((layer.type === 'video' || layer.type === 'precomp') && window.VideoFrameExtractor) {
-                    window.VideoFrameExtractor.extractLayerRange(layer);
-                  }
+                  multiTrimLayers.forEach(m => {
+                    const mLayer = m.layer;
+                    mLayer.startSec = Math.round(mLayer.startSec * fps) / fps;
+                    mLayer.durationSec = Math.max(1 / fps, Math.round(mLayer.durationSec * fps) / fps);
+                    mLayer.startPx = Math.round(mLayer.startSec * pps);
+                    mLayer.widthPx = Math.max(minWidth, Math.round((mLayer.startSec + mLayer.durationSec) * pps) - mLayer.startPx);
+                    if (m.clipEl) {
+                      m.clipEl.style.left = `${mLayer.startPx}px`;
+                      m.clipEl.style.width = `${mLayer.widthPx}px`;
+                      if (typeof syncLayerKeyframeMarkersInPlace === 'function') {
+                        syncLayerKeyframeMarkersInPlace(mLayer);
+                      } else {
+                        renderLayerKeyframes(mLayer, m.clipEl);
+                      }
+                      if (mLayer.type === 'audio') renderAudioClipWaveform(mLayer, m.clipEl);
+                    }
+                    invalidatePreviewCacheForLayer(mLayer, m.initialStartSec, m.initialEndSec);
+                    if ((mLayer.type === 'video' || mLayer.type === 'precomp') && window.VideoFrameExtractor) {
+                      window.VideoFrameExtractor.extractLayerRange(mLayer);
+                    }
+                  });
+
+                  if (typeof updateCutBarRowState === 'function') updateCutBarRowState();
                   redrawComposition();
                   saveCurrentProjectLayers();
                   updateTimelineDuration(true);
@@ -4781,6 +4879,47 @@ function initTimelineOperations() {
                 const initialEndSec = initialStartSec + initialDurSec;
                 window.isTransformInteracting = true;
 
+                // Support batch duration trimming for multi-selected layers
+                const isMultiSelectState = (typeof isSelectorMode !== 'undefined' && isSelectorMode) || (window.selectedLayerIds && window.selectedLayerIds.size > 1);
+                const isMultiTrimming = isMultiSelectState && (window.selectedLayerIds ? window.selectedLayerIds.has(layer.id) : false);
+                let multiTrimLayers = [];
+                if (isMultiTrimming) {
+                  const currentLayers = currentProjectState?.layers || [];
+                  multiTrimLayers = currentLayers.filter(l => (typeof isLayerSelected === 'function' ? isLayerSelected(l.id) : window.selectedLayerIds?.has(l.id))).map(l => {
+                    const sInitPx = l.startPx || 0;
+                    const sWidthPx = l.widthPx || 320;
+                    const sInitSec = l.startSec !== undefined ? l.startSec : (sInitPx / curPps);
+                    const sDurSec = l.durationSec !== undefined ? l.durationSec : (sWidthPx / curPps);
+                    const sClipEl = document.querySelector(`.timeline-clip-block[data-layer-id="${l.id}"]`);
+                    const sLane = sClipEl?.closest('.timeline-lane-track');
+                    return {
+                      layer: l,
+                      initialStartPx: sInitPx,
+                      initialWidthPx: sWidthPx,
+                      initialStartSec: sInitSec,
+                      initialDurSec: sDurSec,
+                      initialEndSec: sInitSec + sDurSec,
+                      initialOffsetSec: l.sourceOffsetSec || 0,
+                      totalMediaDur: (l.type === 'video' || l.type === 'audio') ? getLayerMediaDuration(l) : null,
+                      clipEl: sClipEl,
+                      lane: sLane
+                    };
+                  });
+                } else {
+                  multiTrimLayers = [{
+                    layer: layer,
+                    initialStartPx: layer.startPx || 0,
+                    initialWidthPx: initialWidthPx,
+                    initialStartSec: initialStartSec,
+                    initialDurSec: initialDurSec,
+                    initialEndSec: initialEndSec,
+                    initialOffsetSec: currentOffsetSec,
+                    totalMediaDur: totalMediaDur,
+                    clipEl: clipEl,
+                    lane: lane
+                  }];
+                }
+
                 function onPointerMove(moveEvent) {
                   const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
                   const deltaX = moveEvent.clientX - startPointerX;
@@ -4788,7 +4927,9 @@ function initTimelineOperations() {
 
                   // Snap trimming end to beatmarks, other layers depan/belakang, and playhead
                   const snapTargets = (typeof getTimelineSnapTargets === 'function') ? getTimelineSnapTargets(layer.id, true) : [];
-                  const snap = (typeof findTimelineSnap === 'function') ? findTimelineSnap(rawEndPx, snapTargets, 10) : null;
+                  const multiIds = new Set(multiTrimLayers.map(m => m.layer.id));
+                  const filteredSnapTargets = snapTargets.filter(st => !multiIds.has(st.layerId));
+                  const snap = (typeof findTimelineSnap === 'function') ? findTimelineSnap(rawEndPx, filteredSnapTargets, 10) : null;
                   if (snap) {
                     rawEndPx = snap.px;
                     if (typeof showTimelineSnapGuide === 'function') showTimelineSnapGuide(snap.px);
@@ -4813,27 +4954,48 @@ function initTimelineOperations() {
                     const maxAllowedEndSec = curStartSec + maxAvailableDurSec;
                     targetEndSec = Math.min(maxAllowedEndSec, targetEndSec);
                   }
-                  const oldDurSec = initialDurSec;
-                  layer.durationSec = Math.max(minDurSec, Math.round((targetEndSec - curStartSec) * safeFps) / safeFps);
-                  layer.widthPx = Math.max(minWidth, Math.round((curStartSec + layer.durationSec) * activePps) - (layer.startPx || 0));
-                  if (layer.speed !== undefined && layer.speed < 0 && totalMediaDur !== null) {
-                    const deltaDur = oldDurSec - layer.durationSec;
-                    layer.sourceOffsetSec = Math.max(0, Math.min(totalMediaDur, currentOffsetSec + deltaDur * effSpeed));
-                  }
-                  layer.isDurationExplicit = true;
-                  layer._userTrimmed = true;
+                  const primaryNewDurSec = Math.max(minDurSec, Math.round((targetEndSec - curStartSec) * safeFps) / safeFps);
+                  const deltaDurSec = primaryNewDurSec - initialDurSec;
 
-                  clipEl.style.width = `${layer.widthPx}px`;
-                  if (!isDesktop || !layer._kfExpanded) {
-                    renderLayerKeyframes(layer, clipEl);
-                  } else {
-                    const curEnd = curStartSec + (layer.durationSec || 0);
-                    lane.querySelectorAll('.desktop-kf-diamond').forEach(d => {
-                      const t = Number(d.dataset.time);
-                      d.classList.toggle('is-out-of-bounds', t < curStartSec - 0.001 || t > curEnd + 0.001);
-                    });
-                  }
-                  if (layer.type === 'audio') renderAudioClipWaveform(layer, clipEl);
+                  // Apply to all trimmed layers
+                  multiTrimLayers.forEach(m => {
+                    const mLayer = m.layer;
+                    const mIsTimeRemap = (mLayer.speedMode === 'time_remap');
+                    const mEffSpeed = (mLayer.speed !== undefined && mLayer.speed !== 0) ? Math.abs(mLayer.speed) : 1.0;
+                    const mCurStartSec = mLayer.startSec !== undefined ? mLayer.startSec : ((mLayer.startPx || 0) / activePps);
+                    let mTargetDurSec = Math.max(minDurSec, Math.round((m.initialDurSec + deltaDurSec) * safeFps) / safeFps);
+
+                    if (!mIsTimeRemap && m.totalMediaDur !== null) {
+                      const mMaxAvailableDurSec = Math.max(minDurSec, (m.totalMediaDur - m.initialOffsetSec) / mEffSpeed);
+                      mTargetDurSec = Math.min(mMaxAvailableDurSec, mTargetDurSec);
+                    }
+
+                    const mOldDurSec = mLayer.durationSec || m.initialDurSec;
+                    mLayer.durationSec = Math.max(minDurSec, mTargetDurSec);
+                    mLayer.widthPx = Math.max(minWidth, Math.round((mCurStartSec + mLayer.durationSec) * activePps) - (mLayer.startPx || 0));
+
+                    if (mLayer.speed !== undefined && mLayer.speed < 0 && m.totalMediaDur !== null) {
+                      const dDur = mOldDurSec - mLayer.durationSec;
+                      mLayer.sourceOffsetSec = Math.max(0, Math.min(m.totalMediaDur, m.initialOffsetSec + dDur * mEffSpeed));
+                    }
+                    mLayer.isDurationExplicit = true;
+                    mLayer._userTrimmed = true;
+
+                    if (m.clipEl) {
+                      m.clipEl.style.width = `${mLayer.widthPx}px`;
+                      if (!isDesktop || !mLayer._kfExpanded) {
+                        renderLayerKeyframes(mLayer, m.clipEl);
+                      } else if (m.lane) {
+                        const curEnd = mCurStartSec + (mLayer.durationSec || 0);
+                        m.lane.querySelectorAll('.desktop-kf-diamond').forEach(d => {
+                          const t = Number(d.dataset.time);
+                          d.classList.toggle('is-out-of-bounds', t < mCurStartSec - 0.001 || t > curEnd + 0.001);
+                        });
+                      }
+                      if (mLayer.type === 'audio') renderAudioClipWaveform(mLayer, m.clipEl);
+                    }
+                  });
+
                   const curTrimEndSec = (layer.startSec !== undefined ? layer.startSec : (layer.startPx / activePps)) + (layer.durationSec || 0);
                   const rulerDuration = (typeof lastGeneratedDuration !== 'undefined') ? lastGeneratedDuration : (typeof window !== 'undefined' && typeof window.lastGeneratedDuration === 'number' ? window.lastGeneratedDuration : 0);
                   if (curTrimEndSec > rulerDuration) {
@@ -4859,22 +5021,28 @@ function initTimelineOperations() {
 
                   const fps = (typeof getProjectFps === 'function') ? getProjectFps() : 60;
                   const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
-                  const curStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
-                  layer.durationSec = Math.max(1 / fps, Math.round(layer.durationSec * fps) / fps);
-                  layer.widthPx = Math.max(minWidth, Math.round((curStartSec + layer.durationSec) * pps) - (layer.startPx || 0));
-                  clipEl.style.width = `${layer.widthPx}px`;
-                  if (typeof syncLayerKeyframeMarkersInPlace === 'function') {
-                    syncLayerKeyframeMarkersInPlace(layer);
-                  } else {
-                    renderLayerKeyframes(layer, clipEl);
-                  }
-                  if (layer.type === 'audio') renderAudioClipWaveform(layer, clipEl);
-                  if (typeof updateCutBarRowState === 'function') updateCutBarRowState();
 
-                  invalidatePreviewCacheForLayer(layer, initialStartSec, initialEndSec);
-                  if ((layer.type === 'video' || layer.type === 'precomp') && window.VideoFrameExtractor) {
-                    window.VideoFrameExtractor.extractLayerRange(layer);
-                  }
+                  multiTrimLayers.forEach(m => {
+                    const mLayer = m.layer;
+                    const curStartSec = mLayer.startSec !== undefined ? mLayer.startSec : ((mLayer.startPx || 0) / pps);
+                    mLayer.durationSec = Math.max(1 / fps, Math.round(mLayer.durationSec * fps) / fps);
+                    mLayer.widthPx = Math.max(minWidth, Math.round((curStartSec + mLayer.durationSec) * pps) - (mLayer.startPx || 0));
+                    if (m.clipEl) {
+                      m.clipEl.style.width = `${mLayer.widthPx}px`;
+                      if (typeof syncLayerKeyframeMarkersInPlace === 'function') {
+                        syncLayerKeyframeMarkersInPlace(mLayer);
+                      } else {
+                        renderLayerKeyframes(mLayer, m.clipEl);
+                      }
+                      if (mLayer.type === 'audio') renderAudioClipWaveform(mLayer, m.clipEl);
+                    }
+                    invalidatePreviewCacheForLayer(mLayer, m.initialStartSec, m.initialEndSec);
+                    if ((mLayer.type === 'video' || mLayer.type === 'precomp') && window.VideoFrameExtractor) {
+                      window.VideoFrameExtractor.extractLayerRange(mLayer);
+                    }
+                  });
+
+                  if (typeof updateCutBarRowState === 'function') updateCutBarRowState();
                   redrawComposition();
                   saveCurrentProjectLayers();
                   updateTimelineDuration(true);

@@ -138,17 +138,23 @@
 
     _getProjectBaseDims(fallbackW, fallbackH) {
       const proj = window.currentProjectState || {};
-      const aspect = proj.aspectRatio || '16:9';
-      const res = proj.resolution || '1080p';
-      let baseDims = window.getProjectDimensions(res, aspect);
       if (window.currentActivePrecomp) {
-        const cw = Math.round(Math.abs(window.currentActivePrecomp.mediaWidth || window.currentActivePrecomp.scaleW || baseDims[0]));
-        const ch = Math.round(Math.abs(window.currentActivePrecomp.mediaHeight || window.currentActivePrecomp.scaleH || baseDims[1]));
-        baseDims = [cw, ch];
+        const cw = Math.round(Math.abs(window.currentActivePrecomp.mediaWidth || window.currentActivePrecomp.scaleW || 0));
+        const ch = Math.round(Math.abs(window.currentActivePrecomp.mediaHeight || window.currentActivePrecomp.scaleH || 0));
+        if (cw > 0 && ch > 0) return { baseW: cw, baseH: ch };
       }
-      const baseW = proj._baseW || proj.width || baseDims[0] || fallbackW;
-      const baseH = proj._baseH || proj.height || baseDims[1] || fallbackH;
-      return { baseW, baseH };
+      let baseW = proj._baseW || proj.baseW || proj.width || 0;
+      let baseH = proj._baseH || proj.baseH || proj.height || 0;
+      if (!baseW || !baseH) {
+        if (typeof window.getProjectDimensions === 'function' && proj.resolution && proj.aspectRatio) {
+          const dims = window.getProjectDimensions(proj.resolution, proj.aspectRatio);
+          if (dims && dims.length >= 2) {
+            baseW = dims[0];
+            baseH = dims[1];
+          }
+        }
+      }
+      return { baseW: baseW || fallbackW || 1, baseH: baseH || fallbackH || 1 };
     },
 
     _drawSnapGuides(ctx, w, h) {
@@ -187,7 +193,7 @@
 
       const colors = this._getThemeColors();
       const { baseW, baseH } = this._getProjectBaseDims(w, h);
-      const bufferScale = (window._lastBufferScale) || (w / (baseW || 1920));
+      const bufferScale = (window._lastBufferScale) || (baseW > 0 ? (w / baseW) : 1);
       const fps = (typeof window.getProjectFps === 'function') ? window.getProjectFps() : 60;
       const currentSec = (typeof window.getCurrentPlayheadTime === 'function') ? window.getCurrentPlayheadTime() : 0;
 

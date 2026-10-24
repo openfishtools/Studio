@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Clean All Beatmarks Button (`editor.html`, `desktop.html`, `js/editor/editor-layers.js`, `js/app/desktop.js`)**: Added a dedicated "Clean All Beatmarks" button (`#btn-beatmark-clean-all`) with `delete_sweep` icon in the beatmark drawer/inspector panel next to the remove beatmark button. Clicking it removes all beatmarks and marker names with an undo/redo history snapshot, live ruler refresh, and toast confirmation.
+
+### Improved
+- **OS & Mobile Media Player Notification Suppression (`js/media/fish-audio-engine.js`, `js/editor/editor-media.js`, `js/editor/editor-timeline-core.js`)**: Suppressed browser/OS Media Session integration (`navigator.mediaSession.playbackState = 'none'`, `metadata = null`, cleared action handlers, and `disableRemotePlayback`/`playsinline` attributes on all audio elements) so playing the timeline in Studio does not spawn external music player popups or lockscreen/notification shade media widgets across PC (Firefox, Chrome) and mobile devices.
+
+### Fixed
+- **Beatmark FPS Alignment & Navigation Loop Fix (`js/editor/editor-timeline-core.js`, `js/app/desktop.js`, `js/editor/editor-layers.js`)**: Fixed beatmark addition, dragging, and detection to strictly quantize beatmark timestamps to the project's exact FPS frame boundaries (`Math.round(sec * fps) / fps`) with dynamic half-frame tolerance (`0.5 / fps`), preventing playhead from falling off-frame or getting trapped when navigating forward or backward between beatmarks. Re-quantizes and deduplicates existing beatmarks when changing project FPS in `setTimelineFps`.
+
 ## [0.6.3] - 2026-10-20
 
 ### Added

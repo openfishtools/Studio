@@ -1840,7 +1840,7 @@
         for (let i = 0; i < beatmarks.length; i++) {
           const bm = beatmarks[i];
           if (Math.abs(targetSec - bm) * pps <= 8) {
-            targetSec = bm;
+            targetSec = Math.round(bm * fps) / fps;
             break;
           }
         }
@@ -3463,6 +3463,7 @@
       }).catch(() => {});
     } catch (_) {}
   }
+  window.saveDesktopMarkerNames = saveDesktopMarkerNames;
 
   function syncDesktopMarkerLabels() {
     const markerNames = (window.currentProjectState && window.currentProjectState.markerNames) || {};
@@ -3471,13 +3472,15 @@
       const timeVal = parseFloat(item.dataset.time);
       if (isNaN(timeVal)) return;
 
+      const fps = window.currentTimelineFps || (window.currentProjectState && window.currentProjectState.fps) || 60;
+      const tolerance = 0.5 / fps;
       let name = '';
       if (markerNames[timeVal] !== undefined) {
         name = markerNames[timeVal];
       } else if (markerNames[String(timeVal)] !== undefined) {
         name = markerNames[String(timeVal)];
       } else {
-        const key = Object.keys(markerNames).find(k => Math.abs(parseFloat(k) - timeVal) <= 0.05);
+        const key = Object.keys(markerNames).find(k => Math.abs(parseFloat(k) - timeVal) <= tolerance);
         if (key) name = markerNames[key];
       }
 
@@ -3519,8 +3522,9 @@
     const currentSec = (typeof window.getCurrentPlayheadTime === 'function')
       ? window.getCurrentPlayheadTime()
       : 0;
+    const fps = window.currentTimelineFps || (window.currentProjectState && window.currentProjectState.fps) || 60;
     const beatmarks = (window.currentProjectState && window.currentProjectState.beatmarks) || [];
-    const isNear = beatmarks.some(b => Math.abs(b - currentSec) <= 0.05);
+    const isNear = beatmarks.some(b => Math.abs(b - currentSec) <= 0.5 / fps);
     btnAddBm.setAttribute('title', isNear ? 'Playhead on Marker (M)' : 'Add Marker / Beatmark at Playhead (M)');
   }
 
@@ -3533,7 +3537,8 @@
     const markerNames = (window.currentProjectState && window.currentProjectState.markerNames) || {};
     let existingName = markerNames[time] || markerNames[String(time)] || '';
     if (!existingName) {
-      const key = Object.keys(markerNames).find(k => Math.abs(parseFloat(k) - time) <= 0.05);
+      const fps = window.currentTimelineFps || (window.currentProjectState && window.currentProjectState.fps) || 60;
+      const key = Object.keys(markerNames).find(k => Math.abs(parseFloat(k) - time) <= 0.5 / fps);
       if (key) existingName = markerNames[key];
     }
 
@@ -3575,7 +3580,8 @@
         e.stopPropagation();
         btnAddBm.blur();
         btnAddBm.classList.add('is-pressed');
-        setTimeout(() => btnAddBm.classList.remove('is-pressed'), 180);
+        if (btnAddBm._pressTimer) clearTimeout(btnAddBm._pressTimer);
+        btnAddBm._pressTimer = setTimeout(() => btnAddBm.classList.remove('is-pressed'), 35);
         if (typeof window.toggleBeatmarkAtCurrentTime === 'function') {
           const isPlayingNow = (typeof window.getIsTimelinePlaying === 'function' && window.getIsTimelinePlaying());
           window.toggleBeatmarkAtCurrentTime(isPlayingNow ? 'add' : 'toggle');
@@ -3768,7 +3774,8 @@
             if (Math.abs(newSec - curPlayheadSec) * pps < 6) {
               newSec = curPlayheadSec;
             }
-            currentTime = Math.round(newSec * 1000) / 1000;
+            const fps = window.currentTimelineFps || (window.currentProjectState && window.currentProjectState.fps) || 60;
+            currentTime = Math.round(newSec * fps) / fps;
             const newLeftPx = Math.round(currentTime * pps);
             item.style.left = `${newLeftPx}px`;
 
@@ -3794,7 +3801,8 @@
 
             // Update currentProjectState.beatmarks
             if (window.currentProjectState && Array.isArray(window.currentProjectState.beatmarks)) {
-              const idx = window.currentProjectState.beatmarks.findIndex(b => Math.abs(b - initialTime) <= 0.05);
+              const fps = window.currentTimelineFps || (window.currentProjectState && window.currentProjectState.fps) || 60;
+              const idx = window.currentProjectState.beatmarks.findIndex(b => Math.abs(b - initialTime) <= 0.5 / fps);
               if (idx !== -1) {
                 window.currentProjectState.beatmarks[idx] = finalTime;
                 window.currentProjectState.beatmarks.sort((a, b) => a - b);

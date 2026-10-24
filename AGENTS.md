@@ -230,3 +230,14 @@ Verifies that all 11 modular editor files in `Studio/js/editor/` strictly adhere
 - **No Remote Git Inspections/Checkouts Without Prior Notice**: Never check remote GitHub, fetch, pull, or checkout branches without explicitly informing and getting confirmation from the user first.
 - **Absolute Preservation of Local State**: Always respect and preserve active uncommitted edits and untracked files. Never overwrite or discard user work in the working directory under any circumstance.
 
+## 18. Zero Hardcoded Dimension Tunnels & Strict Fallback Policy
+- **STRICTLY FORBIDDEN to Hardcode Composition Dimensions**: Never write fallback tunnels like `|| 1920`, `|| 1080`, or default `[1920, 1080]` when reading or calculating composition/layer dimensions.
+- **Dynamic Resolution Order**: Always resolve composition dimensions strictly in order:
+  1. `window.currentActivePrecomp` (if inside precompose)
+  2. `currentProjectState._baseW` and `currentProjectState._baseH` (active backing canvas dimensions)
+  3. `currentProjectState.baseW` and `currentProjectState.baseH`
+  4. `currentProjectState.width` and `currentProjectState.height`
+  5. `window.getProjectDimensions(ps.resolution, ps.aspectRatio)` (only when both parameters are explicitly present)
+- **Toast Error on Failure, NO Fake Fallbacks**: If composition dimensions cannot be determined, NEVER invent fallback dimensions (which destroys 1:1 square, 9:16 portrait, or custom ratios). Immediately abort the operation and show an error toast (`showEditorToast('Gagal menentukan ukuran komposisi proyek', 2400, 'error')`).
+
+

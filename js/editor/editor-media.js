@@ -279,6 +279,25 @@
           vidAudio.muted = false;
           vidAudio.loop = false;
           vidAudio.preload = 'auto';
+          vidAudio.setAttribute('playsinline', 'true');
+          vidAudio.setAttribute('disableremoteplayback', 'true');
+          if ('disableRemotePlayback' in vidAudio) {
+            try { vidAudio.disableRemotePlayback = true; } catch (_) {}
+          }
+          try { vidAudio.playsInline = true; } catch (_) {}
+
+          const suppressVidAudio = () => {
+            if (window.FishAudioEngine && typeof window.FishAudioEngine.suppressMediaSession === 'function') {
+              window.FishAudioEngine.suppressMediaSession();
+            } else if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+              try {
+                navigator.mediaSession.playbackState = 'none';
+                navigator.mediaSession.metadata = null;
+              } catch (_) {}
+            }
+          };
+          vidAudio.addEventListener('play', suppressVidAudio, { passive: true });
+          vidAudio.addEventListener('playing', suppressVidAudio, { passive: true });
 
           vidAudio.onloadedmetadata = () => {
             if (window.FishAudioEngine) {
@@ -356,6 +375,25 @@
         audio.muted = !!layer.isMuted;
         audio.loop = false;
         audio.preload = 'auto';
+        audio.setAttribute('playsinline', 'true');
+        audio.setAttribute('disableremoteplayback', 'true');
+        if ('disableRemotePlayback' in audio) {
+          try { audio.disableRemotePlayback = true; } catch (_) {}
+        }
+        try { audio.playsInline = true; } catch (_) {}
+
+        const suppressAudio = () => {
+          if (window.FishAudioEngine && typeof window.FishAudioEngine.suppressMediaSession === 'function') {
+            window.FishAudioEngine.suppressMediaSession();
+          } else if (typeof navigator !== 'undefined' && 'mediaSession' in navigator) {
+            try {
+              navigator.mediaSession.playbackState = 'none';
+              navigator.mediaSession.metadata = null;
+            } catch (_) {}
+          }
+        };
+        audio.addEventListener('play', suppressAudio, { passive: true });
+        audio.addEventListener('playing', suppressAudio, { passive: true });
 
         audio.onloadedmetadata = () => {
           const hasFx = Array.isArray(layer.audioEffects) && layer.audioEffects.some(fx => !fx.disabled);
