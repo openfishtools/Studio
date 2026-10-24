@@ -416,6 +416,8 @@
 
     /**
      * Enforce NLE timeline-locked playback drift correction.
+     * Uses a silent deadzone for steady-state hardware crystal clock playback (zero WSOLA pitch-shifter artifacts),
+     * throttled gentle rate steering only for medium drift, and frame-drop lag resync when the main thread stalls.
      * @param {HTMLMediaElement} el
      * @param {number} targetTime
      * @param {number} currentSpeed
@@ -427,14 +429,30 @@
       if (!el || el.seeking || !isFinite(targetTime)) return false;
       const isVid = el.tagName === 'VIDEO';
       const safeSpeed = Math.max(0.0625, Math.min(8.0, currentSpeed || 1.0));
-      const drift = (el.currentTime || 0) - targetTime;
+      const curTime = el.currentTime || 0;
+      const drift = curTime - targetTime; // positive = audio ran ahead (timeline lagged), negative = audio fell behind
       const absDrift = Math.abs(drift);
-      const driftThreshold = isVid ? Math.max(0.14, 0.10 * safeSpeed) : Math.max(0.085, 0.06 * safeSpeed);
-      const seekCooldownMs = isVid ? 200 : 180;
+
+      // Allow hardware audio pipeline to settle for 280ms right after play() before enforcing drift corrections
+      const sincePlayStartMs = el._playStartPerfMs ? (nowMs - el._playStartPerfMs) : 9999;
+      if (sincePlayStartMs >= 0 && sincePlayStartMs < 280 && absDrift < 0.35) {
+        if (Math.abs((el.playbackRate || safeSpeed) - safeSpeed) > 0.002) {
+          try { el.playbackRate = safeSpeed; } catch (_) {}
+        }
+        return false;
+      }
+
+      // If timeline lagged / dropped frames, audio ran ahead (drift > 0) -> resync sooner (130ms) so audio matches lag like After Effects.
+      // If audio is slightly behind (drift < 0), allow up to 180ms before hard seeking to prevent double-seeks.
+      const driftThreshold = isVid
+        ? Math.max(0.16, 0.12 * safeSpeed)
+        : (drift > 0 ? Math.max(0.13, 0.09 * safeSpeed) : Math.max(0.18, 0.12 * safeSpeed));
+      const seekCooldownMs = isVid ? 240 : 280;
 
       if (absDrift > driftThreshold && (!el._lastHardSeekTime || (nowMs - el._lastHardSeekTime > seekCooldownMs))) {
         try {
           el._lastHardSeekTime = nowMs;
+          el._lastRateSteerTime = nowMs;
           if (!isVid && typeof onHardSeekAudioCallback === 'function') {
             onHardSeekAudioCallback(el);
           }
@@ -442,20 +460,28 @@
             ? Math.max(0, el.duration - 0.01)
             : Infinity;
           el.currentTime = Math.min(Math.max(0, targetTime), maxSeek);
-          el.playbackRate = safeSpeed;
+          if (Math.abs((el.playbackRate || safeSpeed) - safeSpeed) > 0.002) {
+            el.playbackRate = safeSpeed;
+          }
           return true;
         } catch (_) {}
-      } else if (absDrift > 0.015) {
-        // Proportional pitch-safe micro-steering to lock phase to NLE timeline without hard-seek clicks
-        const steerFactor = Math.max(0.92, Math.min(1.08, 1.0 - (drift / Math.max(0.25, safeSpeed)) * 1.4));
-        const steeredRate = Math.max(0.0625, Math.min(8.0, safeSpeed * steerFactor));
-        if (Math.abs((el.playbackRate || safeSpeed) - steeredRate) > 0.004) {
-          try {
-            el.playbackRate = steeredRate;
-          } catch (_) {}
+      } else if (absDrift > 0.055) {
+        // Throttle playbackRate updates to at most once every 220ms and cap steering to gentle ±3%
+        // so browser WSOLA time-stretcher never stutters or sounds sped-up.
+        if (!el._lastRateSteerTime || (nowMs - el._lastRateSteerTime > 220)) {
+          const steerFactor = Math.max(0.97, Math.min(1.03, 1.0 - (drift / Math.max(0.5, safeSpeed)) * 0.35));
+          const steeredRate = Math.max(0.0625, Math.min(8.0, safeSpeed * steerFactor));
+          if (Math.abs((el.playbackRate || safeSpeed) - steeredRate) > 0.005) {
+            try {
+              el._lastRateSteerTime = nowMs;
+              el.playbackRate = steeredRate;
+            } catch (_) {}
+          }
         }
-      } else if (Math.abs((el.playbackRate || safeSpeed) - safeSpeed) > 0.004) {
+      } else if (absDrift < 0.035 && Math.abs((el.playbackRate || safeSpeed) - safeSpeed) > 0.002) {
+        // Deadzone (< 35ms): lock strictly to exact target rate (1.0x) so audio runs crystal-clear on hardware clock
         try {
+          el._lastRateSteerTime = nowMs;
           el.playbackRate = safeSpeed;
         } catch (_) {}
       }

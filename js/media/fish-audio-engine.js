@@ -670,6 +670,8 @@
           if (hasFx) {
             this.attachMediaElement(el);
             this.applyAudioEffects(el, layer.audioEffects);
+          } else if (this.sources.has(el)) {
+            this.detachMediaElement(el);
           }
         }
 
@@ -821,7 +823,7 @@
               ? Math.max(0, el.duration - 0.01)
               : Infinity;
             const clampedTarget = Math.min(Math.max(0, targetTime), maxSeek);
-            if (Math.abs((el.currentTime || 0) - clampedTarget) > 0.015) {
+            if (Math.abs((el.currentTime || 0) - clampedTarget) > 0.025) {
               try {
                 el.currentTime = clampedTarget;
               } catch (_) {}
@@ -830,10 +832,15 @@
               el.muted = !!isMuted;
             } catch (_) {}
             this.setElementGain(el, isMuted ? 0 : currentVol);
-            el.playbackRate = Math.max(0.0625, Math.min(8.0, currentSpeed));
+            const targetRate = Math.max(0.0625, Math.min(8.0, currentSpeed));
+            if (Math.abs((el.playbackRate || 1.0) - targetRate) > 0.002) {
+              el.playbackRate = targetRate;
+            }
+            el._playStartPerfMs = nowMs;
+            el._lastHardSeekTime = nowMs;
             el._lastRateSteerTime = nowMs;
-            el._lastSteeredRate = currentSpeed;
-            el._baseSpeed = currentSpeed;
+            el._lastSteeredRate = targetRate;
+            el._baseSpeed = targetRate;
             el._playStartTime = Date.now();
             el._lastPlaybackStopTime = clampedTarget;
             el.play().catch(() => {});

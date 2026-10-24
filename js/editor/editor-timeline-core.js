@@ -2228,9 +2228,28 @@
         const currentSec = Math.max(0, -panX / pixelsPerSecond);
         const layers = currentProjectState.layers || [];
 
-        // 1. NLE Master Timeline Clock: advance deterministically by elapsed wall-clock time * playbackSpeed
-        const effectiveDeltaSec = Math.min(0.10, rawDeltaSec) * playbackSpeed;
+        // 1. NLE Master Timeline Clock with After Effects-style Real-Time / Frame-Drop Sync:
+        // On the very first rAF callback right after clicking Play (where audio was already primed at startSec),
+        // clamp the initial tick delta to at most 1 frame so initial rAF scheduling latency doesn't jump ahead of audio.
+        const clampedDeltaSec = isFirstTick
+          ? Math.min(frameDuration, Math.max(0, rawDeltaSec))
+          : Math.min(0.085, Math.max(0, rawDeltaSec));
+
+        // Track smoothed actual frame interval to detect sustained render lag (like After Effects real-time preview)
+        if (isFirstTick || !window._nleSmoothedFrameSec) {
+          window._nleSmoothedFrameSec = frameDuration;
+        } else {
+          window._nleSmoothedFrameSec = window._nleSmoothedFrameSec * 0.82 + Math.min(0.12, Math.max(frameDuration, rawDeltaSec)) * 0.18;
+        }
+
+        const effectiveDeltaSec = clampedDeltaSec * playbackSpeed;
         let nextSec = currentSec + effectiveDeltaSec;
+
+        // Calculate actual achieved speed ratio when rendering is heavy (so audio slows down with heavy lag instead of cutting out)
+        const lagRatio = (window._nleSmoothedFrameSec > frameDuration * 1.45)
+          ? Math.max(0.5, Math.min(1.0, frameDuration / window._nleSmoothedFrameSec))
+          : 1.0;
+        const effectiveAudioSpeed = playbackSpeed * (lagRatio < 0.88 ? lagRatio : 1.0);
 
         let nextPan = -(nextSec * pixelsPerSecond);
         if (nextPan <= bounds.min) {
@@ -2239,6 +2258,7 @@
             nextSec = Math.abs(bounds.max) / pixelsPerSecond;
             lastTime = timestamp;
             _playTickCount = 0;
+            window._nleSmoothedFrameSec = frameDuration;
             if (window.FishAudioEngine && typeof window.FishAudioEngine.handleLoopReset === 'function') {
               window.FishAudioEngine.handleLoopReset(layers, nextSec, pixelsPerSecond, playbackSpeed);
             } else if (window.FishAudioEngine) {
@@ -2257,7 +2277,7 @@
           }
         } else if (window.FishAudioEngine) {
           // 2. Slave all active audio/video tracks directly to NLE timeline position nextSec
-          window.FishAudioEngine.syncPlayback(layers, nextSec, pixelsPerSecond, playbackSpeed);
+          window.FishAudioEngine.syncPlayback(layers, nextSec, pixelsPerSecond, effectiveAudioSpeed);
         }
         updateTimelinePosition(nextPan, true);
 

@@ -300,7 +300,8 @@
           vidAudio.addEventListener('playing', suppressVidAudio, { passive: true });
 
           vidAudio.onloadedmetadata = () => {
-            if (window.FishAudioEngine) {
+            const hasFx = Array.isArray(layer.audioEffects) && layer.audioEffects.some(fx => !fx.disabled);
+            if (window.FishAudioEngine && !layer.isMuted && hasFx) {
               window.FishAudioEngine.attachMediaElement(vidAudio);
               window.FishAudioEngine.applyAudioEffects(vidAudio, layer.audioEffects);
             }
