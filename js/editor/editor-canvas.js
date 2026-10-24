@@ -1019,6 +1019,13 @@
         ? Array.from(window.selectedLayerIds)
         : (window.selectedLayerId ? [window.selectedLayerId] : []);
 
+      // Fast-path during active playback: if no layer is selected and grid overlay is off, skip per-frame overlay redraw
+      if (window.isTimelinePlaying && allSelectedIds.length === 0) {
+        if (!window.CanvasOverlay || !window.CanvasOverlay.showGrid) {
+          return;
+        }
+      }
+
       const layers = (currentProjectState && currentProjectState.layers) || [];
       const pixelsPerSecond = window.currentPixelsPerSecond || 80;
 

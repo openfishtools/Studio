@@ -161,7 +161,9 @@
     }
 
     hasFrame(frameIndex, expectedWidth = null, expectedHeight = null, compId = null) {
-      this.syncStateWithProject(null, compId);
+      if (typeof window === 'undefined' || !window.isTimelinePlaying) {
+        this.syncStateWithProject(null, compId);
+      }
       const pool = this.getPool(compId || this.activeCompId);
       const entry = pool.get(frameIndex);
       if (!entry) return false;
@@ -180,7 +182,9 @@
     }
 
     getFrame(frameIndex, expectedWidth = null, expectedHeight = null, compId = null) {
-      this.syncStateWithProject(null, compId);
+      if (typeof window === 'undefined' || !window.isTimelinePlaying) {
+        this.syncStateWithProject(null, compId);
+      }
       const pool = this.getPool(compId || this.activeCompId);
       const entry = pool.get(frameIndex);
       if (!entry) return null;
@@ -291,7 +295,9 @@
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (!sourceCanvas || sourceCanvas.width === 0 || sourceCanvas.height === 0) return;
       const targetComp = compId || this.activeCompId;
-      this.syncStateWithProject(null, targetComp);
+      if (typeof window === 'undefined' || !window.isTimelinePlaying) {
+        this.syncStateWithProject(null, targetComp);
+      }
       const targetPool = this.getPool(targetComp);
       if (this.hasFrame(frameIndex, sourceCanvas.width, sourceCanvas.height, targetComp)) return;
       if (!this._pendingFrames) this._pendingFrames = new Set();

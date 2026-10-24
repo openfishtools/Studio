@@ -810,12 +810,12 @@
           }
         }
 
-        const syncDrawers = !isActivelyPlaying || ((_playTickCount || 0) % 6 === 0);
+        const syncDrawers = !isActivelyPlaying || ((_playTickCount || 0) % 15 === 0);
         if (syncDrawers) {
           if (typeof updateTransformKeyframeBtnState === 'function') {
             updateTransformKeyframeBtnState();
           }
-          if (typeof updateGraphEditorUI === 'function' && typeof currentDrawerSubview !== 'undefined' && currentDrawerSubview === 'graph') {
+          if (!isActivelyPlaying && typeof updateGraphEditorUI === 'function' && typeof currentDrawerSubview !== 'undefined' && currentDrawerSubview === 'graph') {
             updateGraphEditorUI();
           }
           if (typeof syncTransformControllerValues === 'function' && typeof currentDrawerSubview !== 'undefined' && currentDrawerSubview === 'transform') {
@@ -825,7 +825,7 @@
             syncBlendOverlayValues();
             if (typeof updateBlendKeyframeBtnState === 'function') updateBlendKeyframeBtnState();
           }
-          if (typeof syncEffectsRackUI === 'function' && typeof currentDrawerSubview !== 'undefined' && currentDrawerSubview === 'effects') {
+          if (!isActivelyPlaying && typeof syncEffectsRackUI === 'function' && typeof currentDrawerSubview !== 'undefined' && currentDrawerSubview === 'effects') {
             try {
               syncEffectsRackUI();
             } catch (err) {
@@ -2423,13 +2423,15 @@
             const startSec = Math.max(0, -panX / pixelsPerSecond);
             window.playbackPlayStartSec = startSec;
 
+            if (window.PreviewCacheManager) {
+              window.PreviewCacheManager.stopIdleWorker();
+              window.PreviewCacheManager.syncStateWithProject(currentProjectState);
+            }
+
             isPlaying = true;
             window.isTimelinePlaying = true;
             if (window.FishAudioEngine && typeof window.FishAudioEngine.suppressMediaSession === 'function') {
               window.FishAudioEngine.suppressMediaSession();
-            }
-            if (window.PreviewCacheManager) {
-              window.PreviewCacheManager.stopIdleWorker();
             }
             updatePlayButtonUI();
             if (timelineTweenRaf) {

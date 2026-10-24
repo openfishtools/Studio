@@ -623,7 +623,11 @@
     }
 
     syncPlayback(layers, currentSec, pixelsPerSecond = 80, actualSpeedRatio = 1.0) {
-      FishAudioEngine.suppressMediaSession();
+      const nowWall = Date.now();
+      if (!this._lastMediaSessionSuppressMs || (nowWall - this._lastMediaSessionSuppressMs > 1000)) {
+        this._lastMediaSessionSuppressMs = nowWall;
+        FishAudioEngine.suppressMediaSession();
+      }
       if (!this.isUnlocked) {
         if (this._hasUserActivation()) {
           this.unlock();
