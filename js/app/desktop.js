@@ -2364,15 +2364,39 @@
               }
             }
 
-            // Live visual update on all moving clip elements
+            // Live visual update on all moving clip elements & their keyframes
+            const fps = (typeof window.getProjectFps === 'function') ? window.getProjectFps() : 60;
             layerSnapshots.forEach(s => {
-              const newPx = Math.max(0, Math.round(s.initialStartPx + finalDeltaPx));
+              const rawSec = Math.max(0, (s.initialStartPx + finalDeltaPx) / pps);
+              const snappedSec = Math.round(rawSec * fps) / fps;
+              const newPx = Math.round(snappedSec * pps);
               s.layer.startPx = newPx;
-              s.layer.startSec = newPx / pps;
+              s.layer.startSec = snappedSec;
               if (s.clipEl) {
                 s.clipEl.style.left = `${newPx}px`;
               }
+              if (s.initialKeyframes && s.layer.keyframes) {
+                const deltaSec = s.layer.startSec - s.initialStartSec;
+                for (const [prop, kfs] of Object.entries(s.initialKeyframes)) {
+                  if (Array.isArray(kfs) && Array.isArray(s.layer.keyframes[prop])) {
+                    kfs.forEach((initKf, idx) => {
+                      const curKf = s.layer.keyframes[prop][idx];
+                      if (curKf) {
+                        curKf.time = Number(Math.max(0, initKf.time + deltaSec).toFixed(4));
+                      }
+                    });
+                  }
+                }
+                if (s.clipEl && !s.layer._kfExpanded && typeof window.renderLayerKeyframes === 'function') {
+                  window.renderLayerKeyframes(s.layer, s.clipEl);
+                } else if (s.layer._kfExpanded && typeof window.syncLayerKeyframeMarkersInPlace === 'function') {
+                  window.syncLayerKeyframeMarkersInPlace(s.layer);
+                }
+              }
             });
+            if (typeof window.redrawComposition === 'function') {
+              window.redrawComposition();
+            }
           });
         }
       }

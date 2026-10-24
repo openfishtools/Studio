@@ -885,7 +885,7 @@
             const pps = window.currentPixelsPerSecond || (typeof pixelsPerSecond !== 'undefined' ? pixelsPerSecond : 80);
             window.FishAudioEngine.parkPlayback(currentProjectState.layers || [], sec, pps);
           }
-        }, 50);
+        }, 16);
       }
 
       function updateTimelinePosition(newPanX, immediate = false) {
@@ -2226,43 +2226,11 @@
           : 1.0;
 
         const currentSec = Math.max(0, -panX / pixelsPerSecond);
-        const currentFrame = Math.round(currentSec * fps);
         const layers = currentProjectState.layers || [];
 
-        // 1. Synchronize audio playback with timeline position
-        if (window.FishAudioEngine) {
-          window.FishAudioEngine.syncPlayback(layers, currentSec, pixelsPerSecond, playbackSpeed);
-        }
-
-        // 2. Continuous time advance with Master Audio Clock synchronization
-        // Advance timeline time proportionally to actual elapsed time and playback speed multiplier (0.5x, 1x, 1.5x, 2x)
-        const effectiveDeltaSec = Math.min(0.25, rawDeltaSec) * playbackSpeed;
+        // 1. NLE Master Timeline Clock: advance deterministically by elapsed wall-clock time * playbackSpeed
+        const effectiveDeltaSec = Math.min(0.10, rawDeltaSec) * playbackSpeed;
         let nextSec = currentSec + effectiveDeltaSec;
-
-        let masterSecVal = null;
-        let driftVal = null;
-        if (window.FishAudioEngine && _playTickCount > 3 && playbackSpeed === 1.0) {
-          const masterSec = window.FishAudioEngine.getMasterAudioTime(layers, currentSec, pixelsPerSecond);
-          masterSecVal = masterSec;
-          if (masterSec !== null && !isNaN(masterSec) && Number.isFinite(masterSec) && masterSec >= 0) {
-            const drift = masterSec - nextSec;
-            driftVal = drift;
-            // Smooth clock slewing: strictly monotonic forward motion.
-            // NEVER subtract or pull backwards!
-            if (drift >= 0.060) {
-              // Master audio ahead (> 60ms): catch up smoothly
-              nextSec += Math.min(effectiveDeltaSec * 0.35, drift * 0.25);
-            } else if (drift < -0.060 && drift > -0.80) {
-              // Master audio behind (> 60ms, e.g. startup delay): advance timeline at 85% pace so audio naturally catches up
-              nextSec = currentSec + (effectiveDeltaSec * 0.85);
-            } else {
-              // Tightly synchronized within [-60ms, +60ms] deadband: advance at 100% wall-clock pace (zero judder)
-              nextSec = currentSec + effectiveDeltaSec;
-            }
-          }
-        }
-        // Strict invariant: timeline playhead MUST ALWAYS advance forward monotonically (never freeze or jitter backwards)
-        nextSec = Math.max(currentSec + (effectiveDeltaSec * 0.5), nextSec);
 
         let nextPan = -(nextSec * pixelsPerSecond);
         if (nextPan <= bounds.min) {
@@ -2287,6 +2255,9 @@
             }
             return;
           }
+        } else if (window.FishAudioEngine) {
+          // 2. Slave all active audio/video tracks directly to NLE timeline position nextSec
+          window.FishAudioEngine.syncPlayback(layers, nextSec, pixelsPerSecond, playbackSpeed);
         }
         updateTimelinePosition(nextPan, true);
 

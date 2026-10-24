@@ -703,6 +703,16 @@ function initTimelineOperations() {
           });
         }
 
+        const btnBatchFloatSaveElement = document.getElementById('btn-batch-float-save-element');
+        if (btnBatchFloatSaveElement) {
+          btnBatchFloatSaveElement.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof window.openSaveElementModal === 'function') {
+              window.openSaveElementModal();
+            }
+          });
+        }
+
         const btnBatchFloatClose = document.getElementById('btn-batch-float-close');
         if (btnBatchFloatClose) {
           btnBatchFloatClose.addEventListener('click', (e) => {
@@ -1182,6 +1192,16 @@ function initTimelineOperations() {
           });
         }
 
+        const btnSelectAll = document.getElementById('popover-btn-select-all');
+        if (btnSelectAll) {
+          btnSelectAll._bound = true;
+          btnSelectAll.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (window.Popover) window.Popover.close();
+            selectAllTimelineLayers();
+          });
+        }
+
         const btnFitComp = document.getElementById('popover-btn-fit-comp');
         if (btnFitComp) {
           btnFitComp.addEventListener('click', (e) => {
@@ -1525,15 +1545,22 @@ function initTimelineOperations() {
           }
         }
 
-        // 3c. Save as Element State (Single layer only)
+        // 3c. Save as Element State (Single or Multi-layer selection)
         const saveElemBtn = document.getElementById('popover-btn-save-element');
+        const saveElemLabel = document.getElementById('popover-label-save-element');
         if (saveElemBtn) {
-          if (!hasKeyframesSelected && selectedCount === 1 && !isFromEmptyTimeline) {
+          if (!hasKeyframesSelected && selectedCount >= 1 && !isFromEmptyTimeline) {
             saveElemBtn.removeAttribute('disabled');
             saveElemBtn.style.display = 'flex';
+            if (saveElemLabel) {
+              saveElemLabel.textContent = selectedCount > 1 ? `Save as Element (${selectedCount})` : 'Save as Element';
+            }
           } else {
             saveElemBtn.setAttribute('disabled', 'true');
             saveElemBtn.style.display = 'none';
+            if (saveElemLabel) {
+              saveElemLabel.textContent = 'Save as Element';
+            }
           }
         }
 
@@ -1634,7 +1661,24 @@ function initTimelineOperations() {
           .map(l => (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l) : (Array.isArray(l) ? [] : {})));
 
         if (copied.length > 0) {
+          const curPanX = (typeof panX === 'number') ? panX : (window.timelinePanX !== undefined ? window.timelinePanX : 0);
+          const curPps = (typeof pixelsPerSecond === 'number' && pixelsPerSecond > 0) ? pixelsPerSecond : (window.currentPixelsPerSecond || 80);
+          const copyPlayheadSec = (typeof getCurrentPlayheadTime === 'function')
+            ? getCurrentPlayheadTime()
+            : Math.max(0, -curPanX / curPps);
+          const minCopyStartSec = Math.min(...copied.map(l => (l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / curPps))));
+          const maxCopyEndSec = Math.max(...copied.map(l => {
+            const s = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / curPps);
+            const d = l.durationSec !== undefined ? l.durationSec : ((l.widthPx || 320) / curPps);
+            return s + d;
+          }));
+          // Preserve exact playhead offset at copy time when playhead is inside the copied layer(s) span
+          const anchorSec = (copyPlayheadSec >= minCopyStartSec - 0.001 && copyPlayheadSec <= maxCopyEndSec + 0.001)
+            ? copyPlayheadSec
+            : minCopyStartSec;
+
           window.internalLayerClipboard = copied;
+          window.internalLayerClipboardAnchorSec = anchorSec;
           window.lastClipboardType = 'layer';
           if (copied.length === 1 && typeof window.FishAttributesClipboard !== 'undefined' && typeof window.FishAttributesClipboard.syncFromLayer === 'function') {
             window.FishAttributesClipboard.syncFromLayer(copied[0]);
@@ -1663,8 +1707,13 @@ function initTimelineOperations() {
         lastContextClickSec = null;
         if (typeof window !== 'undefined') window.lastContextClickSec = null;
 
-        const minStartSec = Math.min(...window.internalLayerClipboard.map(l => (l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pixelsPerSecond))));
-        const deltaSec = curPlayheadSec - minStartSec;
+        const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || 60);
+        const minStartSec = Math.min(...window.internalLayerClipboard.map(l => (l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / curPps))));
+        const anchorSec = (typeof window.internalLayerClipboardAnchorSec === 'number' && isFinite(window.internalLayerClipboardAnchorSec))
+          ? window.internalLayerClipboardAnchorSec
+          : minStartSec;
+        const rawDeltaSec = Math.max(-minStartSec, curPlayheadSec - anchorSec);
+        const deltaSec = Math.round(rawDeltaSec * safeFps) / safeFps;
 
         // Pass 1: generate unique ID map for all copied layers to preserve internal hierarchy
         const idMap = new Map();
@@ -1674,14 +1723,15 @@ function initTimelineOperations() {
         });
 
         const newPastedIds = [];
+        const newPastedLayers = [];
         window.internalLayerClipboard.forEach((l) => {
-          const origStartSec = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pixelsPerSecond);
-          const newStartSec = Math.max(0, origStartSec + deltaSec);
-          const newStartPx = Math.round(newStartSec * pixelsPerSecond);
+          const origStartSec = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / curPps);
+          const newStartSec = Math.max(0, Math.round((origStartSec + deltaSec) * safeFps) / safeFps);
+          const newStartPx = Math.round(newStartSec * curPps);
           const newId = idMap.get(l.id);
 
           // Deep clone keyframes & shift all times by deltaSec so animation aligns with pasted layer
-          let clonedKeyframes = l.keyframes ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.keyframes) : (Array.isArray(l.keyframes) ? [] : {})) : undefined;
+          let clonedKeyframes = l.keyframes ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.keyframes) : JSON.parse(JSON.stringify(l.keyframes))) : undefined;
           if (clonedKeyframes && Math.abs(deltaSec) > 0.0001) {
             Object.keys(clonedKeyframes).forEach(prop => {
               if (Array.isArray(clonedKeyframes[prop])) {
@@ -1697,7 +1747,7 @@ function initTimelineOperations() {
           // Deep clone 100% of all effects and remap their keyframes
           let clonedEffects = undefined;
           if (Array.isArray(l.effects)) {
-            clonedEffects = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.effects) : (Array.isArray(l.effects) ? [] : {}));
+            clonedEffects = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.effects) : JSON.parse(JSON.stringify(l.effects)));
             clonedEffects.forEach(fx => {
               const oldId = fx.id;
               const newFxId = 'fx_' + (fx.type || 'effect') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + '_' + Math.floor(Math.random() * 1000);
@@ -1714,7 +1764,7 @@ function initTimelineOperations() {
             });
           }
 
-          let clonedAudioEffects = Array.isArray(l.audioEffects) ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.audioEffects) : (Array.isArray(l.audioEffects) ? [] : {})) : undefined;
+          let clonedAudioEffects = Array.isArray(l.audioEffects) ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.audioEffects) : JSON.parse(JSON.stringify(l.audioEffects))) : undefined;
           if (clonedAudioEffects) {
             clonedAudioEffects.forEach(fx => {
               fx.id = 'fx_' + (fx.type || 'audio') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
@@ -1724,13 +1774,13 @@ function initTimelineOperations() {
           // Remap parentId if parent layer is also part of the copied set
           const newParentId = (l.parentId && idMap.has(l.parentId)) ? idMap.get(l.parentId) : (l.parentId || null);
 
-          const clonedLayer = Object.assign({}, (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l) : (Array.isArray(l) ? [] : {})), {
+          const clonedLayer = Object.assign({}, (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l) : JSON.parse(JSON.stringify(l))), {
             id: newId,
             name: l.name ? (l.name + ' (Copy)') : 'Layer (Copy)',
             startSec: newStartSec,
             startPx: newStartPx,
             parentId: newParentId,
-            parentBind: l.parentBind ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.parentBind) : (Array.isArray(l.parentBind) ? [] : {})) : undefined,
+            parentBind: l.parentBind ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.parentBind) : JSON.parse(JSON.stringify(l.parentBind))) : undefined,
             effects: clonedEffects,
             audioEffects: clonedAudioEffects,
             keyframes: clonedKeyframes
@@ -1765,9 +1815,12 @@ function initTimelineOperations() {
           }
 
           invalidatePreviewCacheForLayer(clonedLayer);
-          currentProjectState.layers.unshift(clonedLayer);
+          newPastedLayers.push(clonedLayer);
           newPastedIds.push(newId);
         });
+
+        // Insert in exact original top-to-bottom stack order
+        currentProjectState.layers.unshift(...newPastedLayers);
 
         saveCurrentProjectLayers();
         renderTimelineLayers();
@@ -4182,7 +4235,7 @@ function initTimelineOperations() {
                     initialEndSec: sInitSec + sDurSec,
                     durationSec: sDurSec,
                     clipEl: sClipEl,
-                    initialKeyframes: l.keyframes ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(layer.keyframes) : (Array.isArray(layer.keyframes) ? [] : {})) : null
+                    initialKeyframes: l.keyframes ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.keyframes) : JSON.parse(JSON.stringify(l.keyframes))) : null
                   };
                 });
               }
@@ -4349,9 +4402,12 @@ function initTimelineOperations() {
                         kfs.forEach((initKf, idx) => {
                           const curKf = m.layer.keyframes[p][idx];
                           if (curKf) {
-                            curKf.time = Number((initKf.time + mDeltaSec).toFixed(4));
+                            curKf.time = Number(Math.max(0, initKf.time + mDeltaSec).toFixed(4));
                           }
                         });
+                      }
+                      if (m.clipEl && (!isDesktop || !m.layer._kfExpanded)) {
+                        renderLayerKeyframes(m.layer, m.clipEl);
                       }
                     }
                   });
@@ -4509,6 +4565,18 @@ function initTimelineOperations() {
                       multiDragLayers.forEach(m => {
                         m.layer.startSec = Math.round(m.layer.startSec * fps) / fps;
                         m.layer.startPx = Math.round(m.layer.startSec * pps);
+                        if (m.initialKeyframes && m.layer.keyframes) {
+                          const mDeltaSec = m.layer.startSec - m.initialStartSec;
+                          for (const [p, kfs] of Object.entries(m.initialKeyframes)) {
+                            if (!Array.isArray(kfs) || !Array.isArray(m.layer.keyframes[p])) continue;
+                            kfs.forEach((initKf, idx) => {
+                              const curKf = m.layer.keyframes[p][idx];
+                              if (curKf) {
+                                curKf.time = Number(Math.max(0, initKf.time + mDeltaSec).toFixed(4));
+                              }
+                            });
+                          }
+                        }
                       });
                     } else {
                       layer.startSec = Math.round(layer.startSec * fps) / fps;

@@ -419,6 +419,11 @@
             <button type="button" class="batch-floating-btn" id="btn-batch-float-exclude" title="Exclude Group (Group and Exclude)" aria-label="Exclude Group (Group and Exclude)">
               <i class='fticon fticon-exclude-group-group-and-exclude' style='width:20px;height:20px;font-size:20px;line-height:1;' aria-hidden='true'></i>
             </button>
+
+            <!-- Save as Element Button -->
+            <button type="button" class="batch-floating-btn" id="btn-batch-float-save-element" title="Save Selected Layers as Element" aria-label="Save as Element">
+              <i class='fticon fticon-save-preset' style='width:20px;height:20px;font-size:20px;line-height:1;' aria-hidden='true'></i>
+            </button>
           </div>
 
           <!-- 4. Floating Round Action Button (Add Track / Layer) -->
@@ -2975,6 +2980,12 @@
         <span class="context-menu-shortcut">Ctrl+Shift+G</span>
       </button>
 
+      <!-- 4c. Select All (Text Only, No Icon) -->
+      <button type="button" class="popover-menu-item" id="popover-btn-select-all" title="Select All Layers (Ctrl+A)">
+        <span id="popover-label-select-all">Select All</span>
+        <span class="context-menu-shortcut">Ctrl+A</span>
+      </button>
+
       <!-- 5. Save as Element -->
       <button type="button" class="popover-menu-item" id="popover-btn-save-element" title="Save Layer as Element Template">
         <span id="popover-label-save-element">Save as Element</span>
@@ -3856,7 +3867,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.6.3</span>
+          <span class="welcome-badge">v0.6.4</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3886,11 +3897,75 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.4 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.4</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Oct 24, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Multi-Layer Save as Element &amp; Playhead-Exact Copy/Paste/Import (`editor.html`, `js/editor/editor-timeline-ops.js`, `js/editor/editor-effects.js`, `js/storage/db.js`)</span>
+                  <span class="changelog-item-desc">Enabled saving multiple selected layers (including Select All) as a reusable Element template via `#popover-btn-save-element` and `#btn-batch-float-save-element`, while preserving 100% exact playhead-relative offset (`anchorSec`), layer stacking order, `parentId` hierarchy, and keyframe timing during Copy/Paste and Save/Import Element.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Always Mobile Layout Switch (`index.html`, `editor.html`, `js/app/main.js`, `js/editor/editor-state.js`, `js/editor/editor-timeline-core.js`, `css/layout/editor.css`)</span>
+                  <span class="changelog-item-desc">Added an "Always Mobile" toggle switch (`#settings-always-mobile-switch`) in the `index.html` Settings modal (`EDITOR LAYOUT` section). When enabled, opening projects routes to `editor.html` and enforces the stacked mobile layout (`html.force-mobile-view`, preview on top, timeline below, horizontal `#preview-split-handle` resizer active, and side-by-side split disabled) even on large screens (`&gt; 600px`). Persists bidirectionally across `localStorage` (`oft_always_mobile`, `oft_tablet_split_view`) and IndexedDB (`FishDatabase` `settings.config`).</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Clean All Beatmarks Button (`editor.html`, `desktop.html`, `js/editor/editor-layers.js`, `js/app/desktop.js`)</span>
+                  <span class="changelog-item-desc">Added a dedicated "Clean All Beatmarks" button (`#btn-beatmark-clean-all`) with `delete_sweep` icon in the beatmark drawer/inspector panel next to the remove beatmark button. Clicking it removes all beatmarks and marker names with an undo/redo history snapshot, live ruler refresh, and toast confirmation.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">NLE-Based Timeline Audio Synchronization (`js/editor/editor-timeline-core.js`, `js/media/fish-audio-engine.js`, `js/media/videocomp-enggine.js`)</span>
+                  <span class="changelog-item-desc">Converted timeline playback to a deterministic NLE master transport clock where all active `&lt;audio&gt;` and `&lt;video&gt;` tracks strictly slave to the timeline playhead (`nextSec`). Removed the 220ms/250ms startup mute delay in `FishAudioEngine.syncPlayback`, reduced parked audio pre-seek debounce to 16ms (`scheduleParkAudio`), and tightened `VideoCompEngine.correctPlaybackDrift` from `2.5s` to `85ms` with smooth proportional playbackRate micro-steering (`0.92x–1.08x`) for `&lt; 15ms` phase-locked sync without free-running audio delay.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">OS &amp; Mobile Media Player Notification Suppression (`js/media/fish-audio-engine.js`, `js/editor/editor-media.js`, `js/editor/editor-timeline-core.js`)</span>
+                  <span class="changelog-item-desc">Suppressed browser/OS Media Session integration (`navigator.mediaSession.playbackState = 'none'`, `metadata = null`, cleared action handlers, and `disableRemotePlayback`/`playsinline` attributes on all audio elements) so playing the timeline in Studio does not spawn external music player popups or lockscreen/notification shade media widgets across PC (Firefox, Chrome) and mobile devices.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Multi-Layer Drag Keyframe Shift (`js/editor/editor-timeline-ops.js`, `js/app/desktop.js`)</span>
+                  <span class="changelog-item-desc">Fixed `multiDragLayers` initialization in `onClipPointerDown` cloning `l.keyframes` (each individual selected layer's own keyframes) instead of `layer.keyframes` (the primary clicked layer), and added live frame-quantized keyframe shifting and marker re-rendering during multi-layer dragging across both Mobile/Always Mobile and Desktop timelines.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Always Mobile Preview Resize Handle Position (`css/layout/editor.css`)</span>
+                  <span class="changelog-item-desc">Added `position: relative` to `.editor-controller` in `@media (min-width: 601px)` and `html.force-mobile-view .editor-controller` so `#preview-split-handle` remains anchored on the border between the preview canvas and controller bar instead of jumping to the top header bar on screens `&gt; 600px`.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Beatmark FPS Alignment &amp; Navigation Loop Fix (`js/editor/editor-timeline-core.js`, `js/app/desktop.js`, `js/editor/editor-layers.js`)</span>
+                  <span class="changelog-item-desc">Fixed beatmark addition, dragging, and detection to strictly quantize beatmark timestamps to the project's exact FPS frame boundaries (`Math.round(sec * fps) / fps`) with dynamic half-frame tolerance (`0.5 / fps`), preventing playhead from falling off-frame or getting trapped when navigating forward or backward between beatmarks. Re-quantizes and deduplicates existing beatmarks when changing project FPS in `setTimelineFps`.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.3 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.3</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Oct 20, 2026</span>
               </div>
               <div class="welcome-changelog-item">

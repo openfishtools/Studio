@@ -2836,15 +2836,21 @@ window.FishDatabase = (function () {
   }
 
   async function saveSavedElement(element) {
-    if (!element || !element.name || !element.layerData) return null;
+    if (!element || !element.name || (!element.layerData && (!Array.isArray(element.layersData) || element.layersData.length === 0))) return null;
     try {
       const list = await getSavedElements();
+      const primaryLayer = element.layerData || (Array.isArray(element.layersData) ? element.layersData[0] : null);
       const elem = {
         id: element.id || ('elem_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)),
         name: String(element.name).trim() || 'Untitled Element',
-        type: element.type || (element.layerData ? element.layerData.type : 'layer'),
+        type: element.type || (primaryLayer ? primaryLayer.type : 'layer'),
         createdAt: element.createdAt || Date.now(),
-        layerData: JSON.parse(JSON.stringify(element.layerData))
+        layerData: primaryLayer ? JSON.parse(JSON.stringify(primaryLayer)) : null,
+        layersData: Array.isArray(element.layersData) ? JSON.parse(JSON.stringify(element.layersData)) : (primaryLayer ? [JSON.parse(JSON.stringify(primaryLayer))] : []),
+        anchorSec: (typeof element.anchorSec === 'number' && isFinite(element.anchorSec)) ? element.anchorSec : undefined,
+        minStartSec: (typeof element.minStartSec === 'number' && isFinite(element.minStartSec)) ? element.minStartSec : undefined,
+        maxEndSec: (typeof element.maxEndSec === 'number' && isFinite(element.maxEndSec)) ? element.maxEndSec : undefined,
+        layerCount: Array.isArray(element.layersData) ? element.layersData.length : 1
       };
       const existingIdx = list.findIndex(item => item.id === elem.id);
       if (existingIdx >= 0) {

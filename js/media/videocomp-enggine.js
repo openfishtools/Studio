@@ -415,7 +415,7 @@
     }
 
     /**
-     * Enforce playback drift correction.
+     * Enforce NLE timeline-locked playback drift correction.
      * @param {HTMLMediaElement} el
      * @param {number} targetTime
      * @param {number} currentSpeed
@@ -426,10 +426,11 @@
     correctPlaybackDrift(el, targetTime, currentSpeed, nowMs, onHardSeekAudioCallback = null) {
       if (!el || el.seeking || !isFinite(targetTime)) return false;
       const isVid = el.tagName === 'VIDEO';
+      const safeSpeed = Math.max(0.0625, Math.min(8.0, currentSpeed || 1.0));
       const drift = (el.currentTime || 0) - targetTime;
       const absDrift = Math.abs(drift);
-      const driftThreshold = isVid ? Math.max(0.22, 0.14 * currentSpeed) : 2.5;
-      const seekCooldownMs = isVid ? 250 : 1000;
+      const driftThreshold = isVid ? Math.max(0.14, 0.10 * safeSpeed) : Math.max(0.085, 0.06 * safeSpeed);
+      const seekCooldownMs = isVid ? 200 : 180;
 
       if (absDrift > driftThreshold && (!el._lastHardSeekTime || (nowMs - el._lastHardSeekTime > seekCooldownMs))) {
         try {
@@ -441,8 +442,21 @@
             ? Math.max(0, el.duration - 0.01)
             : Infinity;
           el.currentTime = Math.min(Math.max(0, targetTime), maxSeek);
-          el.playbackRate = Math.max(0.0625, Math.min(8.0, currentSpeed));
+          el.playbackRate = safeSpeed;
           return true;
+        } catch (_) {}
+      } else if (absDrift > 0.015) {
+        // Proportional pitch-safe micro-steering to lock phase to NLE timeline without hard-seek clicks
+        const steerFactor = Math.max(0.92, Math.min(1.08, 1.0 - (drift / Math.max(0.25, safeSpeed)) * 1.4));
+        const steeredRate = Math.max(0.0625, Math.min(8.0, safeSpeed * steerFactor));
+        if (Math.abs((el.playbackRate || safeSpeed) - steeredRate) > 0.004) {
+          try {
+            el.playbackRate = steeredRate;
+          } catch (_) {}
+        }
+      } else if (Math.abs((el.playbackRate || safeSpeed) - safeSpeed) > 0.004) {
+        try {
+          el.playbackRate = safeSpeed;
         } catch (_) {}
       }
       return false;

@@ -807,87 +807,52 @@
 
         if (el.paused) {
           try {
+            if (el._unmuteTimer) {
+              clearTimeout(el._unmuteTimer);
+              el._unmuteTimer = null;
+            }
+            el._unmute = null;
+            el._suppressAudioUntil = 0;
             el._lastMasterSec = null;
             el._lastReportedTime = undefined;
             el._lastAdvanceWallTime = undefined;
-            // Check if playhead jumped from last playback stop position or target differs from currentTime
-            const hasPositionJump = (el._lastPlaybackStopTime !== undefined && Math.abs(el._lastPlaybackStopTime - targetTime) > 0.08) ||
-                                    (Math.abs((el.currentTime || 0) - targetTime) > 0.04);
-            if (hasPositionJump) {
-              // Safari WebKit CoreAudio Stale Buffer Suppression:
-              // When resuming playback after playhead repositioning, AVPlayer and
-              // WebKit's MediaElementAudioSourceNode output residual samples from
-              // the previous position for up to 200ms.
-              // Suppress output completely in both Web Audio gain graph and native element.
-              const suppressDuration = 220;
-              el._suppressAudioUntil = Date.now() + suppressDuration;
-              el._jumpTarget = targetTime;
-              el.muted = true;
-              this.setElementGain(el, 0);
 
+            const maxSeek = (el.duration && !isNaN(el.duration) && el.duration > 0)
+              ? Math.max(0, el.duration - 0.01)
+              : Infinity;
+            const clampedTarget = Math.min(Math.max(0, targetTime), maxSeek);
+            if (Math.abs((el.currentTime || 0) - clampedTarget) > 0.015) {
               try {
-                el.currentTime = targetTime;
+                el.currentTime = clampedTarget;
               } catch (_) {}
-
-              const unmute = () => {
-                if (el._unmuteTimer) {
-                  clearTimeout(el._unmuteTimer);
-                  el._unmuteTimer = null;
-                }
-                el._suppressAudioUntil = 0;
-                try {
-                  if (!isMuted) {
-                    el.muted = false;
-                  }
-                } catch (_) {}
-                this.setElementGain(el, currentVol);
-              };
-
-              el._unmute = unmute;
-              el._unmuteTimer = setTimeout(() => {
-                if (!el.paused && el._unmute) {
-                  el._unmute();
-                  el._unmute = null;
-                }
-              }, suppressDuration);
             }
+            try {
+              el.muted = !!isMuted;
+            } catch (_) {}
+            this.setElementGain(el, isMuted ? 0 : currentVol);
             el.playbackRate = Math.max(0.0625, Math.min(8.0, currentSpeed));
             el._lastRateSteerTime = nowMs;
             el._lastSteeredRate = currentSpeed;
             el._baseSpeed = currentSpeed;
             el._playStartTime = Date.now();
-            el._lastPlaybackStopTime = targetTime;
+            el._lastPlaybackStopTime = clampedTarget;
             el.play().catch(() => {});
           } catch (_) {}
           return;
         }
 
-        // Unmute once audio element has actually begun rendering new samples past the jump target
         if (el._suppressAudioUntil && el._unmute) {
-          const baseTarget = el._jumpTarget !== undefined ? el._jumpTarget : targetTime;
-          if (Date.now() >= el._suppressAudioUntil || ((el.currentTime || 0) > baseTarget + 0.008)) {
-            el._unmute();
-            el._unmute = null;
-          }
+          el._unmute();
+          el._unmute = null;
         }
 
         if (!el.seeking) {
-          if (Math.abs((el.playbackRate || 1.0) - currentSpeed) > 0.01) {
-            try {
-              el.playbackRate = Math.max(0.0625, Math.min(8.0, currentSpeed));
-            } catch (_) {}
-          }
-          window.VideoCompEngine.correctPlaybackDrift(el, targetTime, currentSpeed, nowMs, (audioEl) => {
-            audioEl._suppressAudioUntil = Date.now() + 250;
-            audioEl.muted = true;
-            this.setElementGain(audioEl, 0);
-            setTimeout(() => {
-              if (!audioEl.paused && !isMuted) {
-                audioEl.muted = false;
-                this.setElementGain(audioEl, currentVol);
-              }
-            }, 250);
-          });
+          try {
+            if (el.muted !== !!isMuted) {
+              el.muted = !!isMuted;
+            }
+          } catch (_) {}
+          window.VideoCompEngine.correctPlaybackDrift(el, targetTime, currentSpeed, nowMs);
         }
       });
 

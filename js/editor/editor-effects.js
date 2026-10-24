@@ -2740,17 +2740,55 @@
         });
       }
 
-      function openSaveElementModal() {
+      function getTargetLayersForSaveElement() {
         const layers = currentProjectState.layers || [];
-        const layer = layers.find(l => l.id === window.selectedLayerId);
-        if (!layer) {
+        const ids = [];
+        if (window.selectedLayerId) ids.push(window.selectedLayerId);
+        if (typeof selectedLayerId !== 'undefined' && selectedLayerId && !ids.includes(selectedLayerId)) {
+          ids.push(selectedLayerId);
+        }
+        if (typeof selectedLayerIds !== 'undefined' && selectedLayerIds && selectedLayerIds.size > 0) {
+          selectedLayerIds.forEach(id => { if (!ids.includes(id)) ids.push(id); });
+        }
+        if (window.selectedLayerIds && window.selectedLayerIds.size > 0) {
+          window.selectedLayerIds.forEach(id => { if (!ids.includes(id)) ids.push(id); });
+        }
+        return layers.filter(l => ids.includes(l.id));
+      }
+
+      function cleanLayerForElementSave(layer) {
+        const clonedData = (window.UndoRedoManager && window.UndoRedoManager._safeClone)
+          ? window.UndoRedoManager._safeClone(layer)
+          : JSON.parse(JSON.stringify(layer));
+        delete clonedData._shapeBufferCanvas;
+        delete clonedData._precompBufferCanvas;
+        delete clonedData._fillBufferCanvas;
+        delete clonedData._fillMediaImg;
+        delete clonedData._alphaHitCanvas;
+        delete clonedData._alphaHitCtx;
+        delete clonedData._canvasBounds;
+        delete clonedData._textBufferCanvas;
+        delete clonedData._textMbCanvas;
+        delete clonedData._bgCutoutBitmap;
+        delete clonedData._lastRenderedFrame;
+        return clonedData;
+      }
+
+      function openSaveElementModal() {
+        const targetLayers = getTargetLayersForSaveElement();
+        if (!targetLayers || targetLayers.length === 0) {
           showEffectsRackToast('Select a layer to save');
           return;
         }
 
         const nameInput = document.getElementById('input-element-name');
         if (nameInput) {
-          nameInput.value = layer.name || `${layer.type || 'Layer'} Element`;
+          if (targetLayers.length === 1) {
+            const layer = targetLayers[0];
+            nameInput.value = layer.name || `${layer.type || 'Layer'} Element`;
+          } else {
+            nameInput.value = `${targetLayers.length} Layers Element`;
+          }
         }
 
         if (window.Modal) window.Modal.open('modal-save-element');
@@ -2762,29 +2800,44 @@
       if (btnConfirmSaveElement) {
         btnConfirmSaveElement.addEventListener('click', async (e) => {
           e.stopPropagation();
-          const layers = currentProjectState.layers || [];
-          const layer = layers.find(l => l.id === window.selectedLayerId);
-          if (!layer) return;
+          const targetLayers = getTargetLayersForSaveElement();
+          if (!targetLayers || targetLayers.length === 0) return;
 
+          const firstLayer = targetLayers[0];
           const nameInput = document.getElementById('input-element-name');
-          const elemName = (nameInput && nameInput.value.trim()) || layer.name || 'Untitled Element';
+          const defaultName = targetLayers.length > 1 ? `${targetLayers.length} Layers Element` : (firstLayer.name || 'Untitled Element');
+          const elemName = (nameInput && nameInput.value.trim()) || defaultName;
 
-          // Clean clone layer without runtime references
-          const clonedData = (window.UndoRedoManager && window.UndoRedoManager._safeClone) ? window.UndoRedoManager._safeClone(layer) : layer;
-          delete clonedData._shapeBufferCanvas;
-          delete clonedData._precompBufferCanvas;
-          delete clonedData._fillBufferCanvas;
-          delete clonedData._fillMediaImg;
-          delete clonedData._alphaHitCanvas;
-          delete clonedData._alphaHitCtx;
-          delete clonedData._canvasBounds;
+          const pps = window.currentPixelsPerSecond || 80;
+          const currentPanX = window.timelinePanX !== undefined ? window.timelinePanX : 0;
+          const savePlayheadSec = (typeof getCurrentPlayheadTime === 'function')
+            ? getCurrentPlayheadTime()
+            : Math.max(0, -currentPanX / pps);
+
+          const clonedLayers = targetLayers.map(l => cleanLayerForElementSave(l));
+          const minStartSec = Math.min(...clonedLayers.map(l => (l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps))));
+          const maxEndSec = Math.max(...clonedLayers.map(l => {
+            const s = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps);
+            const d = l.durationSec !== undefined ? l.durationSec : ((l.widthPx || 320) / pps);
+            return s + d;
+          }));
+
+          // Capture 100% exact playhead anchor when playhead is inside the saved layer(s) span
+          const anchorSec = (savePlayheadSec >= minStartSec - 0.001 && savePlayheadSec <= maxEndSec + 0.001)
+            ? savePlayheadSec
+            : minStartSec;
 
           const elemObj = {
             id: 'elem_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
             name: elemName,
-            type: layer.type || 'layer',
+            type: clonedLayers.length > 1 ? 'group' : (firstLayer.type || 'layer'),
             createdAt: Date.now(),
-            layerData: clonedData
+            layerData: clonedLayers[0],
+            layersData: clonedLayers,
+            layerCount: clonedLayers.length,
+            anchorSec: Number(anchorSec.toFixed(4)),
+            minStartSec: Number(minStartSec.toFixed(4)),
+            maxEndSec: Number(maxEndSec.toFixed(4))
           };
 
           if (window.FishDatabase && typeof window.FishDatabase.saveSavedElement === 'function') {
@@ -2792,7 +2845,7 @@
           }
 
           if (window.Modal) window.Modal.close('modal-save-element');
-          showEffectsRackToast(`Saved element "${elemName}"`);
+          showEffectsRackToast(clonedLayers.length > 1 ? `Saved ${clonedLayers.length} layers to "${elemName}"` : `Saved element "${elemName}"`);
           renderSavedElementsGrid();
         });
       }
@@ -2835,8 +2888,10 @@
         };
 
         gridEl.innerHTML = filtered.map(item => {
-          const lData = item.layerData || {};
-          const type = (item.type || lData.type || 'layer').toLowerCase();
+          const lData = item.layerData || (Array.isArray(item.layersData) && item.layersData[0]) || {};
+          const count = Array.isArray(item.layersData) ? item.layersData.length : (item.layerCount || 1);
+          const type = (count > 1 ? 'group' : (item.type || lData.type || 'layer')).toLowerCase();
+          const metaLabel = count > 1 ? `${count} layers` : type;
           const icon = typeIconMap[type] || typeIconMap.shape;
 
           return `
@@ -2846,7 +2901,7 @@
               </button>
               <div class="element-gallery-card-icon">${icon}</div>
               <span class="element-gallery-card-title">${item.name || 'Untitled'}</span>
-              <span class="element-gallery-card-meta">${type}</span>
+              <span class="element-gallery-card-meta">${metaLabel}</span>
             </div>
           `;
         }).join('');
@@ -2876,9 +2931,13 @@
         });
       }
 
-      // 4. Insert Element into Timeline at current playhead
+      // 4. Insert Element into Timeline at current playhead with 100% exact relative position
       function insertSavedElementToTimeline(element) {
-        if (!element || !element.layerData) return;
+        const sourceLayers = (element && Array.isArray(element.layersData) && element.layersData.length > 0)
+          ? element.layersData
+          : (element && element.layerData ? [element.layerData] : []);
+        if (sourceLayers.length === 0) return;
+
         currentProjectState.layers = currentProjectState.layers || [];
 
         // Record Undo
@@ -2887,59 +2946,136 @@
         }
 
         const pps = window.currentPixelsPerSecond || 80;
+        const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || 60);
         const currentPanX = window.timelinePanX !== undefined ? window.timelinePanX : 0;
-        const playheadSec = Number((Math.abs(currentPanX) / pps).toFixed(3));
+        const playheadSec = (typeof getCurrentPlayheadTime === 'function')
+          ? getCurrentPlayheadTime()
+          : Math.max(0, -currentPanX / pps);
 
-        const base = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(element.layerData) : (Array.isArray(element.layerData) ? [] : {}));
-        const newLayerId = 'layer_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-        const durationSec = base.durationSec || (base.widthPx ? (base.widthPx / pps) : 4);
+        const minStartSec = Math.min(...sourceLayers.map(l => (l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps))));
+        const anchorSec = (typeof element.anchorSec === 'number' && isFinite(element.anchorSec))
+          ? element.anchorSec
+          : minStartSec;
+        const rawDeltaSec = Math.max(-minStartSec, playheadSec - anchorSec);
+        const deltaSec = Math.round(rawDeltaSec * safeFps) / safeFps;
 
-        base.id = newLayerId;
-        base.name = `${element.name || base.name || 'Element'}`;
-        base.startSec = playheadSec;
-        base.startPx = Math.round(playheadSec * pps);
-        base.durationSec = durationSec;
-        base.widthPx = Math.round(durationSec * pps);
+        // Pass 1: build ID map for internal parentId hierarchy
+        const idMap = new Map();
+        sourceLayers.forEach((srcL, idx) => {
+          const newId = 'layer_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5) + '_' + idx;
+          if (srcL.id) idMap.set(srcL.id, newId);
+        });
 
-        // Regenerate unique IDs for all nested effects & remap keyframes
-        if (Array.isArray(base.effects)) {
-          const oldEffects = base.effects;
-          base.effects = [];
-          const kfMap = {};
+        const insertedLayers = [];
+        const insertedIds = [];
 
-          oldEffects.forEach(fx => {
-            const oldFxId = fx.id;
-            const newFx = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(fx) : (Array.isArray(fx) ? [] : {}));
-            newFx.id = 'fx_' + (fx.type || 'fx') + '_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-            base.effects.push(newFx);
+        sourceLayers.forEach((srcL, idx) => {
+          const base = (window.UndoRedoManager && window.UndoRedoManager._safeClone)
+            ? window.UndoRedoManager._safeClone(srcL)
+            : JSON.parse(JSON.stringify(srcL));
+          const newLayerId = idMap.get(srcL.id) || ('layer_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5) + '_' + idx);
+          const origStartSec = base.startSec !== undefined ? base.startSec : ((base.startPx || 0) / pps);
+          const durationSec = base.durationSec !== undefined ? base.durationSec : (base.widthPx ? (base.widthPx / pps) : 4);
+          const newStartSec = Math.max(0, Math.round((origStartSec + deltaSec) * safeFps) / safeFps);
+
+          base.id = newLayerId;
+          if (sourceLayers.length === 1) {
+            base.name = `${element.name || base.name || 'Element'}`;
+          } else {
+            base.name = base.name || `${element.name || 'Element'} ${idx + 1}`;
+          }
+          base.startSec = newStartSec;
+          base.startPx = Math.round(newStartSec * pps);
+          base.durationSec = durationSec;
+          base.widthPx = Math.round(durationSec * pps);
+          base.parentId = (base.parentId && idMap.has(base.parentId)) ? idMap.get(base.parentId) : null;
+
+          // Shift all keyframe times by deltaSec so animations match the imported position 100%
+          if (base.keyframes && typeof base.keyframes === 'object' && Math.abs(deltaSec) > 0.0001) {
+            Object.keys(base.keyframes).forEach(prop => {
+              if (Array.isArray(base.keyframes[prop])) {
+                base.keyframes[prop].forEach(kf => {
+                  if (kf && typeof kf.time === 'number') {
+                    kf.time = Number(Math.max(0, kf.time + deltaSec).toFixed(4));
+                  }
+                });
+              }
+            });
+          }
+
+          // Regenerate unique IDs for all nested effects & remap keyframes
+          if (Array.isArray(base.effects)) {
+            const oldEffects = base.effects;
+            base.effects = [];
+            const kfMap = {};
+
+            oldEffects.forEach(fx => {
+              const oldFxId = fx.id;
+              const newFx = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(fx) : JSON.parse(JSON.stringify(fx)));
+              newFx.id = 'fx_' + (fx.type || 'fx') + '_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+              base.effects.push(newFx);
+
+              if (base.keyframes) {
+                Object.keys(base.keyframes).forEach(k => {
+                  if (k.startsWith(oldFxId + ':')) {
+                    const paramName = k.slice(oldFxId.length + 1);
+                    kfMap[`${newFx.id}:${paramName}`] = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(base.keyframes[k]) : JSON.parse(JSON.stringify(base.keyframes[k])));
+                    delete base.keyframes[k];
+                  }
+                });
+              }
+            });
 
             if (base.keyframes) {
-              getEffectParamIds(fx).forEach(p => {
-                const oldK = `${oldFxId}:${p}`;
-                if (base.keyframes[oldK]) {
-                  kfMap[`${newFx.id}:${p}`] = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(base.keyframes[oldK]) : (Array.isArray(base.keyframes[oldK]) ? [] : {}));
-                  delete base.keyframes[oldK];
-                }
-              });
+              Object.assign(base.keyframes, kfMap);
             }
-          });
-
-          if (base.keyframes) {
-            Object.assign(base.keyframes, kfMap);
           }
+
+          if (Array.isArray(base.audioEffects)) {
+            base.audioEffects.forEach(fx => {
+              fx.id = 'fx_' + (fx.type || 'audio') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+            });
+          }
+
+          if (typeof invalidatePreviewCacheForLayer === 'function') {
+            invalidatePreviewCacheForLayer(base);
+          }
+
+          insertedLayers.push(base);
+          insertedIds.push(newLayerId);
+        });
+
+        // Insert at top of timeline stack preserving exact original layer order
+        currentProjectState.layers.unshift(...insertedLayers);
+
+        if (insertedIds.length === 1) {
+          window.selectedLayerId = insertedIds[0];
+          if (window.selectedLayerIds) {
+            window.selectedLayerIds.clear();
+            window.selectedLayerIds.add(insertedIds[0]);
+          }
+          if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
+          if (typeof selectTimelineLayer === 'function') selectTimelineLayer(insertedIds[0], false);
+        } else if (insertedIds.length > 1) {
+          window.selectedLayerId = insertedIds[0];
+          if (typeof selectedLayerId !== 'undefined') selectedLayerId = insertedIds[0];
+          if (window.selectedLayerIds) {
+            window.selectedLayerIds.clear();
+            insertedIds.forEach(id => window.selectedLayerIds.add(id));
+          }
+          if (typeof selectedLayerIds !== 'undefined' && selectedLayerIds) {
+            selectedLayerIds.clear();
+            insertedIds.forEach(id => selectedLayerIds.add(id));
+          }
+          if (typeof isSelectorMode !== 'undefined') isSelectorMode = true;
+          window.isSelectorMode = true;
+          if (typeof updateEditorHeaderMode === 'function') updateEditorHeaderMode();
+          if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
         }
 
-        currentProjectState.layers.push(base);
-        window.selectedLayerId = newLayerId;
-        if (window.selectedLayerIds) {
-          window.selectedLayerIds.clear();
-          window.selectedLayerIds.add(newLayerId);
-        }
-
-        if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
-        if (typeof selectTimelineLayer === 'function') selectTimelineLayer(newLayerId, false);
         if (typeof redrawComposition === 'function') redrawComposition('insert-element');
         if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+        if (typeof updateTimelineDuration === 'function') updateTimelineDuration(true);
 
         // Close Add Drawer
         const drawer = document.getElementById('timeline-add-drawer');
@@ -2949,6 +3085,7 @@
 
         showEffectsRackToast(`Inserted "${element.name}"`);
       }
+      window.insertSavedElementToTimeline = insertSavedElementToTimeline;
 
       // 5. Search Filter in Drawer
       const elemSearch = document.getElementById('drawer-element-search-input');
