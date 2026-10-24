@@ -2227,29 +2227,73 @@
 
         const currentSec = Math.max(0, -panX / pixelsPerSecond);
         const layers = currentProjectState.layers || [];
+        const currentFrameIdx = Math.round(currentSec * fps);
+        const nextFrameIdx = currentFrameIdx + 1;
 
-        // 1. NLE Master Timeline Clock with After Effects-style Real-Time / Frame-Drop Sync:
-        // On the very first rAF callback right after clicking Play (where audio was already primed at startSec),
-        // clamp the initial tick delta to at most 1 frame so initial rAF scheduling latency doesn't jump ahead of audio.
-        const clampedDeltaSec = isFirstTick
-          ? Math.min(frameDuration, Math.max(0, rawDeltaSec))
-          : Math.min(0.085, Math.max(0, rawDeltaSec));
+        const isCacheEnabled = !!(window.PreviewCacheManager && window.isPreviewCacheEnabled !== false);
+        const isCurrentOrNextFrameCached = isCacheEnabled && (
+          window.PreviewCacheManager.hasFrame(currentFrameIdx) ||
+          window.PreviewCacheManager.hasFrame(nextFrameIdx)
+        );
 
-        // Track smoothed actual frame interval to detect sustained render lag (like After Effects real-time preview)
-        if (isFirstTick || !window._nleSmoothedFrameSec) {
-          window._nleSmoothedFrameSec = frameDuration;
+        // 1. After Effects Frame-Accurate RAM Preview Clock:
+        // - When building RAM cache on uncached frames (isCacheEnabled && !isCurrentOrNextFrameCached):
+        //   Advance strictly by 1 frame (frameDuration * playbackSpeed) so ZERO frames are ever skipped/jumped,
+        //   turning the entire timeline cache bar solid green on the first pass!
+        // - When playing back cached frames (green bar) or when cache is disabled:
+        //   Advance at real-time speed, capped to at most 2 frames on minor VSync hiccups so motion never jumps.
+        let effectiveDeltaSec;
+        if (isFirstTick) {
+          effectiveDeltaSec = Math.min(frameDuration, Math.max(0, rawDeltaSec)) * playbackSpeed;
+        } else if (isCacheEnabled && !isCurrentOrNextFrameCached) {
+          effectiveDeltaSec = frameDuration * playbackSpeed;
         } else {
-          window._nleSmoothedFrameSec = window._nleSmoothedFrameSec * 0.82 + Math.min(0.12, Math.max(frameDuration, rawDeltaSec)) * 0.18;
+          effectiveDeltaSec = Math.min(frameDuration * 2.0, Math.max(frameDuration * 0.85, rawDeltaSec)) * playbackSpeed;
         }
 
-        const effectiveDeltaSec = clampedDeltaSec * playbackSpeed;
         let nextSec = currentSec + effectiveDeltaSec;
+        // Snap nextSec to exact frame boundary when stepping frame-by-frame at 1.0x speed
+        if (Math.abs(playbackSpeed - 1.0) < 0.01 && isCacheEnabled && !isCurrentOrNextFrameCached) {
+          nextSec = nextFrameIdx / fps;
+        }
 
-        // Calculate actual achieved speed ratio when rendering is heavy (so audio slows down with heavy lag instead of cutting out)
-        const lagRatio = (window._nleSmoothedFrameSec > frameDuration * 1.45)
-          ? Math.max(0.5, Math.min(1.0, frameDuration / window._nleSmoothedFrameSec))
-          : 1.0;
-        const effectiveAudioSpeed = playbackSpeed * (lagRatio < 0.88 ? lagRatio : 1.0);
+        // 2. After Effects Stepped Audio Slow-Mo with Hold Interval (Jeda Sebelum Slow-Mo Berikutnya):
+        // Measure actual achieved frame rate vs target frameDuration.
+        // Instead of changing audio speed 1:1 every frame, quantize into discrete speed tiers and hold each tier
+        // for at least 450ms before stepping to the next slow-mo tier, while snapping back to 1.0x immediately on cached frames!
+        if (isFirstTick || !window._nleSmoothedFrameSec) {
+          window._nleSmoothedFrameSec = frameDuration;
+          window._nleSteppedAudioRatio = 1.0;
+          window._nleLastAudioStepMs = timestamp;
+        } else {
+          const measuredFrameSec = Math.min(0.25, Math.max(frameDuration, rawDeltaSec));
+          window._nleSmoothedFrameSec = window._nleSmoothedFrameSec * 0.78 + measuredFrameSec * 0.22;
+        }
+
+        let effectiveAudioSpeed = playbackSpeed;
+        if (isCurrentOrNextFrameCached || window._nleSmoothedFrameSec <= frameDuration * 1.22) {
+          // Real-time / Cached Green Bar: immediately lock audio to 100% normal speed (1.0x)
+          window._nleSteppedAudioRatio = 1.0;
+          window._nleLastAudioStepMs = timestamp;
+          effectiveAudioSpeed = playbackSpeed;
+        } else {
+          // Lagging / Rendering uncached heavy frames: compute target slow-mo ratio (quantized to 0.05 steps)
+          const rawLagRatio = Math.max(0.25, Math.min(1.0, frameDuration / window._nleSmoothedFrameSec));
+          const quantizedRatio = Math.max(0.25, Math.min(1.0, Math.round(rawLagRatio * 20) / 20));
+          const currentHeldRatio = window._nleSteppedAudioRatio || 1.0;
+          const elapsedSinceLastStep = timestamp - (window._nleLastAudioStepMs || 0);
+
+          // Hold each slow-mo speed plateau for 450ms ("jeda sebelum slowmo selanjutnya") so audio plays smoothly
+          // at that slow-mo rate before stepping again
+          if (
+            (currentHeldRatio === 1.0 && elapsedSinceLastStep >= 180 && quantizedRatio <= 0.85) ||
+            (elapsedSinceLastStep >= 450 && Math.abs(quantizedRatio - currentHeldRatio) >= 0.08)
+          ) {
+            window._nleSteppedAudioRatio = quantizedRatio;
+            window._nleLastAudioStepMs = timestamp;
+          }
+          effectiveAudioSpeed = playbackSpeed * (window._nleSteppedAudioRatio || 1.0);
+        }
 
         let nextPan = -(nextSec * pixelsPerSecond);
         if (nextPan <= bounds.min) {
@@ -2259,6 +2303,8 @@
             lastTime = timestamp;
             _playTickCount = 0;
             window._nleSmoothedFrameSec = frameDuration;
+            window._nleSteppedAudioRatio = 1.0;
+            window._nleLastAudioStepMs = timestamp;
             if (window.FishAudioEngine && typeof window.FishAudioEngine.handleLoopReset === 'function') {
               window.FishAudioEngine.handleLoopReset(layers, nextSec, pixelsPerSecond, playbackSpeed);
             } else if (window.FishAudioEngine) {
@@ -2276,12 +2322,12 @@
             return;
           }
         } else if (window.FishAudioEngine) {
-          // 2. Slave all active audio/video tracks directly to NLE timeline position nextSec
+          // 3. Slave all active audio/video tracks directly to NLE timeline position nextSec and stepped slow-mo speed
           window.FishAudioEngine.syncPlayback(layers, nextSec, pixelsPerSecond, effectiveAudioSpeed);
         }
         updateTimelinePosition(nextPan, true);
 
-        // 3. Render synchronous canvas frame for the new playhead position
+        // 4. Render synchronous canvas frame for the new playhead position
         const canvas = document.getElementById('editor-active-canvas');
         if (canvas) {
           renderCanvasFrame(canvas, currentProjectState.bgColor, canvas.width, canvas.height, 'playbackStep', nextSec);

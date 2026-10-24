@@ -2740,11 +2740,15 @@
         if (!hasUnreadyVideoInComposition && !isExport && !window.isExporting && !isIdleCache && !isTransformDragging &&
             triggerSource !== 'lookahead-cache' &&
             window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
-          if ((adaptiveScale >= 0.96 || isDraftModeActive) && (!window.isTimelinePlaying || currentRenderElapsed < 13)) {
+          if (adaptiveScale >= 0.96 || isDraftModeActive) {
             window.PreviewCacheManager.setFrameFromCanvas(frameIndex, canvas, isDraftModeActive);
           }
         }
 
+      }
+
+      if (!isExport && !isIdleCache && triggerSource !== 'lookahead-cache') {
+        window._lastFrameWasCached = !!cachedBitmap;
       }
 
       // Grid overlay → drawn by CanvasOverlay (js/canvas-overlay.js) on separate canvas

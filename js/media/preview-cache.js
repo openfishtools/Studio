@@ -298,8 +298,8 @@
       if (!this._inFlightFrames) this._inFlightFrames = new Set();
       if (!this._frameGen) this._frameGen = new Map();
       const inFlightKey = `${targetComp}:${frameIndex}`;
-      // Guard against excessive GPU memory pressure (allow up to 8 in-flight frames for 60fps playback)
-      if (this._inFlightFrames.size >= 8 && !this._inFlightFrames.has(inFlightKey)) return;
+      // Guard against excessive GPU memory pressure while ensuring zero dropped frames during 60fps RAM preview
+      if (this._inFlightFrames.size >= 24 && !this._inFlightFrames.has(inFlightKey)) return;
       const gen = (this._frameGen.get(inFlightKey) || 0) + 1;
       this._frameGen.set(inFlightKey, gen);
       this._pendingFrames.add(inFlightKey);

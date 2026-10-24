@@ -442,12 +442,15 @@
         return false;
       }
 
-      // If timeline lagged / dropped frames, audio ran ahead (drift > 0) -> resync sooner (130ms) so audio matches lag like After Effects.
-      // If audio is slightly behind (drift < 0), allow up to 180ms before hard seeking to prevent double-seeks.
+      // If timeline lagged / dropped frames, audio ran ahead (drift > 0) -> resync at 180ms (or 260ms during stepped slow-mo)
+      // so each slow-mo plateau plays smoothly before the next step ("jeda sebelum slowmo selanjutnya").
+      const isSlowMoStepped = (typeof window !== 'undefined' && typeof window._nleSteppedAudioRatio === 'number' && window._nleSteppedAudioRatio < 0.95);
       const driftThreshold = isVid
         ? Math.max(0.16, 0.12 * safeSpeed)
-        : (drift > 0 ? Math.max(0.13, 0.09 * safeSpeed) : Math.max(0.18, 0.12 * safeSpeed));
-      const seekCooldownMs = isVid ? 240 : 280;
+        : (isSlowMoStepped
+          ? Math.max(0.24, 0.18 * safeSpeed)
+          : (drift > 0 ? Math.max(0.15, 0.10 * safeSpeed) : Math.max(0.18, 0.12 * safeSpeed)));
+      const seekCooldownMs = isVid ? 240 : (isSlowMoStepped ? 420 : 280);
 
       if (absDrift > driftThreshold && (!el._lastHardSeekTime || (nowMs - el._lastHardSeekTime > seekCooldownMs))) {
         try {
@@ -465,6 +468,15 @@
           }
           return true;
         } catch (_) {}
+      } else if (isSlowMoStepped) {
+        // During AE-style stepped slow-mo, lock directly to the held slow-mo tier (safeSpeed)
+        // so the slow-mo plateau stays steady without micro-jitter
+        if (Math.abs((el.playbackRate || safeSpeed) - safeSpeed) > 0.004) {
+          try {
+            el._lastRateSteerTime = nowMs;
+            el.playbackRate = safeSpeed;
+          } catch (_) {}
+        }
       } else if (absDrift > 0.055) {
         // Throttle playbackRate updates to at most once every 220ms and cap steering to gentle ±3%
         // so browser WSOLA time-stretcher never stutters or sounds sped-up.
