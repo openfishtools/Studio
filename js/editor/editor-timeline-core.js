@@ -2248,14 +2248,10 @@
         const canMultiStepCatchUp = isCacheEnabled && !isNextFrameCached && Math.abs(playbackSpeed - 1.0) < 0.01 &&
           lastRenderMs < 9.0 && rawDeltaSec >= frameDuration * 1.65;
 
-        if (canMultiStepCatchUp) {
+        if (canMultiStepCatchUp && window.PreviewCacheManager && !window.PreviewCacheManager.hasFrame(nextFrameIdx)) {
           const midSec = nextFrameIdx / fps;
-          const midPan = -(midSec * pixelsPerSecond);
-          if (midPan > bounds.min) {
-            const canvas = document.getElementById('editor-active-canvas');
-            if (canvas) {
-              renderCanvasFrame(canvas, currentProjectState.bgColor, canvas.width, canvas.height, 'playbackStep', midSec);
-            }
+          if (typeof window.PreviewCacheManager.bakeSingleFrameOffscreen === 'function') {
+            window.PreviewCacheManager.bakeSingleFrameOffscreen(nextFrameIdx, midSec);
           }
         }
 
@@ -2295,15 +2291,15 @@
         }
 
         let effectiveAudioSpeed = playbackSpeed;
-        if (isCurrentAndNextCached || isNextFrameCached || window._nleSmoothedFrameSec <= frameDuration * 1.30) {
+        if (isCurrentAndNextCached || isNextFrameCached || window._nleSmoothedFrameSec <= frameDuration * 1.40) {
           // Real-time / Cached Green Bar: immediately lock audio to 100% normal speed (1.0x)
           window._nleSteppedAudioRatio = 1.0;
           window._nleLastAudioStepMs = timestamp;
           effectiveAudioSpeed = playbackSpeed;
         } else {
-          // Lagging / Rendering uncached heavy frames: compute target slow-mo ratio (quantized to 0.05 steps)
-          const rawLagRatio = Math.max(0.25, Math.min(1.0, frameDuration / window._nleSmoothedFrameSec));
-          const quantizedRatio = Math.max(0.25, Math.min(1.0, Math.round(rawLagRatio * 20) / 20));
+          // Lagging / Rendering uncached heavy frames: compute target slow-mo ratio (quantized to 0.05 steps, min 0.50x)
+          const rawLagRatio = Math.max(0.50, Math.min(1.0, frameDuration / window._nleSmoothedFrameSec));
+          const quantizedRatio = Math.max(0.50, Math.min(1.0, Math.round(rawLagRatio * 20) / 20));
           const currentHeldRatio = window._nleSteppedAudioRatio || 1.0;
           const elapsedSinceLastStep = timestamp - (window._nleLastAudioStepMs || 0);
 
@@ -2355,6 +2351,11 @@
         const canvas = document.getElementById('editor-active-canvas');
         if (canvas) {
           renderCanvasFrame(canvas, currentProjectState.bgColor, canvas.width, canvas.height, 'playbackStep', nextSec);
+        }
+
+        // 5. High-speed playback lookahead: batch bake upcoming frames into RAM preview cache using offscreen canvas pool
+        if (window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
+          window.PreviewCacheManager.bakePlaybackLookahead(nextSec, fps);
         }
 
         _playTickCount++;
@@ -2452,6 +2453,10 @@
               window.PreviewCacheManager.syncStateWithProject(currentProjectState);
               if (typeof window.PreviewCacheManager.ensureAudioOnlyFullCache === 'function') {
                 window.PreviewCacheManager.ensureAudioOnlyFullCache(currentProjectState);
+              }
+              if (typeof window.PreviewCacheManager.primePlaybackLookahead === 'function') {
+                const pFps = (typeof getProjectFps === 'function') ? getProjectFps() : 60;
+                window.PreviewCacheManager.primePlaybackLookahead(startSec, pFps);
               }
             }
 
