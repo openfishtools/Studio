@@ -1214,14 +1214,13 @@
       }
 
       // ─── EARLY-EXIT CACHE FAST-PATH ──────────────────────────────────────────
-      // During playback: if frame is cached, blit directly and skip the entire
-      // render pipeline (layer filter, camera transform, effects, etc.).
-      // Only active during playback — scrub/idle-cache/export/transform-drag still
-      // go through the full pipeline so they stay live & accurate.
+      // If frame is cached, blit directly and skip the entire render pipeline
+      // (layer filter, camera transform, effects, etc.).
+      // Bypassed during export, idle-cache generation, or direct canvas transform dragging.
       if (
-        window.isTimelinePlaying &&
-        !isExport && !isIdleCache &&
-        !window.isTransformInteracting &&
+        !isExport && !isIdleCache && !isTemplate &&
+        triggerSource !== 'lookahead-cache' &&
+        !isTransformDragging &&
         window.PreviewCacheManager &&
         window.isPreviewCacheEnabled !== false
       ) {
@@ -1230,6 +1229,7 @@
           ctx.clearRect(0, 0, w, h);
           ctx.drawImage(earlyBitmap, 0, 0, w, h);
           window._lastFrameRenderDuration = 0.5;
+          window._lastFrameWasCached = true;
           if (window._adaptiveDraftState) {
             window._adaptiveDraftState.fastStreak = (window._adaptiveDraftState.fastStreak || 0) + 1;
             if (window._adaptiveDraftState.fastStreak >= 8 && window._adaptiveDraftState.scale < 1.0) {
@@ -1238,10 +1238,10 @@
               window._currentAdaptiveDraftScale = window._adaptiveDraftState.scale;
             }
           }
-          if (canvas && canvas.id === 'editor-active-canvas' && triggerSource !== 'lookahead-cache' && triggerSource !== 'idle-cache') {
+          if (canvas && canvas.id === 'editor-active-canvas') {
             syncActiveViewerOverlay(currentSec, w, h);
           }
-          return; // skip full pipeline — ~0.1ms vs ~10ms
+          return true; // skip full pipeline — ~0.1ms vs ~10ms
         }
       }
       // ─────────────────────────────────────────────────────────────────────────

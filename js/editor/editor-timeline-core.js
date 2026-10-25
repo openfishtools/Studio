@@ -802,10 +802,10 @@
         // Calculate current timecode in exact milliseconds
         const currentMs = Math.round((Math.max(0, -panX) / pixelsPerSecond) * 1000);
         const isActivelyPlaying = isAnyPlaybackActive();
-        if (currentMs !== lastDisplayedMs && (!isActivelyPlaying || force || Math.abs(currentMs - lastDisplayedMs) >= 40)) {
+        if (currentMs !== lastDisplayedMs && (!isActivelyPlaying || Math.abs(currentMs - lastDisplayedMs) >= 40)) {
           lastDisplayedMs = currentMs;
           timecodeEl.textContent = formatTimecode(currentMs);
-          if (typeof updateTimeBadgeBeatmarkState === 'function') {
+          if (!isActivelyPlaying && typeof updateTimeBadgeBeatmarkState === 'function') {
             updateTimeBadgeBeatmarkState();
           }
         }
@@ -2200,17 +2200,30 @@
           return;
         }
 
-        const fps = (window.PreviewCacheManager && window.PreviewCacheManager.fps)
-          || window.currentTimelineFps
-          || (currentProjectState && currentProjectState.fps ? parseInt(currentProjectState.fps, 10) : 60)
-          || 60;
+        const fps = (typeof getProjectFps === 'function')
+          ? getProjectFps()
+          : ((window.PreviewCacheManager && window.PreviewCacheManager.fps)
+            || window.currentTimelineFps
+            || (currentProjectState && currentProjectState.fps ? parseInt(currentProjectState.fps, 10) : 60)
+            || 60);
         const frameDuration = 1 / fps;
         const pixelsPerFrame = pixelsPerSecond / fps;
 
         const isFirstTick = (_playTickCount === 0);
-        // Adaptive Refresh Throttle: Prevents hyper-speed playback on 120Hz/144Hz/240Hz monitors
-        // Threshold 0.65 guarantees standard 60Hz displays (14.5ms-18ms VSync jitter) NEVER drop alternate frames
-        if (!isFirstTick && rawDeltaSec < frameDuration * 0.65) {
+        const currentSec = Math.max(0, -panX / pixelsPerSecond);
+        const layers = currentProjectState.layers || [];
+        const currentFrameIdx = Math.round(currentSec * fps);
+        const nextFrameIdx = currentFrameIdx + 1;
+
+        const isCacheEnabled = !!(window.PreviewCacheManager && window.isPreviewCacheEnabled !== false);
+        const isNextFrameCached = isCacheEnabled && window.PreviewCacheManager.hasFrame(nextFrameIdx);
+        const isCurrentAndNextCached = isNextFrameCached && window.PreviewCacheManager.hasFrame(currentFrameIdx);
+
+        // Adaptive Refresh Throttle:
+        // - When playing uncached frames or 60fps timelines, throttle ticks faster than 0.65 * frameDuration
+        // - When playing cached frames on a lower-FPS project (e.g. 24fps/30fps on a 60Hz display) with audio,
+        //   allow smooth playhead motion while canvas blits the quantized project frame in ~0.1ms!
+        if (!isFirstTick && rawDeltaSec < frameDuration * 0.65 && !isCurrentAndNextCached) {
           playAnimationId = requestAnimationFrame(stepPlay);
           return;
         }
@@ -2226,36 +2239,33 @@
           ? window.timelinePlaybackSpeed
           : 1.0;
 
-        const currentSec = Math.max(0, -panX / pixelsPerSecond);
-        const layers = currentProjectState.layers || [];
-        const currentFrameIdx = Math.round(currentSec * fps);
-        const nextFrameIdx = currentFrameIdx + 1;
-
-        const isCacheEnabled = !!(window.PreviewCacheManager && window.isPreviewCacheEnabled !== false);
-        const isCurrentOrNextFrameCached = isCacheEnabled && (
-          window.PreviewCacheManager.hasFrame(currentFrameIdx) ||
-          window.PreviewCacheManager.hasFrame(nextFrameIdx)
-        );
-
         // 1. After Effects Frame-Accurate RAM Preview Clock:
-        // - When building RAM cache on uncached frames (isCacheEnabled && !isCurrentOrNextFrameCached):
-        //   Advance strictly by 1 frame (frameDuration * playbackSpeed) so ZERO frames are ever skipped/jumped,
-        //   turning the entire timeline cache bar solid green on the first pass!
+        // - When building RAM cache on uncached frames (isCacheEnabled && !isNextFrameCached):
+        //   Advance strictly by 1 frame (nextFrameIdx / fps) so ZERO frames are ever skipped/jumped,
+        //   turning the entire timeline cache bar solid green on the first pass without gaps ("putus-putus")!
         // - When playing back cached frames (green bar) or when cache is disabled:
-        //   Advance at real-time speed, capped to at most 2 frames on minor VSync hiccups so motion never jumps.
+        //   Lock to hardware Master Audio Clock when available (zero audio drift / zero WSOLA rate jitter!),
+        //   otherwise advance by true wall-clock rawDeltaSec (without artificial min-clamp speed-up bias).
         let effectiveDeltaSec;
         if (isFirstTick) {
           effectiveDeltaSec = Math.min(frameDuration, Math.max(0, rawDeltaSec)) * playbackSpeed;
-        } else if (isCacheEnabled && !isCurrentOrNextFrameCached) {
+        } else if (isCacheEnabled && !isNextFrameCached) {
           effectiveDeltaSec = frameDuration * playbackSpeed;
         } else {
-          effectiveDeltaSec = Math.min(frameDuration * 2.0, Math.max(frameDuration * 0.85, rawDeltaSec)) * playbackSpeed;
+          effectiveDeltaSec = Math.min(Math.max(frameDuration * 2.5, 0.05), Math.max(0, rawDeltaSec)) * playbackSpeed;
         }
 
         let nextSec = currentSec + effectiveDeltaSec;
-        // Snap nextSec to exact frame boundary when stepping frame-by-frame at 1.0x speed
-        if (Math.abs(playbackSpeed - 1.0) < 0.01 && isCacheEnabled && !isCurrentOrNextFrameCached) {
+        if (isCacheEnabled && !isNextFrameCached && Math.abs(playbackSpeed - 1.0) < 0.01) {
+          // Strict 1-by-1 frame stepping when filling uncached frames at 1.0x
           nextSec = nextFrameIdx / fps;
+        } else if ((isCurrentAndNextCached || !isCacheEnabled) && Math.abs(playbackSpeed - 1.0) < 0.01 && window.FishAudioEngine && typeof window.FishAudioEngine.getMasterAudioTime === 'function') {
+          // When frames are cached (including audio-only timelines), slave playhead to hardware audio clock
+          // so the timeline never outruns or fights the audio element!
+          const masterAudioSec = window.FishAudioEngine.getMasterAudioTime(layers, nextSec, pixelsPerSecond);
+          if (masterAudioSec !== null && isFinite(masterAudioSec) && masterAudioSec >= currentSec && Math.abs(masterAudioSec - nextSec) < 0.25) {
+            nextSec = masterAudioSec;
+          }
         }
 
         // 2. After Effects Stepped Audio Slow-Mo with Hold Interval (Jeda Sebelum Slow-Mo Berikutnya):
@@ -2272,7 +2282,7 @@
         }
 
         let effectiveAudioSpeed = playbackSpeed;
-        if (isCurrentOrNextFrameCached || window._nleSmoothedFrameSec <= frameDuration * 1.22) {
+        if (isCurrentAndNextCached || isNextFrameCached || window._nleSmoothedFrameSec <= frameDuration * 1.22) {
           // Real-time / Cached Green Bar: immediately lock audio to 100% normal speed (1.0x)
           window._nleSteppedAudioRatio = 1.0;
           window._nleLastAudioStepMs = timestamp;

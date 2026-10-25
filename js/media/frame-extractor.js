@@ -2236,9 +2236,8 @@
       if (layer.mediaDuration && (!source.duration || source.duration <= 0)) {
         source.duration = layer.mediaDuration;
       }
-      const nativeFps = (layer.mediaFps && layer.mediaFps >= 10 && layer.mediaFps <= 240) ? layer.mediaFps : null;
-      const effectiveFps = nativeFps || (parseInt(typeof window !== 'undefined' && window.currentProjectState && window.currentProjectState.fps, 10) || this.targetFps || 60);
-      if (!source.fps || (nativeFps && source.fps !== nativeFps)) {
+      const effectiveFps = this.targetFps || (parseInt(typeof window !== 'undefined' && window.currentProjectState && window.currentProjectState.fps, 10) || 60);
+      if (!source.fps || source.fps !== effectiveFps) {
         source.fps = effectiveFps;
       }
 
@@ -2325,13 +2324,6 @@
         }
       }
 
-      if (typeof window !== 'undefined' && window.PreviewCacheManager) {
-        const pps = window.currentPixelsPerSecond || 80;
-        const start = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
-        const dur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
-        window.PreviewCacheManager.invalidateRange(start, start + dur);
-      }
-
       if (source.dataUrl) {
         this._startExtractionForSource(source, missing);
       }
@@ -2390,9 +2382,8 @@
         if (vl.mediaDuration && (!source.duration || source.duration <= 0)) {
           source.duration = vl.mediaDuration;
         }
-        const nativeFps = (vl.mediaFps && vl.mediaFps >= 10 && vl.mediaFps <= 240) ? vl.mediaFps : null;
-        const effectiveFps = nativeFps || (parseInt(typeof window !== 'undefined' && window.currentProjectState && window.currentProjectState.fps, 10) || this.targetFps || 60);
-        if (!source.fps || (nativeFps && source.fps !== nativeFps)) {
+        const effectiveFps = this.targetFps || (parseInt(typeof window !== 'undefined' && window.currentProjectState && window.currentProjectState.fps, 10) || 60);
+        if (!source.fps || source.fps !== effectiveFps) {
           source.fps = effectiveFps;
         }
         if (!source.isDbLoaded) {
@@ -3617,21 +3608,14 @@
 
       if (window.PreviewCacheManager && isComplete && source && source._hasNewExtractedFrames) {
         source._hasNewExtractedFrames = false;
-        const pps = window.currentPixelsPerSecond || 80;
         const matchingLayers = this._collectMatchingLayers(l => (l.type === 'video' || l.type === 'precomp') && !l.hidden && this._getSourceKey(l) === sourceKey);
         if (matchingLayers.length === 0) return;
 
-        if (!window.isTimelinePlaying) {
-          matchingLayers.forEach(l => {
-            const start = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps);
-            const dur = l.durationSec !== undefined ? l.durationSec : ((l.widthPx || 320) / pps);
-            window.PreviewCacheManager.invalidateRange(start, start + dur);
-          });
-          if (window.PreviewCacheManager.idleCacheEnabled) {
-            window.PreviewCacheManager.scheduleIdleCheck();
-          }
-        } else {
-          window._pendingVideoCacheInvalidation = true;
+        if (window.PreviewCacheManager._unreadyFrames) {
+          window.PreviewCacheManager._unreadyFrames.clear();
+        }
+        if (!window.isTimelinePlaying && window.PreviewCacheManager.idleCacheEnabled) {
+          window.PreviewCacheManager.scheduleIdleCheck(true);
         }
       }
     }

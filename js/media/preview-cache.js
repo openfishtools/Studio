@@ -420,9 +420,10 @@
       if (!this._inFlightFrames) this._inFlightFrames = new Set();
       if (!this._frameGen) this._frameGen = new Map();
       const inFlightKey = `${targetComp}:${frameIndex}`;
+      if (this._inFlightFrames.has(inFlightKey)) return;
       // Allow sufficient concurrent bitmap encodes during 60fps playback so live frames are never dropped
       const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 24 : 48;
-      if (this._inFlightFrames.size >= maxInFlight && !this._inFlightFrames.has(inFlightKey)) return;
+      if (this._inFlightFrames.size >= maxInFlight) return;
       const gen = (this._frameGen.get(inFlightKey) || 0) + 1;
       this._frameGen.set(inFlightKey, gen);
       this._pendingFrames.add(inFlightKey);
@@ -1032,8 +1033,15 @@
         }
       };
 
+      const onPointerMove = (e) => {
+        // Only interrupt idle cache on active drag/scrubbing (buttons > 0), not passive mouse hover
+        if (e && (e.buttons > 0 || window.isTimelineScrubbing || window.isTimelinePanning || window.isTransformInteracting)) {
+          onActivity();
+        }
+      };
+
       window.addEventListener('pointerdown', onActivity, { passive: true });
-      window.addEventListener('pointermove', onActivity, { passive: true });
+      window.addEventListener('pointermove', onPointerMove, { passive: true });
       window.addEventListener('keydown', onActivity, { passive: true });
       window.addEventListener('wheel', onActivity, { passive: true });
       window.addEventListener('scroll', onActivity, { passive: true });
@@ -1044,7 +1052,7 @@
       if (this.ensureAudioOnlyFullCache()) return;
       if (!this.idleCacheEnabled) return;
       if (this.idleTimer) clearTimeout(this.idleTimer);
-      const delay = immediate ? 50 : 600;
+      const delay = immediate ? 40 : 280;
       this.idleTimer = setTimeout(() => {
         if (typeof window !== 'undefined' && window.isExporting) return;
         if (this.ensureAudioOnlyFullCache()) return;
@@ -1082,8 +1090,7 @@
     stopIdleWorker() {
       this.isIdleRunning = false;
       if (this.idleWorkerId) {
-        if (typeof cancelIdleCallback === 'function') cancelIdleCallback(this.idleWorkerId);
-        else clearTimeout(this.idleWorkerId);
+        clearTimeout(this.idleWorkerId);
         this.idleWorkerId = null;
       }
     }
@@ -1158,48 +1165,45 @@
         return;
       }
 
-      const totalFrames = Math.ceil(totalDur * this.fps);
+      const currentFps = this.fps || 60;
+      const totalFrames = Math.ceil(totalDur * currentFps);
       const pps = window.currentPixelsPerSecond || 80;
       const currentPanX = window.timelinePanX !== undefined ? window.timelinePanX : 0;
-      const currentFrame = Math.max(0, Math.min(totalFrames, Math.round((Math.abs(currentPanX) / pps) * this.fps)));
+      const currentFrame = Math.max(0, Math.min(totalFrames, Math.round((Math.abs(currentPanX) / pps) * currentFps)));
 
-      // AE-Style Bidirectional RAM Preview Sweep across the ENTIRE project duration [0 .. totalFrames]
+      // AE-Style Contiguous Forward-First RAM Preview Sweep across [currentFrame .. totalFrames], then [0 .. currentFrame - 1]
+      // Ensures the green cache bar grows smoothly and contiguously without gaps or alternating jumps.
       let targetFrame = -1;
-      let fwdIdx = currentFrame;
-      let bwdIdx = currentFrame - 1;
       const targetComp = this.activeCompId || 'root';
-      const maxFwd = totalFrames;
-      const minBwd = 0;
       let sawUnreadyOrInFlight = false;
 
-      while (targetFrame === -1 && (fwdIdx <= maxFwd || bwdIdx >= minBwd)) {
-        // Check forward first (more useful — user is likely playing forward)
-        if (fwdIdx <= maxFwd) {
-          if (!this.frames.has(fwdIdx)) {
-            const inFlightKey = `${targetComp}:${fwdIdx}`;
-            const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
-            const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
-            if (!isInFlight && !isMarkedUnready && this.isTimeReadyToCache(fwdIdx / this.fps)) {
-              targetFrame = fwdIdx;
-              break;
-            }
-            sawUnreadyOrInFlight = true;
+      // Pass 1: Contiguous forward from playhead to end of composition
+      for (let f = currentFrame; f <= totalFrames; f++) {
+        if (!this.frames.has(f)) {
+          const inFlightKey = `${targetComp}:${f}`;
+          const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
+          const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
+          if (!isInFlight && !isMarkedUnready && this.isTimeReadyToCache(f / currentFps)) {
+            targetFrame = f;
+            break;
           }
-          fwdIdx++;
+          sawUnreadyOrInFlight = true;
         }
-        // Then check backward (recent history — scrub back support)
-        if (bwdIdx >= minBwd) {
-          if (!this.frames.has(bwdIdx)) {
-            const inFlightKey = `${targetComp}:${bwdIdx}`;
+      }
+
+      // Pass 2: Contiguous from 0 up to playhead
+      if (targetFrame === -1) {
+        for (let f = 0; f < currentFrame; f++) {
+          if (!this.frames.has(f)) {
+            const inFlightKey = `${targetComp}:${f}`;
             const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
             const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
-            if (!isInFlight && !isMarkedUnready && this.isTimeReadyToCache(bwdIdx / this.fps)) {
-              targetFrame = bwdIdx;
+            if (!isInFlight && !isMarkedUnready && this.isTimeReadyToCache(f / currentFps)) {
+              targetFrame = f;
               break;
             }
             sawUnreadyOrInFlight = true;
           }
-          bwdIdx--;
         }
       }
 
@@ -1207,7 +1211,7 @@
         // If frames are still unready (e.g. video decoder catching up), clear _unreadyFrames and retry shortly instead of stopping permanently
         if (sawUnreadyOrInFlight) {
           if (this._unreadyFrames) this._unreadyFrames.clear();
-          this.idleWorkerId = setTimeout(() => this.runIdleStep(), 120);
+          this.idleWorkerId = setTimeout(() => this.runIdleStep(), 100);
           return;
         }
         this.stopIdleWorker();
@@ -1226,6 +1230,14 @@
           return;
         }
 
+        // Skip if targetFrame was already cached in the meantime
+        if (this.hasFrame(targetFrame, activeCanvas.width, activeCanvas.height, targetComp)) {
+          if (this.isIdleRunning) {
+            this.idleWorkerId = setTimeout(() => this.runIdleStep(), 4);
+          }
+          return;
+        }
+
         if (!this.offscreenCanvas) {
           this.offscreenCanvas = document.createElement('canvas');
         }
@@ -1235,7 +1247,7 @@
         }
 
         const inFlightKey = `${targetComp}:${targetFrame}`;
-        const targetSec = targetFrame / this.fps;
+        const targetSec = targetFrame / currentFps;
         if (!this.isTimeReadyToCache(targetSec)) {
           if (!this._unreadyFrames) this._unreadyFrames = new Set();
           this._unreadyFrames.add(inFlightKey);
@@ -1265,12 +1277,7 @@
         }
 
         if (this.isIdleRunning) {
-          if (typeof requestIdleCallback === 'function') {
-            this.idleWorkerId = requestIdleCallback(() => this.runIdleStep(), { timeout: 50 });
-          } else {
-            // 16ms = exactly one 60fps frame tick — idle cache fills at display refresh rate
-            this.idleWorkerId = setTimeout(() => this.runIdleStep(), 16);
-          }
+          this.idleWorkerId = setTimeout(() => this.runIdleStep(), 12);
         }
       };
 

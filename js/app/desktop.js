@@ -1787,14 +1787,14 @@
       }
       needle.style.transform = `translate3d(${(panelW + playheadX - desktopScrollX).toFixed(2)}px, 0, 0)`;
 
-      // 2. Only update track transforms when horizontal scroll actually changed
-      if (scrollChanged || force) {
+      // 2. Only update track transforms and scrollbar when horizontal scroll or panel width actually changed
+      if (scrollChanged || panelChanged || force) {
         const scrollTransform = `translate3d(${(-desktopScrollX).toFixed(2)}px, 0, 0)`;
         layersTrack.style.transform = scrollTransform;
         rulerTrack.style.transform = scrollTransform;
-      }
-      if (typeof window.syncDesktopTimelineScrollbar === 'function') {
-        window.syncDesktopTimelineScrollbar();
+        if (typeof window.syncDesktopTimelineScrollbar === 'function') {
+          window.syncDesktopTimelineScrollbar();
+        }
       }
     }
     window.syncDesktopPlayhead = syncDesktopPlayhead;

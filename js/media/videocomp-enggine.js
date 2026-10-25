@@ -448,9 +448,9 @@
       const driftThreshold = isVid
         ? Math.max(0.16, 0.12 * safeSpeed)
         : (isSlowMoStepped
-          ? Math.max(0.24, 0.18 * safeSpeed)
-          : (drift > 0 ? Math.max(0.15, 0.10 * safeSpeed) : Math.max(0.18, 0.12 * safeSpeed)));
-      const seekCooldownMs = isVid ? 240 : (isSlowMoStepped ? 420 : 280);
+          ? Math.max(0.26, 0.20 * safeSpeed)
+          : (drift > 0 ? Math.max(0.20, 0.14 * safeSpeed) : Math.max(0.24, 0.16 * safeSpeed)));
+      const seekCooldownMs = isVid ? 240 : (isSlowMoStepped ? 450 : 380);
 
       if (absDrift > driftThreshold && (!el._lastHardSeekTime || (nowMs - el._lastHardSeekTime > seekCooldownMs))) {
         try {
@@ -477,11 +477,11 @@
             el.playbackRate = safeSpeed;
           } catch (_) {}
         }
-      } else if (absDrift > 0.055) {
-        // Throttle playbackRate updates to at most once every 220ms and cap steering to gentle ±3%
+      } else if (absDrift > (isVid ? 0.055 : 0.11)) {
+        // Throttle playbackRate updates to at most once every 320ms and cap steering to gentle ±2%
         // so browser WSOLA time-stretcher never stutters or sounds sped-up.
-        if (!el._lastRateSteerTime || (nowMs - el._lastRateSteerTime > 220)) {
-          const steerFactor = Math.max(0.97, Math.min(1.03, 1.0 - (drift / Math.max(0.5, safeSpeed)) * 0.35));
+        if (!el._lastRateSteerTime || (nowMs - el._lastRateSteerTime > 320)) {
+          const steerFactor = Math.max(0.98, Math.min(1.02, 1.0 - (drift / Math.max(0.5, safeSpeed)) * 0.25));
           const steeredRate = Math.max(0.0625, Math.min(8.0, safeSpeed * steerFactor));
           if (Math.abs((el.playbackRate || safeSpeed) - steeredRate) > 0.005) {
             try {
@@ -490,8 +490,8 @@
             } catch (_) {}
           }
         }
-      } else if (absDrift < 0.035 && Math.abs((el.playbackRate || safeSpeed) - safeSpeed) > 0.002) {
-        // Deadzone (< 35ms): lock strictly to exact target rate (1.0x) so audio runs crystal-clear on hardware clock
+      } else if (absDrift < (isVid ? 0.035 : 0.085) && Math.abs((el.playbackRate || safeSpeed) - safeSpeed) > 0.002) {
+        // Deadzone: lock strictly to exact target rate (1.0x) so audio runs crystal-clear on hardware clock
         try {
           el._lastRateSteerTime = nowMs;
           el.playbackRate = safeSpeed;

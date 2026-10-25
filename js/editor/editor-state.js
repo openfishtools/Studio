@@ -353,12 +353,17 @@
 
     // Global Unified Project FPS Resolver
     function getProjectFps() {
-      if (typeof window.currentTimelineFps === 'number' && window.currentTimelineFps > 0) {
-        return window.currentTimelineFps;
-      }
       if (typeof currentProjectState !== 'undefined' && currentProjectState && currentProjectState.fps) {
         const val = parseInt(currentProjectState.fps, 10);
-        if (!isNaN(val) && val > 0) return val;
+        if (!isNaN(val) && val > 0) {
+          if (window.currentTimelineFps !== val) {
+            window.currentTimelineFps = val;
+          }
+          return val;
+        }
+      }
+      if (typeof window.currentTimelineFps === 'number' && window.currentTimelineFps > 0) {
+        return window.currentTimelineFps;
       }
       const fpsDropdown = document.getElementById('dropdown-fps');
       if (fpsDropdown && fpsDropdown.dataset && fpsDropdown.dataset.value) {
