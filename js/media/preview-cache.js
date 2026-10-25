@@ -46,12 +46,15 @@
 
     get maxFrames() {
       const fps = this.fps || 60;
-      const totalDur = (typeof window !== 'undefined' && typeof window.getProjectTotalDuration === 'function')
-        ? window.getProjectTotalDuration()
-        : 0;
-      const projectFrames = totalDur > 0 ? (Math.ceil(totalDur * fps) + 30) : 0;
-      const oneMinuteFrames = Math.round(60 * fps);
-      return Math.max(1800, oneMinuteFrames, projectFrames);
+      const devMem = this._devMem || 4;
+      // Device-aware RAM frame cap to prevent GPU/browser OOM crashes while holding up to 1 minute of 60fps preview
+      if (devMem <= 2) {
+        return Math.min(900, Math.max(450, Math.round(15 * fps)));
+      }
+      if (this._isMobile || devMem <= 4) {
+        return Math.min(1800, Math.max(900, Math.round(30 * fps)));
+      }
+      return Math.min(3600, Math.max(1800, Math.round(60 * fps)));
     }
 
     get frames() {
@@ -170,10 +173,6 @@
       const entry = pool.get(frameIndex);
       if (!entry) return false;
       if (entry.isAudioOnly) return true;
-      if (entry.isDraft !== this.isDraftMode) {
-        this.deleteFrame(frameIndex, false, compId);
-        return false;
-      }
       if (expectedWidth && expectedHeight && entry.width && entry.height) {
         const entryAspect = entry.width / entry.height;
         const expectedAspect = expectedWidth / expectedHeight;
@@ -190,10 +189,6 @@
       if (!entry) return null;
       if (entry.isAudioOnly) {
         return entry.bitmap || this._getAudioOnlyCanvas(expectedWidth, expectedHeight);
-      }
-      if (entry.isDraft !== this.isDraftMode) {
-        this.deleteFrame(frameIndex, false, compId);
-        return null;
       }
       if (expectedWidth && expectedHeight && entry.width && entry.height) {
         const entryAspect = entry.width / entry.height;
@@ -328,8 +323,9 @@
     }
 
     /**
-     * Evict only frames that fall outside the active project duration or exceed maxFrames.
-     * Protects the entire active composition playback range [0 .. totalProjectFrames] so the timeline bar stays full.
+     * Evict the single worst frame from the current pool when over maxFrames limit.
+     * Frames outside project duration bounds are purged first; if pool exceeds device memory cap,
+     * furthest frame from playhead is evicted so browser GPU memory never crashes.
      */
     _evictIfNeeded(compId = null) {
       const targetComp = compId || this.activeCompId;
@@ -339,7 +335,8 @@
         : 0;
       const currentFps = this.fps || 60;
       const totalProjectFrames = Math.ceil(totalDur * currentFps);
-      const effectiveMax = Math.max(this.maxFrames, totalProjectFrames + 15);
+      const memCap = this.maxFrames || Math.round(60 * currentFps);
+      const effectiveMax = Math.min(memCap, Math.max(60, totalProjectFrames + 15));
       if (pool.size <= effectiveMax) return;
 
       const pps = (typeof window !== 'undefined' && window.currentPixelsPerSecond) ? window.currentPixelsPerSecond : 80;
@@ -354,10 +351,11 @@
       for (const fIdx of pool.keys()) {
         const inFlightKey = `${targetComp}:${fIdx}`;
         if (this._inFlightFrames && this._inFlightFrames.has(inFlightKey)) continue; // never evict in-flight
-        // Never evict frames inside the active project duration [0, totalProjectFrames]
-        if (fIdx >= 0 && fIdx <= totalProjectFrames) continue;
         const dist = Math.abs(fIdx - curFrame);
-        const score = dist + 100000;
+        let score = dist;
+        if (fIdx < 0 || fIdx > totalProjectFrames) {
+          score += 100000;
+        }
         if (score > worstScore) {
           worstScore = score;
           worstIdx = fIdx;
@@ -421,15 +419,36 @@
       if (!this._frameGen) this._frameGen = new Map();
       const inFlightKey = `${targetComp}:${frameIndex}`;
       if (this._inFlightFrames.has(inFlightKey)) return;
-      // Allow sufficient concurrent bitmap encodes during 60fps playback so live frames are never dropped
-      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 24 : 48;
+      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 12 : 24;
       if (this._inFlightFrames.size >= maxInFlight) return;
       const gen = (this._frameGen.get(inFlightKey) || 0) + 1;
       this._frameGen.set(inFlightKey, gen);
       this._pendingFrames.add(inFlightKey);
       this._inFlightFrames.add(inFlightKey);
       try {
-        const bitmap = await createImageBitmap(sourceCanvas);
+        const srcW = sourceCanvas.width;
+        const srcH = sourceCanvas.height;
+        const maxDim = (this._isMobile || (this._devMem && this._devMem <= 4))
+          ? (isDraft ? 540 : 720)
+          : (isDraft ? 720 : 960);
+        const maxSide = Math.max(srcW, srcH);
+        let bitmap = null;
+        if (maxSide > maxDim) {
+          const scale = maxDim / maxSide;
+          const targetW = Math.max(16, Math.round(srcW * scale));
+          const targetH = Math.max(16, Math.round(srcH * scale));
+          try {
+            bitmap = await createImageBitmap(sourceCanvas, {
+              resizeWidth: targetW,
+              resizeHeight: targetH,
+              resizeQuality: 'low'
+            });
+          } catch (_) {
+            bitmap = await createImageBitmap(sourceCanvas);
+          }
+        } else {
+          bitmap = await createImageBitmap(sourceCanvas);
+        }
         // Re-check after await: frame may have been cleared/invalidated or superseded by a newer render
         if (!this._inFlightFrames.has(inFlightKey) || this._frameGen.get(inFlightKey) !== gen) {
           if (bitmap && typeof bitmap.close === 'function') {
@@ -443,10 +462,10 @@
         targetPool.set(frameIndex, {
           bitmap,
           isDraft,
-          width: sourceCanvas.width,
-          height: sourceCanvas.height
+          width: srcW,
+          height: srcH
         });
-        // Evict only out-of-bounds frames if over limit
+        // Evict oldest frame if over limit (prevents browser OOM crash when full timeline is cached)
         this._evictIfNeeded(targetComp);
         // Throttled ruler update — updates green cache bar smoothly during playback & idle fill
         this._scheduleRulerUpdate();
@@ -1165,35 +1184,82 @@
         return;
       }
 
+      const activeCanvas = (typeof document !== 'undefined') ? document.getElementById('editor-active-canvas') : null;
+      if (!activeCanvas || activeCanvas.width === 0 || activeCanvas.height === 0) {
+        this.stopIdleWorker();
+        return;
+      }
+
       const currentFps = this.fps || 60;
       const totalFrames = Math.ceil(totalDur * currentFps);
       const pps = window.currentPixelsPerSecond || 80;
       const currentPanX = window.timelinePanX !== undefined ? window.timelinePanX : 0;
       const currentFrame = Math.max(0, Math.min(totalFrames, Math.round((Math.abs(currentPanX) / pps) * currentFps)));
 
-      // AE-Style Contiguous Forward-First RAM Preview Sweep across [currentFrame .. totalFrames], then [0 .. currentFrame - 1]
-      // Ensures the green cache bar grows smoothly and contiguously without gaps or alternating jumps.
-      let targetFrame = -1;
       const targetComp = this.activeCompId || 'root';
-      let sawUnreadyOrInFlight = false;
+      const memCap = this.maxFrames || Math.round(60 * currentFps);
+      const effectiveMax = Math.min(memCap, totalFrames + 1);
+      if (this.frames.size >= effectiveMax) {
+        this.stopIdleWorker();
+        return;
+      }
 
-      // Pass 1: Contiguous forward from playhead to end of composition
-      for (let f = currentFrame; f <= totalFrames; f++) {
-        if (!this.frames.has(f)) {
-          const inFlightKey = `${targetComp}:${f}`;
-          const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
-          const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
-          if (!isInFlight && !isMarkedUnready && this.isTimeReadyToCache(f / currentFps)) {
-            targetFrame = f;
-            break;
-          }
-          sawUnreadyOrInFlight = true;
+      // Compute active window around playhead so idle worker never caches more frames than maxFrames
+      let winStart = 0;
+      let winEnd = totalFrames;
+      if (totalFrames + 1 > memCap) {
+        const fwdAllowance = Math.floor(memCap * 0.75);
+        const bwdAllowance = memCap - fwdAllowance - 1;
+        winStart = Math.max(0, currentFrame - bwdAllowance);
+        winEnd = Math.min(totalFrames, winStart + memCap - 1);
+        if (winEnd === totalFrames) {
+          winStart = Math.max(0, totalFrames - memCap + 1);
         }
       }
 
-      // Pass 2: Contiguous from 0 up to playhead
-      if (targetFrame === -1) {
-        for (let f = 0; f < currentFrame; f++) {
+      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 8 : 16;
+      if (this._inFlightFrames && this._inFlightFrames.size >= maxInFlight) {
+        this.idleWorkerId = setTimeout(() => this.runIdleStep(), 16);
+        return;
+      }
+
+      // Prepare offscreen canvas capped to preview cache resolution for rapid 60fps rendering
+      if (!this.offscreenCanvas) {
+        this.offscreenCanvas = document.createElement('canvas');
+      }
+      const maxDim = (this._isMobile || (this._devMem && this._devMem <= 4))
+        ? (this.isDraftMode ? 540 : 720)
+        : (this.isDraftMode ? 720 : 960);
+      const srcW = activeCanvas.width;
+      const srcH = activeCanvas.height;
+      const maxSide = Math.max(srcW, srcH);
+      const scale = maxSide > maxDim ? (maxDim / maxSide) : 1.0;
+      const targetW = Math.max(16, Math.round(srcW * scale));
+      const targetH = Math.max(16, Math.round(srcH * scale));
+      if (this.offscreenCanvas.width !== targetW || this.offscreenCanvas.height !== targetH) {
+        this.offscreenCanvas.width = targetW;
+        this.offscreenCanvas.height = targetH;
+      }
+
+      const stepStartMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      const timeBudgetMs = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 4.5 : 7.5;
+      const maxFramesPerStep = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 2 : 4;
+      let renderedInStep = 0;
+
+      while (renderedInStep < maxFramesPerStep) {
+        if (!this.isIdleRunning || !this.idleCacheEnabled || window.isTimelinePlaying || window.isTransformInteracting) {
+          this.stopIdleWorker();
+          return;
+        }
+        if (this._inFlightFrames && this._inFlightFrames.size >= maxInFlight) {
+          break;
+        }
+
+        let targetFrame = -1;
+        let sawUnreadyOrInFlight = false;
+
+        // Pass 1: Contiguous forward from playhead to end of active window
+        for (let f = currentFrame; f <= winEnd; f++) {
           if (!this.frames.has(f)) {
             const inFlightKey = `${targetComp}:${f}`;
             const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
@@ -1205,58 +1271,35 @@
             sawUnreadyOrInFlight = true;
           }
         }
-      }
 
-      if (targetFrame === -1) {
-        // If frames are still unready (e.g. video decoder catching up), clear _unreadyFrames and retry shortly instead of stopping permanently
-        if (sawUnreadyOrInFlight) {
-          if (this._unreadyFrames) this._unreadyFrames.clear();
-          this.idleWorkerId = setTimeout(() => this.runIdleStep(), 100);
-          return;
-        }
-        this.stopIdleWorker();
-        return;
-      }
-
-      const renderNext = async () => {
-        if (!this.isIdleRunning || !this.idleCacheEnabled || window.isTimelinePlaying || window.isTransformInteracting) {
-          this.stopIdleWorker();
-          return;
-        }
-
-        const activeCanvas = document.getElementById('editor-active-canvas');
-        if (!activeCanvas || activeCanvas.width === 0 || activeCanvas.height === 0) {
-          this.stopIdleWorker();
-          return;
-        }
-
-        // Skip if targetFrame was already cached in the meantime
-        if (this.hasFrame(targetFrame, activeCanvas.width, activeCanvas.height, targetComp)) {
-          if (this.isIdleRunning) {
-            this.idleWorkerId = setTimeout(() => this.runIdleStep(), 4);
+        // Pass 2: Contiguous from winStart up to playhead
+        if (targetFrame === -1) {
+          for (let f = winStart; f < currentFrame; f++) {
+            if (!this.frames.has(f)) {
+              const inFlightKey = `${targetComp}:${f}`;
+              const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
+              const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
+              if (!isInFlight && !isMarkedUnready && this.isTimeReadyToCache(f / currentFps)) {
+                targetFrame = f;
+                break;
+              }
+              sawUnreadyOrInFlight = true;
+            }
           }
-          return;
         }
 
-        if (!this.offscreenCanvas) {
-          this.offscreenCanvas = document.createElement('canvas');
-        }
-        if (this.offscreenCanvas.width !== activeCanvas.width || this.offscreenCanvas.height !== activeCanvas.height) {
-          this.offscreenCanvas.width = activeCanvas.width;
-          this.offscreenCanvas.height = activeCanvas.height;
+        if (targetFrame === -1) {
+          if (sawUnreadyOrInFlight) {
+            if (this._unreadyFrames) this._unreadyFrames.clear();
+            this.idleWorkerId = setTimeout(() => this.runIdleStep(), 80);
+            return;
+          }
+          this.stopIdleWorker();
+          return;
         }
 
         const inFlightKey = `${targetComp}:${targetFrame}`;
         const targetSec = targetFrame / currentFps;
-        if (!this.isTimeReadyToCache(targetSec)) {
-          if (!this._unreadyFrames) this._unreadyFrames = new Set();
-          this._unreadyFrames.add(inFlightKey);
-          if (this.isIdleRunning) {
-            this.idleWorkerId = setTimeout(() => this.runIdleStep(), 16);
-          }
-          return;
-        }
-
         let isFrameReady = true;
         if (typeof window.renderCanvasFrame === 'function') {
           const res = window.renderCanvasFrame(
@@ -1269,19 +1312,24 @@
           );
           if (res === false) isFrameReady = false;
         }
+
         if (isFrameReady) {
-          await this.setFrameFromCanvas(targetFrame, this.offscreenCanvas, this.isDraftMode);
+          this.setFrameFromCanvas(targetFrame, this.offscreenCanvas, this.isDraftMode);
+          renderedInStep++;
         } else {
           if (!this._unreadyFrames) this._unreadyFrames = new Set();
           this._unreadyFrames.add(inFlightKey);
         }
 
-        if (this.isIdleRunning) {
-          this.idleWorkerId = setTimeout(() => this.runIdleStep(), 12);
+        const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        if ((nowMs - stepStartMs) >= timeBudgetMs) {
+          break;
         }
-      };
+      }
 
-      renderNext();
+      if (this.isIdleRunning) {
+        this.idleWorkerId = setTimeout(() => this.runIdleStep(), 4);
+      }
     }
 
     /**

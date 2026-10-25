@@ -217,7 +217,7 @@
           } else {
             if (source.cachedFrameIndices && source.cachedFrameIndices.has(fIdx)) {
               extractor.fetchFrameFromDB(source, fIdx);
-              if (!isExporting && !isIdleCache && typeof extractor.ensurePlaybackFrames === 'function') {
+              if (!isExporting && typeof extractor.ensurePlaybackFrames === 'function') {
                 extractor.ensurePlaybackFrames(source, fIdx);
               }
             }

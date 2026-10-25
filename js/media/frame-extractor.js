@@ -73,29 +73,29 @@
     if (devMem <= 2) {
       return {
         isMobile: true,
-        maxRamFramesPerSource: 90,
-        maxTotalRamFrames: 150,
+        maxRamFramesPerSource: 450,
+        maxTotalRamFrames: 750,
         maxTargetDim: 540,
-        maxDecodeQueue: 4,
-        maxPendingBitmaps: 3,
+        maxDecodeQueue: 6,
+        maxPendingBitmaps: 4,
         dbBatchSize: 4
       };
     }
     if (mobile || devMem <= 4) {
       return {
         isMobile: mobile,
-        maxRamFramesPerSource: 150,
-        maxTotalRamFrames: 240,
-        maxTargetDim: 540,
-        maxDecodeQueue: 6,
-        maxPendingBitmaps: 4,
-        dbBatchSize: 5
+        maxRamFramesPerSource: 900,
+        maxTotalRamFrames: 1500,
+        maxTargetDim: 640,
+        maxDecodeQueue: 10,
+        maxPendingBitmaps: 8,
+        dbBatchSize: 6
       };
     }
     return {
       isMobile: false,
-      maxRamFramesPerSource: 3600,
-      maxTotalRamFrames: 7200,
+      maxRamFramesPerSource: 2400,
+      maxTotalRamFrames: 4500,
       maxTargetDim: 960,
       maxDecodeQueue: 16,
       maxPendingBitmaps: 12,

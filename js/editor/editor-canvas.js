@@ -96,9 +96,17 @@
 
     function redrawComposition(source = 'general', immediate = false) {
       _lastRedrawSource = source;
-      const isPureTimelineScrub = (source === 'scrub' || source === 'playbackStep') ||
-        (!!(window.isTimelineScrubbing || window.isTimelinePanning) && !window.isTransformInteracting);
-      if (!window.isTimelinePlaying && !isPureTimelineScrub && window.PreviewCacheManager && typeof window.PreviewCacheManager.syncStateWithProject === 'function') {
+      const isNonMutatingRedraw = (
+        source === 'scrub' ||
+        source === 'scrubEnd' ||
+        source === 'playbackStep' ||
+        source === 'playbackPause' ||
+        source === 'frameReady' ||
+        source === 'playbackFramesBatchLoaded' ||
+        source === 'fitPreviewCanvasBox' ||
+        source === 'video:onseeked'
+      ) || (!!(window.isTimelineScrubbing || window.isTimelinePanning) && !window.isTransformInteracting);
+      if (!window.isTimelinePlaying && !isNonMutatingRedraw && window.PreviewCacheManager && typeof window.PreviewCacheManager.syncStateWithProject === 'function') {
         window.PreviewCacheManager.syncStateWithProject();
       }
 
@@ -1290,10 +1298,7 @@
       // RAM preview cache: used during playback, scrubbing, and frame park for instant 60fps blit.
       // Canvas wireframe transform interaction bypasses cache to track cursor movements live.
       if (!isExport && !isIdleCache && !isTransformDragging && window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
-        const isVideoReady = activeVideos.every(vl => window.VideoFrameExtractor ? window.VideoFrameExtractor.isVideoFrameReady(vl, currentSec) : false);
-        if (isVideoReady) {
-          cachedBitmap = window.PreviewCacheManager.getFrame(frameIndex, w, h);
-        }
+        cachedBitmap = window.PreviewCacheManager.getFrame(frameIndex, w, h);
       }
 
       if (cachedBitmap) {
