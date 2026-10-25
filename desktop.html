@@ -3086,28 +3086,6 @@
     <!-- Options list -->
     <div class="export-fs-body" id="export-fs-body">
 
-      <!-- Export Preview & Specs Summary Card -->
-      <div class="export-preview-card" id="export-preview-card">
-        <div class="export-preview-viewport" id="export-preview-viewport">
-          <canvas id="export-preview-canvas" class="export-preview-canvas"></canvas>
-          <span class="export-preview-badge" id="export-preview-badge">00:05</span>
-        </div>
-        <div class="export-specs-grid">
-          <div class="export-spec-item">
-            <span class="export-spec-label">Est. Size</span>
-            <span class="export-spec-val" id="export-spec-size">~15.6 MB</span>
-          </div>
-          <div class="export-spec-item">
-            <span class="export-spec-label">Quality</span>
-            <span class="export-spec-val" id="export-spec-quality">1080p · Normal</span>
-          </div>
-          <div class="export-spec-item">
-            <span class="export-spec-label">Frame Rate</span>
-            <span class="export-spec-val" id="export-spec-fps">60 FPS</span>
-          </div>
-        </div>
-      </div>
-
       <!-- 1. Export Video -->
       <div class="export-option-card" data-export-type="video" role="radio" aria-checked="false" tabindex="0">
         <div class="export-option-radio">
@@ -3203,11 +3181,10 @@
       <span class="export-settings-title">Video Settings</span>
     </div>
     <div class="export-settings-body">
-      <div class="export-settings-summary-bar" id="export-video-summary-bar">
-        <span class="export-summary-pill" id="export-video-summary-res">1920×1080</span>
-        <span class="export-summary-pill" id="export-video-summary-fps">60 FPS</span>
-        <span class="export-summary-pill" id="export-video-summary-quality">Normal</span>
-        <span class="export-summary-pill is-highlight" id="export-video-summary-size">~15.6 MB</span>
+      <!-- Filename -->
+      <div class="export-setting-group">
+        <span class="export-setting-label">File Name</span>
+        <input type="text" class="export-setting-select" id="export-video-filename" placeholder="New_Project" spellcheck="false" autocomplete="off" style="font-family:var(--font-brand);font-size:14px;font-weight:600;background-image:none;padding-right:14px;">
       </div>
       <!-- 1. Aspect Ratio (Visual Frames) -->
       <div class="modal-form-group">
@@ -3308,11 +3285,6 @@
           </label>
         </div>
       </div>
-      <!-- Filename -->
-      <div class="export-setting-group">
-        <span class="export-setting-label">File Name</span>
-        <input type="text" class="export-setting-select" id="export-video-filename" placeholder="New_Project" spellcheck="false" autocomplete="off" style="font-family:var(--font-brand);font-size:14px;font-weight:600;">
-      </div>
     </div>
     </div><!-- /export-fs-inner -->
   </div>
@@ -3329,12 +3301,6 @@
       <span class="export-settings-title">Image Sequence Settings</span>
     </div>
     <div class="export-settings-body">
-      <div class="export-settings-summary-bar" id="export-seq-summary-bar">
-        <span class="export-summary-pill" id="export-seq-summary-res">1920×1080</span>
-        <span class="export-summary-pill" id="export-seq-summary-fps">60 FPS</span>
-        <span class="export-summary-pill" id="export-seq-summary-quality">ZIP</span>
-        <span class="export-summary-pill is-highlight" id="export-seq-summary-size">~180 MB</span>
-      </div>
       <!-- 1. Aspect Ratio (Visual Frames) -->
       <div class="modal-form-group">
         <label class="modal-label">ASPECT RATIO</label>
@@ -6482,21 +6448,13 @@
 
   <!-- ==========================================================================
        FULLSCREEN EXPORT PROGRESS OVERLAY
-       Features: Live frame preview, specs summary, progress bar, percentage text
+       Features: Minimal professional progress bar, percentage text, stage status
        ========================================================================== -->
   <div class="export-progress-overlay" id="editor-export-progress-overlay" role="dialog" aria-modal="true" aria-hidden="true" style="display: none;">
     <div class="export-progress-modal">
       <div class="export-progress-title-row">
         <h3 class="export-progress-title" id="export-progress-title">Exporting video</h3>
         <span class="export-progress-percent" id="export-progress-percent">0%</span>
-      </div>
-      <div class="export-progress-preview-box" id="export-progress-preview-box">
-        <canvas id="export-progress-preview-canvas" class="export-progress-preview-canvas"></canvas>
-      </div>
-      <div class="export-progress-specs" id="export-progress-specs">
-        <span class="export-progress-spec-pill" id="export-progress-spec-quality">1080p · Normal</span>
-        <span class="export-progress-spec-pill" id="export-progress-spec-fps">60 FPS</span>
-        <span class="export-progress-spec-pill" id="export-progress-spec-size">~15.6 MB</span>
       </div>
       <div class="export-progress-bar-track">
         <div class="export-progress-bar-fill" id="export-progress-fill" style="width: 0%;"></div>

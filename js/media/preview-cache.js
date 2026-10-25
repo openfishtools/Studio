@@ -46,18 +46,12 @@
 
     get maxFrames() {
       const fps = this.fps || 60;
-      const devMem = this._devMem || 4;
-      // Low-end mobile devices (e.g. Redmi 9 with 3GB/4GB RAM):
-      // Cap RAM preview bitmaps to 120-240 frames (~40-80MB VRAM) to prevent Android LMK & GPU texture eviction
-      if (devMem <= 2) {
-        return Math.min(120, Math.max(60, Math.round(4 * fps)));
-      }
-      if (this._isMobile || devMem <= 4) {
-        return Math.min(240, Math.max(90, Math.round(8 * fps)));
-      }
-      // Desktop / high-RAM devices: up to 1 minute (60s)
+      const totalDur = (typeof window !== 'undefined' && typeof window.getProjectTotalDuration === 'function')
+        ? window.getProjectTotalDuration()
+        : 0;
+      const projectFrames = totalDur > 0 ? (Math.ceil(totalDur * fps) + 30) : 0;
       const oneMinuteFrames = Math.round(60 * fps);
-      return Math.max(1800, oneMinuteFrames);
+      return Math.max(1800, oneMinuteFrames, projectFrames);
     }
 
     get frames() {
@@ -84,8 +78,10 @@
       if (!compId || compId === 'root') return;
       if (this.pools.has(compId)) {
         const pool = this.pools.get(compId);
+        const closedBitmaps = new Set();
         for (const entry of pool.values()) {
-          if (entry && entry.bitmap && typeof entry.bitmap.close === 'function') {
+          if (entry && entry.bitmap && !closedBitmaps.has(entry.bitmap) && typeof entry.bitmap.close === 'function') {
+            closedBitmaps.add(entry.bitmap);
             try { entry.bitmap.close(); } catch (_) {}
           }
         }
@@ -101,6 +97,7 @@
         if (!this.pools.has(target)) {
           this.pools.set(target, new Map());
         }
+        this.ensureAudioOnlyFullCache();
         this.updateRulerUI();
         if (this.idleCacheEnabled) {
           this.scheduleIdleCheck();
@@ -172,6 +169,7 @@
       const pool = this.getPool(compId || this.activeCompId);
       const entry = pool.get(frameIndex);
       if (!entry) return false;
+      if (entry.isAudioOnly) return true;
       if (entry.isDraft !== this.isDraftMode) {
         this.deleteFrame(frameIndex, false, compId);
         return false;
@@ -190,6 +188,9 @@
       const pool = this.getPool(compId || this.activeCompId);
       const entry = pool.get(frameIndex);
       if (!entry) return null;
+      if (entry.isAudioOnly) {
+        return entry.bitmap || this._getAudioOnlyCanvas(expectedWidth, expectedHeight);
+      }
       if (entry.isDraft !== this.isDraftMode) {
         this.deleteFrame(frameIndex, false, compId);
         return null;
@@ -205,9 +206,130 @@
     }
 
     /**
-     * Evict the single worst frame from the current pool when over maxFrames limit.
-     * Strategy: protect the active composition playback range so the timeline bar stays solid.
-     * Furthest frames from playhead outside the project loop are evicted first.
+     * Check if the active composition only contains audio layers (and no visible visual layers).
+     * When true, the entire timeline duration can be cached instantaneously using a single shared background frame.
+     */
+    isAudioOnlyComposition(projectState = null, compId = null) {
+      const ps = projectState || (typeof window !== 'undefined' ? window.currentProjectState : null);
+      if (!ps || !Array.isArray(ps.layers) || ps.layers.length === 0) return false;
+      const targetComp = compId || this.activeCompId || 'root';
+      const layers = (targetComp === 'root' || !targetComp)
+        ? (ps.layers || [])
+        : ((typeof window !== 'undefined' && window.currentActivePrecomp && Array.isArray(window.currentActivePrecomp.layers))
+          ? window.currentActivePrecomp.layers
+          : (ps.layers || []));
+      if (layers.length === 0) return false;
+
+      let hasActiveAudio = false;
+      for (let i = 0; i < layers.length; i++) {
+        const l = layers[i];
+        if (!l || l.hidden) continue;
+        const t = (l.type || l.mediaType || '').toLowerCase();
+        if (t === 'audio') {
+          hasActiveAudio = true;
+        } else if (t === 'null' || l.isNull) {
+          continue;
+        } else {
+          // Any visible visual layer (video, image, text, shape, precomp, adjustment, camera, etc.)
+          return false;
+        }
+      }
+      return hasActiveAudio;
+    }
+
+    _getAudioOnlyCanvas(width = null, height = null, bgColor = null) {
+      if (typeof document === 'undefined') return null;
+      const activeCanvas = document.getElementById('editor-active-canvas');
+      const w = Math.max(16, Number(width) || (activeCanvas && activeCanvas.width) || 640);
+      const h = Math.max(16, Number(height) || (activeCanvas && activeCanvas.height) || 360);
+      const ps = (typeof window !== 'undefined' && window.currentProjectState) ? window.currentProjectState : null;
+      const bg = bgColor || (ps && ps.bgColor) || '#0a0d07';
+
+      if (!this._audioOnlyCanvas) {
+        this._audioOnlyCanvas = document.createElement('canvas');
+      }
+      if (this._audioOnlyCanvas.width !== w || this._audioOnlyCanvas.height !== h || this._audioOnlyBg !== bg) {
+        this._audioOnlyCanvas.width = w;
+        this._audioOnlyCanvas.height = h;
+        this._audioOnlyBg = bg;
+        const ctx = this._audioOnlyCanvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, w, h);
+          if (bg && bg !== 'transparent') {
+            ctx.fillStyle = bg;
+            ctx.fillRect(0, 0, w, h);
+          }
+        }
+      }
+      return this._audioOnlyCanvas;
+    }
+
+    /**
+     * Instantly populate the full project duration cache when the timeline only has audio layer(s).
+     * Uses a single shared entry across all frames (0 .. totalFrames) so memory usage is ~0 MB
+     * and the green cache bar is immediately 100% full for adding beatmarks.
+     */
+    ensureAudioOnlyFullCache(projectState = null, compId = null) {
+      if (typeof window !== 'undefined' && (window.isExporting || window.isPreviewCacheEnabled === false)) return false;
+      const targetComp = compId || this.activeCompId || 'root';
+      if (!this.isAudioOnlyComposition(projectState, targetComp)) return false;
+
+      const totalDur = (typeof window !== 'undefined' && typeof window.getProjectTotalDuration === 'function')
+        ? window.getProjectTotalDuration()
+        : 0;
+      if (totalDur <= 0) return false;
+
+      const currentFps = this.fps || 60;
+      const totalFrames = Math.ceil(totalDur * currentFps);
+      const pool = this.getPool(targetComp);
+      const ps = projectState || (typeof window !== 'undefined' ? window.currentProjectState : null);
+      const bg = (ps && ps.bgColor) || '#0a0d07';
+
+      // Fast check if already fully populated for this exact audio-only duration and background
+      if (
+        pool.size >= totalFrames + 1 &&
+        this._lastAudioOnlyCacheKey === `${targetComp}:${totalFrames}:${currentFps}:${bg}:${this.isDraftMode ? 1 : 0}` &&
+        pool.has(0) &&
+        pool.has(totalFrames)
+      ) {
+        return true;
+      }
+
+      const bgCanvas = this._getAudioOnlyCanvas(null, null, bg);
+      if (!bgCanvas) return false;
+
+      const sharedEntry = {
+        bitmap: bgCanvas,
+        isDraft: this.isDraftMode,
+        isAudioOnly: true,
+        shared: true,
+        width: bgCanvas.width,
+        height: bgCanvas.height
+      };
+
+      for (let f = 0; f <= totalFrames; f++) {
+        pool.set(f, sharedEntry);
+      }
+      this._lastAudioOnlyCacheKey = `${targetComp}:${totalFrames}:${currentFps}:${bg}:${this.isDraftMode ? 1 : 0}`;
+
+      // Upgrade sharedEntry.bitmap to hardware ImageBitmap asynchronously if supported
+      if (typeof createImageBitmap === 'function') {
+        createImageBitmap(bgCanvas).then((bmp) => {
+          if (bmp && sharedEntry.bitmap === bgCanvas) {
+            sharedEntry.bitmap = bmp;
+          } else if (bmp && typeof bmp.close === 'function') {
+            try { bmp.close(); } catch (_) {}
+          }
+        }).catch(() => {});
+      }
+
+      this.updateRulerUI();
+      return true;
+    }
+
+    /**
+     * Evict only frames that fall outside the active project duration or exceed maxFrames.
+     * Protects the entire active composition playback range [0 .. totalProjectFrames] so the timeline bar stays full.
      */
     _evictIfNeeded(compId = null) {
       const targetComp = compId || this.activeCompId;
@@ -216,12 +338,8 @@
         ? window.getProjectTotalDuration()
         : 0;
       const currentFps = this.fps || 60;
-      const totalProjectFrames = Math.round(totalDur * currentFps);
-      // Up to 1 minute project duration cached in memory
-      const oneMinuteFrames = Math.round(60 * currentFps);
-      const memCap = this.maxFrames || oneMinuteFrames;
-      // Allow full project cache if project is <= 1 minute, otherwise cap at 1 minute
-      const effectiveMax = Math.min(memCap, Math.max(60, Math.min(totalProjectFrames + 15, oneMinuteFrames)));
+      const totalProjectFrames = Math.ceil(totalDur * currentFps);
+      const effectiveMax = Math.max(this.maxFrames, totalProjectFrames + 15);
       if (pool.size <= effectiveMax) return;
 
       const pps = (typeof window !== 'undefined' && window.currentPixelsPerSecond) ? window.currentPixelsPerSecond : 80;
@@ -236,12 +354,10 @@
       for (const fIdx of pool.keys()) {
         const inFlightKey = `${targetComp}:${fIdx}`;
         if (this._inFlightFrames && this._inFlightFrames.has(inFlightKey)) continue; // never evict in-flight
+        // Never evict frames inside the active project duration [0, totalProjectFrames]
+        if (fIdx >= 0 && fIdx <= totalProjectFrames) continue;
         const dist = Math.abs(fIdx - curFrame);
-        // Frames outside project duration bounds are purged first, otherwise furthest from playhead
-        let score = dist;
-        if (fIdx < 0 || fIdx > totalProjectFrames) {
-          score += 100000;
-        }
+        const score = dist + 100000;
         if (score > worstScore) {
           worstScore = score;
           worstIdx = fIdx;
@@ -286,7 +402,7 @@
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (this._rulerUpdatePending) return;
       this._rulerUpdatePending = true;
-      const delay = (typeof window !== 'undefined' && window.isTimelinePlaying) ? 180 : 80;
+      const delay = (typeof window !== 'undefined' && window.isTimelinePlaying) ? 90 : 60;
       setTimeout(() => {
         this._rulerUpdatePending = false;
         this.updateRulerUI();
@@ -297,14 +413,15 @@
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (!sourceCanvas || sourceCanvas.width === 0 || sourceCanvas.height === 0) return;
       const targetComp = compId || this.activeCompId;
+      if (this.ensureAudioOnlyFullCache(null, targetComp)) return;
       const targetPool = this.getPool(targetComp);
       if (this.hasFrame(frameIndex, sourceCanvas.width, sourceCanvas.height, targetComp)) return;
       if (!this._pendingFrames) this._pendingFrames = new Set();
       if (!this._inFlightFrames) this._inFlightFrames = new Set();
       if (!this._frameGen) this._frameGen = new Map();
       const inFlightKey = `${targetComp}:${frameIndex}`;
-      // Guard against excessive GPU memory pressure on mobile (e.g. Mali-G52 on Redmi 9)
-      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 2 : 16;
+      // Allow sufficient concurrent bitmap encodes during 60fps playback so live frames are never dropped
+      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 24 : 48;
       if (this._inFlightFrames.size >= maxInFlight && !this._inFlightFrames.has(inFlightKey)) return;
       const gen = (this._frameGen.get(inFlightKey) || 0) + 1;
       this._frameGen.set(inFlightKey, gen);
@@ -328,9 +445,9 @@
           width: sourceCanvas.width,
           height: sourceCanvas.height
         });
-        // Evict oldest frame if over limit (LRU — keeps playback smooth without OOM)
+        // Evict only out-of-bounds frames if over limit
         this._evictIfNeeded(targetComp);
-        // Throttled ruler update — prevents ruler flickering during rapid idle cache fills (120ms batch)
+        // Throttled ruler update — updates green cache bar smoothly during playback & idle fill
         this._scheduleRulerUpdate();
       } catch (_) {}
       finally {
@@ -359,8 +476,8 @@
       const pool = this.getPool(targetComp);
       const entry = pool.get(frameIndex);
       if (entry) {
-        if (entry.bitmap && typeof entry.bitmap.close === 'function') {
-          entry.bitmap.close();
+        if (!entry.shared && entry.bitmap && typeof entry.bitmap.close === 'function') {
+          try { entry.bitmap.close(); } catch (_) {}
         }
         pool.delete(frameIndex);
         if (updateUI && targetComp === this.activeCompId) {
@@ -379,6 +496,7 @@
         return;
       }
       const targetComp = compId || this.activeCompId;
+      this._lastAudioOnlyCacheKey = null;
       const pool = this.getPool(targetComp);
       const minSec = Math.max(0, Math.min(startSec, endSec));
       const maxSec = Math.max(startSec, endSec);
@@ -405,12 +523,15 @@
         }
         if (pool.has(f)) {
           const entry = pool.get(f);
-          if (entry && entry.bitmap && typeof entry.bitmap.close === 'function') {
-            entry.bitmap.close();
+          if (entry && !entry.shared && entry.bitmap && typeof entry.bitmap.close === 'function') {
+            try { entry.bitmap.close(); } catch (_) {}
           }
           pool.delete(f);
           changed = true;
         }
+      }
+      if (this.ensureAudioOnlyFullCache(null, targetComp)) {
+        return;
       }
       if (!compId || compId === this.activeCompId) {
         this.updateRulerUI();
@@ -707,6 +828,7 @@
     }
 
     clearAll(scope = 'current', compId = null) {
+      this._lastAudioOnlyCacheKey = null;
       if (this._frameGen) {
         this._frameGen.clear();
       }
@@ -720,11 +842,13 @@
       if (this._unreadyFrames) {
         this._unreadyFrames.clear();
       }
+      const closedBitmaps = new Set();
       if (scope === 'all') {
         for (const pool of this.pools.values()) {
           for (const entry of pool.values()) {
-            if (entry && entry.bitmap && typeof entry.bitmap.close === 'function') {
-              entry.bitmap.close();
+            if (entry && entry.bitmap && !closedBitmaps.has(entry.bitmap) && typeof entry.bitmap.close === 'function') {
+              closedBitmaps.add(entry.bitmap);
+              try { entry.bitmap.close(); } catch (_) {}
             }
           }
           pool.clear();
@@ -732,11 +856,15 @@
       } else {
         const pool = this.getPool(compId || this.activeCompId);
         for (const entry of pool.values()) {
-          if (entry && entry.bitmap && typeof entry.bitmap.close === 'function') {
-            entry.bitmap.close();
+          if (entry && entry.bitmap && !closedBitmaps.has(entry.bitmap) && typeof entry.bitmap.close === 'function') {
+            closedBitmaps.add(entry.bitmap);
+            try { entry.bitmap.close(); } catch (_) {}
           }
         }
         pool.clear();
+      }
+      if (this.ensureAudioOnlyFullCache(null, compId || this.activeCompId)) {
+        return;
       }
       this.updateRulerUI();
       if (this.idleCacheEnabled) {
@@ -789,6 +917,7 @@
       this._lastKnownLayerSnapshots.set(targetComp, currentSnapshot);
 
       if (!prevSnapshot) {
+        this.ensureAudioOnlyFullCache(ps, targetComp);
         return compChanged;
       }
 
@@ -796,6 +925,7 @@
       if (compChanged || diffInvalidated) {
         if (this._unreadyFrames) this._unreadyFrames.clear();
       }
+      this.ensureAudioOnlyFullCache(ps, targetComp);
       return compChanged || diffInvalidated;
     }
 
@@ -911,11 +1041,13 @@
 
     scheduleIdleCheck(immediate = false) {
       if (typeof window !== 'undefined' && window.isExporting) return;
+      if (this.ensureAudioOnlyFullCache()) return;
       if (!this.idleCacheEnabled) return;
       if (this.idleTimer) clearTimeout(this.idleTimer);
       const delay = immediate ? 50 : 600;
       this.idleTimer = setTimeout(() => {
         if (typeof window !== 'undefined' && window.isExporting) return;
+        if (this.ensureAudioOnlyFullCache()) return;
         if (!this.idleCacheEnabled) return;
         if (window.isTimelinePlaying || window.isTransformInteracting) return;
         if (document.querySelector('.modal-backdrop.is-open, .modal-backdrop.active')) return;
@@ -933,6 +1065,7 @@
       } else {
         this.clearAll('current');
       }
+      if (this.ensureAudioOnlyFullCache()) return;
       this.idleCacheEnabled = true;
       this.stopIdleWorker();
       this.scheduleIdleCheck(true);
@@ -940,6 +1073,7 @@
 
     startIdleWorker() {
       if (typeof window !== 'undefined' && window.isExporting) return;
+      if (this.ensureAudioOnlyFullCache()) return;
       if (this.isIdleRunning || !this.idleCacheEnabled || window.isTimelinePlaying || window.isTransformInteracting) return;
       this.isIdleRunning = true;
       this.runIdleStep();
@@ -1019,44 +1153,63 @@
         return;
       }
 
+      if (this.ensureAudioOnlyFullCache()) {
+        this.stopIdleWorker();
+        return;
+      }
+
       const totalFrames = Math.ceil(totalDur * this.fps);
       const pps = window.currentPixelsPerSecond || 80;
       const currentPanX = window.timelinePanX !== undefined ? window.timelinePanX : 0;
-      const currentFrame = Math.max(0, Math.min(totalFrames - 1, Math.round((Math.abs(currentPanX) / pps) * this.fps)));
+      const currentFrame = Math.max(0, Math.min(totalFrames, Math.round((Math.abs(currentPanX) / pps) * this.fps)));
 
-      // AE-Style Bidirectional RAM Preview Sweep:
-      // Fill cache OUTWARD from playhead within the active RAM window (up to 1 minute).
+      // AE-Style Bidirectional RAM Preview Sweep across the ENTIRE project duration [0 .. totalFrames]
       let targetFrame = -1;
       let fwdIdx = currentFrame;
       let bwdIdx = currentFrame - 1;
       const targetComp = this.activeCompId || 'root';
-      const maxCap = this.maxFrames || Math.round(60 * this.fps);
-      const maxRadius = Math.max(120, maxCap);
-      const maxFwd = Math.min(totalFrames, currentFrame + maxRadius);
-      const minBwd = Math.max(0, currentFrame - Math.floor(maxRadius * 0.5));
+      const maxFwd = totalFrames;
+      const minBwd = 0;
+      let sawUnreadyOrInFlight = false;
 
-      while (targetFrame === -1 && (fwdIdx < maxFwd || bwdIdx >= minBwd)) {
+      while (targetFrame === -1 && (fwdIdx <= maxFwd || bwdIdx >= minBwd)) {
         // Check forward first (more useful — user is likely playing forward)
-        if (fwdIdx < maxFwd) {
-          const inFlightKey = `${targetComp}:${fwdIdx}`;
-          if (!this.frames.has(fwdIdx) && (!this._inFlightFrames || !this._inFlightFrames.has(inFlightKey)) && (!this._unreadyFrames || !this._unreadyFrames.has(inFlightKey)) && this.isTimeReadyToCache(fwdIdx / this.fps)) {
-            targetFrame = fwdIdx;
-            break;
+        if (fwdIdx <= maxFwd) {
+          if (!this.frames.has(fwdIdx)) {
+            const inFlightKey = `${targetComp}:${fwdIdx}`;
+            const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
+            const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
+            if (!isInFlight && !isMarkedUnready && this.isTimeReadyToCache(fwdIdx / this.fps)) {
+              targetFrame = fwdIdx;
+              break;
+            }
+            sawUnreadyOrInFlight = true;
           }
           fwdIdx++;
         }
         // Then check backward (recent history — scrub back support)
         if (bwdIdx >= minBwd) {
-          const inFlightKey = `${targetComp}:${bwdIdx}`;
-          if (!this.frames.has(bwdIdx) && (!this._inFlightFrames || !this._inFlightFrames.has(inFlightKey)) && (!this._unreadyFrames || !this._unreadyFrames.has(inFlightKey)) && this.isTimeReadyToCache(bwdIdx / this.fps)) {
-            targetFrame = bwdIdx;
-            break;
+          if (!this.frames.has(bwdIdx)) {
+            const inFlightKey = `${targetComp}:${bwdIdx}`;
+            const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
+            const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
+            if (!isInFlight && !isMarkedUnready && this.isTimeReadyToCache(bwdIdx / this.fps)) {
+              targetFrame = bwdIdx;
+              break;
+            }
+            sawUnreadyOrInFlight = true;
           }
           bwdIdx--;
         }
       }
 
       if (targetFrame === -1) {
+        // If frames are still unready (e.g. video decoder catching up), clear _unreadyFrames and retry shortly instead of stopping permanently
+        if (sawUnreadyOrInFlight) {
+          if (this._unreadyFrames) this._unreadyFrames.clear();
+          this.idleWorkerId = setTimeout(() => this.runIdleStep(), 120);
+          return;
+        }
         this.stopIdleWorker();
         return;
       }

@@ -2762,16 +2762,15 @@
           return false;
         });
 
-        const isLowEndMobile = (typeof window !== 'undefined' && (
-          window.innerWidth <= 768 ||
-          (typeof navigator !== 'undefined' && ((navigator.deviceMemory && navigator.deviceMemory <= 4) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '')))
-        ));
-        const shouldBakeLiveFrame = !isScrubbing && (!isLowEndMobile || !window.isTimelinePlaying);
+        const shouldBakeLiveFrame = !isScrubbing;
 
         if (shouldBakeLiveFrame && !hasUnreadyVideoInComposition && !isExport && !window.isExporting && !isIdleCache && !isTransformDragging &&
             triggerSource !== 'lookahead-cache' &&
             window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
-          if (adaptiveScale >= 0.96 || isDraftModeActive) {
+          if (typeof window.PreviewCacheManager.ensureAudioOnlyFullCache === 'function' &&
+              window.PreviewCacheManager.ensureAudioOnlyFullCache(currentProjectState)) {
+            // Audio-only timeline: entire project duration is now 100% cached
+          } else if (adaptiveScale >= 0.96 || isDraftModeActive || window.isTimelinePlaying) {
             window.PreviewCacheManager.setFrameFromCanvas(frameIndex, canvas, isDraftModeActive);
           }
         }

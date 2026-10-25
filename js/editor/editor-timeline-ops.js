@@ -5731,6 +5731,10 @@ function initTimelineOperations() {
         if (typeof window.enhanceLaneHeads === 'function') {
           try { window.enhanceLaneHeads(); } catch (_) {}
         }
+
+        if (window.PreviewCacheManager && typeof window.PreviewCacheManager.ensureAudioOnlyFullCache === 'function') {
+          window.PreviewCacheManager.ensureAudioOnlyFullCache(currentProjectState);
+        }
       }
 
       function updateReorderHandlesContrast() {

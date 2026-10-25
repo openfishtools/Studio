@@ -2427,6 +2427,9 @@
             if (window.PreviewCacheManager) {
               window.PreviewCacheManager.stopIdleWorker();
               window.PreviewCacheManager.syncStateWithProject(currentProjectState);
+              if (typeof window.PreviewCacheManager.ensureAudioOnlyFullCache === 'function') {
+                window.PreviewCacheManager.ensureAudioOnlyFullCache(currentProjectState);
+              }
             }
 
             isPlaying = true;
