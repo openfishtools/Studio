@@ -120,6 +120,7 @@
      5. TAP HIGHLIGHT — Remove blue flash on ALL interactive elements.
         Safari still shows it on some elements not covered globally.
      ========================================================================= */
+  *, *::before, *::after,
   a, button, [role="button"], [tabindex],
   .action-btn, .studio-top-btn, .aspect-ratio-frame,
   .modal-color-swatch, .custom-dropdown-trigger,

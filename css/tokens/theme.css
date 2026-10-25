@@ -15,14 +15,35 @@
   font-display: swap;
 }
 
-/* --- Global Text Selection & Hidden Scrollbar UI --- */
+/* --- Global Text Selection, Tap Highlight, & Hidden Scrollbar UI --- */
 *, *::before, *::after {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
   -webkit-user-select: none;
   -moz-user-select: none;
   -ms-user-select: none;
   user-select: none;
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
+}
+
+*:focus,
+*:focus-visible {
+  outline: none;
+}
+
+input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="color"]):not([type="file"]),
+textarea,
+[contenteditable="true"] {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+
+::selection {
+  background-color: var(--color-primary);
+  color: var(--bg-canvas);
 }
 
 *::-webkit-scrollbar {

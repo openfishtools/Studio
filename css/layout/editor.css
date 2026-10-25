@@ -25,6 +25,8 @@
   padding: 0;
   border: none;
   outline: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
   font-family: var(--font-brand);
   -webkit-font-smoothing: antialiased;
   scrollbar-width: none !important;
