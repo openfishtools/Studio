@@ -656,6 +656,7 @@
       const hasSkewKf = !!(kfs && Array.isArray(kfs.skew) && kfs.skew.length > 0);
       const hasOpacityKf = !!(kfs && Array.isArray(kfs.opacity) && kfs.opacity.length > 0);
       const hasVecKf = !!(kfs && Array.isArray(kfs.vectorPoints) && kfs.vectorPoints.length > 0);
+      const hasSpeedKf = !!(kfs && Array.isArray(kfs.speed) && kfs.speed.length > 0);
 
       let shapePropsToSig = layer.shapeProps;
       if (hasVecKf && layer.shapeProps && typeof layer.shapeProps === 'object' && layer.shapeProps.points) {
@@ -701,7 +702,7 @@
         Number(layer.anchorZ ?? 0).toFixed(2),
         hasOpacityKf ? 'kf_op' : Number(layer.opacity ?? 1).toFixed(3),
         Number(layer.roundness ?? (layer.shapeProps && layer.shapeProps.roundness) ?? 0).toFixed(2),
-        Number(layer.speed ?? 1).toFixed(3),
+        hasSpeedKf ? 'kf_spd' : Number(layer.speed ?? 1).toFixed(3),
         layer.speedMode || '',
         layer.fillType || (layer.shapeProps && layer.shapeProps.fillType) || '',
         layer.fillColor || layer.color || (layer.shapeProps && layer.shapeProps.fillColor) || '',
@@ -1310,14 +1311,11 @@
 
       // Rotating scratch offscreen canvas pool (prevents in-flight createImageBitmap corruption/overwrites during batch caching)
       if (!this._idleCanvasPool) {
-        this._idleCanvasPool = [
-          document.createElement('canvas'),
-          document.createElement('canvas'),
-          document.createElement('canvas'),
-          document.createElement('canvas'),
-          document.createElement('canvas'),
-          document.createElement('canvas')
-        ];
+        this._idleCanvasPool = [];
+        const poolSize = this._isMobile ? 8 : 16;
+        for (let i = 0; i < poolSize; i++) {
+          this._idleCanvasPool.push(document.createElement('canvas'));
+        }
         this._idlePoolIdx = 0;
       }
 
