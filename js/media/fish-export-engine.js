@@ -73,7 +73,37 @@
   }
 
   // ── Progress UI Helpers ────────────────────────────────────────────────────────
-  function showProgress(title, pct, stage, engineBadge) {
+  function updateProgressPreview(sourceCanvas) {
+    try {
+      if (typeof window.drawExportProgressPreview === 'function') {
+        window.drawExportProgressPreview(sourceCanvas);
+        return;
+      }
+      var previewCanvas = document.getElementById('export-progress-preview-canvas');
+      if (!previewCanvas) return;
+      var src = sourceCanvas || document.getElementById('editor-active-canvas');
+      if (!src || !src.width || !src.height) return;
+      var maxDim = 420;
+      var ratio = src.width / src.height;
+      var tw = maxDim;
+      var th = Math.max(1, Math.round(maxDim / ratio));
+      if (src.height > src.width) {
+        th = maxDim;
+        tw = Math.max(1, Math.round(maxDim * ratio));
+      }
+      if (previewCanvas.width !== tw || previewCanvas.height !== th) {
+        previewCanvas.width = tw;
+        previewCanvas.height = th;
+      }
+      var ctx = previewCanvas.getContext('2d');
+      if (ctx) {
+        ctx.clearRect(0, 0, tw, th);
+        ctx.drawImage(src, 0, 0, tw, th);
+      }
+    } catch (_) {}
+  }
+
+  function showProgress(title, pct, stage) {
     window.isExporting = true;
     if (typeof document !== 'undefined') document.body.classList.add('is-exporting');
     if (typeof window.pausePlayback === 'function') {
@@ -92,15 +122,17 @@
     isCancelled = false;
     var overlay = document.getElementById('editor-export-progress-overlay');
     var titleEl = document.getElementById('export-progress-title');
-    var badgeEl = document.getElementById('export-engine-badge');
     var fillEl  = document.getElementById('export-progress-fill');
     var pctEl   = document.getElementById('export-progress-percent');
     var stageEl = document.getElementById('export-progress-stage');
     if (titleEl)  titleEl.textContent  = title || 'Exporting video';
-    if (badgeEl)  badgeEl.textContent  = (engineBadge || 'GPU').toUpperCase();
     if (fillEl)   fillEl.style.width   = Math.min(100, Math.max(0, pct || 0)) + '%';
     if (pctEl)    pctEl.textContent    = Math.round(pct || 0) + '%';
     if (stageEl)  stageEl.textContent  = stage || '';
+    if (typeof window.updateExportPreviewAndSpecs === 'function') {
+      try { window.updateExportPreviewAndSpecs(); } catch (_) {}
+    }
+    updateProgressPreview(null);
     if (overlay)  overlay.style.display = 'flex';
   }
 
@@ -1028,7 +1060,7 @@
 
     logExport('WebCodecs', 'Codec selected & configured: ' + chosenCodec.codec + ' (' + chosenConfig.width + 'x' + chosenConfig.height + ', latency=' + chosenConfig.latencyMode + ', hw=' + chosenConfig.hardwareAcceleration + ')');
 
-    showProgress('Exporting video', 0, 'Preparing...', 'GPU');
+    showProgress('Exporting video', 0, 'Preparing...');
     var cacheOk = await ensureVideosCached(onProgress);
     if (!cacheOk) {
       logExportWarn('WebCodecs', 'ensureVideosCached returned false');
@@ -1158,6 +1190,9 @@
 
         await prepareFrameAtTime(t, videoLayers, pps);
         window.renderCanvasFrame(exportCanvas, ps.bgColor, baseW, baseH, 'export-video', t);
+        if (i === 0 || i % 4 === 0 || i === totalFrames - 1) {
+          updateProgressPreview(exportCanvas);
+        }
 
         // Non-blocking GPU event-loop backpressure: keep queue bounded to <=8 frames
         while (encoder.encodeQueueSize > 8 && !encError && !isCancelled) {
@@ -1194,7 +1229,7 @@
 
 
         var pct = 3 + Math.round((i / totalFrames) * 86);
-        updateProgress(pct, (i + 1) + ' / ' + totalFrames, onProgress);
+        updateProgress(pct, 'Frame ' + (i + 1) + ' / ' + totalFrames, onProgress);
         if (i === 0) {
           logExportInfo('WebCodecs:Render', 'Frame 0/' + totalFrames + ' submitted (forced keyframe)');
         } else if (i % Math.max(1, Math.min(60, Math.round(fps))) === 0 || i === totalFrames - 1) {
@@ -1346,7 +1381,7 @@
       return;
     }
 
-    showProgress('Exporting video', 0, 'Initializing...', 'CPU');
+    showProgress('Exporting video', 0, 'Initializing...');
     var cacheOk = await ensureVideosCached(onProgress);
     if (!cacheOk) {
       logExportWarn('FFmpeg', 'ensureVideosCached failed');
@@ -1417,6 +1452,9 @@
 
         await prepareFrameAtTime(t, videoLayers, pps);
         window.renderCanvasFrame(exportCanvas, ps.bgColor, baseW, baseH, 'export-video', t);
+        if (i === 0 || i % 4 === 0 || i === totalFrames - 1) {
+          updateProgressPreview(exportCanvas);
+        }
 
         var blob  = await new Promise(function(r) { exportCanvas.toBlob(r, 'image/jpeg', 0.90); });
         var bytes = new Uint8Array(await blob.arrayBuffer());
@@ -1425,7 +1463,7 @@
         created.push(name);
 
         var pct = 10 + Math.round((i / totalFrames) * 60);
-        updateProgress(pct, (i + 1) + ' / ' + totalFrames, onProgress);
+        updateProgress(pct, 'Frame ' + (i + 1) + ' / ' + totalFrames, onProgress);
         if (i === 0) {
           logExportInfo('FFmpeg:Render', 'Frame 0/' + totalFrames + ' written to FS');
         } else if (i % Math.max(1, Math.round(totalFrames / 5)) === 0 || i === totalFrames - 1) {
@@ -1557,7 +1595,7 @@
     var totalFrames = Math.max(1, Math.round(totalDur * fps));
     var pps   = window.currentPixelsPerSecond || 80;
 
-    showProgress('Exporting video', 0, 'Preparing...', 'GPU');
+    showProgress('Exporting video', 0, 'Preparing...');
     var cacheOk = await ensureVideosCached(onProgress);
     if (!cacheOk) {
       logExportWarn('MediaRecorder', 'ensureVideosCached failed');
@@ -1715,6 +1753,7 @@
           if (elapsedSec >= totalDur) {
             updateProgress(98, 'Finalizing...', onProgress);
             window.renderCanvasFrame(exportCanvas, ps.bgColor, baseW, baseH, 'export-video', totalDur);
+            updateProgressPreview(exportCanvas);
             setTimeout(function() {
               try { recorder.stop(); } catch (_) { onFinish(); }
             }, 80);
@@ -1723,7 +1762,7 @@
 
           var pct = 5 + Math.min(92, Math.round((elapsedSec / totalDur) * 92));
           var curFrame = Math.min(totalFrames, Math.round((elapsedSec / totalDur) * totalFrames));
-          updateProgress(pct, curFrame + ' / ' + totalFrames, onProgress);
+          updateProgress(pct, 'Frame ' + curFrame + ' / ' + totalFrames, onProgress);
 
           for (var vi = 0; vi < videoLayers.length; vi++) {
             var vl = videoLayers[vi];
@@ -1766,6 +1805,9 @@
           }
 
           window.renderCanvasFrame(exportCanvas, ps.bgColor, baseW, baseH, 'export-video', elapsedSec);
+          if (curFrame % 4 === 0) {
+            updateProgressPreview(exportCanvas);
+          }
           if (vTrack && typeof vTrack.requestFrame === 'function') {
             try { vTrack.requestFrame(); } catch (_) {}
           }

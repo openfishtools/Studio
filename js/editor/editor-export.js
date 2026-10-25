@@ -22,7 +22,34 @@
       let ffmpegInstance = null;
 
       // 1. Progress Overlay Helpers
-      function showExportProgress(title, percent = 0, stage = '', engineBadge = 'GPU') {
+      function drawExportProgressPreview(sourceCanvas) {
+        try {
+          const previewCanvas = document.getElementById('export-progress-preview-canvas');
+          if (!previewCanvas) return;
+          const src = sourceCanvas || document.getElementById('editor-active-canvas');
+          if (!src || !src.width || !src.height) return;
+          const maxDim = 420;
+          const ratio = src.width / src.height;
+          let tw = maxDim;
+          let th = Math.max(1, Math.round(maxDim / ratio));
+          if (src.height > src.width) {
+            th = maxDim;
+            tw = Math.max(1, Math.round(maxDim * ratio));
+          }
+          if (previewCanvas.width !== tw || previewCanvas.height !== th) {
+            previewCanvas.width = tw;
+            previewCanvas.height = th;
+          }
+          const ctx = previewCanvas.getContext('2d');
+          if (ctx) {
+            ctx.clearRect(0, 0, tw, th);
+            ctx.drawImage(src, 0, 0, tw, th);
+          }
+        } catch (_) {}
+      }
+      window.drawExportProgressPreview = drawExportProgressPreview;
+
+      function showExportProgress(title, percent = 0, stage = '') {
         window.isExporting = true;
         if (typeof document !== 'undefined') document.body.classList.add('is-exporting');
         // Stop playback immediately across both timeline and template editor!
@@ -41,16 +68,18 @@
         }
         const overlay = document.getElementById('editor-export-progress-overlay');
         const titleEl = document.getElementById('export-progress-title');
-        const badgeEl = document.getElementById('export-engine-badge');
         const fillEl = document.getElementById('export-progress-fill');
         const percentEl = document.getElementById('export-progress-percent');
         const stageEl = document.getElementById('export-progress-stage');
 
         if (titleEl) titleEl.textContent = title || 'Exporting video';
-        if (badgeEl) badgeEl.textContent = (engineBadge || 'GPU').toUpperCase();
         if (fillEl) fillEl.style.width = `${Math.min(100, Math.max(0, percent))}%`;
         if (percentEl) percentEl.textContent = `${Math.round(percent)}%`;
         if (stageEl) stageEl.textContent = stage || '';
+        if (typeof window.updateExportPreviewAndSpecs === 'function') {
+          try { window.updateExportPreviewAndSpecs(); } catch (_) {}
+        }
+        drawExportProgressPreview(null);
         if (overlay) overlay.style.display = 'flex';
 
         isExportCancelled = false;
@@ -351,7 +380,7 @@
           return;
         }
 
-        showExportProgress('Exporting image sequence...', 0, 'Initializing sequence generator...', 'CPU');
+        showExportProgress('Exporting image sequence', 0, 'Preparing sequence...');
         isExportCancelled = false;
         window.isExportCancelled = false;
         window.isExporting = true;
@@ -398,6 +427,9 @@
             }
 
             renderCanvasFrame(exportCanvas, currentProjectState.bgColor, baseW, baseH, 'export-sequence', t);
+            if (i === 0 || i % 3 === 0 || i === totalFrames - 1) {
+              drawExportProgressPreview(exportCanvas);
+            }
 
             const frameBlob = await new Promise(res => exportCanvas.toBlob(res, 'image/png'));
             if (isExportCancelled || window.isExportCancelled || !window.isExporting) {
@@ -408,7 +440,7 @@
             zip.file(filename, frameBytes);
 
             const pct = Math.round((i / totalFrames) * 85);
-            updateExportProgress(pct, `${i + 1} / ${totalFrames}`);
+            updateExportProgress(pct, `Frame ${i + 1} / ${totalFrames}`);
 
             if (i % 4 === 0) {
               await new Promise(r => setTimeout(r, 0));
@@ -711,6 +743,9 @@
 
             // Draw full project resolution frame
             renderCanvasFrame(exportCanvas, currentProjectState.bgColor, baseW, baseH, 'export-video', t);
+            if (i === 0 || i % 4 === 0 || i === totalFrames - 1) {
+              drawExportProgressPreview(exportCanvas);
+            }
 
             // Backpressure: wait for encoder to process queued frames so GPU BGRA surface buffer pool never exhausts
             while (videoEncoder.encodeQueueSize > 2) {
@@ -768,7 +803,7 @@
 
 
             const pct = 5 + Math.round((i / totalFrames) * 88);
-            updateExportProgress(pct, 'Rendering video...');
+            updateExportProgress(pct, `Frame ${i + 1} / ${totalFrames}`);
 
             if (i % 6 === 0) {
               await new Promise(r => setTimeout(r, 0));
@@ -866,7 +901,7 @@
         const totalDur = Math.max(0.5, (typeof window.getProjectTotalDuration === 'function' ? window.getProjectTotalDuration() : (currentProjectState.defaultDuration || 5)));
         const pps = window.currentPixelsPerSecond || 80;
 
-        showExportProgress('Exporting video', 0, 'Preparing...', 'GPU');
+        showExportProgress('Exporting video', 0, 'Preparing...');
         isExportCancelled = false;
         window.isExporting = true;
 
@@ -1014,6 +1049,7 @@
 
           // Pre-render frame 0 to canvas so the very first frame is ready
           renderCanvasFrame(exportCanvas, currentProjectState.bgColor, baseW, baseH, 'export-video', 0);
+          drawExportProgressPreview(exportCanvas);
 
           // Warm up and start playing initial videos FIRST before recording starts (eliminates 300ms video startup lag)
           await Promise.all(initialVideos.map(item => item.el.play().catch(() => {})));
@@ -1030,6 +1066,7 @@
           await new Promise((resolve, reject) => {
             let rafId = null;
             let finished = false;
+            let recStep = 0;
 
             const onFinish = () => {
               if (finished) return;
@@ -1065,6 +1102,7 @@
               if (elapsedSec >= totalDur) {
                 updateExportProgress(98, 'Saving video...');
                 renderCanvasFrame(exportCanvas, currentProjectState.bgColor, baseW, baseH, 'export-video', totalDur);
+                drawExportProgressPreview(exportCanvas);
                 setTimeout(() => {
                   try { mediaRecorder.stop(); } catch (_) { onFinish(); }
                 }, 80);
@@ -1125,6 +1163,10 @@
 
               // Draw full-resolution frame directly to canvas
               renderCanvasFrame(exportCanvas, currentProjectState.bgColor, baseW, baseH, 'export-video', elapsedSec);
+              if (recStep % 4 === 0) {
+                drawExportProgressPreview(exportCanvas);
+              }
+              recStep++;
 
               rafId = requestAnimationFrame(recordFrame);
             }
@@ -1253,7 +1295,7 @@
       async function exportVideoFFmpeg(preset = 'normal', customName = '') {
         if (window.Popover) window.Popover.close();
 
-        showExportProgress('Exporting video', 0, 'Initializing...', 'CPU');
+        showExportProgress('Exporting video', 0, 'Initializing...');
 
         const cacheOk = await ensureAllVideosCached();
         if (!cacheOk) return;
@@ -1331,6 +1373,9 @@
             await prepareVideoFramesForTime(t, videoLayers, pps);
 
             renderCanvasFrame(exportCanvas, currentProjectState.bgColor, baseW, baseH, 'export-video', t);
+            if (i === 0 || i % 3 === 0 || i === totalFrames - 1) {
+              drawExportProgressPreview(exportCanvas);
+            }
 
             let frameBlob = await new Promise(res => exportCanvas.toBlob(res, 'image/jpeg', 0.90));
             let frameBytes = new Uint8Array(await frameBlob.arrayBuffer());
@@ -1341,7 +1386,7 @@
             frameBytes = null;
 
             const framePercent = 10 + Math.round((i / totalFrames) * 60);
-            updateExportProgress(framePercent, `${i + 1} / ${totalFrames}`);
+            updateExportProgress(framePercent, `Frame ${i + 1} / ${totalFrames}`);
 
             if (i % 3 === 0) {
               await new Promise(r => setTimeout(r, 0));
@@ -1526,6 +1571,213 @@
 
       const _exportBackdrop = document.getElementById('export-drawer-backdrop');
 
+      function formatExportBytes(bytes) {
+        if (!Number.isFinite(bytes) || bytes <= 0) return '~0.1 MB';
+        const mb = bytes / (1024 * 1024);
+        if (mb < 1) {
+          const kb = Math.max(10, Math.round(bytes / 1024));
+          return `~${kb} KB`;
+        }
+        if (mb >= 100) {
+          return `~${Math.round(mb)} MB`;
+        }
+        return `~${mb.toFixed(1)} MB`;
+      }
+
+      function formatExportDurationBadge(sec) {
+        const total = Math.max(0, Math.round(sec || 0));
+        const mins = Math.floor(total / 60);
+        const rem = total % 60;
+        return `${String(mins).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
+      }
+
+      function getSettingsResolutionAndFps(prefix) {
+        const ps = window.currentProjectState || {};
+        const grid = document.getElementById(`${prefix}-aspect-grid`);
+        const selectedRatio = grid?.querySelector('.aspect-ratio-frame.is-selected')?.dataset.val || ps.aspectRatio || '16:9';
+        let resLabel = ps.resolution || '1080p';
+        let w = 1920, h = 1080;
+
+        if (selectedRatio === 'Custom') {
+          const cw = parseInt(document.getElementById(`${prefix}-custom-res-w`)?.value, 10);
+          const ch = parseInt(document.getElementById(`${prefix}-custom-res-h`)?.value, 10);
+          if (cw > 0 && ch > 0) {
+            w = cw;
+            h = ch;
+            resLabel = `${cw}×${ch}`;
+          } else if (typeof window.getProjectDimensions === 'function') {
+            const d = window.getProjectDimensions(ps.resolution || '1080p', ps.aspectRatio || '16:9');
+            w = d[0];
+            h = d[1];
+            resLabel = `${w}×${h}`;
+          }
+        } else {
+          const dd = document.getElementById(`dropdown-${prefix}-resolution`);
+          resLabel = dd?.dataset.value || ps.resolution || '1080p';
+          if (typeof window.getProjectDimensions === 'function') {
+            const d = window.getProjectDimensions(resLabel, selectedRatio);
+            w = d[0];
+            h = d[1];
+          }
+        }
+
+        const fpsEl = document.getElementById(`${prefix}-fps`);
+        const rawFps = fpsEl ? parseInt(fpsEl.value, 10) : parseInt(ps.fps || 60, 10);
+        const fps = Math.max(1, Math.min(240, Number.isFinite(rawFps) ? rawFps : 60));
+
+        return { w, h, resLabel, fps, aspectRatio: selectedRatio };
+      }
+
+      function updateExportPreviewAndSpecs() {
+        const ps = window.currentProjectState || {};
+        const totalDur = Math.max(0.5, typeof window.getProjectTotalDuration === 'function' ? window.getProjectTotalDuration() : (ps.defaultDuration || 5));
+
+        // 1. Update Preview Canvas from #editor-active-canvas
+        try {
+          const previewCanvas = document.getElementById('export-preview-canvas');
+          const activeCanvas = document.getElementById('editor-active-canvas');
+          if (previewCanvas && activeCanvas && activeCanvas.width > 0 && activeCanvas.height > 0) {
+            const maxDim = 420;
+            const ratio = activeCanvas.width / activeCanvas.height;
+            let tw = maxDim;
+            let th = Math.max(1, Math.round(maxDim / ratio));
+            if (activeCanvas.height > activeCanvas.width) {
+              th = maxDim;
+              tw = Math.max(1, Math.round(maxDim * ratio));
+            }
+            if (previewCanvas.width !== tw || previewCanvas.height !== th) {
+              previewCanvas.width = tw;
+              previewCanvas.height = th;
+            }
+            const ctx = previewCanvas.getContext('2d');
+            if (ctx) {
+              ctx.clearRect(0, 0, tw, th);
+              ctx.drawImage(activeCanvas, 0, 0, tw, th);
+            }
+          }
+        } catch (_) {}
+
+        // 2. Compute Video Settings Specs
+        const vCfg = getSettingsResolutionAndFps('export-video');
+        const bitrateBtn = document.querySelector('[data-video-bitrate].is-active');
+        const preset = bitrateBtn ? bitrateBtn.dataset.videoBitrate : 'normal';
+        const presetLabel = preset === 'light' ? 'Light' : (preset === 'detail' ? 'Detail' : 'Normal');
+        const includeAudio = document.getElementById('export-video-audio') ? document.getElementById('export-video-audio').checked : true;
+
+        let baseBps = 25000000;
+        let vbrFactor = 0.72;
+        if (preset === 'light') {
+          baseBps = 16000000;
+          vbrFactor = 0.68;
+        } else if (preset === 'detail') {
+          baseBps = 50000000;
+          vbrFactor = 0.90;
+        }
+        if (totalDur > 60) {
+          const durScale = Math.max(0.32, Math.min(1.0, 90 / totalDur));
+          baseBps = Math.max(6000000, Math.round(baseBps * durScale));
+        }
+        const pixelScale = Math.max(0.25, Math.min(3.2, (vCfg.w * vCfg.h) / (1920 * 1080)));
+        const fpsScale = Math.max(0.5, Math.min(1.6, Math.pow(vCfg.fps / 60, 0.45)));
+        const effectiveVideoBps = baseBps * vbrFactor * Math.pow(pixelScale, 0.65) * fpsScale;
+        const audioBps = includeAudio ? 192000 : 0;
+        const estVideoBytes = ((effectiveVideoBps + audioBps) / 8) * totalDur;
+        const estVideoSizeStr = formatExportBytes(estVideoBytes);
+
+        // Update Video Settings Summary Bar
+        const vSumRes = document.getElementById('export-video-summary-res');
+        const vSumFps = document.getElementById('export-video-summary-fps');
+        const vSumQual = document.getElementById('export-video-summary-quality');
+        const vSumSize = document.getElementById('export-video-summary-size');
+        if (vSumRes) vSumRes.textContent = `${vCfg.w}×${vCfg.h}`;
+        if (vSumFps) vSumFps.textContent = `${vCfg.fps} FPS`;
+        if (vSumQual) vSumQual.textContent = presetLabel;
+        if (vSumSize) vSumSize.textContent = estVideoSizeStr;
+
+        // 3. Compute Sequence Settings Specs
+        const sCfg = getSettingsResolutionAndFps('export-seq');
+        const seqFmtBtn = document.querySelector('[data-seq-format].is-active');
+        const seqFormat = seqFmtBtn ? seqFmtBtn.dataset.seqFormat : 'zip';
+        const seqFmtLabel = seqFormat === 'webp' ? 'WebP' : (seqFormat === 'gif' ? 'GIF' : 'ZIP');
+        const seqTotalFrames = Math.max(1, Math.round(totalDur * sCfg.fps));
+        const perFrameFactor = seqFormat === 'webp' ? 0.14 : 0.38;
+        const estSeqBytes = seqTotalFrames * (sCfg.w * sCfg.h * perFrameFactor);
+        const estSeqSizeStr = formatExportBytes(estSeqBytes);
+
+        // Update Sequence Settings Summary Bar
+        const sSumRes = document.getElementById('export-seq-summary-res');
+        const sSumFps = document.getElementById('export-seq-summary-fps');
+        const sSumQual = document.getElementById('export-seq-summary-quality');
+        const sSumSize = document.getElementById('export-seq-summary-size');
+        if (sSumRes) sSumRes.textContent = `${sCfg.w}×${sCfg.h}`;
+        if (sSumFps) sSumFps.textContent = `${sCfg.fps} FPS`;
+        if (sSumQual) sSumQual.textContent = seqFmtLabel;
+        if (sSumSize) sSumSize.textContent = estSeqSizeStr;
+
+        // 4. Update Option Card Descriptions
+        const cardDescVideo = document.getElementById('export-card-desc-video');
+        const cardDescFrame = document.getElementById('export-card-desc-frame');
+        const cardDescSeq = document.getElementById('export-card-desc-sequence');
+        const projDims = typeof window.getProjectDimensions === 'function'
+          ? window.getProjectDimensions(ps.resolution || '1080p', ps.aspectRatio || '16:9')
+          : [1920, 1080];
+        const estFrameBytes = projDims[0] * projDims[1] * 0.42;
+        const estFrameSizeStr = formatExportBytes(estFrameBytes);
+
+        if (cardDescVideo) cardDescVideo.textContent = `MP4 · ${vCfg.resLabel} · ${presetLabel} · ${vCfg.fps} FPS`;
+        if (cardDescFrame) cardDescFrame.textContent = `PNG · ${projDims[0]}×${projDims[1]} · ${estFrameSizeStr}`;
+        if (cardDescSeq) cardDescSeq.textContent = `${seqFmtLabel} · ${sCfg.resLabel} · ${sCfg.fps} FPS`;
+
+        // 5. Update Top Preview Card Specs & Progress Modal Specs based on active export type
+        const activeType = _currentExportType || 'video';
+        const specSizeEl = document.getElementById('export-spec-size');
+        const specQualEl = document.getElementById('export-spec-quality');
+        const specFpsEl = document.getElementById('export-spec-fps');
+        const badgeEl = document.getElementById('export-preview-badge');
+
+        const progQualEl = document.getElementById('export-progress-spec-quality');
+        const progFpsEl = document.getElementById('export-progress-spec-fps');
+        const progSizeEl = document.getElementById('export-progress-spec-size');
+
+        let displaySize = estVideoSizeStr;
+        let displayQual = `${vCfg.resLabel} · ${presetLabel}`;
+        let displayFps = `${vCfg.fps} FPS`;
+        let displayBadge = `${formatExportDurationBadge(totalDur)} · ${vCfg.w}×${vCfg.h}`;
+
+        if (activeType === 'frame') {
+          displaySize = estFrameSizeStr;
+          displayQual = `${ps.resolution || '1080p'} · PNG`;
+          displayFps = '1 Frame';
+          displayBadge = `PNG · ${projDims[0]}×${projDims[1]}`;
+        } else if (activeType === 'sequence') {
+          displaySize = estSeqSizeStr;
+          displayQual = `${sCfg.resLabel} · ${seqFmtLabel}`;
+          displayFps = `${sCfg.fps} FPS`;
+          displayBadge = `${seqTotalFrames}f · ${sCfg.w}×${sCfg.h}`;
+        } else if (activeType === 'project') {
+          const layerCount = Array.isArray(ps.layers) ? ps.layers.length : 0;
+          displaySize = '.ofts Bundle';
+          displayQual = `${ps.resolution || '1080p'} · Project`;
+          displayFps = `${ps.fps || 60} FPS`;
+          displayBadge = `${layerCount} Layer${layerCount === 1 ? '' : 's'}`;
+        } else if (activeType === 'link') {
+          displaySize = 'Max 15 MB';
+          displayQual = 'Cloud + QR';
+          displayFps = `${ps.fps || 60} FPS`;
+          displayBadge = `${formatExportDurationBadge(totalDur)}`;
+        }
+
+        if (specSizeEl) specSizeEl.textContent = displaySize;
+        if (specQualEl) specQualEl.textContent = displayQual;
+        if (specFpsEl) specFpsEl.textContent = displayFps;
+        if (badgeEl) badgeEl.textContent = displayBadge;
+
+        if (progQualEl) progQualEl.textContent = displayQual;
+        if (progFpsEl) progFpsEl.textContent = displayFps;
+        if (progSizeEl) progSizeEl.textContent = `Est. ${displaySize}`;
+      }
+      window.updateExportPreviewAndSpecs = updateExportPreviewAndSpecs;
+
       function openExportOverlay() {
         if (!_exportOverlay) return;
         if (typeof pausePlayback === 'function') {
@@ -1535,9 +1787,9 @@
         if (_exportBackdrop) _exportBackdrop.classList.add('is-active');
         _exportOverlay.classList.add('is-active');
 
-        // Default is None / unselected, but if previously chosen, preserve saved selection on reopen
-        if (!_currentExportType && currentProjectState && currentProjectState.exportType) {
-          _currentExportType = currentProjectState.exportType;
+        // Default to 'video' if not previously chosen so specs & Render button are immediately ready
+        if (!_currentExportType) {
+          _currentExportType = (currentProjectState && currentProjectState.exportType) ? currentProjectState.exportType : 'video';
         }
         if (_currentExportType) {
           _exportOverlay.querySelectorAll('.export-option-card').forEach(c => {
@@ -1632,10 +1884,29 @@
                 }
                 if (wrap) wrap.style.display = 'none';
               }
+              updateExportPreviewAndSpecs();
             });
           }
 
-
+          if (dd && !dd._exportSpecsBound) {
+            dd._exportSpecsBound = true;
+            dd.addEventListener('click', () => {
+              setTimeout(updateExportPreviewAndSpecs, 0);
+            });
+          }
+          if (wInput && !wInput._exportSpecsBound) {
+            wInput._exportSpecsBound = true;
+            wInput.addEventListener('input', updateExportPreviewAndSpecs);
+          }
+          if (hInput && !hInput._exportSpecsBound) {
+            hInput._exportSpecsBound = true;
+            hInput.addEventListener('input', updateExportPreviewAndSpecs);
+          }
+          if (fpsInput && !fpsInput._exportSpecsBound) {
+            fpsInput._exportSpecsBound = true;
+            fpsInput.addEventListener('input', updateExportPreviewAndSpecs);
+            fpsInput.addEventListener('change', updateExportPreviewAndSpecs);
+          }
 
           if (typeof setupEditorResLink === 'function') {
             setupEditorResLink(btnId, `${prefix}-custom-res-w`, `${prefix}-custom-res-h`, prefix);
@@ -1644,6 +1915,7 @@
 
         syncExportSettingsPanel('export-video');
         syncExportSettingsPanel('export-seq');
+        updateExportPreviewAndSpecs();
       }
 
       function closeExportOverlay() {
@@ -1774,6 +2046,7 @@
             if (currentProjectState) currentProjectState.exportType = type;
             if (_exportNextBtn) _exportNextBtn.disabled = false;
             if (_exportNextLabel) _exportNextLabel.textContent = 'Render';
+            updateExportPreviewAndSpecs();
           });
         });
 
@@ -1795,6 +2068,7 @@
               if (currentProjectState) currentProjectState.exportType = _currentExportType;
               if (_exportNextBtn) _exportNextBtn.disabled = false;
               if (_exportNextLabel) _exportNextLabel.textContent = 'Render';
+              updateExportPreviewAndSpecs();
             }
             const panel = document.getElementById(panelId);
             if (panel) {
@@ -1811,6 +2085,7 @@
           const panelId = btn.dataset.closeSettings;
           const panel = document.getElementById(panelId);
           if (panel) panel.classList.remove('is-active');
+          updateExportPreviewAndSpecs();
         });
       });
 
@@ -1819,14 +2094,21 @@
         pill.addEventListener('click', () => {
           document.querySelectorAll('[data-video-bitrate]').forEach(p => p.classList.remove('is-active'));
           pill.classList.add('is-active');
+          updateExportPreviewAndSpecs();
         });
       });
+
+      const _exportAudioToggle = document.getElementById('export-video-audio');
+      if (_exportAudioToggle) {
+        _exportAudioToggle.addEventListener('change', updateExportPreviewAndSpecs);
+      }
 
       // Image sequence format pill selection
       document.querySelectorAll('[data-seq-format]').forEach(pill => {
         pill.addEventListener('click', () => {
           document.querySelectorAll('[data-seq-format]').forEach(p => p.classList.remove('is-active'));
           pill.classList.add('is-active');
+          updateExportPreviewAndSpecs();
         });
       });
 
@@ -2307,8 +2589,8 @@
       // ---- Image Sequence: GIF export (animated GIF via canvas) ----
       async function exportImageSequenceGIF() {
         // GIF export requires external library; fallback to ZIP with notice
-        showExportProgress('GIF export...', 0, 'GIF encoding is not yet supported. Exporting as ZIP instead.', 'CPU');
-        await new Promise(r => setTimeout(r, 1200));
+        showExportProgress('GIF export', 0, 'Exporting sequence as ZIP...');
+        await new Promise(r => setTimeout(r, 800));
         hideExportProgress();
         await exportImageSequenceZIP();
       }
@@ -2319,7 +2601,7 @@
         if (window.isExporting) return;
         if (typeof JSZip === 'undefined') { alert('JSZip not available.'); return; }
 
-        showExportProgress('Exporting WebP sequence...', 0, 'Initializing...', 'CPU');
+        showExportProgress('Exporting WebP sequence', 0, 'Preparing sequence...');
         isExportCancelled = false;
         window.isExportCancelled = false;
         window.isExporting = true;
@@ -2348,16 +2630,19 @@
             const t = i / fps;
             await prepareVideoFramesForTime(t, videoLayers, pps);
             renderCanvasFrame(exportCanvas, currentProjectState.bgColor, baseW, baseH, 'export-seq', t);
+            if (i === 0 || i % 3 === 0 || i === totalFrames - 1) {
+              drawExportProgressPreview(exportCanvas);
+            }
             const blob = await new Promise(r => exportCanvas.toBlob(r, 'image/webp', 0.92));
             if (!blob) continue;
             const buf = await blob.arrayBuffer();
             zip.file(`frame_${String(i).padStart(6, '0')}.webp`, buf);
-            updateExportProgress(Math.round(((i + 1) / totalFrames) * 100), `Frame ${i + 1} / ${totalFrames}`, 'CPU');
+            updateExportProgress(Math.round(((i + 1) / totalFrames) * 100), `Frame ${i + 1} / ${totalFrames}`);
             await new Promise(r => setTimeout(r, 0));
           }
 
           if (!isExportCancelled && window.isExporting) {
-            updateExportProgress(99, 'Compressing...', 'CPU');
+            updateExportProgress(99, 'Compressing...');
             const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 3 } });
             const url = URL.createObjectURL(zipBlob);
             const a = document.createElement('a');

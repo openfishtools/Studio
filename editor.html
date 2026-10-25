@@ -3050,6 +3050,28 @@
     <!-- Options list -->
     <div class="export-fs-body" id="export-fs-body">
 
+      <!-- Export Preview & Specs Summary Card -->
+      <div class="export-preview-card" id="export-preview-card">
+        <div class="export-preview-viewport" id="export-preview-viewport">
+          <canvas id="export-preview-canvas" class="export-preview-canvas"></canvas>
+          <span class="export-preview-badge" id="export-preview-badge">00:05</span>
+        </div>
+        <div class="export-specs-grid">
+          <div class="export-spec-item">
+            <span class="export-spec-label">Est. Size</span>
+            <span class="export-spec-val" id="export-spec-size">~15.6 MB</span>
+          </div>
+          <div class="export-spec-item">
+            <span class="export-spec-label">Quality</span>
+            <span class="export-spec-val" id="export-spec-quality">1080p · Normal</span>
+          </div>
+          <div class="export-spec-item">
+            <span class="export-spec-label">Frame Rate</span>
+            <span class="export-spec-val" id="export-spec-fps">60 FPS</span>
+          </div>
+        </div>
+      </div>
+
       <!-- 1. Export Video -->
       <div class="export-option-card" data-export-type="video" role="radio" aria-checked="false" tabindex="0">
         <div class="export-option-radio">
@@ -3057,7 +3079,7 @@
         </div>
         <div class="export-option-info">
           <span class="export-option-label">Export Video</span>
-          <span class="export-option-desc">MP4 video</span>
+          <span class="export-option-desc" id="export-card-desc-video">MP4 · 1080p · 60 FPS</span>
         </div>
         <button type="button" class="export-option-chevron" data-settings-panel="export-settings-video" title="Video settings" aria-label="Video settings">
           <i class='fticon fticon-video-settings' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3071,7 +3093,7 @@
         </div>
         <div class="export-option-info">
           <span class="export-option-label">Current Frame</span>
-          <span class="export-option-desc">PNG image</span>
+          <span class="export-option-desc" id="export-card-desc-frame">PNG image</span>
         </div>
         <button type="button" class="export-option-chevron" data-settings-panel="" title="" aria-label="" style="opacity:0;pointer-events:none;">
           <i class='fticon fticon-video-settings' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3085,7 +3107,7 @@
         </div>
         <div class="export-option-info">
           <span class="export-option-label">Image Sequence</span>
-          <span class="export-option-desc">ZIP · GIF · WebP</span>
+          <span class="export-option-desc" id="export-card-desc-sequence">ZIP · GIF · WebP</span>
         </div>
         <button type="button" class="export-option-chevron" data-settings-panel="export-settings-sequence" title="Sequence settings" aria-label="Sequence settings">
           <i class='fticon fticon-video-settings' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3145,6 +3167,12 @@
       <span class="export-settings-title">Video Settings</span>
     </div>
     <div class="export-settings-body">
+      <div class="export-settings-summary-bar" id="export-video-summary-bar">
+        <span class="export-summary-pill" id="export-video-summary-res">1920×1080</span>
+        <span class="export-summary-pill" id="export-video-summary-fps">60 FPS</span>
+        <span class="export-summary-pill" id="export-video-summary-quality">Normal</span>
+        <span class="export-summary-pill is-highlight" id="export-video-summary-size">~15.6 MB</span>
+      </div>
       <!-- 1. Aspect Ratio (Visual Frames) -->
       <div class="modal-form-group">
         <label class="modal-label">ASPECT RATIO</label>
@@ -3226,7 +3254,7 @@
       </div>
       <!-- Bitrate -->
       <div class="export-setting-group">
-        <span class="export-setting-label">Bitrate Quality</span>
+        <span class="export-setting-label">Quality Preset</span>
         <div class="export-format-pill-row">
           <button type="button" class="export-format-pill" data-video-bitrate="light">Light</button>
           <button type="button" class="export-format-pill is-active" data-video-bitrate="normal">Normal</button>
@@ -3265,6 +3293,12 @@
       <span class="export-settings-title">Image Sequence Settings</span>
     </div>
     <div class="export-settings-body">
+      <div class="export-settings-summary-bar" id="export-seq-summary-bar">
+        <span class="export-summary-pill" id="export-seq-summary-res">1920×1080</span>
+        <span class="export-summary-pill" id="export-seq-summary-fps">60 FPS</span>
+        <span class="export-summary-pill" id="export-seq-summary-quality">ZIP</span>
+        <span class="export-summary-pill is-highlight" id="export-seq-summary-size">~180 MB</span>
+      </div>
       <!-- 1. Aspect Ratio (Visual Frames) -->
       <div class="modal-form-group">
         <label class="modal-label">ASPECT RATIO</label>
@@ -6277,22 +6311,29 @@
 
   <!-- ==========================================================================
        FULLSCREEN EXPORT PROGRESS OVERLAY
-       Features: Flat backdrop, 'Exporting video...', progress bar, percentage text
+       Features: Live frame preview, specs summary, progress bar, percentage text
        ========================================================================== -->
   <div class="export-progress-overlay" id="editor-export-progress-overlay" role="dialog" aria-modal="true" aria-hidden="true" style="display: none;">
     <div class="export-progress-modal">
       <div class="export-progress-title-row">
         <h3 class="export-progress-title" id="export-progress-title">Exporting video</h3>
-        <span class="export-engine-badge" id="export-engine-badge">GPU</span>
+        <span class="export-progress-percent" id="export-progress-percent">0%</span>
+      </div>
+      <div class="export-progress-preview-box" id="export-progress-preview-box">
+        <canvas id="export-progress-preview-canvas" class="export-progress-preview-canvas"></canvas>
+      </div>
+      <div class="export-progress-specs" id="export-progress-specs">
+        <span class="export-progress-spec-pill" id="export-progress-spec-quality">1080p · Normal</span>
+        <span class="export-progress-spec-pill" id="export-progress-spec-fps">60 FPS</span>
+        <span class="export-progress-spec-pill" id="export-progress-spec-size">~15.6 MB</span>
       </div>
       <div class="export-progress-bar-track">
         <div class="export-progress-bar-fill" id="export-progress-fill" style="width: 0%;"></div>
       </div>
-      <div class="export-progress-info">
-        <span class="export-progress-percent" id="export-progress-percent">0%</span>
+      <div class="export-progress-footer">
         <span class="export-progress-stage" id="export-progress-stage">Preparing...</span>
+        <button type="button" class="export-cancel-btn" id="btn-export-cancel">Cancel</button>
       </div>
-      <button type="button" class="export-cancel-btn" id="btn-export-cancel">Cancel Export</button>
     </div>
   </div>
 
