@@ -44,6 +44,8 @@ html, body {
   height: 100%;
   height: 100vh;
   height: 100dvh;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
   margin: 0;
   padding: 0;
   overflow: hidden;
@@ -63,7 +65,8 @@ html, body {
   height: 100%;
   height: 100vh;
   height: 100dvh;
-  max-height: 100dvh;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
   overflow: hidden;
   position: relative;
   display: flex;
@@ -83,7 +86,7 @@ html, body {
   flex-direction: row;
   justify-content: space-between;
   align-items: flex-start;
-  padding: 40px 24px 0 24px;
+  padding: max(40px, calc(16px + env(safe-area-inset-top, 0px))) 24px 0 24px;
   user-select: none;
   width: 100%;
   box-sizing: border-box;
@@ -1074,7 +1077,8 @@ html, body {
     height: 100%;
     height: 100vh;
     height: 100dvh;
-    max-height: 100dvh;
+    height: var(--app-height, 100dvh);
+    max-height: var(--app-height, 100dvh);
     display: flex;
     flex-direction: column;
   }
@@ -1082,8 +1086,8 @@ html, body {
   .studio-header {
     height: auto;
     min-height: auto;
-    max-height: 48dvh;
-    padding: 24px 16px 0 16px;
+    max-height: calc(var(--app-height, 100dvh) * 0.48);
+    padding: max(24px, calc(12px + env(safe-area-inset-top, 0px))) 16px 0 16px;
     display: flex;
     flex-direction: row;
     justify-content: space-between;
@@ -1105,7 +1109,7 @@ html, body {
 
   .tech-grid-container {
     position: absolute;
-    top: 25vh;
+    top: calc(var(--app-height, 100dvh) * 0.25);
     left: auto;
     right: -100px;
     transform: translateY(-50%);
@@ -1117,11 +1121,11 @@ html, body {
   }
 
   .dashboard-container {
-    height: 50vh;
-    max-height: 50vh;
-    min-height: 50vh;
+    height: calc(var(--app-height, 100dvh) * 0.5);
+    max-height: calc(var(--app-height, 100dvh) * 0.5);
+    min-height: 0;
     width: 100%;
-    padding: 14px 16px 16px 16px;
+    padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px)) 16px;
     border-top-left-radius: 64px;
     overflow-y: auto;
   }
@@ -1172,7 +1176,7 @@ html, body {
 
 @media (max-width: 380px) {
   .studio-header {
-    padding: 20px 12px 0 12px;
+    padding: max(20px, calc(10px + env(safe-area-inset-top, 0px))) 12px 0 12px;
     gap: 6px;
   }
   .studio-header-actions {
@@ -1199,7 +1203,8 @@ html, body {
     height: 100%;
     height: 100vh;
     height: 100dvh;
-    max-height: 100dvh;
+    height: var(--app-height, 100dvh);
+    max-height: var(--app-height, 100dvh);
   }
 
   .studio-header {
@@ -1224,11 +1229,11 @@ html, body {
     right: 0;
     bottom: 0;
     width: 50%;
-    height: 50vh;
-    max-height: 50vh;
-    min-height: 50vh;
+    height: calc(var(--app-height, 100dvh) * 0.5);
+    max-height: calc(var(--app-height, 100dvh) * 0.5);
+    min-height: 0;
     border-top-left-radius: 64px;
-    padding: 14px 16px 16px 16px;
+    padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px)) 16px;
     gap: 10px;
   }
 
@@ -1259,7 +1264,8 @@ html, body {
     height: 100%;
     height: 100vh;
     height: 100dvh;
-    max-height: 100dvh;
+    height: var(--app-height, 100dvh);
+    max-height: var(--app-height, 100dvh);
   }
 
   .studio-header {
@@ -1290,11 +1296,11 @@ html, body {
     right: 0;
     bottom: 0;
     width: clamp(380px, 32vw, 440px);
-    height: 50vh;
-    max-height: 50vh;
-    min-height: 50vh;
+    height: calc(var(--app-height, 100dvh) * 0.5);
+    max-height: calc(var(--app-height, 100dvh) * 0.5);
+    min-height: 0;
     border-top-left-radius: 64px;
-    padding: 16px;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px)) 16px;
     gap: 10px;
   }
 
@@ -1320,7 +1326,8 @@ html, body {
     height: 100%;
     height: 100vh;
     height: 100dvh;
-    max-height: 100dvh;
+    height: var(--app-height, 100dvh);
+    max-height: var(--app-height, 100dvh);
   }
 
   .studio-header {
@@ -1351,11 +1358,11 @@ html, body {
     right: 0;
     bottom: 0;
     width: clamp(380px, 30vw, 440px);
-    height: 50vh;
-    max-height: 50vh;
-    min-height: 50vh;
+    height: calc(var(--app-height, 100dvh) * 0.5);
+    max-height: calc(var(--app-height, 100dvh) * 0.5);
+    min-height: 0;
     border-top-left-radius: 64px;
-    padding: 16px;
+    padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px)) 16px;
     gap: 10px;
   }
 

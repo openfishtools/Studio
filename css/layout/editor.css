@@ -993,7 +993,9 @@ body.is-exporting .template-scrubber-wrap {
   }
 
   .editor-header {
-    height: 42px;
+    height: calc(42px + env(safe-area-inset-top, 0px));
+    min-height: calc(42px + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
     width: 100%;
     background-color: var(--bg-panel);
     border-radius: 0;
@@ -1003,6 +1005,7 @@ body.is-exporting .template-scrubber-wrap {
     justify-content: center;
     flex-shrink: 0;
     z-index: 10;
+    box-sizing: border-box;
   }
 
   .editor-header-nav {
@@ -1167,8 +1170,9 @@ body.is-exporting .template-scrubber-wrap {
     background-color: var(--bg-timeline);
     width: 100%;
     height: calc(100% - var(--mobile-preview-height, 55%));
-    min-height: 140px;
-    flex: 1;
+    min-height: 0;
+    max-height: calc(100% - 120px);
+    flex: 1 1 0%;
     position: relative;
     overflow: hidden;
     display: flex;
@@ -1277,7 +1281,9 @@ body.is-exporting .template-scrubber-wrap {
 
   /* Header Tablet/Desktop: Sleek & Compact (42px, matching Alight Motion proportions) */
   .editor-header {
-    height: 42px;
+    height: calc(42px + env(safe-area-inset-top, 0px));
+    min-height: calc(42px + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
     width: 100%;
     background-color: var(--bg-panel);
     border-radius: 0;
@@ -1287,6 +1293,7 @@ body.is-exporting .template-scrubber-wrap {
     justify-content: center;
     flex-shrink: 0;
     z-index: 10;
+    box-sizing: border-box;
   }
 
   .editor-header-nav {
@@ -2659,9 +2666,11 @@ body.has-active-drawer .timeline-layers-viewport {
   inset: 0 !important;
   width: 100vw !important;
   width: 100dvw !important;
+  width: var(--app-width, 100dvw) !important;
   height: 100vh !important;
   height: 100dvh !important;
-  max-height: 100dvh !important;
+  height: var(--app-height, 100dvh) !important;
+  max-height: var(--app-height, 100dvh) !important;
   z-index: 1050 !important;
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -2678,8 +2687,9 @@ body.has-active-drawer .timeline-layers-viewport {
 .drawer-card.is-effects-gallery {
   height: 50vh;
   height: 50dvh;
+  height: calc(var(--app-height, 100dvh) * 0.5);
   max-height: calc(100% - 12px);
-  min-height: 250px;
+  min-height: 220px;
 }
 
 #drawer-effects-gallery .drawer-body {
@@ -2700,11 +2710,10 @@ body.has-active-drawer .timeline-layers-viewport {
     right: 0 !important;
     width: calc(100% - var(--left-pane-width, 50%)) !important;
     max-width: calc(100% - var(--left-pane-width, 50%)) !important;
-    top: 42px !important;
+    top: calc(42px + env(safe-area-inset-top, 0px)) !important;
     bottom: 0 !important;
-    height: calc(100vh - 42px) !important;
-    height: calc(100dvh - 42px) !important;
-    max-height: calc(100dvh - 42px) !important;
+    height: calc(var(--app-height, 100dvh) - 42px - env(safe-area-inset-top, 0px)) !important;
+    max-height: calc(var(--app-height, 100dvh) - 42px - env(safe-area-inset-top, 0px)) !important;
     z-index: 1050 !important;
     pointer-events: none !important;
   }
@@ -4334,8 +4343,9 @@ body.force-mobile-view .editor-timeline-wrapper {
   max-width: 100% !important;
   min-width: 0 !important;
   height: calc(100% - var(--mobile-preview-height, 55%)) !important;
-  min-height: 140px !important;
-  flex: 1 !important;
+  min-height: 0 !important;
+  max-height: calc(100% - 120px) !important;
+  flex: 1 1 0% !important;
   overflow: hidden !important;
   display: flex !important;
   flex-direction: column !important;

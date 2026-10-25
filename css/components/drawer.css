@@ -43,7 +43,8 @@
   width: 100%;
   height: 100vh;
   height: 100dvh;
-  max-height: 100dvh;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
   z-index: 1050;
   padding-bottom: env(safe-area-inset-bottom, 0px);
   box-sizing: border-box;

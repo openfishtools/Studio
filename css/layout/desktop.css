@@ -35,10 +35,12 @@
 .desktop-viewport {
   position: relative;
   width: 100vw;
+  width: var(--app-width, 100vw);
   height: 100vh;
   height: 100dvh;
-  max-width: 100vw;
-  max-height: 100dvh;
+  height: var(--app-height, 100dvh);
+  max-width: var(--app-width, 100vw);
+  max-height: var(--app-height, 100dvh);
   display: flex;
   flex-direction: column;
   background-color: var(--bg-canvas);
@@ -46,6 +48,7 @@
   font-family: var(--font-brand);
   overflow: hidden;
   box-sizing: border-box;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 
   /* Resizable layout variables */
   --desktop-upper-height: 54%;
