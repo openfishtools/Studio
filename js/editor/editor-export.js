@@ -1783,7 +1783,6 @@
         if (typeof pausePlayback === 'function') {
           try { pausePlayback(false); } catch (_) {}
         }
-        history.pushState({ exportOverlay: true }, '');
         if (_exportBackdrop) _exportBackdrop.classList.add('is-active');
         _exportOverlay.classList.add('is-active');
 
@@ -2001,19 +2000,6 @@
         _exportCloseBtn.addEventListener('click', () => closeExportOverlay());
       }
 
-      // Back button closes overlay via popstate
-      window.addEventListener('popstate', (e) => {
-        if (_exportOverlay && _exportOverlay.classList.contains('is-active')) {
-          closeExportOverlay();
-          return;
-        }
-        // Also close QR modal on back
-        const qrBackdrop = document.getElementById('qr-share-backdrop');
-        if (qrBackdrop && qrBackdrop.classList.contains('is-active')) {
-          qrBackdrop.classList.remove('is-active');
-        }
-      });
-
       // Radio card selection & second-click to settings
       if (_exportOverlay) {
         _exportOverlay.querySelectorAll('.export-option-card').forEach(card => {
@@ -2028,7 +2014,6 @@
               if (panelId) {
                 const panel = document.getElementById(panelId);
                 if (panel) {
-                  history.pushState({ settingsPanel: panelId }, '');
                   panel.classList.add('is-active');
                 }
               }
@@ -2072,7 +2057,6 @@
             }
             const panel = document.getElementById(panelId);
             if (panel) {
-              history.pushState({ settingsPanel: panelId }, '');
               panel.classList.add('is-active');
             }
           });
@@ -2890,7 +2874,6 @@
         if (cardContainer) cardContainer.classList.add('skeleton-loading');
         if (renderedImg) renderedImg.classList.add('is-hidden');
 
-        history.pushState({ qrModal: true }, '');
         backdrop.classList.add('is-active');
 
         // 2. Render pixel-perfect WYSIWYG canvas and bind directly to image preview
@@ -3081,19 +3064,11 @@
         if (isExpanded) return;
         isExpanded = true;
         widget.classList.add('is-expanded');
-        try {
-          history.pushState({ mattingWidgetOpen: true }, '');
-        } catch (_) {}
       }
 
-      function collapseWidget(fromPopstate = false) {
+      function collapseWidget() {
         isExpanded = false;
         widget.classList.remove('is-expanded');
-        if (!fromPopstate && history.state && history.state.mattingWidgetOpen) {
-          try {
-            history.back();
-          } catch (_) {}
-        }
       }
 
       widget.addEventListener('click', (e) => {
@@ -3118,12 +3093,6 @@
       document.addEventListener('click', (e) => {
         if (isExpanded && !widget.contains(e.target)) {
           collapseWidget();
-        }
-      });
-
-      window.addEventListener('popstate', (e) => {
-        if (isExpanded) {
-          collapseWidget(true);
         }
       });
 

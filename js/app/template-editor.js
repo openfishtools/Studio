@@ -227,19 +227,11 @@
         if (isExpanded) return;
         isExpanded = true;
         widget.classList.add('is-expanded');
-        try {
-          history.pushState({ templateMattingWidgetOpen: true }, '');
-        } catch (_) {}
       };
 
-      const collapseWidget = (fromPopstate = false) => {
+      const collapseWidget = () => {
         isExpanded = false;
         widget.classList.remove('is-expanded');
-        if (!fromPopstate && history.state && history.state.templateMattingWidgetOpen) {
-          try {
-            history.back();
-          } catch (_) {}
-        }
       };
 
       widget.addEventListener('click', (e) => {
@@ -264,12 +256,6 @@
       document.addEventListener('click', (e) => {
         if (isExpanded && !widget.contains(e.target)) {
           collapseWidget();
-        }
-      });
-
-      window.addEventListener('popstate', () => {
-        if (isExpanded) {
-          collapseWidget(true);
         }
       });
 
@@ -530,25 +516,6 @@
         await this._handleFileReplacement(file);
         el.fileInput.value = '';
       });
-
-      // Native browser back button (popstate support)
-      window.addEventListener('popstate', (e) => {
-        if (this.isOpen) {
-          const exportOverlay = document.getElementById('export-fs-overlay');
-          if (exportOverlay && exportOverlay.classList.contains('is-active')) {
-            return;
-          }
-          const qrBackdrop = document.getElementById('qr-share-backdrop');
-          if (qrBackdrop && qrBackdrop.classList.contains('is-active')) {
-            return;
-          }
-          if (window.Popover && window.Popover.activePopover && window.Popover.activePopover.id === 'popover-template-next') {
-            window.Popover.close(false);
-          } else {
-            this.close(true);
-          }
-        }
-      });
     },
 
     async open() {
@@ -584,11 +551,6 @@
 
       el.overlay.classList.add('is-open');
       this.isOpen = true;
-
-      // Push history state for native back button / Android gesture
-      try {
-        history.pushState({ templateEditorOpen: true }, '');
-      } catch (_) {}
     },
 
     close(fromPopstate = false) {
@@ -601,14 +563,6 @@
       const el = this._elements;
       el.overlay.classList.remove('is-open');
       this.isOpen = false;
-
-      if (!fromPopstate) {
-        try {
-          if (history.state && history.state.templateEditorOpen) {
-            history.back();
-          }
-        } catch (_) {}
-      }
 
       // Sync back to editor timeline
       if (typeof window.seekTimelineToTime === 'function') {

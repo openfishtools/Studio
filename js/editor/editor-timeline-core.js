@@ -2222,10 +2222,9 @@
         const isCurrentAndNextCached = isNextFrameCached && window.PreviewCacheManager.hasFrame(currentFrameIdx);
 
         // Adaptive Refresh Throttle:
-        // - When playing uncached frames or 60fps timelines, throttle ticks faster than 0.65 * frameDuration
-        // - When playing cached frames on a lower-FPS project (e.g. 24fps/30fps on a 60Hz display) with audio,
-        //   allow smooth playhead motion while canvas blits the quantized project frame in ~0.1ms!
-        if (!isFirstTick && rawDeltaSec < frameDuration * 0.65 && !isCurrentAndNextCached) {
+        // Only throttle sub-frame rAF ticks when project FPS is lower than display refresh rate (e.g. 24fps/30fps on 60Hz/120Hz).
+        // Never throttle at >= 50fps so 60fps rAF ticks are never dropped due to 1-2ms browser scheduling jitter!
+        if (!isFirstTick && fps < 50 && rawDeltaSec < frameDuration * 0.72 && !isCurrentAndNextCached) {
           playAnimationId = requestAnimationFrame(stepPlay);
           return;
         }
@@ -2241,26 +2240,38 @@
           ? window.timelinePlaybackSpeed
           : 1.0;
 
-        // 1. After Effects Frame-Accurate RAM Preview Clock:
+        // 1. After Effects Real-Time + Gapless RAM Preview Clock:
         // - When building RAM cache on uncached frames (isCacheEnabled && !isNextFrameCached):
-        //   Advance strictly by 1 frame (nextFrameIdx / fps) so ZERO frames are ever skipped/jumped,
-        //   turning the entire timeline cache bar solid green on the first pass without gaps ("putus-putus")!
-        // - When playing back cached frames (green bar) or when cache is disabled:
-        //   Lock to hardware Master Audio Clock when available (zero audio drift / zero WSOLA rate jitter!),
-        //   otherwise advance by true wall-clock rawDeltaSec (without artificial min-clamp speed-up bias).
+        //   If render time is fast (< 9ms) and wall-clock advanced by ~2 frames (e.g. rAF jitter),
+        //   bake the intermediate frame first so ZERO frames are skipped AND playback stays 100% real-time!
+        const lastRenderMs = (typeof window._lastFrameRenderDuration === 'number') ? window._lastFrameRenderDuration : 4;
+        const canMultiStepCatchUp = isCacheEnabled && !isNextFrameCached && Math.abs(playbackSpeed - 1.0) < 0.01 &&
+          lastRenderMs < 9.0 && rawDeltaSec >= frameDuration * 1.65;
+
+        if (canMultiStepCatchUp) {
+          const midSec = nextFrameIdx / fps;
+          const midPan = -(midSec * pixelsPerSecond);
+          if (midPan > bounds.min) {
+            const canvas = document.getElementById('editor-active-canvas');
+            if (canvas) {
+              renderCanvasFrame(canvas, currentProjectState.bgColor, canvas.width, canvas.height, 'playbackStep', midSec);
+            }
+          }
+        }
+
         let effectiveDeltaSec;
         if (isFirstTick) {
           effectiveDeltaSec = Math.min(frameDuration, Math.max(0, rawDeltaSec)) * playbackSpeed;
         } else if (isCacheEnabled && !isNextFrameCached) {
-          effectiveDeltaSec = frameDuration * playbackSpeed;
+          effectiveDeltaSec = (canMultiStepCatchUp ? (frameDuration * 2) : frameDuration) * playbackSpeed;
         } else {
           effectiveDeltaSec = Math.min(Math.max(frameDuration * 2.5, 0.05), Math.max(0, rawDeltaSec)) * playbackSpeed;
         }
 
         let nextSec = currentSec + effectiveDeltaSec;
         if (isCacheEnabled && !isNextFrameCached && Math.abs(playbackSpeed - 1.0) < 0.01) {
-          // Strict 1-by-1 frame stepping when filling uncached frames at 1.0x
-          nextSec = nextFrameIdx / fps;
+          // Contiguous frame stepping (1 frame, or 2 frames if intermediate frame was just baked above)
+          nextSec = (canMultiStepCatchUp ? (nextFrameIdx + 1) : nextFrameIdx) / fps;
         } else if ((isCurrentAndNextCached || !isCacheEnabled) && Math.abs(playbackSpeed - 1.0) < 0.01 && window.FishAudioEngine && typeof window.FishAudioEngine.getMasterAudioTime === 'function') {
           // When frames are cached (including audio-only timelines), slave playhead to hardware audio clock
           // so the timeline never outruns or fights the audio element!
@@ -2271,20 +2282,20 @@
         }
 
         // 2. After Effects Stepped Audio Slow-Mo with Hold Interval (Jeda Sebelum Slow-Mo Berikutnya):
-        // Measure actual achieved frame rate vs target frameDuration.
-        // Instead of changing audio speed 1:1 every frame, quantize into discrete speed tiers and hold each tier
-        // for at least 450ms before stepping to the next slow-mo tier, while snapping back to 1.0x immediately on cached frames!
+        // Measure actual achieved timeline speed vs wall-clock rawDeltaSec.
         if (isFirstTick || !window._nleSmoothedFrameSec) {
           window._nleSmoothedFrameSec = frameDuration;
           window._nleSteppedAudioRatio = 1.0;
           window._nleLastAudioStepMs = timestamp;
         } else {
-          const measuredFrameSec = Math.min(0.25, Math.max(frameDuration, rawDeltaSec));
-          window._nleSmoothedFrameSec = window._nleSmoothedFrameSec * 0.78 + measuredFrameSec * 0.22;
+          const advancedFrames = canMultiStepCatchUp ? 2 : 1;
+          const perFrameWallSec = rawDeltaSec / advancedFrames;
+          const measuredFrameSec = Math.min(0.25, Math.max(frameDuration, perFrameWallSec));
+          window._nleSmoothedFrameSec = window._nleSmoothedFrameSec * 0.82 + measuredFrameSec * 0.18;
         }
 
         let effectiveAudioSpeed = playbackSpeed;
-        if (isCurrentAndNextCached || isNextFrameCached || window._nleSmoothedFrameSec <= frameDuration * 1.22) {
+        if (isCurrentAndNextCached || isNextFrameCached || window._nleSmoothedFrameSec <= frameDuration * 1.30) {
           // Real-time / Cached Green Bar: immediately lock audio to 100% normal speed (1.0x)
           window._nleSteppedAudioRatio = 1.0;
           window._nleLastAudioStepMs = timestamp;
@@ -2299,7 +2310,7 @@
           // Hold each slow-mo speed plateau for 450ms ("jeda sebelum slowmo selanjutnya") so audio plays smoothly
           // at that slow-mo rate before stepping again
           if (
-            (currentHeldRatio === 1.0 && elapsedSinceLastStep >= 180 && quantizedRatio <= 0.85) ||
+            (currentHeldRatio === 1.0 && elapsedSinceLastStep >= 240 && quantizedRatio <= 0.80) ||
             (elapsedSinceLastStep >= 450 && Math.abs(quantizedRatio - currentHeldRatio) >= 0.08)
           ) {
             window._nleSteppedAudioRatio = quantizedRatio;

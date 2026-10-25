@@ -2157,6 +2157,46 @@ body.has-active-drawer .timeline-layers-viewport {
   opacity: 0.2;
 }
 
+/* Audio Conversion Progress Bar Placeholder inside Timeline Clip */
+.timeline-clip-block.is-converting-audio {
+  background-color: var(--bg-dashboard) !important;
+  border: 1.5px dashed var(--track-audio, var(--color-primary)) !important;
+  color: var(--text-primary) !important;
+  overflow: hidden !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: wait !important;
+  pointer-events: none !important;
+}
+
+.clip-convert-progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 0%;
+  background-color: var(--track-audio, var(--color-primary));
+  opacity: 0.32;
+  transition: width 0.08s linear;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.clip-convert-progress-num {
+  position: relative;
+  z-index: 2;
+  font-family: var(--font-brand);
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: 0.4px;
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
 .timeline-clip-block.clip-adjustment,
 .timeline-clip-block.clip-adj,
 .timeline-clip-block.clip-fx {

@@ -70,17 +70,6 @@ class DrawerManager {
         this.close();
       }
     });
-
-    // 3. Native Back Button / Popstate support
-    window.addEventListener('popstate', (e) => {
-      // Never close timeline-layer-drawer on generic popstate
-      if (this.activeDrawer && this.activeDrawer.id === 'timeline-layer-drawer') {
-        return;
-      }
-      if (this.activeDrawer) {
-        this.close(false); // Do not call history.back() again
-      }
-    });
   }
 
   /**
@@ -508,9 +497,6 @@ class DrawerManager {
       } else {
         this.cleanup(el);
       }
-      if (this.historyPushed) {
-        window.history.replaceState({ drawerOpen: true, drawerId: el.id }, '');
-      }
     } else {
       this.cleanup(el);
     }
@@ -558,11 +544,7 @@ class DrawerManager {
       fab.blur();
     }
 
-    // Push invisible history state for native back gesture if not already active
-    if (!this.historyPushed) {
-      window.history.pushState({ drawerOpen: true, drawerId: el.id }, '');
-      this.historyPushed = true;
-    }
+    this.historyPushed = false;
 
     // Auto-focus first focusable element inside drawer
     const focusable = el.querySelector('button, [tabindex="0"], input');
@@ -580,7 +562,6 @@ class DrawerManager {
    */
   close(targetOrHistory = true, triggerHistoryBack = true) {
     let closingDrawer = this.activeDrawer;
-    const doHistory = (typeof targetOrHistory === 'boolean') ? targetOrHistory : triggerHistoryBack;
 
     if (typeof targetOrHistory === 'string' || (targetOrHistory && targetOrHistory.nodeType)) {
       const specified = this.resolveElement(targetOrHistory);
@@ -641,12 +622,7 @@ class DrawerManager {
       }
     }, 260);
 
-    if (doHistory && this.historyPushed) {
-      this.historyPushed = false;
-      window.history.back();
-    } else {
-      this.historyPushed = false;
-    }
+    this.historyPushed = false;
   }
 
   /**

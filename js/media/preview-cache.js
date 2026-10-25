@@ -419,7 +419,7 @@
       if (!this._frameGen) this._frameGen = new Map();
       const inFlightKey = `${targetComp}:${frameIndex}`;
       if (this._inFlightFrames.has(inFlightKey)) return;
-      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 10 : 18;
+      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 12 : 24;
       if (this._inFlightFrames.size >= maxInFlight) return;
       const gen = (this._frameGen.get(inFlightKey) || 0) + 1;
       this._frameGen.set(inFlightKey, gen);
@@ -428,42 +428,8 @@
       try {
         const srcW = sourceCanvas.width;
         const srcH = sourceCanvas.height;
-        const maxDim = (this._isMobile || (this._devMem && this._devMem <= 4))
-          ? (isDraft ? 480 : 640)
-          : (isDraft ? 640 : 854);
-        const maxSide = Math.max(srcW, srcH);
-        let bitmap = null;
-        if (maxSide > maxDim) {
-          const scale = maxDim / maxSide;
-          const targetW = Math.max(16, Math.round(srcW * scale));
-          const targetH = Math.max(16, Math.round(srcH * scale));
-          if (!this._resizeBufferCanvas) {
-            this._resizeBufferCanvas = (typeof OffscreenCanvas !== 'undefined')
-              ? new OffscreenCanvas(targetW, targetH)
-              : document.createElement('canvas');
-            this._resizeBufferCtx = this._resizeBufferCanvas.getContext('2d', { alpha: false }) || this._resizeBufferCanvas.getContext('2d');
-            if (this._resizeBufferCtx) {
-              this._resizeBufferCtx.imageSmoothingEnabled = true;
-              this._resizeBufferCtx.imageSmoothingQuality = 'low';
-            }
-          }
-          if (this._resizeBufferCanvas.width !== targetW || this._resizeBufferCanvas.height !== targetH) {
-            this._resizeBufferCanvas.width = targetW;
-            this._resizeBufferCanvas.height = targetH;
-            if (this._resizeBufferCtx) {
-              this._resizeBufferCtx.imageSmoothingEnabled = true;
-              this._resizeBufferCtx.imageSmoothingQuality = 'low';
-            }
-          }
-          if (this._resizeBufferCtx) {
-            this._resizeBufferCtx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
-            bitmap = await createImageBitmap(this._resizeBufferCanvas);
-          } else {
-            bitmap = await createImageBitmap(sourceCanvas);
-          }
-        } else {
-          bitmap = await createImageBitmap(sourceCanvas);
-        }
+        // Direct GPU-to-GPU createImageBitmap without intermediate canvas copy (0ms main-thread overhead)
+        const bitmap = await createImageBitmap(sourceCanvas);
         // Re-check after await: frame may have been cleared/invalidated or superseded by a newer render
         if (!this._inFlightFrames.has(inFlightKey) || this._frameGen.get(inFlightKey) !== gen) {
           if (bitmap && typeof bitmap.close === 'function') {
@@ -1161,6 +1127,7 @@
     }
 
     stopIdleWorker() {
+      const wasRunning = this.isIdleRunning;
       this.isIdleRunning = false;
       if (this.idleWorkerId) {
         if (this._idleUsedRAF && typeof cancelAnimationFrame === 'function') {
@@ -1173,6 +1140,9 @@
         this.idleWorkerId = null;
         this._idleUsedRAF = false;
         this._idleUsedRIC = false;
+      }
+      if (wasRunning && typeof window !== 'undefined' && window.currentProjectState) {
+        this.refreshBaselineSnapshot(window.currentProjectState);
       }
     }
 

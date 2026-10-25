@@ -55,7 +55,7 @@
         <h1 class="brand-title">FishTools</h1>
         <div class="brand-subtitle-row">
           <span class="brand-subtitle">Studio</span>
-          <span class="badge-pre-alpha" id="studio-version-badge">0.6.4</span>
+          <span class="badge-pre-alpha" id="studio-version-badge">0.6.5</span>
         </div>
 
         <!-- Desktop Folders Shelf in Photo 2 area -->
@@ -783,7 +783,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">FishTools Studio</h3>
-          <span class="welcome-badge">v0.6.4</span>
+          <span class="welcome-badge">v0.6.5</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
@@ -819,11 +819,47 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.5 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.5</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Oct 25, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Video-to-Audio Conversion Placeholder Slot &amp; Progress Bar (`js/editor/editor-media.js`, `js/editor/editor-timeline-ops.js`, `css/components/drawer.css`, `css/layout/editor.css`)</span>
+                  <span class="changelog-item-desc">Added an immediate empty placeholder slot/track that acts as a real-time progress bar with a centered percentage badge (`0%`–`100%`) whenever converting video to MP3 in the Media Pool or extracting audio from a video clip on the timeline, before smoothly transforming into the final audio item.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Zero-Drop 60fps RAM Preview Playback &amp; Async Lookahead Caching (`js/editor/editor-timeline-core.js`, `js/editor/editor-canvas.js`, `js/media/preview-cache.js`, `js/media/frame-extractor.js`, `js/media/videocomp-enggine.js`)</span>
+                  <span class="changelog-item-desc">Eliminated synchronous `createImageBitmap` stalls during active playback by keeping displayed frames on fast main-canvas GPU blits while offloading bitmap creation and `f+1..f+4` lookahead pre-baking to asynchronous microtasks, plus pausing background video frame extraction while `isPlaying` is active so playback stays at 1.0x real-time speed without dropping frames.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Sequential Innermost-First Precompose Baking &amp; Smart 3-Tier Fast-Path (`js/media/frame-extractor.js`, `js/media/videocomp-enggine.js`, `js/editor/editor-canvas.js`)</span>
+                  <span class="changelog-item-desc">Rebuilt Precompose (`precomp`) frame extraction with strict 1-by-1 innermost-child-first queuing (`_precompExtractionQueue`, `_waitForLayerExtractionDone`) and a smart 3-tier complexity analyzer (`_analyzePrecompComplexity`): `static` precomps render 1 shared `ImageBitmap` in `&lt;2ms`, `lightweight` animated precomps (transform/opacity/camera/text animations on non-video layers) bypass frame baking completely (`0ms`, `_lightweightFastPath = true`) for instant live canvas rendering, and `heavy` precomps reuse cached static hold frames outside active keyframe intervals.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Removed UI Browser History Stack Pollution (`js/ui/drawer.js`, `js/ui/modal.js`, `js/ui/popover.js`, `js/ui/context-menu.js`, `js/ui/folderanim.js`, `js/editor/editor-inspector.js`, `js/editor/editor-timeline-ops.js`, `js/editor/editor-export.js`, `js/app/template-editor.js`, `js/app/main.js`)</span>
+                  <span class="changelog-item-desc">Removed all `history.pushState`, `history.replaceState`, `history.back()`, and `popstate` UI state listeners across drawers, modals, popovers, context menus, inspector subviews, folders, precompose navigation, and export overlays so browser "Go Back" navigates cleanly without stepping through UI states.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.4 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.4</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Oct 24, 2026</span>
               </div>
               <div class="welcome-changelog-item">

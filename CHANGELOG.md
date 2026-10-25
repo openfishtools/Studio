@@ -5,6 +5,18 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.5] - 2026-10-25
+
+### Added
+- **Video-to-Audio Conversion Placeholder Slot & Progress Bar (`js/editor/editor-media.js`, `js/editor/editor-timeline-ops.js`, `css/components/drawer.css`, `css/layout/editor.css`)**: Added an immediate empty placeholder slot/track that acts as a real-time progress bar with a centered percentage badge (`0%`–`100%`) whenever converting video to MP3 in the Media Pool or extracting audio from a video clip on the timeline, before smoothly transforming into the final audio item.
+
+### Improved
+- **Zero-Drop 60fps RAM Preview Playback & Async Lookahead Caching (`js/editor/editor-timeline-core.js`, `js/editor/editor-canvas.js`, `js/media/preview-cache.js`, `js/media/frame-extractor.js`, `js/media/videocomp-enggine.js`)**: Eliminated synchronous `createImageBitmap` stalls during active playback by keeping displayed frames on fast main-canvas GPU blits while offloading bitmap creation and `f+1..f+4` lookahead pre-baking to asynchronous microtasks, plus pausing background video frame extraction while `isPlaying` is active so playback stays at 1.0x real-time speed without dropping frames.
+- **Sequential Innermost-First Precompose Baking & Smart 3-Tier Fast-Path (`js/media/frame-extractor.js`, `js/media/videocomp-enggine.js`, `js/editor/editor-canvas.js`)**: Rebuilt Precompose (`precomp`) frame extraction with strict 1-by-1 innermost-child-first queuing (`_precompExtractionQueue`, `_waitForLayerExtractionDone`) and a smart 3-tier complexity analyzer (`_analyzePrecompComplexity`): `static` precomps render 1 shared `ImageBitmap` in `<2ms`, `lightweight` animated precomps (transform/opacity/camera/text animations on non-video layers) bypass frame baking completely (`0ms`, `_lightweightFastPath = true`) for instant live canvas rendering, and `heavy` precomps reuse cached static hold frames outside active keyframe intervals.
+
+### Fixed
+- **Removed UI Browser History Stack Pollution (`js/ui/drawer.js`, `js/ui/modal.js`, `js/ui/popover.js`, `js/ui/context-menu.js`, `js/ui/folderanim.js`, `js/editor/editor-inspector.js`, `js/editor/editor-timeline-ops.js`, `js/editor/editor-export.js`, `js/app/template-editor.js`, `js/app/main.js`)**: Removed all `history.pushState`, `history.replaceState`, `history.back()`, and `popstate` UI state listeners across drawers, modals, popovers, context menus, inspector subviews, folders, precompose navigation, and export overlays so browser "Go Back" navigates cleanly without stepping through UI states.
+
 ## [0.6.4] - 2026-10-24
 
 ### Added

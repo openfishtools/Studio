@@ -211,9 +211,6 @@
         window.activeKeyframeProperty = window.activeTransformTool || 'move';
         syncTransformControllerValues();
         updateTransformKeyframeBtnState();
-        try {
-          history.pushState({ drawerSubview: 'transform' }, '');
-        } catch (_) {}
       } else if (subviewName === 'camera') {
         window.activeKeyframeProperty = 'cameraZoom';
         if (typeof syncCameraSettingsUI === 'function') {
@@ -222,9 +219,6 @@
         if (typeof updateCameraKeyframeBtnState === 'function') {
           updateCameraKeyframeBtnState();
         }
-        try {
-          history.pushState({ drawerSubview: 'camera' }, '');
-        } catch (_) {}
       } else if (subviewName === 'blend') {
         window.activeKeyframeProperty = 'opacity';
         if (typeof syncBlendOverlayValues === 'function') {
@@ -233,16 +227,10 @@
         if (typeof updateBlendKeyframeBtnState === 'function') {
           updateBlendKeyframeBtnState();
         }
-        try {
-          history.pushState({ drawerSubview: 'blend' }, '');
-        } catch (_) {}
       } else if (subviewName === 'graph') {
         if (typeof updateGraphEditorUI === 'function') {
           updateGraphEditorUI();
         }
-        try {
-          history.pushState({ drawerSubview: 'graph' }, '');
-        } catch (_) {}
       } else if (subviewName === 'effects') {
         const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
         const curProp = window.activeKeyframeProperty;
@@ -254,16 +242,10 @@
         if (typeof updateEffectsKeyframeAndGraphBtnStates === 'function') {
           updateEffectsKeyframeAndGraphBtnStates();
         }
-        try {
-          history.pushState({ drawerSubview: 'effects' }, '');
-        } catch (_) {}
       } else if (subviewName === 'fill') {
         if (typeof syncFillControllerUI === 'function') {
           syncFillControllerUI();
         }
-        try {
-          history.pushState({ drawerSubview: 'fill' }, '');
-        } catch (_) {}
       } else if (subviewName === 'volume') {
         window.activeKeyframeProperty = 'volume';
         if (typeof syncVolumeControllerValues === 'function') {
@@ -276,9 +258,6 @@
         if (typeof renderAudioEffectsRack === 'function') {
           renderAudioEffectsRack(curL);
         }
-        try {
-          history.pushState({ drawerSubview: 'volume' }, '');
-        } catch (_) {}
       } else if (subviewName === 'speed') {
         const curL = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
         window.activeKeyframeProperty = (curL && curL.speedMode === 'time_remap') ? 'timeRemap' : 'speed';
@@ -288,16 +267,10 @@
         if (typeof updateSpeedKeyframeBtnState === 'function') {
           updateSpeedKeyframeBtnState();
         }
-        try {
-          history.pushState({ drawerSubview: 'speed' }, '');
-        } catch (_) {}
       } else if (subviewName === 'shape') {
         if (typeof syncShapeControllerUI === 'function') {
           syncShapeControllerUI();
         }
-        try {
-          history.pushState({ drawerSubview: 'shape' }, '');
-        } catch (_) {}
       } else if (subviewName === 'vector') {
         window.activeKeyframeProperty = 'vectorPoints';
         if (typeof syncVectorControllerUI === 'function') {
@@ -306,16 +279,10 @@
         if (typeof updateVectorKeyframeBtnState === 'function') {
           updateVectorKeyframeBtnState();
         }
-        try {
-          history.pushState({ drawerSubview: 'vector' }, '');
-        } catch (_) {}
       } else if (subviewName === 'beatmark') {
         if (typeof syncBeatmarkDrawerUI === 'function') {
           syncBeatmarkDrawerUI();
         }
-        try {
-          history.pushState({ drawerSubview: 'beatmark' }, '');
-        } catch (_) {}
       } else if (subviewName === 'effects-gallery') {
         if (typeof window.closeGalleryCategory === 'function') {
           window.closeGalleryCategory();
@@ -326,9 +293,6 @@
         if (typeof window.autoFetchAndLoadEffects === 'function') {
           window.autoFetchAndLoadEffects();
         }
-        try {
-          history.pushState({ drawerSubview: 'effects-gallery' }, '');
-        } catch (_) {}
       }
 
       if (window.CanvasOverlay && typeof window.CanvasOverlay.scheduleRedraw === 'function') {
@@ -3268,52 +3232,6 @@
       }
 
       bindTransformInlineEditing();
-
-      // J. Popstate support for native back navigation
-      window.addEventListener('popstate', (e) => {
-        if (window.Popover && typeof window.Popover.getAwaitedPopstate === 'function' && window.Popover.getAwaitedPopstate() > 0) {
-          return;
-        }
-        if (window._popoverClosingHistoryBack) {
-          return;
-        }
-        if (window._isPrecompPoppingHistory) {
-          window._isPrecompPoppingHistory = false;
-          return;
-        }
-        if (e.state && (e.state.popoverOpen || e.state.modalOpen)) return;
-        if (window.Popover && typeof window.Popover.isOpen === 'function' && window.Popover.isOpen()) {
-          window.Popover.close(false);
-          return;
-        }
-        if (e.state && e.state.drawerSubview && e.state.drawerSubview === currentDrawerSubview) {
-          return;
-        }
-        if (currentDrawerSubview === 'graph') {
-          switchLayerDrawerSubview(window.previousDrawerSubview || 'transform');
-        } else if (document.getElementById('drawer-effects-gallery') && document.getElementById('drawer-effects-gallery').classList.contains('is-active')) {
-          const iv = document.getElementById('effects-items-view');
-          if (iv && iv.style.display !== 'none' && typeof window.closeGalleryCategory === 'function') {
-            window.closeGalleryCategory();
-          } else {
-            closeEffectsGalleryDrawer(false);
-          }
-        } else if (currentDrawerSubview === 'effects-gallery') {
-          const iv = document.getElementById('effects-items-view');
-          if (iv && iv.style.display !== 'none' && typeof window.closeGalleryCategory === 'function') {
-            window.closeGalleryCategory();
-          } else {
-            switchLayerDrawerSubview('effects');
-          }
-        } else if (currentDrawerSubview === 'transform' || currentDrawerSubview === 'blend' || currentDrawerSubview === 'effects' || currentDrawerSubview === 'camera' || currentDrawerSubview === 'fill' || currentDrawerSubview === 'volume' || currentDrawerSubview === 'speed' || currentDrawerSubview === 'shape' || currentDrawerSubview === 'text' || currentDrawerSubview === 'beatmark') {
-          switchLayerDrawerSubview('main');
-        } else if (compositionStack && compositionStack.length > 0) {
-          window._precompHistoryPushed = Math.max(0, (window._precompHistoryPushed || 1) - 1);
-          if (typeof exitPrecompose === 'function') {
-            exitPrecompose(true);
-          }
-        }
-      });
     })();
 
     function syncBlendOverlayValues() {

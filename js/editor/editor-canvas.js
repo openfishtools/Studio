@@ -727,10 +727,10 @@
           const childBaseH = Math.round(Math.abs(child.mediaHeight || child.scaleH || baseH));
           const childW = isExport ? childBaseW : Math.max(1, Math.round(childBaseW * (pw / baseW)));
           const childH = isExport ? childBaseH : Math.max(1, Math.round(childBaseH * (ph / baseH)));
-          const precompRes = (triggerSource !== 'precomp-extract' && window.VideoCompEngine && typeof window.VideoCompEngine.resolvePrecompElement === 'function')
+          const precompRes = (window.VideoCompEngine && typeof window.VideoCompEngine.resolvePrecompElement === 'function')
             ? window.VideoCompEngine.resolvePrecompElement(child, {
                 isExport,
-                isIdleCache: triggerSource === 'idle-cache',
+                isIdleCache: triggerSource === 'idle-cache' || triggerSource === 'precomp-extract',
                 currentSec: innerSec,
                 pixelsPerSecond: pps,
                 targetW: childW,
@@ -2786,11 +2786,6 @@
           } else if (adaptiveScale >= 0.96 || isDraftModeActive || window.isTimelinePlaying) {
             window.PreviewCacheManager.setFrameFromCanvas(frameIndex, canvas, isDraftModeActive);
           }
-        }
-
-        // Keep baseline layer snapshot synchronized if renderCanvasFrame lazily initialized layer dimensions/defaults
-        if ((window.isTimelinePlaying || isIdleCache) && !isTransformDragging && window.PreviewCacheManager && typeof window.PreviewCacheManager.refreshBaselineSnapshot === 'function') {
-          window.PreviewCacheManager.refreshBaselineSnapshot(currentProjectState);
         }
 
       }

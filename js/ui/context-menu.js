@@ -53,17 +53,6 @@ window.ContextMenu = (function () {
       }
     });
 
-    // Native browser back button / popstate handling
-    window.addEventListener('popstate', () => {
-      if (popstateAwaited > 0) {
-        popstateAwaited--;
-        return;
-      }
-      if (isOpen) {
-        close(false);
-      }
-    });
-
     // Dismiss on window resize or scroll
     window.addEventListener('resize', () => {
       if (isOpen) close();
@@ -172,24 +161,12 @@ window.ContextMenu = (function () {
             console.error('ContextMenu action error:', err);
           }
         }
-        // If the action did NOT transition to a modal, revert contextMenu history state
-        if (window.history.state && window.history.state.contextMenuOpen && (!window.Modal || !window.Modal.activeModal)) {
-          popstateAwaited++;
-          window._contextMenuClosingHistoryBack = true;
-          window.history.back();
-          setTimeout(() => { window._contextMenuClosingHistoryBack = false; }, 350);
-        }
       });
 
       menuCard.appendChild(btn);
     });
 
     currentCloseCallback = options.onClose || null;
-
-    // Push history state for back button navigation
-    if (!window.history.state || !window.history.state.contextMenuOpen) {
-      window.history.pushState({ contextMenuOpen: true }, '');
-    }
 
     positionMenu(options.x || 0, options.y || 0);
     menuBackdrop.classList.add('is-open');
@@ -214,13 +191,6 @@ window.ContextMenu = (function () {
     }
 
     isOpen = false;
-
-    if (popHistory && window.history.state && window.history.state.contextMenuOpen) {
-      popstateAwaited++;
-      window._contextMenuClosingHistoryBack = true;
-      window.history.back();
-      setTimeout(() => { window._contextMenuClosingHistoryBack = false; }, 350);
-    }
 
     if (typeof currentCloseCallback === 'function') {
       const cb = currentCloseCallback;

@@ -615,6 +615,47 @@
   line-height: 1.2;
 }
 
+/* Audio Conversion Progress Bar Placeholder Tile */
+.media-item-tile.is-converting-audio,
+.fill-media-thumbbox.is-converting-audio {
+  background-color: var(--bg-dashboard);
+  border: 1px dashed var(--track-audio, var(--color-primary));
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: wait;
+  pointer-events: none;
+}
+
+.media-convert-progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 0%;
+  background-color: var(--track-audio, var(--color-primary));
+  opacity: 0.28;
+  transition: width 0.08s linear;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.media-convert-progress-num {
+  position: relative;
+  z-index: 2;
+  font-family: var(--font-brand);
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: 0.3px;
+  line-height: 1;
+  user-select: none;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Media Item Delete Button (Desktop Hover Only) */
 .media-item-delete-btn {
   position: absolute;

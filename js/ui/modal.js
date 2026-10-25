@@ -29,26 +29,6 @@ class ModalManager {
         this.close();
       }
     });
-
-    // 3. Native / Browser Back Button Interception (History popstate)
-    window.addEventListener('popstate', (e) => {
-      if (window._modalClosingHistoryBack || window._popoverClosingHistoryBack || window._contextMenuClosingHistoryBack) {
-        return;
-      }
-      if (window.Popover && typeof window.Popover.getAwaitedPopstate === 'function' && window.Popover.getAwaitedPopstate() > 0) {
-        return;
-      }
-      if (window.ContextMenu && typeof window.ContextMenu.getAwaitedPopstate === 'function' && window.ContextMenu.getAwaitedPopstate() > 0) {
-        return;
-      }
-      if (e.state && e.state.modalOpen) {
-        return;
-      }
-      if (this.activeModal) {
-        // User clicked Back button: Close the modal without navigating away
-        this.close(false); // don't call history.back again
-      }
-    });
   }
 
   /**
@@ -73,17 +53,7 @@ class ModalManager {
 
     this.activeModal = el;
     el.classList.add('is-active');
-
-    // Push or replace history state so Back button closes modal without changing URL
-    if (!this.historyPushed) {
-      if (window.history.state && (window.history.state.contextMenuOpen || window.history.state.popoverOpen)) {
-        window.history.replaceState({ modalOpen: true, modalId: el.id }, '');
-        this.historyPushed = true;
-      } else if (!window.history.state || !window.history.state.modalOpen) {
-        window.history.pushState({ modalOpen: true, modalId: el.id }, '');
-        this.historyPushed = true;
-      }
-    }
+    this.historyPushed = false;
 
     // Auto-focus first input if present
     const firstInput = el.querySelector('input, select, textarea, button');
@@ -98,21 +68,12 @@ class ModalManager {
    * @param {boolean} [triggerHistoryBack=true]
    */
   close(modalTargetOrTriggerBack = true, triggerHistoryBack = true) {
-    let shouldTriggerHistory = true;
     let targetEl = null;
 
-    if (typeof modalTargetOrTriggerBack === 'boolean') {
-      shouldTriggerHistory = modalTargetOrTriggerBack;
-    } else if (typeof modalTargetOrTriggerBack === 'string') {
+    if (typeof modalTargetOrTriggerBack === 'string') {
       targetEl = document.getElementById(modalTargetOrTriggerBack);
-      if (typeof triggerHistoryBack === 'boolean') {
-        shouldTriggerHistory = triggerHistoryBack;
-      }
     } else if (modalTargetOrTriggerBack instanceof HTMLElement) {
       targetEl = modalTargetOrTriggerBack;
-      if (typeof triggerHistoryBack === 'boolean') {
-        shouldTriggerHistory = triggerHistoryBack;
-      }
     }
 
     const el = targetEl || this.activeModal;
@@ -122,17 +83,7 @@ class ModalManager {
     if (this.activeModal === el) {
       this.activeModal = null;
     }
-
-    if (shouldTriggerHistory && this.historyPushed && window.history.state && window.history.state.modalOpen) {
-      this.historyPushed = false;
-      window._modalClosingHistoryBack = true;
-      window.history.back();
-      setTimeout(() => {
-        window._modalClosingHistoryBack = false;
-      }, 350);
-    } else {
-      this.historyPushed = false;
-    }
+    this.historyPushed = false;
   }
 }
 

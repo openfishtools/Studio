@@ -3121,9 +3121,6 @@ function initTimelineOperations() {
           seekTimelineToTime(0, true);
         }
 
-        window._precompHistoryPushed = (window._precompHistoryPushed || 0) + 1;
-        history.pushState({ precompOpen: true, precompId: targetPrecomp.id }, '');
-
         // Switch PreviewCacheManager scope to the precompose without clearing cache
         if (window.PreviewCacheManager) {
           window.PreviewCacheManager.setActiveComp(targetPrecomp.id);
@@ -3141,15 +3138,6 @@ function initTimelineOperations() {
 
       function exitPrecompose(fromHistory = false) {
         if (!compositionStack || compositionStack.length === 0) return;
-
-        // If exiting via UI button click (not popstate), pop browser history entry asynchronously
-        if (!fromHistory && window._precompHistoryPushed > 0) {
-          window._precompHistoryPushed = Math.max(0, window._precompHistoryPushed - 1);
-          window._isPrecompPoppingHistory = true;
-          try {
-            history.back();
-          } catch (_) {}
-        }
 
         const exitingPrecomp = currentActivePrecomp;
 
@@ -3351,11 +3339,87 @@ function initTimelineOperations() {
 
         if (window.Popover) window.Popover.close();
 
-        if (typeof showEffectsRackToast === 'function') {
-          showEffectsRackToast('Mengekstrak audio ke MP3...');
+        const cleanBaseName = (layer.name || 'Video').replace(/\.[^/.]+$/, '');
+        const audioItemName = cleanBaseName + ' (Audio).mp3';
+        const placeholderMediaId = 'med_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+        const placeholderLayerId = 'layer_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6) + '_' + currentProjectState.layers.length;
+        const estDur = layer.durationSec || layer.mediaDuration || 5;
+        const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
+        const widthPx = layer.widthPx || Math.max(80, Math.round(estDur * pps));
+
+        // 1. Optimistic Placeholder in Media Pool
+        const audioMediaItem = {
+          id: placeholderMediaId,
+          projectId: projectId,
+          name: audioItemName,
+          type: 'audio',
+          mimeType: 'audio/mp3',
+          size: 0,
+          dataUrl: '',
+          blob: null,
+          thumbUrl: '',
+          duration: estDur,
+          _convertingAudio: true,
+          _convertProgress: 0,
+          createdAt: new Date().toISOString()
+        };
+        window._activeMediaMap = window._activeMediaMap || new Map();
+        window._activeMediaMap.set(placeholderMediaId, audioMediaItem);
+        if (typeof renderMediaGrid === 'function') {
+          await renderMediaGrid();
+        }
+        if (typeof renderFillMediaPool === 'function') {
+          renderFillMediaPool();
         }
 
+        // 2. Optimistic Placeholder Layer in Timeline directly below video layer
+        const newAudioLayer = {
+          id: placeholderLayerId,
+          mediaId: placeholderMediaId,
+          name: audioItemName,
+          type: 'audio',
+          startPx: layer.startPx || 0,
+          startSec: layer.startSec !== undefined ? layer.startSec : 0,
+          durationSec: estDur,
+          widthPx: widthPx,
+          sourceOffsetSec: layer.sourceOffsetSec || 0,
+          dataUrl: '',
+          thumbUrl: '',
+          mediaDuration: estDur,
+          isDurationExplicit: true,
+          _convertingAudio: true,
+          _convertProgress: 0
+        };
+
+        const videoIdx = currentProjectState.layers.findIndex(l => l.id === layer.id);
+        if (videoIdx >= 0) {
+          currentProjectState.layers.splice(videoIdx + 1, 0, newAudioLayer);
+        } else {
+          currentProjectState.layers.unshift(newAudioLayer);
+        }
+        renderTimelineLayers();
+        await new Promise(r => requestAnimationFrame(r));
+
+        const setProgress = (pct) => {
+          if (typeof window.updateAudioConvertProgressUI === 'function') {
+            window.updateAudioConvertProgressUI(placeholderMediaId, pct);
+            window.updateAudioConvertProgressUI(placeholderLayerId, pct);
+          }
+        };
+
+        const cleanupPlaceholders = async () => {
+          if (window._activeMediaMap) window._activeMediaMap.delete(placeholderMediaId);
+          if (currentProjectState && Array.isArray(currentProjectState.layers)) {
+            const idx = currentProjectState.layers.findIndex(l => l.id === placeholderLayerId);
+            if (idx >= 0) currentProjectState.layers.splice(idx, 1);
+          }
+          if (typeof renderMediaGrid === 'function') await renderMediaGrid();
+          if (typeof renderFillMediaPool === 'function') renderFillMediaPool();
+          renderTimelineLayers();
+        };
+
         try {
+          setProgress(5);
           let blob = null;
           if (layer.dataUrl && (layer.dataUrl.startsWith('data:') || layer.dataUrl.startsWith('blob:'))) {
             const res = await fetch(layer.dataUrl);
@@ -3378,18 +3442,28 @@ function initTimelineOperations() {
           }
 
           if (!blob) {
+            await cleanupPlaceholders();
             alert('Cannot locate video source data to extract audio.');
             return;
           }
 
-          const decodedBuffer = await decodeAudioFromBlob(blob);
+          setProgress(12);
+          const decodedBuffer = await decodeAudioFromBlob(blob, (decFrac) => {
+            setProgress(12 + Math.round(decFrac * 33));
+          });
 
           if (!decodedBuffer || decodedBuffer.numberOfChannels === 0) {
+            await cleanupPlaceholders();
             alert('No audio stream detected in this video file.');
             return;
           }
 
-          const mp3Blob = await audioBufferToMp3(decodedBuffer, 192);
+          setProgress(45);
+          const mp3Blob = await audioBufferToMp3(decodedBuffer, 192, (encFrac) => {
+            setProgress(45 + Math.round(encFrac * 50));
+          });
+
+          setProgress(96);
           const mp3DataUrl = await new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result);
@@ -3397,33 +3471,30 @@ function initTimelineOperations() {
             reader.readAsDataURL(mp3Blob);
           });
 
-          const cleanBaseName = (layer.name || 'Video').replace(/\.[^/.]+$/, '');
-          const audioItemName = cleanBaseName + ' (Audio).mp3';
+          setProgress(100);
+          await new Promise(r => requestAnimationFrame(r));
+
           const audioDur = decodedBuffer.duration || layer.durationSec || 5;
 
-          // 1. Save to Media Pool
-          const audioMediaItem = {
-            id: 'med_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-            projectId: projectId,
-            name: audioItemName,
-            type: 'audio',
-            mimeType: 'audio/mp3',
-            size: mp3Blob.size || mp3DataUrl.length,
-            dataUrl: mp3DataUrl,
-            blob: mp3Blob,
-            thumbUrl: '',
-            duration: audioDur,
-            createdAt: new Date().toISOString()
-          };
+          // Finalize Media Pool item
+          audioMediaItem.size = mp3Blob.size || mp3DataUrl.length;
+          audioMediaItem.dataUrl = mp3DataUrl;
+          audioMediaItem.blob = mp3Blob;
+          audioMediaItem.duration = audioDur;
+          delete audioMediaItem._convertingAudio;
+          delete audioMediaItem._convertProgress;
 
           if (window.FishDatabase) {
             await window.FishDatabase.saveMedia(audioMediaItem);
             if (typeof renderMediaGrid === 'function') {
               await renderMediaGrid();
             }
+            if (typeof renderFillMediaPool === 'function') {
+              renderFillMediaPool();
+            }
           }
 
-          // 2. Mute source video layer (audio is now separated into distinct audio track)
+          // Mute source video layer (audio is now separated into distinct audio track)
           layer.isMuted = true;
           const cachedVideoMedia = layerMediaCache.get(layer.id) || layerMediaCache.get(layer.mediaId);
           if (cachedVideoMedia && cachedVideoMedia.el) {
@@ -3441,31 +3512,13 @@ function initTimelineOperations() {
             }
           });
 
-          // 3. Add as Audio Layer in Timeline (creates 2 independent layers)
-          const widthPx = Math.max(80, Math.round((layer.durationSec !== undefined ? layer.durationSec : audioDur) * pixelsPerSecond));
-          const newAudioLayer = {
-            id: 'layer_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6) + '_' + currentProjectState.layers.length,
-            mediaId: audioMediaItem.id,
-            name: audioItemName,
-            type: 'audio',
-            startPx: layer.startPx || 0,
-            startSec: layer.startSec !== undefined ? layer.startSec : 0,
-            durationSec: layer.durationSec !== undefined ? layer.durationSec : audioDur,
-            widthPx: layer.widthPx || widthPx,
-            sourceOffsetSec: layer.sourceOffsetSec || 0,
-            dataUrl: mp3DataUrl,
-            thumbUrl: '',
-            mediaDuration: audioDur,
-            isDurationExplicit: true
-          };
-
-          // Insert directly adjacent to current video layer
-          const videoIdx = currentProjectState.layers.findIndex(l => l.id === layer.id);
-          if (videoIdx >= 0) {
-            currentProjectState.layers.splice(videoIdx + 1, 0, newAudioLayer);
-          } else {
-            currentProjectState.layers.unshift(newAudioLayer);
-          }
+          // Finalize Audio Layer in Timeline
+          newAudioLayer.durationSec = layer.durationSec !== undefined ? layer.durationSec : audioDur;
+          newAudioLayer.widthPx = layer.widthPx || Math.max(80, Math.round(newAudioLayer.durationSec * (window.currentPixelsPerSecond || pixelsPerSecond || 80)));
+          newAudioLayer.dataUrl = mp3DataUrl;
+          newAudioLayer.mediaDuration = audioDur;
+          delete newAudioLayer._convertingAudio;
+          delete newAudioLayer._convertProgress;
 
           await saveCurrentProjectLayers(true);
           renderTimelineLayers();
@@ -3478,6 +3531,7 @@ function initTimelineOperations() {
 
         } catch (err) {
           console.error('Audio extraction error:', err);
+          await cleanupPlaceholders();
           alert('Could not extract audio: this video may not contain an audio track.');
         }
       }
@@ -4031,58 +4085,66 @@ function initTimelineOperations() {
 
           // 2. Timeline Track Lane in layersTrack
           const isReverse = (layer.speed !== undefined && layer.speed < 0);
+          const isConvertingAudio = !!layer._convertingAudio;
+          const convertPct = Math.max(0, Math.min(100, Math.round(Number(layer._convertProgress) || 0)));
           const lane = document.createElement('div');
           lane.className = 'timeline-track-lane';
           lane.dataset.layerId = layer.id;
           lane.innerHTML = `
             <div class="track-content-lane">
-              <div class="timeline-clip-block clip-${clipType} ${isSelected ? 'is-selected' : ''} ${isHidden ? 'is-hidden' : ''} ${isReverse ? 'is-reverse' : ''}" 
+              <div class="timeline-clip-block clip-${clipType} ${isConvertingAudio ? 'is-converting-audio' : ''} ${isSelected ? 'is-selected' : ''} ${isHidden ? 'is-hidden' : ''} ${isReverse ? 'is-reverse' : ''}" 
                    style="left: ${layer.startPx || 0}px; width: ${layer.widthPx || 320}px;" 
                    title="${layer.name}${isReverse ? ' (Reverse ' + layer.speed + 'x)' : ''}${isHidden ? ' (Hidden)' : ''}" 
-                   data-layer-id="${layer.id}">
-                <button type="button" class="timeline-clip-handle handle-left" aria-label="Trim / Lengthen Start" title="Drag to trim or lengthen start">
-                  <span class="fticon fticon-chevron-left" style="width: 13px; height: 13px;" aria-hidden="true"></span>
-                </button>
-                <span class="timeline-clip-tag">${typeTag}${isReverse ? ' ◀' : ''}</span>
-                <span class="clip-label">${layer.name}</span>
-                <button type="button" class="timeline-clip-handle handle-right" aria-label="Trim / Lengthen End" title="Drag to trim or lengthen end">
-                  <span class="fticon fticon-chevron-right" style="width: 13px; height: 13px;" aria-hidden="true"></span>
-                </button>
-                ${(clipType === 'video' || clipType === 'precomp') ? '<div class="timeline-clip-progress-track"><div class="timeline-clip-progress"></div></div>' : ''}
-                ${(clipType === 'audio') ? '<canvas class="timeline-audio-waveform-canvas"></canvas>' : ''}
-                ${(clipType === 'text') ? (() => {
-                  const pps = window.currentPixelsPerSecond || 80;
-                  const tp = layer.textProps || {};
-                  const animInDur = Math.max(0.1, Number(tp.animInDuration || tp.animDuration) || 0.8);
-                  const animOutDur = Math.max(0.1, Number(tp.animOutDuration) || 0.6);
-                  const clipW = layer.widthPx || 320;
-                  const hasIn = (tp.animIn || tp.animation || 'none') !== 'none';
-                  const hasOut = (tp.animOut || 'none') !== 'none';
+                   data-layer-id="${layer.id}"
+                   ${layer.mediaId ? `data-media-id="${layer.mediaId}"` : ''}>
+                ${isConvertingAudio ? `
+                  <div class="clip-convert-progress-fill" style="width: ${convertPct}%;"></div>
+                  <span class="clip-convert-progress-num">${convertPct}%</span>
+                ` : `
+                  <button type="button" class="timeline-clip-handle handle-left" aria-label="Trim / Lengthen Start" title="Drag to trim or lengthen start">
+                    <span class="fticon fticon-chevron-left" style="width: 13px; height: 13px;" aria-hidden="true"></span>
+                  </button>
+                  <span class="timeline-clip-tag">${typeTag}${isReverse ? ' ◀' : ''}</span>
+                  <span class="clip-label">${layer.name}</span>
+                  <button type="button" class="timeline-clip-handle handle-right" aria-label="Trim / Lengthen End" title="Drag to trim or lengthen end">
+                    <span class="fticon fticon-chevron-right" style="width: 13px; height: 13px;" aria-hidden="true"></span>
+                  </button>
+                  ${(clipType === 'video' || clipType === 'precomp') ? '<div class="timeline-clip-progress-track"><div class="timeline-clip-progress"></div></div>' : ''}
+                  ${(clipType === 'audio') ? '<canvas class="timeline-audio-waveform-canvas"></canvas>' : ''}
+                  ${(clipType === 'text') ? (() => {
+                    const pps = window.currentPixelsPerSecond || 80;
+                    const tp = layer.textProps || {};
+                    const animInDur = Math.max(0.1, Number(tp.animInDuration || tp.animDuration) || 0.8);
+                    const animOutDur = Math.max(0.1, Number(tp.animOutDuration) || 0.6);
+                    const clipW = layer.widthPx || 320;
+                    const hasIn = (tp.animIn || tp.animation || 'none') !== 'none';
+                    const hasOut = (tp.animOut || 'none') !== 'none';
 
-                  const inPx = Math.min(clipW * 0.48, Math.round(animInDur * pps));
-                  const outPx = Math.min(clipW * 0.48, Math.round(animOutDur * pps));
-                  const inMarkerLeft = Math.max(34, inPx - 42);
-                  const outMarkerRight = Math.max(2, outPx - 48);
+                    const inPx = Math.min(clipW * 0.48, Math.round(animInDur * pps));
+                    const outPx = Math.min(clipW * 0.48, Math.round(animOutDur * pps));
+                    const inMarkerLeft = Math.max(34, inPx - 42);
+                    const outMarkerRight = Math.max(2, outPx - 48);
 
-                  return `
-                    ${hasIn ? `
-                      <div class="text-anim-zone zone-in" style="width: ${inPx}px;" title="IN Animation: ${(tp.animIn || tp.animation || 'none').toUpperCase()} (${animInDur.toFixed(2)}s)"></div>
-                      <div class="text-anim-marker marker-in" style="left: ${inMarkerLeft}px;" data-layer-id="${layer.id}" title="IN: ${animInDur.toFixed(2)}s (Drag to adjust)">IN ${animInDur.toFixed(1)}s</div>
-                    ` : ''}
-                    ${hasOut ? `
-                      <div class="text-anim-zone zone-out" style="width: ${outPx}px;" title="OUT Animation: ${(tp.animOut || 'none').toUpperCase()} (${animOutDur.toFixed(2)}s)"></div>
-                      <div class="text-anim-marker marker-out" style="right: ${outMarkerRight}px;" data-layer-id="${layer.id}" title="OUT: ${animOutDur.toFixed(2)}s (Drag to adjust)">OUT ${animOutDur.toFixed(1)}s</div>
-                    ` : ''}
-                  `;
-                })() : ''}
-                <div class="timeline-clip-keyframes"></div>
+                    return `
+                      ${hasIn ? `
+                        <div class="text-anim-zone zone-in" style="width: ${inPx}px;" title="IN Animation: ${(tp.animIn || tp.animation || 'none').toUpperCase()} (${animInDur.toFixed(2)}s)"></div>
+                        <div class="text-anim-marker marker-in" style="left: ${inMarkerLeft}px;" data-layer-id="${layer.id}" title="IN: ${animInDur.toFixed(2)}s (Drag to adjust)">IN ${animInDur.toFixed(1)}s</div>
+                      ` : ''}
+                      ${hasOut ? `
+                        <div class="text-anim-zone zone-out" style="width: ${outPx}px;" title="OUT Animation: ${(tp.animOut || 'none').toUpperCase()} (${animOutDur.toFixed(2)}s)"></div>
+                        <div class="text-anim-marker marker-out" style="right: ${outMarkerRight}px;" data-layer-id="${layer.id}" title="OUT: ${animOutDur.toFixed(2)}s (Drag to adjust)">OUT ${animOutDur.toFixed(1)}s</div>
+                      ` : ''}
+                    `;
+                  })() : ''}
+                  <div class="timeline-clip-keyframes"></div>
+                `}
               </div>
             </div>
           `;
 
           // Select / Deselect clip on click & Long-Press Horizontal Slide
           const clipEl = lane.querySelector('.timeline-clip-block');
-          if (clipEl) {
+          if (clipEl && !isConvertingAudio) {
             if (!isDesktop || !layer._kfExpanded) {
               renderLayerKeyframes(layer, clipEl);
             }

@@ -1151,6 +1151,13 @@
       } catch (_) {
         mediaItems = [];
       }
+      if (window._activeMediaMap) {
+        window._activeMediaMap.forEach(item => {
+          if (item && item.projectId === projectId && !mediaItems.some(m => m.id === item.id)) {
+            mediaItems.push(item);
+          }
+        });
+      }
 
       grid.innerHTML = '';
 
@@ -1178,6 +1185,21 @@
         tile.className = 'fill-media-tile';
         tile.title = item.name || 'Media Item';
         tile.dataset.mediaId = item.id;
+
+        if (item._convertingAudio) {
+          tile.classList.add('is-converting-audio');
+          tile.disabled = true;
+          const pct = Math.max(0, Math.min(100, Math.round(Number(item._convertProgress) || 0)));
+          tile.innerHTML = `
+            <span class="fill-media-thumbbox is-converting-audio">
+              <div class="media-convert-progress-fill" style="width: ${pct}%;"></div>
+              <span class="media-convert-progress-num">${pct}%</span>
+            </span>
+            <span class="fill-media-name" title="${item.name || 'AUD'}">${item.name || 'AUD'}</span>
+          `;
+          grid.appendChild(tile);
+          return;
+        }
 
         const isSelected = (currentMediaId && currentMediaId === item.id) ||
                            (currentMediaUrl && (currentMediaUrl === item.dataUrl || currentMediaUrl === item.thumbUrl));
@@ -1990,7 +2012,7 @@
       window.ensureLameLoaded = ensureLameLoaded;
 
       // Pure client-side MP3 Encoder (Offline, Fast, 192kbps true MP3)
-      async function audioBufferToMp3(buffer, kbps = 192) {
+      async function audioBufferToMp3(buffer, kbps = 192, onProgress = null) {
         let activeBuffer = buffer;
         const supportedRates = [8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000];
         if (!supportedRates.includes(activeBuffer.sampleRate)) {
@@ -2038,6 +2060,7 @@
 
         const mp3Data = [];
         const sampleBlockSize = 1152;
+        let lastYieldMs = performance.now();
 
         for (let i = 0; i < numSamples; i += sampleBlockSize) {
           const leftChunk = leftPCM.subarray(i, i + sampleBlockSize);
@@ -2051,46 +2074,119 @@
           if (mp3buf && mp3buf.length > 0) {
             mp3Data.push(mp3buf);
           }
+
+          const now = performance.now();
+          if (now - lastYieldMs >= 16) {
+            lastYieldMs = now;
+            if (typeof onProgress === 'function' && numSamples > 0) {
+              try { onProgress(Math.min(1, (i + sampleBlockSize) / numSamples)); } catch (_) {}
+            }
+            await new Promise(r => setTimeout(r, 0));
+          }
         }
 
         const endBuf = mp3encoder.flush();
         if (endBuf && endBuf.length > 0) {
           mp3Data.push(endBuf);
         }
+        if (typeof onProgress === 'function') {
+          try { onProgress(1); } catch (_) {}
+        }
 
         return new Blob(mp3Data, { type: 'audio/mp3' });
       }
       window.audioBufferToMp3 = audioBufferToMp3;
 
+      // Helper to update live progress on any placeholder tiles or timeline clips matching itemId / layerId
+      function updateAudioConvertProgressUI(targetId, pct) {
+        const clampedPct = Math.max(0, Math.min(100, Math.round(Number(pct) || 0)));
+        if (window._activeMediaMap && window._activeMediaMap.has(targetId)) {
+          const item = window._activeMediaMap.get(targetId);
+          if (item) item._convertProgress = clampedPct;
+        }
+        const layers = (window.currentProjectState && window.currentProjectState.layers) || [];
+        layers.forEach(l => {
+          if (l.id === targetId || l.mediaId === targetId) {
+            l._convertProgress = clampedPct;
+          }
+        });
+
+        // Update Media Pool & Fill Media Pool tiles
+        document.querySelectorAll(`[data-media-id="${targetId}"]`).forEach(tile => {
+          const fillEl = tile.querySelector('.media-convert-progress-fill');
+          const numEl = tile.querySelector('.media-convert-progress-num');
+          if (fillEl) fillEl.style.width = `${clampedPct}%`;
+          if (numEl) numEl.textContent = `${clampedPct}%`;
+        });
+
+        // Update Timeline Clip placeholder if present
+        document.querySelectorAll(`.timeline-clip-block[data-layer-id="${targetId}"], .timeline-clip-block[data-media-id="${targetId}"]`).forEach(clip => {
+          const fillEl = clip.querySelector('.clip-convert-progress-fill');
+          const numEl = clip.querySelector('.clip-convert-progress-num');
+          if (fillEl) fillEl.style.width = `${clampedPct}%`;
+          if (numEl) numEl.textContent = `${clampedPct}%`;
+        });
+      }
+      window.updateAudioConvertProgressUI = updateAudioConvertProgressUI;
+
       // Universal Cross-Browser Video Audio Extractor (Direct Decode -> Safari Recast -> MediaRecorder Fast Capture)
-      async function decodeAudioFromBlob(blob) {
+      async function decodeAudioFromBlob(blob, onProgress = null) {
         if (!blob) return null;
+        if (typeof onProgress === 'function') {
+          try { onProgress(0.08); } catch (_) {}
+        }
         const arrayBuffer = await blob.arrayBuffer();
+        if (typeof onProgress === 'function') {
+          try { onProgress(0.18); } catch (_) {}
+        }
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) throw new Error('Web Audio API not supported');
 
-        // Attempt 1: Direct decodeAudioData (Chrome, Firefox)
-        try {
-          const ctx1 = new AudioCtx();
-          try {
-            const buf = await ctx1.decodeAudioData(arrayBuffer.slice(0));
-            if (buf && buf.numberOfChannels > 0) return buf;
-          } finally {
-            try { ctx1.close(); } catch (_) {}
-          }
-        } catch (_) {}
+        // Start a gentle indeterminate ticker while native decodeAudioData runs
+        let decodeTicker = null;
+        let fakeDecodeFrac = 0.20;
+        if (typeof onProgress === 'function') {
+          decodeTicker = setInterval(() => {
+            fakeDecodeFrac = Math.min(0.88, fakeDecodeFrac + (0.90 - fakeDecodeFrac) * 0.14);
+            try { onProgress(fakeDecodeFrac); } catch (_) {}
+          }, 60);
+        }
 
-        // Attempt 2: Safari audio/mp4 container recast
         try {
-          const audioMimeBlob = new Blob([arrayBuffer], { type: 'audio/mp4' });
-          const ctx2 = new AudioCtx();
+          // Attempt 1: Direct decodeAudioData (Chrome, Firefox)
           try {
-            const buf = await ctx2.decodeAudioData(await audioMimeBlob.arrayBuffer());
-            if (buf && buf.numberOfChannels > 0) return buf;
-          } finally {
-            try { ctx2.close(); } catch (_) {}
+            const ctx1 = new AudioCtx();
+            try {
+              const buf = await ctx1.decodeAudioData(arrayBuffer.slice(0));
+              if (buf && buf.numberOfChannels > 0) {
+                if (typeof onProgress === 'function') try { onProgress(1); } catch (_) {}
+                return buf;
+              }
+            } finally {
+              try { ctx1.close(); } catch (_) {}
+            }
+          } catch (_) {}
+
+          // Attempt 2: Safari audio/mp4 container recast
+          try {
+            const audioMimeBlob = new Blob([arrayBuffer], { type: 'audio/mp4' });
+            const ctx2 = new AudioCtx();
+            try {
+              const buf = await ctx2.decodeAudioData(await audioMimeBlob.arrayBuffer());
+              if (buf && buf.numberOfChannels > 0) {
+                if (typeof onProgress === 'function') try { onProgress(1); } catch (_) {}
+                return buf;
+              }
+            } finally {
+              try { ctx2.close(); } catch (_) {}
+            }
+          } catch (_) {}
+        } finally {
+          if (decodeTicker) {
+            clearInterval(decodeTicker);
+            decodeTicker = null;
           }
-        } catch (_) {}
+        }
 
         // Attempt 3: Fast playback capture via MediaRecorder (16x speed)
         try {
@@ -2149,7 +2245,9 @@
                 const capturedBlob = new Blob(chunks, { type: mimeType || 'audio/webm' });
                 const decodeCtx = new AudioCtx();
                 try {
-                  return await decodeCtx.decodeAudioData(await capturedBlob.arrayBuffer());
+                  const decoded = await decodeCtx.decodeAudioData(await capturedBlob.arrayBuffer());
+                  if (typeof onProgress === 'function') try { onProgress(1); } catch (_) {}
+                  return decoded;
                 } finally {
                   try { decodeCtx.close(); } catch (_) {}
                 }
@@ -2175,27 +2273,64 @@
       }
       window.decodeAudioFromBlob = decodeAudioFromBlob;
 
-      // Convert Video Media Item to Audio in Media Pool (True MP3)
+      // Convert Video Media Item to Audio in Media Pool (True MP3) with empty progress bar slot
       async function convertVideoMediaToAudio(mediaItem) {
         if (!mediaItem || mediaItem.type !== 'video' || !mediaItem.dataUrl) return;
         const projectId = currentProjectState.id || (new URLSearchParams(window.location.search).get('id')) || 'default_project';
 
-        if (typeof showEffectsRackToast === 'function') {
-          showEffectsRackToast('Mengonversi audio ke MP3...');
+        const cleanBaseName = (mediaItem.name || 'Video').replace(/\.[^/.]+$/, '');
+        const audioItemName = cleanBaseName + ' (Audio).mp3';
+        const placeholderId = 'med_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+
+        // Create optimistic placeholder item in Media Pool immediately
+        const audioMediaItem = {
+          id: placeholderId,
+          projectId: projectId,
+          name: audioItemName,
+          type: 'audio',
+          mimeType: 'audio/mp3',
+          size: 0,
+          dataUrl: '',
+          blob: null,
+          thumbUrl: '',
+          duration: mediaItem.duration || 5,
+          _convertingAudio: true,
+          _convertProgress: 0,
+          createdAt: new Date().toISOString()
+        };
+
+        window._activeMediaMap = window._activeMediaMap || new Map();
+        window._activeMediaMap.set(placeholderId, audioMediaItem);
+        await renderMediaGrid();
+        if (typeof renderFillMediaPool === 'function') {
+          renderFillMediaPool();
         }
+        await new Promise(r => requestAnimationFrame(r));
 
         try {
+          updateAudioConvertProgressUI(placeholderId, 4);
           const res = await fetch(mediaItem.dataUrl);
           const blob = await res.blob();
+          updateAudioConvertProgressUI(placeholderId, 10);
 
-          const decodedBuffer = await decodeAudioFromBlob(blob);
+          const decodedBuffer = await decodeAudioFromBlob(blob, (decFrac) => {
+            updateAudioConvertProgressUI(placeholderId, 10 + Math.round(decFrac * 35));
+          });
 
           if (!decodedBuffer || decodedBuffer.numberOfChannels === 0) {
+            window._activeMediaMap.delete(placeholderId);
+            await renderMediaGrid();
+            if (typeof renderFillMediaPool === 'function') renderFillMediaPool();
             alert('Video tidak memiliki track audio.');
             return;
           }
 
-          const mp3Blob = await audioBufferToMp3(decodedBuffer, 192);
+          updateAudioConvertProgressUI(placeholderId, 45);
+          const mp3Blob = await audioBufferToMp3(decodedBuffer, 192, (encFrac) => {
+            updateAudioConvertProgressUI(placeholderId, 45 + Math.round(encFrac * 50));
+          });
+
+          updateAudioConvertProgressUI(placeholderId, 96);
           const mp3DataUrl = await new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result);
@@ -2203,30 +2338,23 @@
             reader.readAsDataURL(mp3Blob);
           });
 
-          const cleanBaseName = (mediaItem.name || 'Video').replace(/\.[^/.]+$/, '');
-          const audioItemName = cleanBaseName + ' (Audio).mp3';
-          const audioDur = decodedBuffer.duration || 5;
+          updateAudioConvertProgressUI(placeholderId, 100);
+          await new Promise(r => requestAnimationFrame(r));
 
-          const audioMediaItem = {
-            id: 'med_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-            projectId: projectId,
-            name: audioItemName,
-            type: 'audio',
-            mimeType: 'audio/mp3',
-            size: mp3Blob.size || mp3DataUrl.length,
-            dataUrl: mp3DataUrl,
-            blob: mp3Blob,
-            thumbUrl: '',
-            duration: audioDur,
-            createdAt: new Date().toISOString()
-          };
+          const audioDur = decodedBuffer.duration || mediaItem.duration || 5;
+          audioMediaItem.size = mp3Blob.size || mp3DataUrl.length;
+          audioMediaItem.dataUrl = mp3DataUrl;
+          audioMediaItem.blob = mp3Blob;
+          audioMediaItem.duration = audioDur;
+          delete audioMediaItem._convertingAudio;
+          delete audioMediaItem._convertProgress;
 
           if (window.FishDatabase) {
             await window.FishDatabase.saveMedia(audioMediaItem);
-            await renderMediaGrid();
-            if (typeof renderFillMediaPool === 'function') {
-              renderFillMediaPool();
-            }
+          }
+          await renderMediaGrid();
+          if (typeof renderFillMediaPool === 'function') {
+            renderFillMediaPool();
           }
 
           if (typeof showEffectsRackToast === 'function') {
@@ -2234,6 +2362,9 @@
           }
         } catch (err) {
           console.error('[MediaPool] Failed to convert video to audio:', err);
+          if (window._activeMediaMap) window._activeMediaMap.delete(placeholderId);
+          await renderMediaGrid();
+          if (typeof renderFillMediaPool === 'function') renderFillMediaPool();
           alert('Failed to convert video to audio.');
         }
       }
@@ -2316,6 +2447,17 @@
           tile.className = 'media-item-tile';
           tile.dataset.mediaId = item.id;
           tile.title = item.name;
+
+          if (item._convertingAudio) {
+            tile.classList.add('is-converting-audio');
+            const pct = Math.max(0, Math.min(100, Math.round(Number(item._convertProgress) || 0)));
+            tile.innerHTML = `
+              <div class="media-convert-progress-fill" style="width: ${pct}%;"></div>
+              <span class="media-convert-progress-num">${pct}%</span>
+            `;
+            gridEl.insertBefore(tile, importBtn);
+            return;
+          }
 
           if (window.selectedMediaId && window.selectedMediaId === item.id) {
             tile.classList.add('is-selected');
@@ -2824,45 +2966,76 @@
 
       async function convertVideoFileToAudioItem(file, projectId) {
         if (!file) return null;
-        if (typeof showEffectsRackToast === 'function') {
-          showEffectsRackToast('Mengonversi video ke MP3...');
+        const cleanBaseName = (file.name || 'Video').replace(/\.[^/.]+$/, '');
+        const audioItemName = cleanBaseName + ' (Audio).mp3';
+        const placeholderId = 'med_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+
+        const audioMediaItem = {
+          id: placeholderId,
+          projectId: projectId,
+          name: audioItemName,
+          type: 'audio',
+          mimeType: 'audio/mp3',
+          size: 0,
+          dataUrl: '',
+          blob: null,
+          thumbUrl: '',
+          duration: 5,
+          _convertingAudio: true,
+          _convertProgress: 0,
+          createdAt: new Date().toISOString()
+        };
+
+        window._activeMediaMap = window._activeMediaMap || new Map();
+        window._activeMediaMap.set(placeholderId, audioMediaItem);
+        await renderMediaGrid();
+        if (typeof renderFillMediaPool === 'function') {
+          renderFillMediaPool();
         }
+        await new Promise(r => requestAnimationFrame(r));
+
         try {
-          const decodedBuffer = await decodeAudioFromBlob(file);
+          updateAudioConvertProgressUI(placeholderId, 6);
+          const decodedBuffer = await decodeAudioFromBlob(file, (decFrac) => {
+            updateAudioConvertProgressUI(placeholderId, 6 + Math.round(decFrac * 39));
+          });
           if (!decodedBuffer || decodedBuffer.numberOfChannels === 0) {
+            window._activeMediaMap.delete(placeholderId);
+            await renderMediaGrid();
+            if (typeof renderFillMediaPool === 'function') renderFillMediaPool();
             if (typeof showEffectsRackToast === 'function') {
               showEffectsRackToast('Video tidak memiliki track audio.');
             }
             return null;
           }
 
-          const mp3Blob = await audioBufferToMp3(decodedBuffer, 192);
+          updateAudioConvertProgressUI(placeholderId, 45);
+          const mp3Blob = await audioBufferToMp3(decodedBuffer, 192, (encFrac) => {
+            updateAudioConvertProgressUI(placeholderId, 45 + Math.round(encFrac * 52));
+          });
+
+          updateAudioConvertProgressUI(placeholderId, 100);
+          await new Promise(r => requestAnimationFrame(r));
+
           const dataUrl = trackStudioObjectUrl(URL.createObjectURL(mp3Blob));
-          const cleanBaseName = (file.name || 'Video').replace(/\.[^/.]+$/, '');
-          const audioItemName = cleanBaseName + ' (Audio).mp3';
           const audioDur = decodedBuffer.duration || 5;
 
-          const audioMediaItem = {
-            id: 'med_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-            projectId: projectId,
-            name: audioItemName,
-            type: 'audio',
-            mimeType: 'audio/mp3',
-            size: mp3Blob.size,
-            dataUrl: dataUrl,
-            blob: mp3Blob,
-            thumbUrl: '',
-            duration: audioDur,
-            createdAt: new Date().toISOString()
-          };
+          audioMediaItem.size = mp3Blob.size;
+          audioMediaItem.dataUrl = dataUrl;
+          audioMediaItem.blob = mp3Blob;
+          audioMediaItem.duration = audioDur;
+          delete audioMediaItem._convertingAudio;
+          delete audioMediaItem._convertProgress;
 
           if (window.FishDatabase) {
             try {
               await window.FishDatabase.saveMedia(audioMediaItem);
             } catch (_) {}
           }
-          window._activeMediaMap = window._activeMediaMap || new Map();
-          window._activeMediaMap.set(audioMediaItem.id, audioMediaItem);
+          await renderMediaGrid();
+          if (typeof renderFillMediaPool === 'function') {
+            renderFillMediaPool();
+          }
 
           if (typeof showEffectsRackToast === 'function') {
             showEffectsRackToast('Audio berhasil dikonversi ke MP3');
@@ -2870,6 +3043,9 @@
           return audioMediaItem;
         } catch (err) {
           console.error('[MediaPool] Failed to convert video file to audio:', err);
+          if (window._activeMediaMap) window._activeMediaMap.delete(placeholderId);
+          await renderMediaGrid();
+          if (typeof renderFillMediaPool === 'function') renderFillMediaPool();
           if (typeof showEffectsRackToast === 'function') {
             showEffectsRackToast('Gagal mengonversi audio.');
           }

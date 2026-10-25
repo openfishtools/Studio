@@ -1204,12 +1204,7 @@
       if (window.Modal) {
         window.Modal.activeModal = modal;
         modal.classList.add('is-active');
-        if (!window.Modal.historyPushed) {
-          if (!window.history.state || !window.history.state.modalOpen) {
-            window.history.pushState({ modalOpen: true, modalId: modal.id }, '');
-            window.Modal.historyPushed = true;
-          }
-        }
+        window.Modal.historyPushed = false;
       } else {
         modal.classList.add('is-active');
       }
@@ -1476,13 +1471,8 @@
           const cb = onComplete;
           onComplete = null;
           cb();
-        } else if (window.Modal && window.Modal.historyPushed && window.history.state && window.history.state.modalOpen) {
+        } else if (window.Modal) {
           window.Modal.historyPushed = false;
-          window._modalClosingHistoryBack = true;
-          window.history.back();
-          setTimeout(() => {
-            window._modalClosingHistoryBack = false;
-          }, 350);
         }
       };
 

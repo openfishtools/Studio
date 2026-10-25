@@ -325,11 +325,6 @@ const Popover = (function () {
     activeTrigger = triggerEl;
     activePopover = popoverEl;
 
-    // Push popstate history for native back button / Android gesture support (exclude in-drawer popovers)
-    if (popoverEl.id !== 'popover-graph-more' && popoverEl.id !== 'popover-effects-more' && popoverEl.id !== 'popover-graph-delete-confirm' && popoverEl.id !== 'popover-media-item-menu' && (!window.history.state || !window.history.state.popoverOpen)) {
-      window.history.pushState({ popoverOpen: true, popoverId: popoverEl.id }, '');
-    }
-
     // Position popover before scaling
     updatePosition();
 
@@ -348,7 +343,7 @@ const Popover = (function () {
 
   /**
    * Closes active popover
-   * @param {boolean} triggerPopstate - Whether to revert history state
+   * @param {boolean} triggerPopstate - Legacy parameter kept for backward compatibility
    */
   function close(triggerPopstate = true) {
     if (!activePopover) return;
@@ -378,13 +373,6 @@ const Popover = (function () {
 
     window.removeEventListener('resize', scheduleUpdate);
     window.removeEventListener('scroll', scheduleUpdate);
-
-    if (triggerPopstate && elToClose.id !== 'popover-graph-more' && elToClose.id !== 'popover-effects-more' && elToClose.id !== 'popover-media-item-menu' && window.history.state && window.history.state.popoverOpen) {
-      popstateAwaited++;
-      window._popoverClosingHistoryBack = true;
-      window.history.back();
-      setTimeout(() => { window._popoverClosingHistoryBack = false; }, 300);
-    }
 
     try {
       elToClose.dispatchEvent(new CustomEvent('popover:close', { bubbles: true }));
@@ -426,20 +414,6 @@ const Popover = (function () {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && activePopover) {
       close();
-    }
-  });
-
-  // Native popstate listener for back gesture / browser back button
-  window.addEventListener('popstate', (e) => {
-    if (popstateAwaited > 0) {
-      popstateAwaited--;
-      return;
-    }
-    if (window._popoverClosingHistoryBack) {
-      return;
-    }
-    if (activePopover) {
-      close(false);
     }
   });
 
