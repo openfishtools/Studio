@@ -96,25 +96,13 @@
 
     function redrawComposition(source = 'general', immediate = false) {
       _lastRedrawSource = source;
-      const isNonMutatingRedraw = (
-        source === 'scrub' ||
-        source === 'scrubEnd' ||
-        source === 'playbackStep' ||
-        source === 'playbackPause' ||
-        source === 'renderTimeline' ||
-        source === 'frameReady' ||
-        source === 'playbackFramesBatchLoaded' ||
-        source === 'frameExtractorComplete' ||
-        source === 'frameExtractorPlayheadReady' ||
-        source === 'frameExtractorProgress' ||
-        source === 'mediaHydrated' ||
-        source === 'cutout-restored-from-db' ||
-        source === 'cutoutFrameReady' ||
-        source === 'fitPreviewCanvasBox' ||
-        source === 'switchTransformTool' ||
-        source === 'video:onseeked'
-      ) || (!!(window.isTimelineScrubbing || window.isTimelinePanning) && !window.isTransformInteracting);
-      if (!window.isTimelinePlaying && !isNonMutatingRedraw && window.PreviewCacheManager && typeof window.PreviewCacheManager.syncStateWithProject === 'function') {
+      const isMutatingProjectSource = (
+        source === 'projectMutated' ||
+        source === 'transformCommit' ||
+        source === 'layerModified' ||
+        source === 'saveProjectSettings'
+      );
+      if (!window.isTimelinePlaying && isMutatingProjectSource && window.PreviewCacheManager && typeof window.PreviewCacheManager.syncStateWithProject === 'function') {
         window.PreviewCacheManager.syncStateWithProject();
       }
 

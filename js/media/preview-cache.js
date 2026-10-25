@@ -336,7 +336,7 @@
       const currentFps = this.fps || 60;
       const totalProjectFrames = Math.ceil(totalDur * currentFps);
       const memCap = this.maxFrames || Math.round(60 * currentFps);
-      const effectiveMax = Math.min(memCap, Math.max(60, totalProjectFrames + 15));
+      const effectiveMax = Math.max(memCap, totalProjectFrames + 60);
       if (pool.size <= effectiveMax) return;
 
       const pps = (typeof window !== 'undefined' && window.currentPixelsPerSecond) ? window.currentPixelsPerSecond : 80;
@@ -400,7 +400,7 @@
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (this._rulerUpdatePending) return;
       this._rulerUpdatePending = true;
-      const delay = (typeof window !== 'undefined' && window.isTimelinePlaying) ? 60 : 40;
+      const delay = (typeof window !== 'undefined' && window.isTimelinePlaying) ? 40 : 25;
       setTimeout(() => {
         this._rulerUpdatePending = false;
         this.updateRulerUI();
@@ -419,8 +419,12 @@
       if (!this._frameGen) this._frameGen = new Map();
       const inFlightKey = `${targetComp}:${frameIndex}`;
       if (this._inFlightFrames.has(inFlightKey)) return;
-      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 12 : 24;
-      if (this._inFlightFrames.size >= maxInFlight) return;
+      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 32 : 64;
+      if (this._inFlightFrames.size >= maxInFlight) {
+        if (!this._missedPlaybackFrames) this._missedPlaybackFrames = new Set();
+        this._missedPlaybackFrames.add(frameIndex);
+        return;
+      }
       const gen = (this._frameGen.get(inFlightKey) || 0) + 1;
       this._frameGen.set(inFlightKey, gen);
       this._pendingFrames.add(inFlightKey);
@@ -446,6 +450,9 @@
           width: srcW,
           height: srcH
         });
+        if (this._missedPlaybackFrames) {
+          this._missedPlaybackFrames.delete(frameIndex);
+        }
         // Evict oldest frame if over limit (prevents browser OOM crash when full timeline is cached)
         this._evictIfNeeded(targetComp);
         // Throttled ruler update — updates green cache bar smoothly during playback & idle fill
@@ -641,7 +648,22 @@
       if (Array.isArray(layer.subLayers) && layer.subLayers.length > 0) {
         subSig = `${layer.subLayers.length}:${layer.subLayers.map(s => s && s.id).join(',')}`;
       }
-      const shapeSig = (layer.shapeProps && typeof layer.shapeProps === 'object') ? this._fastObjectSig(layer.shapeProps) : '';
+
+      const kfs = (layer.keyframes && typeof layer.keyframes === 'object') ? layer.keyframes : null;
+      const hasMoveKf = !!(kfs && Array.isArray(kfs.move) && kfs.move.length > 0);
+      const hasRotKf = !!(kfs && Array.isArray(kfs.rotate) && kfs.rotate.length > 0);
+      const hasScaleKf = !!(kfs && Array.isArray(kfs.scale) && kfs.scale.length > 0);
+      const hasSkewKf = !!(kfs && Array.isArray(kfs.skew) && kfs.skew.length > 0);
+      const hasOpacityKf = !!(kfs && Array.isArray(kfs.opacity) && kfs.opacity.length > 0);
+      const hasVecKf = !!(kfs && Array.isArray(kfs.vectorPoints) && kfs.vectorPoints.length > 0);
+
+      let shapePropsToSig = layer.shapeProps;
+      if (hasVecKf && layer.shapeProps && typeof layer.shapeProps === 'object' && layer.shapeProps.points) {
+        const shallow = { ...layer.shapeProps };
+        delete shallow.points;
+        shapePropsToSig = shallow;
+      }
+      const shapeSig = (shapePropsToSig && typeof shapePropsToSig === 'object') ? this._fastObjectSig(shapePropsToSig) : '';
       const textPropsSig = (layer.textProps && typeof layer.textProps === 'object') ? this._fastObjectSig(layer.textProps) : '';
       const maskSig = (layer.masks || layer.maskProps) ? (this._fastObjectSig(layer.masks) + '|' + this._fastObjectSig(layer.maskProps)) : '';
 
@@ -658,26 +680,26 @@
         layer.is3D ? 1 : 0,
         layer.blendMode || 'normal',
         layer.parentId || '',
-        startSec.toFixed(4),
-        endSec.toFixed(4),
-        Number(layer.durationSec || (endSec - startSec) || 0).toFixed(4),
-        Number(layer.sourceOffsetSec || 0).toFixed(4),
-        Number(layer.posX ?? layer.x ?? 0).toFixed(2),
-        Number(layer.posY ?? layer.y ?? 0).toFixed(2),
-        Number(layer.posZ ?? layer.z ?? 0).toFixed(2),
-        Number(layer.scaleW ?? layer.scaleX ?? layer.scale ?? 100).toFixed(2),
-        Number(layer.scaleH ?? layer.scaleY ?? layer.scale ?? 100).toFixed(2),
-        Number(layer.scaleZ ?? 100).toFixed(2),
-        Number(layer.rotZ ?? layer.rotationZ ?? layer.rotation ?? 0).toFixed(2),
-        Number(layer.rotX ?? layer.rotationX ?? 0).toFixed(2),
-        Number(layer.rotY ?? layer.rotationY ?? 0).toFixed(2),
-        Number(layer.rotation ?? layer.rotZ ?? 0).toFixed(2),
-        Number(layer.skewX ?? 0).toFixed(2),
-        Number(layer.skewY ?? 0).toFixed(2),
+        startSec.toFixed(3),
+        endSec.toFixed(3),
+        Number(layer.durationSec || (endSec - startSec) || 0).toFixed(3),
+        Number(layer.sourceOffsetSec || 0).toFixed(3),
+        hasMoveKf ? 'kf_move' : Number(layer.posX ?? layer.x ?? 0).toFixed(2),
+        hasMoveKf ? 'kf_move' : Number(layer.posY ?? layer.y ?? 0).toFixed(2),
+        hasMoveKf ? 'kf_move' : Number(layer.posZ ?? layer.z ?? 0).toFixed(2),
+        hasScaleKf ? 'kf_scale' : Number(layer.scaleW ?? layer.scaleX ?? layer.scale ?? 100).toFixed(2),
+        hasScaleKf ? 'kf_scale' : Number(layer.scaleH ?? layer.scaleY ?? layer.scale ?? 100).toFixed(2),
+        hasScaleKf ? 'kf_scale' : Number(layer.scaleZ ?? 100).toFixed(2),
+        hasRotKf ? 'kf_rot' : Number(layer.rotZ ?? layer.rotationZ ?? layer.rotation ?? 0).toFixed(2),
+        hasRotKf ? 'kf_rot' : Number(layer.rotX ?? layer.rotationX ?? 0).toFixed(2),
+        hasRotKf ? 'kf_rot' : Number(layer.rotY ?? layer.rotationY ?? 0).toFixed(2),
+        hasRotKf ? 'kf_rot' : Number(layer.rotation ?? layer.rotZ ?? 0).toFixed(2),
+        hasSkewKf ? 'kf_skew' : Number(layer.skewX ?? 0).toFixed(2),
+        hasSkewKf ? 'kf_skew' : Number(layer.skewY ?? 0).toFixed(2),
         Number(layer.anchorX ?? 0).toFixed(2),
         Number(layer.anchorY ?? 0).toFixed(2),
         Number(layer.anchorZ ?? 0).toFixed(2),
-        Number(layer.opacity ?? 1).toFixed(3),
+        hasOpacityKf ? 'kf_op' : Number(layer.opacity ?? 1).toFixed(3),
         Number(layer.roundness ?? (layer.shapeProps && layer.shapeProps.roundness) ?? 0).toFixed(2),
         Number(layer.speed ?? 1).toFixed(3),
         layer.speedMode || '',
@@ -1242,12 +1264,6 @@
         return;
       }
 
-      // Yield if VideoFrameExtractor is actively decoding video streams so we don't fight for CPU/GPU
-      if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isAnySourceExtracting === 'function' && window.VideoFrameExtractor.isAnySourceExtracting()) {
-        this._scheduleNextIdleTick(120);
-        return;
-      }
-
       const totalDur = (typeof window.getProjectTotalDuration === 'function') ? window.getProjectTotalDuration() : 0;
       if (totalDur <= 0) {
         this.stopIdleWorker();
@@ -1292,90 +1308,146 @@
         }
       }
 
-      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 6 : 12;
-      if (this._inFlightFrames && this._inFlightFrames.size >= maxInFlight) {
-        this._scheduleNextIdleTick(16);
-        return;
+      // Rotating scratch offscreen canvas pool (prevents in-flight createImageBitmap corruption/overwrites during batch caching)
+      if (!this._idleCanvasPool) {
+        this._idleCanvasPool = [
+          document.createElement('canvas'),
+          document.createElement('canvas'),
+          document.createElement('canvas'),
+          document.createElement('canvas'),
+          document.createElement('canvas'),
+          document.createElement('canvas')
+        ];
+        this._idlePoolIdx = 0;
       }
 
-      // Match activeCanvas dimensions so bufferScale is identical to playback (reuses text/shape/precomp caches 1:1!)
-      if (!this.offscreenCanvas) {
-        this.offscreenCanvas = document.createElement('canvas');
-      }
       const targetW = activeCanvas.width;
       const targetH = activeCanvas.height;
-      if (this.offscreenCanvas.width !== targetW || this.offscreenCanvas.height !== targetH) {
-        this.offscreenCanvas.width = targetW;
-        this.offscreenCanvas.height = targetH;
-      }
 
-      let targetFrame = -1;
-      let sawUnreadyOrInFlight = false;
+      const tStart = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+      const budgetMs = this._isMobile ? 8.0 : 12.0;
+      const maxBatch = this._isMobile ? 4 : 8;
+      let cachedInBatch = 0;
+      let sawUnready = false;
 
-      // Pass 1: Contiguous forward from playhead to end of active window (same direction as playback)
-      for (let f = currentFrame; f <= winEnd; f++) {
-        if (!this.frames.has(f)) {
-          const inFlightKey = `${targetComp}:${f}`;
-          const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
-          const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
-          if (!isInFlight && !isMarkedUnready && this.isTimeReadyToCache(f / currentFps)) {
-            targetFrame = f;
-            break;
-          }
-          sawUnreadyOrInFlight = true;
+      while (this.isIdleRunning && cachedInBatch < maxBatch) {
+        if (((typeof performance !== 'undefined') ? performance.now() : Date.now()) - tStart >= budgetMs) {
+          break;
         }
-      }
 
-      // Pass 2: Contiguous from winStart up to playhead
-      if (targetFrame === -1) {
-        for (let f = winStart; f < currentFrame; f++) {
-          if (!this.frames.has(f)) {
-            const inFlightKey = `${targetComp}:${f}`;
-            const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
-            const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
-            if (!isInFlight && !isMarkedUnready && this.isTimeReadyToCache(f / currentFps)) {
-              targetFrame = f;
-              break;
-            }
-            sawUnreadyOrInFlight = true;
-          }
+        const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 16 : 32;
+        if (this._inFlightFrames && this._inFlightFrames.size >= maxInFlight) {
+          break;
         }
-      }
 
-      if (targetFrame === -1) {
-        if (sawUnreadyOrInFlight) {
-          if (this._unreadyFrames) this._unreadyFrames.clear();
-          this._scheduleNextIdleTick(100);
+        if (this.frames.size >= effectiveMax) {
+          this.stopIdleWorker();
           return;
         }
-        this.stopIdleWorker();
-        return;
-      }
 
-      const inFlightKey = `${targetComp}:${targetFrame}`;
-      const targetSec = targetFrame / currentFps;
-      let isFrameReady = true;
-      if (typeof window.renderCanvasFrame === 'function') {
-        const res = window.renderCanvasFrame(
-          this.offscreenCanvas,
-          window.currentProjectState ? window.currentProjectState.bgColor : 'transparent',
-          this.offscreenCanvas.width,
-          this.offscreenCanvas.height,
-          'idle-cache',
-          targetSec
-        );
-        if (res === false) isFrameReady = false;
-      }
+        let targetFrame = -1;
 
-      if (isFrameReady) {
-        this.setFrameFromCanvas(targetFrame, this.offscreenCanvas, this.isDraftMode);
-      } else {
-        if (!this._unreadyFrames) this._unreadyFrames = new Set();
-        this._unreadyFrames.add(inFlightKey);
+        // Priority 0: Missed playback frames (highest priority)
+        if (this._missedPlaybackFrames && this._missedPlaybackFrames.size > 0) {
+          for (const mf of this._missedPlaybackFrames) {
+            this._missedPlaybackFrames.delete(mf);
+            if (!this.frames.has(mf)) {
+              const inFlightKey = `${targetComp}:${mf}`;
+              const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
+              if (!isInFlight && this.isTimeReadyToCache(mf / currentFps)) {
+                targetFrame = mf;
+                break;
+              }
+            }
+          }
+        }
+
+        // Pass 1: Contiguous forward from playhead to end of active window (same direction as playback)
+        if (targetFrame === -1) {
+          for (let f = currentFrame; f <= winEnd; f++) {
+            if (!this.frames.has(f)) {
+              const inFlightKey = `${targetComp}:${f}`;
+              const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
+              const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
+              if (!isInFlight && !isMarkedUnready) {
+                if (this.isTimeReadyToCache(f / currentFps)) {
+                  targetFrame = f;
+                  break;
+                } else {
+                  sawUnready = true;
+                  if (!this._unreadyFrames) this._unreadyFrames = new Set();
+                  this._unreadyFrames.add(inFlightKey);
+                }
+              }
+            }
+          }
+        }
+
+        // Pass 2: Contiguous from winStart up to playhead
+        if (targetFrame === -1) {
+          for (let f = winStart; f < currentFrame; f++) {
+            if (!this.frames.has(f)) {
+              const inFlightKey = `${targetComp}:${f}`;
+              const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
+              const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
+              if (!isInFlight && !isMarkedUnready) {
+                if (this.isTimeReadyToCache(f / currentFps)) {
+                  targetFrame = f;
+                  break;
+                } else {
+                  sawUnready = true;
+                  if (!this._unreadyFrames) this._unreadyFrames = new Set();
+                  this._unreadyFrames.add(inFlightKey);
+                }
+              }
+            }
+          }
+        }
+
+        if (targetFrame === -1) {
+          if (sawUnready) {
+            if (this._unreadyFrames) this._unreadyFrames.clear();
+            this._scheduleNextIdleTick(60);
+            return;
+          }
+          this.stopIdleWorker();
+          return;
+        }
+
+        const inFlightKey = `${targetComp}:${targetFrame}`;
+        const targetSec = targetFrame / currentFps;
+        const offscreen = this._idleCanvasPool[this._idlePoolIdx % this._idleCanvasPool.length];
+        this._idlePoolIdx++;
+
+        if (offscreen.width !== targetW || offscreen.height !== targetH) {
+          offscreen.width = targetW;
+          offscreen.height = targetH;
+        }
+
+        let isFrameReady = true;
+        if (typeof window.renderCanvasFrame === 'function') {
+          const res = window.renderCanvasFrame(
+            offscreen,
+            window.currentProjectState ? window.currentProjectState.bgColor : 'transparent',
+            targetW,
+            targetH,
+            'idle-cache',
+            targetSec
+          );
+          if (res === false) isFrameReady = false;
+        }
+
+        if (isFrameReady) {
+          this.setFrameFromCanvas(targetFrame, offscreen, this.isDraftMode);
+          cachedInBatch++;
+        } else {
+          if (!this._unreadyFrames) this._unreadyFrames = new Set();
+          this._unreadyFrames.add(inFlightKey);
+          sawUnready = true;
+        }
       }
 
       if (this.isIdleRunning) {
-        // Step via requestAnimationFrame just like stepPlay so idle caching runs at exact display frame cadence
         this._scheduleNextIdleTick(0);
       }
     }
