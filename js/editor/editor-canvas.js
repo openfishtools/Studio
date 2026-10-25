@@ -101,9 +101,17 @@
         source === 'scrubEnd' ||
         source === 'playbackStep' ||
         source === 'playbackPause' ||
+        source === 'renderTimeline' ||
         source === 'frameReady' ||
         source === 'playbackFramesBatchLoaded' ||
+        source === 'frameExtractorComplete' ||
+        source === 'frameExtractorPlayheadReady' ||
+        source === 'frameExtractorProgress' ||
+        source === 'mediaHydrated' ||
+        source === 'cutout-restored-from-db' ||
+        source === 'cutoutFrameReady' ||
         source === 'fitPreviewCanvasBox' ||
+        source === 'switchTransformTool' ||
         source === 'video:onseeked'
       ) || (!!(window.isTimelineScrubbing || window.isTimelinePanning) && !window.isTransformInteracting);
       if (!window.isTimelinePlaying && !isNonMutatingRedraw && window.PreviewCacheManager && typeof window.PreviewCacheManager.syncStateWithProject === 'function') {
@@ -1427,7 +1435,7 @@
       renderOrderLayers.forEach(layer => {
         const isSelected = (layer.id === window.selectedLayerId) || (window.selectedLayerIds && window.selectedLayerIds.has(layer.id));
         if (layer.hidden) {
-          if (isSelected && layer.type !== 'camera' && layer.type !== 'audio') {
+          if (!isIdleCache && !isExport && isSelected && layer.type !== 'camera' && layer.type !== 'audio') {
             const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
               ? getLayerEffectivePropsAtTime(layer, currentSec)
               : layer;
@@ -1892,10 +1900,10 @@
             layer.mediaHeight = ph;
 
             // Group wireframe bounds only serve hit-testing / selection overlay.
-            // Skip that per-child projection work while exporting or playing back
+            // Skip that per-child projection work while exporting, idle-caching, or playing back
             // (selected layer still refreshes; syncActiveViewerOverlay also covers it when paused).
             const playbackActive = (typeof window.isAnyPlaybackActive === 'function') && window.isAnyPlaybackActive();
-            const needGroupBounds = !isExport && (!playbackActive || layer.id === window.selectedLayerId || !layer._canvasBounds);
+            const needGroupBounds = !isExport && !isIdleCache && (!playbackActive || layer.id === window.selectedLayerId || !layer._canvasBounds);
             if (needGroupBounds) {
               layer._canvasBounds = computeCollapsedPrecompBounds(layer, effProps, currentSec, bufferScale, camEff, w, h);
             }
@@ -2348,9 +2356,9 @@
               }
 
               // 1. Compute wireframe bounds on unpadded animLayer so wireframe stays tight on text/vector metrics (like AE)
-              // During playback or timeline scrubbing, only compute bounds for selected layers (or if never computed)
+              // During playback, timeline scrubbing, or offscreen idle caching, skip bounds computation for non-selected layers
               const isLayerSelected = (window.selectedLayerId === layer.id) || (window.selectedLayerIds && window.selectedLayerIds.has(layer.id));
-              if (isLayerSelected || (!window.isTimelinePlaying && !isScrubbing) || !layer._canvasBounds) {
+              if (!isIdleCache && !isExport && (isLayerSelected || (!window.isTimelinePlaying && !isScrubbing) || !layer._canvasBounds)) {
                 layer._canvasBounds = engine.getBounds(animLayer, bufferScale, camEff, w, h);
               }
 
@@ -2549,7 +2557,7 @@
             }
 
             // Auto-capture ultra-lightweight micro-thumbnail preview (32x24px, JPEG 0.45) for timeline pill (only when paused/idle & not exporting)
-            if (!isExport && (!layer.thumbUrl || layer.thumbUrl.length < 50) && !window.isTimelinePlaying && !layer._capturingThumb) {
+            if (!isExport && !isIdleCache && (!layer.thumbUrl || layer.thumbUrl.length < 50) && !window.isTimelinePlaying && !layer._capturingThumb) {
               layer._capturingThumb = true;
               setTimeout(() => {
                 try {
@@ -2577,7 +2585,7 @@
               }, 120);
             }
 
-            if (!isExport && window.selectedLayerId && layer.id === window.selectedLayerId && !layer.hidden) {
+            if (!isExport && !isIdleCache && window.selectedLayerId && layer.id === window.selectedLayerId && !layer.hidden) {
               selectedWireframeBounds = layer._canvasBounds;
             }
           }
@@ -2778,6 +2786,11 @@
           } else if (adaptiveScale >= 0.96 || isDraftModeActive || window.isTimelinePlaying) {
             window.PreviewCacheManager.setFrameFromCanvas(frameIndex, canvas, isDraftModeActive);
           }
+        }
+
+        // Keep baseline layer snapshot synchronized if renderCanvasFrame lazily initialized layer dimensions/defaults
+        if ((window.isTimelinePlaying || isIdleCache) && !isTransformDragging && window.PreviewCacheManager && typeof window.PreviewCacheManager.refreshBaselineSnapshot === 'function') {
+          window.PreviewCacheManager.refreshBaselineSnapshot(currentProjectState);
         }
 
       }

@@ -206,8 +206,8 @@
             layer._renderedExactVideoFrame = true;
             hasUnreadyMedia = false;
 
-            // Proactive streaming prefetch during playback/scrubbing to keep RAM window replenished ahead of playhead
-            if (!isExporting && !isIdleCache && typeof extractor.ensurePlaybackFrames === 'function') {
+            // Proactive streaming prefetch during playback/scrubbing/idle-cache to keep RAM window replenished ahead of playhead
+            if (!isExporting && typeof extractor.ensurePlaybackFrames === 'function') {
               const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
               if (!layer._lastPrefetchMs || (now - layer._lastPrefetchMs) >= 120) {
                 layer._lastPrefetchMs = now;
@@ -218,7 +218,11 @@
             if (source.cachedFrameIndices && source.cachedFrameIndices.has(fIdx)) {
               extractor.fetchFrameFromDB(source, fIdx);
               if (!isExporting && typeof extractor.ensurePlaybackFrames === 'function') {
-                extractor.ensurePlaybackFrames(source, fIdx);
+                const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+                if (!layer._lastPrefetchMs || (now - layer._lastPrefetchMs) >= 120) {
+                  layer._lastPrefetchMs = now;
+                  extractor.ensurePlaybackFrames(source, fIdx);
+                }
               }
             }
             if (!isExporting && !isIdleCache && !source.isExtracting) {

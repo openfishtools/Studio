@@ -864,7 +864,7 @@
 
         // Live refresh canvas preview to show/hide layers matching playhead timecode
         if (!isActivelyPlaying) {
-          redrawComposition();
+          redrawComposition('renderTimeline');
         }
       }
 
@@ -1618,26 +1618,17 @@
           });
         };
         pauseLayerMediaTree(currentProjectState.layers || []);
-        // Always trigger idle cache fill after pause — fills remaining uncached frames in background
-        // This mirrors AE RAM Preview: bar fills continuously during idle time
-        if (window.PreviewCacheManager && window.isPreviewCacheEnabled !== false && !window.isExporting) {
-          window.PreviewCacheManager.scheduleIdleCheck(true);
-        }
-        // Flush any pending debounced beatmark save and refresh badge state
         if (typeof saveCurrentProjectBeatmarks === 'function') {
           saveCurrentProjectBeatmarks(true);
         }
         if (typeof updateTimeBadgeBeatmarkState === 'function') {
           updateTimeBadgeBeatmarkState();
         }
-
-        // AE-style Play From: If mode is 'last_pause', return playhead to the frame where play was clicked
         if (returnToStart && window.playbackPlayFromMode === 'last_pause' && typeof window.playbackPlayStartSec === 'number' && !isNaN(window.playbackPlayStartSec)) {
           if (typeof seekTimelineToTime === 'function') {
             seekTimelineToTime(window.playbackPlayStartSec, true);
           }
         }
-
         if (window._adaptiveDraftState) {
           window._adaptiveDraftState.scale = 1.0;
           window._currentAdaptiveDraftScale = 1.0;
@@ -1645,9 +1636,20 @@
 
         if (!window.isExporting) {
           renderTimeline(true);
-          redrawComposition('playbackPause');
           if (typeof updateCutBarRowState === 'function') updateCutBarRowState();
           if (typeof updateReorderHandlesContrast === 'function') updateReorderHandlesContrast();
+        }
+
+        // Refresh layer state snapshot AFTER renderTimeline(true) and UI sync so any lazy property initialization
+        // during playback or pause UI sync (e.g. fitLayerToComposition, scaleZ, text/shape default dimensions)
+        // never triggers false-positive cache invalidation
+        if (window.PreviewCacheManager && typeof window.PreviewCacheManager.refreshBaselineSnapshot === 'function') {
+          window.PreviewCacheManager.refreshBaselineSnapshot(currentProjectState);
+        }
+
+        // Trigger immediate idle cache fill after pause — continues filling remaining uncached frames smoothly like playback
+        if (window.PreviewCacheManager && window.isPreviewCacheEnabled !== false && !window.isExporting) {
+          window.PreviewCacheManager.scheduleIdleCheck(true);
         }
       }
       window.pausePlayback = pausePlayback;

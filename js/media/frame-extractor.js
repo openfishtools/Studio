@@ -633,6 +633,7 @@
     _isUserInteracting() {
       if (typeof window === 'undefined') return false;
       if (window.isTimelinePlaying) return true;
+      if (window.PreviewCacheManager && window.PreviewCacheManager.isIdleRunning) return true;
       if (window.isTimelineScrubbing || window.isTimelinePanning) return true;
       if (window.isUserInteracting || window.isTransformInteracting) return true;
       if (window._lastUserInteractionTime && (Date.now() - window._lastUserInteractionTime < 160)) {
@@ -1159,7 +1160,11 @@
                 this._evictOldestFrame(source, frameIdx);
                 loadedBmp = bmp;
                 const curPlayheadFIdx = this._getVideoFrameForPlayhead(source);
-                if (Math.abs(frameIdx - curPlayheadFIdx) <= 15 && typeof window !== 'undefined' && typeof window.redrawComposition === 'function' && !window.isTimelinePlaying && !window.isExporting) {
+                const isIdleCaching = !!(typeof window !== 'undefined' && window.PreviewCacheManager && window.PreviewCacheManager.isIdleRunning);
+                if (typeof window !== 'undefined' && window.PreviewCacheManager && window.PreviewCacheManager._unreadyFrames) {
+                  window.PreviewCacheManager._unreadyFrames.clear();
+                }
+                if (Math.abs(frameIdx - curPlayheadFIdx) <= 15 && typeof window !== 'undefined' && typeof window.redrawComposition === 'function' && !window.isTimelinePlaying && !window.isExporting && !isIdleCaching) {
                   window.redrawComposition('frameReady');
                 }
               } else if (bmp && typeof bmp.close === 'function') {
@@ -1309,7 +1314,11 @@
         })));
       } finally {
         source._isStreamingPrefetch = false;
-        if (typeof window !== 'undefined' && typeof window.redrawComposition === 'function' && !window.isTimelinePlaying && !window.isExporting) {
+        const isIdleCaching = !!(typeof window !== 'undefined' && window.PreviewCacheManager && window.PreviewCacheManager.isIdleRunning);
+        if (typeof window !== 'undefined' && window.PreviewCacheManager && window.PreviewCacheManager._unreadyFrames) {
+          window.PreviewCacheManager._unreadyFrames.clear();
+        }
+        if (typeof window !== 'undefined' && typeof window.redrawComposition === 'function' && !window.isTimelinePlaying && !window.isExporting && !isIdleCaching) {
           window.redrawComposition('playbackFramesBatchLoaded');
         }
       }

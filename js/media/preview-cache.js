@@ -47,14 +47,14 @@
     get maxFrames() {
       const fps = this.fps || 60;
       const devMem = this._devMem || 4;
-      // Device-aware RAM frame cap to prevent GPU/browser OOM crashes while holding up to 1 minute of 60fps preview
+      // Device-aware RAM frame cap: hold up to 60s on mobile/4GB and 120s on desktop at preview resolution
       if (devMem <= 2) {
-        return Math.min(900, Math.max(450, Math.round(15 * fps)));
+        return Math.min(1800, Math.max(600, Math.round(30 * fps)));
       }
       if (this._isMobile || devMem <= 4) {
-        return Math.min(1800, Math.max(900, Math.round(30 * fps)));
+        return Math.min(3600, Math.max(1200, Math.round(60 * fps)));
       }
-      return Math.min(3600, Math.max(1800, Math.round(60 * fps)));
+      return Math.min(7200, Math.max(2400, Math.round(120 * fps)));
     }
 
     get frames() {
@@ -400,7 +400,7 @@
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (this._rulerUpdatePending) return;
       this._rulerUpdatePending = true;
-      const delay = (typeof window !== 'undefined' && window.isTimelinePlaying) ? 90 : 60;
+      const delay = (typeof window !== 'undefined' && window.isTimelinePlaying) ? 60 : 40;
       setTimeout(() => {
         this._rulerUpdatePending = false;
         this.updateRulerUI();
@@ -419,7 +419,7 @@
       if (!this._frameGen) this._frameGen = new Map();
       const inFlightKey = `${targetComp}:${frameIndex}`;
       if (this._inFlightFrames.has(inFlightKey)) return;
-      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 12 : 24;
+      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 10 : 18;
       if (this._inFlightFrames.size >= maxInFlight) return;
       const gen = (this._frameGen.get(inFlightKey) || 0) + 1;
       this._frameGen.set(inFlightKey, gen);
@@ -429,21 +429,36 @@
         const srcW = sourceCanvas.width;
         const srcH = sourceCanvas.height;
         const maxDim = (this._isMobile || (this._devMem && this._devMem <= 4))
-          ? (isDraft ? 540 : 720)
-          : (isDraft ? 720 : 960);
+          ? (isDraft ? 480 : 640)
+          : (isDraft ? 640 : 854);
         const maxSide = Math.max(srcW, srcH);
         let bitmap = null;
         if (maxSide > maxDim) {
           const scale = maxDim / maxSide;
           const targetW = Math.max(16, Math.round(srcW * scale));
           const targetH = Math.max(16, Math.round(srcH * scale));
-          try {
-            bitmap = await createImageBitmap(sourceCanvas, {
-              resizeWidth: targetW,
-              resizeHeight: targetH,
-              resizeQuality: 'low'
-            });
-          } catch (_) {
+          if (!this._resizeBufferCanvas) {
+            this._resizeBufferCanvas = (typeof OffscreenCanvas !== 'undefined')
+              ? new OffscreenCanvas(targetW, targetH)
+              : document.createElement('canvas');
+            this._resizeBufferCtx = this._resizeBufferCanvas.getContext('2d', { alpha: false }) || this._resizeBufferCanvas.getContext('2d');
+            if (this._resizeBufferCtx) {
+              this._resizeBufferCtx.imageSmoothingEnabled = true;
+              this._resizeBufferCtx.imageSmoothingQuality = 'low';
+            }
+          }
+          if (this._resizeBufferCanvas.width !== targetW || this._resizeBufferCanvas.height !== targetH) {
+            this._resizeBufferCanvas.width = targetW;
+            this._resizeBufferCanvas.height = targetH;
+            if (this._resizeBufferCtx) {
+              this._resizeBufferCtx.imageSmoothingEnabled = true;
+              this._resizeBufferCtx.imageSmoothingQuality = 'low';
+            }
+          }
+          if (this._resizeBufferCtx) {
+            this._resizeBufferCtx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
+            bitmap = await createImageBitmap(this._resizeBufferCanvas);
+          } else {
             bitmap = await createImageBitmap(sourceCanvas);
           }
         } else {
@@ -949,6 +964,36 @@
       return compChanged || diffInvalidated;
     }
 
+    /**
+     * Refresh the baseline fingerprint and layer snapshot without invalidating existing cached frames.
+     * Called right after playback pauses so lazy property normalization during playback never wipes out cached frames.
+     */
+    refreshBaselineSnapshot(projectState = null, compId = null) {
+      const ps = projectState || (typeof window !== 'undefined' ? window.currentProjectState : null);
+      if (!ps || !Array.isArray(ps.layers)) return;
+      const targetComp = compId || this.activeCompId || 'root';
+      if (!this._lastKnownCompFingerprints) this._lastKnownCompFingerprints = new Map();
+      if (!this._lastKnownLayerSnapshots) this._lastKnownLayerSnapshots = new Map();
+
+      const fps = ps.fps || 60;
+      const baseW = ps._baseW || ps.baseW || ps.width || (typeof window !== 'undefined' && typeof window.getProjectDimensions === 'function' && ps.resolution && ps.aspectRatio ? window.getProjectDimensions(ps.resolution, ps.aspectRatio)[0] : 0);
+      const baseH = ps._baseH || ps.baseH || ps.height || (typeof window !== 'undefined' && typeof window.getProjectDimensions === 'function' && ps.resolution && ps.aspectRatio ? window.getProjectDimensions(ps.resolution, ps.aspectRatio)[1] : 0);
+      const resolution = ps.resolution || `${baseW}x${baseH}`;
+      const aspectRatio = ps.aspectRatio || '';
+      const bgColor = ps.bgColor || '';
+      const motionBlur = (ps.motionBlur && ps.motionBlur.enabled) ? 1 : 0;
+      const layers = (targetComp === 'root' || !targetComp)
+        ? (ps.layers || [])
+        : ((window.currentActivePrecomp && Array.isArray(window.currentActivePrecomp.layers))
+          ? window.currentActivePrecomp.layers
+          : (ps.layers || []));
+      const layerOrderSig = layers.map(l => (l && l.id) || '').join(',');
+      const compFingerprint = `${fps}|${baseW}|${baseH}|${resolution}|${aspectRatio}|${bgColor}|${motionBlur}|${layers.length}|${layerOrderSig}`;
+
+      this._lastKnownCompFingerprints.set(targetComp, compFingerprint);
+      this._lastKnownLayerSnapshots.set(targetComp, this.captureStateSnapshot(layers));
+    }
+
     invalidateAll() {
       return this.clearAll('all');
     }
@@ -1042,7 +1087,15 @@
     }
 
     setupUserActivityListeners() {
-      const onActivity = () => {
+      const onActivity = (e) => {
+        if (e && e.target && typeof e.target.closest === 'function') {
+          if (e.target.closest('#editor-btn-play, .ctrl-btn[title*="Play"], .ctrl-btn[title*="Pause"]')) {
+            return;
+          }
+        }
+        if (e && e.type === 'keydown' && e.code === 'Space') {
+          return;
+        }
         this.lastUserActivity = Date.now();
         if (this.isIdleRunning) {
           this.stopIdleWorker();
@@ -1053,9 +1106,10 @@
       };
 
       const onPointerMove = (e) => {
-        // Only interrupt idle cache on active drag/scrubbing (buttons > 0), not passive mouse hover
-        if (e && (e.buttons > 0 || window.isTimelineScrubbing || window.isTimelinePanning || window.isTransformInteracting)) {
-          onActivity();
+        // Pause idle caching during active drag/scrubbing or rapid mouse movement so UI stays 100% responsive
+        if (!e) return;
+        if (e.buttons > 0 || window.isTimelineScrubbing || window.isTimelinePanning || window.isTransformInteracting) {
+          onActivity(e);
         }
       };
 
@@ -1071,12 +1125,12 @@
       if (this.ensureAudioOnlyFullCache()) return;
       if (!this.idleCacheEnabled) return;
       if (this.idleTimer) clearTimeout(this.idleTimer);
-      const delay = immediate ? 40 : 280;
+      const delay = immediate ? 32 : 180;
       this.idleTimer = setTimeout(() => {
         if (typeof window !== 'undefined' && window.isExporting) return;
         if (this.ensureAudioOnlyFullCache()) return;
         if (!this.idleCacheEnabled) return;
-        if (window.isTimelinePlaying || window.isTransformInteracting) return;
+        if (window.isTimelinePlaying || window.isTransformInteracting || window.isTimelineScrubbing || window.isTimelinePanning) return;
         if (document.querySelector('.modal-backdrop.is-open, .modal-backdrop.active')) return;
         this.startIdleWorker();
       }, delay);
@@ -1103,14 +1157,52 @@
       if (this.ensureAudioOnlyFullCache()) return;
       if (this.isIdleRunning || !this.idleCacheEnabled || window.isTimelinePlaying || window.isTransformInteracting) return;
       this.isIdleRunning = true;
-      this.runIdleStep();
+      this._scheduleNextIdleTick(0);
     }
 
     stopIdleWorker() {
       this.isIdleRunning = false;
       if (this.idleWorkerId) {
-        clearTimeout(this.idleWorkerId);
+        if (this._idleUsedRAF && typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(this.idleWorkerId);
+        } else if (this._idleUsedRIC && typeof cancelIdleCallback === 'function') {
+          cancelIdleCallback(this.idleWorkerId);
+        } else {
+          clearTimeout(this.idleWorkerId);
+        }
         this.idleWorkerId = null;
+        this._idleUsedRAF = false;
+        this._idleUsedRIC = false;
+      }
+    }
+
+    _scheduleNextIdleTick(delayMs = 0) {
+      if (!this.isIdleRunning) return;
+      if (this.idleWorkerId) {
+        if (this._idleUsedRAF && typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(this.idleWorkerId);
+        } else if (this._idleUsedRIC && typeof cancelIdleCallback === 'function') {
+          cancelIdleCallback(this.idleWorkerId);
+        } else {
+          clearTimeout(this.idleWorkerId);
+        }
+        this.idleWorkerId = null;
+        this._idleUsedRAF = false;
+        this._idleUsedRIC = false;
+      }
+      if (delayMs <= 16 && typeof requestAnimationFrame === 'function') {
+        this._idleUsedRAF = true;
+        this.idleWorkerId = requestAnimationFrame(() => this.runIdleStep(null));
+      } else {
+        this.idleWorkerId = setTimeout(() => {
+          if (!this.isIdleRunning) return;
+          if (typeof requestAnimationFrame === 'function') {
+            this._idleUsedRAF = true;
+            this.idleWorkerId = requestAnimationFrame(() => this.runIdleStep(null));
+          } else {
+            this.runIdleStep(null);
+          }
+        }, delayMs);
       }
     }
 
@@ -1163,13 +1255,26 @@
       return true;
     }
 
-    runIdleStep() {
+    runIdleStep(deadline = null) {
+      this.idleWorkerId = null;
+      this._idleUsedRAF = false;
+      this._idleUsedRIC = false;
       if (typeof window !== 'undefined' && window.isExporting) {
         this.stopIdleWorker();
         return;
       }
-      if (!this.isIdleRunning || !this.idleCacheEnabled || window.isTimelinePlaying || window.isTransformInteracting) {
+      if (!this.isIdleRunning || !this.idleCacheEnabled || window.isTimelinePlaying || window.isTransformInteracting || window.isTimelineScrubbing || window.isTimelinePanning) {
         this.stopIdleWorker();
+        return;
+      }
+      if (typeof document !== 'undefined' && document.hidden) {
+        this._scheduleNextIdleTick(250);
+        return;
+      }
+
+      // Yield if VideoFrameExtractor is actively decoding video streams so we don't fight for CPU/GPU
+      if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isAnySourceExtracting === 'function' && window.VideoFrameExtractor.isAnySourceExtracting()) {
+        this._scheduleNextIdleTick(120);
         return;
       }
 
@@ -1217,49 +1322,43 @@
         }
       }
 
-      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 8 : 16;
+      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 6 : 12;
       if (this._inFlightFrames && this._inFlightFrames.size >= maxInFlight) {
-        this.idleWorkerId = setTimeout(() => this.runIdleStep(), 16);
+        this._scheduleNextIdleTick(16);
         return;
       }
 
-      // Prepare offscreen canvas capped to preview cache resolution for rapid 60fps rendering
+      // Match activeCanvas dimensions so bufferScale is identical to playback (reuses text/shape/precomp caches 1:1!)
       if (!this.offscreenCanvas) {
         this.offscreenCanvas = document.createElement('canvas');
       }
-      const maxDim = (this._isMobile || (this._devMem && this._devMem <= 4))
-        ? (this.isDraftMode ? 540 : 720)
-        : (this.isDraftMode ? 720 : 960);
-      const srcW = activeCanvas.width;
-      const srcH = activeCanvas.height;
-      const maxSide = Math.max(srcW, srcH);
-      const scale = maxSide > maxDim ? (maxDim / maxSide) : 1.0;
-      const targetW = Math.max(16, Math.round(srcW * scale));
-      const targetH = Math.max(16, Math.round(srcH * scale));
+      const targetW = activeCanvas.width;
+      const targetH = activeCanvas.height;
       if (this.offscreenCanvas.width !== targetW || this.offscreenCanvas.height !== targetH) {
         this.offscreenCanvas.width = targetW;
         this.offscreenCanvas.height = targetH;
       }
 
-      const stepStartMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      const timeBudgetMs = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 4.5 : 7.5;
-      const maxFramesPerStep = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 2 : 4;
-      let renderedInStep = 0;
+      let targetFrame = -1;
+      let sawUnreadyOrInFlight = false;
 
-      while (renderedInStep < maxFramesPerStep) {
-        if (!this.isIdleRunning || !this.idleCacheEnabled || window.isTimelinePlaying || window.isTransformInteracting) {
-          this.stopIdleWorker();
-          return;
+      // Pass 1: Contiguous forward from playhead to end of active window (same direction as playback)
+      for (let f = currentFrame; f <= winEnd; f++) {
+        if (!this.frames.has(f)) {
+          const inFlightKey = `${targetComp}:${f}`;
+          const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
+          const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
+          if (!isInFlight && !isMarkedUnready && this.isTimeReadyToCache(f / currentFps)) {
+            targetFrame = f;
+            break;
+          }
+          sawUnreadyOrInFlight = true;
         }
-        if (this._inFlightFrames && this._inFlightFrames.size >= maxInFlight) {
-          break;
-        }
+      }
 
-        let targetFrame = -1;
-        let sawUnreadyOrInFlight = false;
-
-        // Pass 1: Contiguous forward from playhead to end of active window
-        for (let f = currentFrame; f <= winEnd; f++) {
+      // Pass 2: Contiguous from winStart up to playhead
+      if (targetFrame === -1) {
+        for (let f = winStart; f < currentFrame; f++) {
           if (!this.frames.has(f)) {
             const inFlightKey = `${targetComp}:${f}`;
             const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
@@ -1271,64 +1370,43 @@
             sawUnreadyOrInFlight = true;
           }
         }
+      }
 
-        // Pass 2: Contiguous from winStart up to playhead
-        if (targetFrame === -1) {
-          for (let f = winStart; f < currentFrame; f++) {
-            if (!this.frames.has(f)) {
-              const inFlightKey = `${targetComp}:${f}`;
-              const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
-              const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
-              if (!isInFlight && !isMarkedUnready && this.isTimeReadyToCache(f / currentFps)) {
-                targetFrame = f;
-                break;
-              }
-              sawUnreadyOrInFlight = true;
-            }
-          }
-        }
-
-        if (targetFrame === -1) {
-          if (sawUnreadyOrInFlight) {
-            if (this._unreadyFrames) this._unreadyFrames.clear();
-            this.idleWorkerId = setTimeout(() => this.runIdleStep(), 80);
-            return;
-          }
-          this.stopIdleWorker();
+      if (targetFrame === -1) {
+        if (sawUnreadyOrInFlight) {
+          if (this._unreadyFrames) this._unreadyFrames.clear();
+          this._scheduleNextIdleTick(100);
           return;
         }
+        this.stopIdleWorker();
+        return;
+      }
 
-        const inFlightKey = `${targetComp}:${targetFrame}`;
-        const targetSec = targetFrame / currentFps;
-        let isFrameReady = true;
-        if (typeof window.renderCanvasFrame === 'function') {
-          const res = window.renderCanvasFrame(
-            this.offscreenCanvas,
-            window.currentProjectState ? window.currentProjectState.bgColor : 'transparent',
-            this.offscreenCanvas.width,
-            this.offscreenCanvas.height,
-            'idle-cache',
-            targetSec
-          );
-          if (res === false) isFrameReady = false;
-        }
+      const inFlightKey = `${targetComp}:${targetFrame}`;
+      const targetSec = targetFrame / currentFps;
+      let isFrameReady = true;
+      if (typeof window.renderCanvasFrame === 'function') {
+        const res = window.renderCanvasFrame(
+          this.offscreenCanvas,
+          window.currentProjectState ? window.currentProjectState.bgColor : 'transparent',
+          this.offscreenCanvas.width,
+          this.offscreenCanvas.height,
+          'idle-cache',
+          targetSec
+        );
+        if (res === false) isFrameReady = false;
+      }
 
-        if (isFrameReady) {
-          this.setFrameFromCanvas(targetFrame, this.offscreenCanvas, this.isDraftMode);
-          renderedInStep++;
-        } else {
-          if (!this._unreadyFrames) this._unreadyFrames = new Set();
-          this._unreadyFrames.add(inFlightKey);
-        }
-
-        const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-        if ((nowMs - stepStartMs) >= timeBudgetMs) {
-          break;
-        }
+      if (isFrameReady) {
+        this.setFrameFromCanvas(targetFrame, this.offscreenCanvas, this.isDraftMode);
+      } else {
+        if (!this._unreadyFrames) this._unreadyFrames = new Set();
+        this._unreadyFrames.add(inFlightKey);
       }
 
       if (this.isIdleRunning) {
-        this.idleWorkerId = setTimeout(() => this.runIdleStep(), 4);
+        // Step via requestAnimationFrame just like stepPlay so idle caching runs at exact display frame cadence
+        this._scheduleNextIdleTick(0);
       }
     }
 
