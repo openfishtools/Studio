@@ -96,7 +96,9 @@
 
     function redrawComposition(source = 'general', immediate = false) {
       _lastRedrawSource = source;
-      if (window.PreviewCacheManager && typeof window.PreviewCacheManager.syncStateWithProject === 'function') {
+      const isPureTimelineScrub = (source === 'scrub' || source === 'playbackStep') ||
+        (!!(window.isTimelineScrubbing || window.isTimelinePanning) && !window.isTransformInteracting);
+      if (!window.isTimelinePlaying && !isPureTimelineScrub && window.PreviewCacheManager && typeof window.PreviewCacheManager.syncStateWithProject === 'function') {
         window.PreviewCacheManager.syncStateWithProject();
       }
 
@@ -1113,12 +1115,15 @@
               anchor: { x: w / 2, y: h / 2 }
             };
           } else if (engine) {
-            const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
-              ? getLayerEffectivePropsAtTime(selL, targetSec)
-              : selL;
             if (isPrecompEffectivelyCollapsed(selL) && Array.isArray(selL.layers) && selL.layers.length > 0) {
+              const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
+                ? getLayerEffectivePropsAtTime(selL, targetSec)
+                : selL;
               selL._canvasBounds = computeCollapsedPrecompBounds(selL, effProps, targetSec, bufferScale, camEff, w, h);
-            } else {
+            } else if (!selL._canvasBounds || selL._currentSec !== targetSec) {
+              const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
+                ? getLayerEffectivePropsAtTime(selL, targetSec)
+                : selL;
               selL._canvasBounds = engine.getBounds(Object.assign({}, selL, effProps), bufferScale, camEff, w, h);
             }
           }
@@ -1127,7 +1132,15 @@
 
       if (window.CanvasOverlay) {
         if (window.isTimelinePlaying) {
-          window.CanvasOverlay.redraw();
+          const isMob = (typeof window !== 'undefined' && (window.innerWidth <= 768 || (typeof navigator !== 'undefined' && navigator.deviceMemory && navigator.deviceMemory <= 4)));
+          if (isMob) {
+            window._mobOverlayTick = ((window._mobOverlayTick || 0) + 1);
+            if (window._mobOverlayTick % 3 === 0) {
+              window.CanvasOverlay.redraw();
+            }
+          } else {
+            window.CanvasOverlay.redraw();
+          }
         } else {
           window.CanvasOverlay.scheduleRedraw();
         }
@@ -2322,26 +2335,31 @@
               layer._currentSec = currentSec;
               animLayer._dofBlur = layerDofBlur;
               layer._dofBlur = layerDofBlur;
+              animLayer._rawLayer = layer;
               if (Array.isArray(effProps.effects)) {
-                animLayer.effects = effProps.effects.map(fx => Object.assign({}, fx));
+                animLayer.effects = effProps.effects;
               } else if (Array.isArray(layer.effects)) {
-                animLayer.effects = layer.effects.map(fx => Object.assign({}, fx));
+                animLayer.effects = layer.effects;
               }
 
               // 1. Compute wireframe bounds on unpadded animLayer so wireframe stays tight on text/vector metrics (like AE)
-              layer._canvasBounds = engine.getBounds(animLayer, bufferScale, camEff, w, h);
+              // During playback or timeline scrubbing, only compute bounds for selected layers (or if never computed)
+              const isLayerSelected = (window.selectedLayerId === layer.id) || (window.selectedLayerIds && window.selectedLayerIds.has(layer.id));
+              if (isLayerSelected || (!window.isTimelinePlaying && !isScrubbing) || !layer._canvasBounds) {
+                layer._canvasBounds = engine.getBounds(animLayer, bufferScale, camEff, w, h);
+              }
 
               // 2. Expand render quad for padded canvas so texture renders 1:1 without squish or stretch
-              let renderAnimLayer = Object.assign({}, animLayer, { _rawLayer: layer });
+              let renderAnimLayer = animLayer;
               if (el && el._isPlaceholder) {
-                renderAnimLayer.effects = [];
+                renderAnimLayer = Object.assign({}, animLayer, { effects: [] });
               }
               if (isText && layer._textPadY > 0 && el && el.width && el.height) {
                 const natW = layer._textNaturalW || (el.width - 2 * layer._textPadX);
                 const natH = layer._textNaturalH || (el.height - 2 * layer._textPadY);
                 const padRatioW = el.width / Math.max(1, natW);
                 const padRatioH = el.height / Math.max(1, natH);
-                renderAnimLayer = Object.assign(renderAnimLayer, {
+                renderAnimLayer = Object.assign({}, renderAnimLayer, {
                   scaleW: animLayer.scaleW * padRatioW,
                   scaleH: animLayer.scaleH * padRatioH
                 });
@@ -2353,7 +2371,7 @@
                 const natH = vBounds ? vBounds.height : (Number(layer.shapeProps && layer.shapeProps.sizeY) || el.height);
                 const padRatioW = el.width / Math.max(1, natW);
                 const padRatioH = el.height / Math.max(1, natH);
-                renderAnimLayer = Object.assign(renderAnimLayer, {
+                renderAnimLayer = Object.assign({}, renderAnimLayer, {
                   scaleW: animLayer.scaleW * padRatioW,
                   scaleH: animLayer.scaleH * padRatioH,
                   _isVectorRenderPass: true
@@ -2744,7 +2762,13 @@
           return false;
         });
 
-        if (!hasUnreadyVideoInComposition && !isExport && !window.isExporting && !isIdleCache && !isTransformDragging &&
+        const isLowEndMobile = (typeof window !== 'undefined' && (
+          window.innerWidth <= 768 ||
+          (typeof navigator !== 'undefined' && ((navigator.deviceMemory && navigator.deviceMemory <= 4) || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '')))
+        ));
+        const shouldBakeLiveFrame = !isScrubbing && (!isLowEndMobile || !window.isTimelinePlaying);
+
+        if (shouldBakeLiveFrame && !hasUnreadyVideoInComposition && !isExport && !window.isExporting && !isIdleCache && !isTransformDragging &&
             triggerSource !== 'lookahead-cache' &&
             window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
           if (adaptiveScale >= 0.96 || isDraftModeActive) {

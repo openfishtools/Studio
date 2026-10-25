@@ -1379,7 +1379,8 @@
       const isVector = (shapeType === 'vector');
       let sProps = layer.shapeProps || {};
 
-      if (isVector && layer.keyframes && Array.isArray(layer.keyframes.vectorPoints) && layer.keyframes.vectorPoints.length > 0 && !(window._vectorEditorState && window._vectorEditorState.isDraggingPad)) {
+      const hasVecKf = isVector && layer.keyframes && Array.isArray(layer.keyframes.vectorPoints) && layer.keyframes.vectorPoints.length > 0;
+      if (hasVecKf && !(window._vectorEditorState && window._vectorEditorState.isDraggingPad)) {
         const pps = window.currentPixelsPerSecond || 80;
         const curSec = (typeof layer._currentSec === 'number') ? layer._currentSec : (Math.abs(window.timelinePanX || 0) / pps);
         const eff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(layer, curSec) : null;
@@ -1388,7 +1389,11 @@
         }
       }
 
-      const sPropsKey = JSON.stringify(sProps);
+      if (layer._shapeDirty || hasVecKf || !layer._cachedSPropsKey || layer._cachedSPropsRef !== sProps) {
+        layer._cachedSPropsKey = JSON.stringify(sProps);
+        layer._cachedSPropsRef = sProps;
+      }
+      const sPropsKey = layer._cachedSPropsKey;
       const fillKey = (typeof getFillRenderKey === 'function') ? getFillRenderKey(layer) : `${layer.fillType || 'color'}_${layer.fillColor || ''}`;
       const strokeKey = `${sProps.strokeWidth !== undefined ? sProps.strokeWidth : (layer.strokeWidth || 0)}_${sProps.strokeColor || layer.strokeColor || ''}_${sProps.strokeCap || layer.strokeCap || 'round'}`;
       const shapeKey = `${shapeType}_${sPropsKey}_${strokeKey}_${fillKey}_${targetW}_${targetH}`;

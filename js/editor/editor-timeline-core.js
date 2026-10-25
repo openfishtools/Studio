@@ -810,7 +810,8 @@
           }
         }
 
-        const syncDrawers = !isActivelyPlaying || ((_playTickCount || 0) % 15 === 0);
+        const isScrubOrPan = !!(window.isTimelineScrubbing || window.isTimelinePanning);
+        const syncDrawers = !isActivelyPlaying && (!isScrubOrPan || ((_playTickCount || 0) % 10 === 0));
         if (syncDrawers) {
           if (typeof updateTransformKeyframeBtnState === 'function') {
             updateTransformKeyframeBtnState();

@@ -1316,7 +1316,7 @@
       const cacheKey = layer.id + ':' + currentSec + ':' + (skipParenting ? '1' : '0');
       const cached = _effectivePropsCache.get(cacheKey);
       if (cached) {
-        return Object.assign({}, cached);
+        return cached;
       }
 
       if (!visited) visited = new Set();
@@ -1360,7 +1360,9 @@
       };
 
       if (Array.isArray(layer.effects)) {
-        baseProps.effects = layer.effects.map(fx => Object.assign({}, fx));
+        const hasFxAnim = (layer.keyframes && Object.keys(layer.keyframes).some(k => k.startsWith('fx:') || k === 'effects')) ||
+          (layer.expressions && Object.keys(layer.expressions).some(k => k.startsWith('fx:')));
+        baseProps.effects = hasFxAnim ? layer.effects.map(fx => Object.assign({}, fx)) : layer.effects;
       }
 
       if (layer.keyframes) {

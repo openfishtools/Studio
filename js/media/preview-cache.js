@@ -33,22 +33,30 @@
       this._lastKnownLayerSnapshots = new Map();
       // Adaptive memory buffer: scale cache capacity to cover up to 1 minute (60s) based on project fps
       // Prevents premature eviction while adjusting for device memory tiers
-      const isMobile = (typeof window !== 'undefined' && (window.innerWidth <= 600 || ('ontouchstart' in window && window.innerWidth <= 900)));
-      const devMem = (typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : 4;
+      const isMobile = (typeof window !== 'undefined' && (
+        window.innerWidth <= 768 ||
+        ('ontouchstart' in window && window.innerWidth <= 1024) ||
+        (typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || ''))
+      ));
+      const devMem = (typeof navigator !== 'undefined' && navigator.deviceMemory) ? navigator.deviceMemory : (isMobile ? 4 : 8);
       this._devMem = devMem;
       this._isMobile = isMobile;
+      this._lastSyncMs = 0;
     }
 
     get maxFrames() {
       const fps = this.fps || 60;
-      // 1 minute (60s) duration cap in frames:
-      const oneMinuteFrames = Math.round(60 * fps);
       const devMem = this._devMem || 4;
-      // Low-end devices (<=2GB): minimum 30s cache (e.g. 1800 frames at 60fps, 900 at 30fps)
-      // Mid-tier & high-end devices: full 1 minute cache (60s * fps)
+      // Low-end mobile devices (e.g. Redmi 9 with 3GB/4GB RAM):
+      // Cap RAM preview bitmaps to 120-240 frames (~40-80MB VRAM) to prevent Android LMK & GPU texture eviction
       if (devMem <= 2) {
-        return Math.max(900, Math.round(30 * fps));
+        return Math.min(120, Math.max(60, Math.round(4 * fps)));
       }
+      if (this._isMobile || devMem <= 4) {
+        return Math.min(240, Math.max(90, Math.round(8 * fps)));
+      }
+      // Desktop / high-RAM devices: up to 1 minute (60s)
+      const oneMinuteFrames = Math.round(60 * fps);
       return Math.max(1800, oneMinuteFrames);
     }
 
@@ -161,9 +169,6 @@
     }
 
     hasFrame(frameIndex, expectedWidth = null, expectedHeight = null, compId = null) {
-      if (typeof window === 'undefined' || !window.isTimelinePlaying) {
-        this.syncStateWithProject(null, compId);
-      }
       const pool = this.getPool(compId || this.activeCompId);
       const entry = pool.get(frameIndex);
       if (!entry) return false;
@@ -182,9 +187,6 @@
     }
 
     getFrame(frameIndex, expectedWidth = null, expectedHeight = null, compId = null) {
-      if (typeof window === 'undefined' || !window.isTimelinePlaying) {
-        this.syncStateWithProject(null, compId);
-      }
       const pool = this.getPool(compId || this.activeCompId);
       const entry = pool.get(frameIndex);
       if (!entry) return null;
@@ -295,17 +297,15 @@
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (!sourceCanvas || sourceCanvas.width === 0 || sourceCanvas.height === 0) return;
       const targetComp = compId || this.activeCompId;
-      if (typeof window === 'undefined' || !window.isTimelinePlaying) {
-        this.syncStateWithProject(null, targetComp);
-      }
       const targetPool = this.getPool(targetComp);
       if (this.hasFrame(frameIndex, sourceCanvas.width, sourceCanvas.height, targetComp)) return;
       if (!this._pendingFrames) this._pendingFrames = new Set();
       if (!this._inFlightFrames) this._inFlightFrames = new Set();
       if (!this._frameGen) this._frameGen = new Map();
       const inFlightKey = `${targetComp}:${frameIndex}`;
-      // Guard against excessive GPU memory pressure while ensuring zero dropped frames during 60fps RAM preview
-      if (this._inFlightFrames.size >= 24 && !this._inFlightFrames.has(inFlightKey)) return;
+      // Guard against excessive GPU memory pressure on mobile (e.g. Mali-G52 on Redmi 9)
+      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 2 : 16;
+      if (this._inFlightFrames.size >= maxInFlight && !this._inFlightFrames.has(inFlightKey)) return;
       const gen = (this._frameGen.get(inFlightKey) || 0) + 1;
       this._frameGen.set(inFlightKey, gen);
       this._pendingFrames.add(inFlightKey);
@@ -476,6 +476,34 @@
       this.invalidateRange(minStart, maxEnd, this.fps, compId);
     }
 
+    _fastObjectSig(obj) {
+      if (!obj || typeof obj !== 'object') return String(obj ?? '');
+      if (Array.isArray(obj)) {
+        let s = '[' + obj.length + ':';
+        for (let i = 0; i < obj.length; i++) {
+          const item = obj[i];
+          if (item && typeof item === 'object') {
+            s += this._fastObjectSig(item) + ',';
+          } else {
+            s += String(item ?? '') + ',';
+          }
+        }
+        return s + ']';
+      }
+      let s = '{';
+      for (const k in obj) {
+        if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+        if (k.charCodeAt(0) === 95) continue;
+        const v = obj[k];
+        if (v && typeof v === 'object') {
+          s += k + ':' + this._fastObjectSig(v) + ';';
+        } else {
+          s += k + ':' + String(v ?? '') + ';';
+        }
+      }
+      return s + '}';
+    }
+
     /**
      * Fast visual state signature for a layer to detect new layers, removed layers,
      * new effects, keyframe edits, expression changes, parenting, or transform changes.
@@ -483,38 +511,17 @@
     getLayerSignature(layer, idx = 0) {
       if (!layer) return '';
       const { startSec, endSec } = this.getLayerBounds(layer);
-      let fxSig = '';
-      if (Array.isArray(layer.effects) && layer.effects.length > 0) {
-        try { fxSig = JSON.stringify(layer.effects); } catch (_) { fxSig = String(layer.effects.length); }
-      }
-      let kfSig = '';
-      if (layer.keyframes && typeof layer.keyframes === 'object') {
-        try { kfSig = JSON.stringify(layer.keyframes); } catch (_) { kfSig = Object.keys(layer.keyframes).join(','); }
-      }
-      let exprSig = '';
-      if (layer.expressions && typeof layer.expressions === 'object') {
-        try { exprSig = JSON.stringify(layer.expressions); } catch (_) { exprSig = Object.keys(layer.expressions).join(','); }
-      }
-      let trSig = '';
-      if (layer.timeRemap !== undefined) {
-        try { trSig = JSON.stringify(layer.timeRemap); } catch (_) {}
-      }
+      const fxSig = (Array.isArray(layer.effects) && layer.effects.length > 0) ? this._fastObjectSig(layer.effects) : '';
+      const kfSig = (layer.keyframes && typeof layer.keyframes === 'object') ? this._fastObjectSig(layer.keyframes) : '';
+      const exprSig = (layer.expressions && typeof layer.expressions === 'object') ? this._fastObjectSig(layer.expressions) : '';
+      const trSig = (layer.timeRemap !== undefined) ? this._fastObjectSig(layer.timeRemap) : '';
       let subSig = '';
       if (Array.isArray(layer.subLayers) && layer.subLayers.length > 0) {
         subSig = `${layer.subLayers.length}:${layer.subLayers.map(s => s && s.id).join(',')}`;
       }
-      let shapeSig = '';
-      if (layer.shapeProps && typeof layer.shapeProps === 'object') {
-        try { shapeSig = JSON.stringify(layer.shapeProps); } catch (_) {}
-      }
-      let textPropsSig = '';
-      if (layer.textProps && typeof layer.textProps === 'object') {
-        try { textPropsSig = JSON.stringify(layer.textProps); } catch (_) {}
-      }
-      let maskSig = '';
-      if (layer.masks || layer.maskProps) {
-        try { maskSig = JSON.stringify({ masks: layer.masks, maskProps: layer.maskProps }); } catch (_) {}
-      }
+      const shapeSig = (layer.shapeProps && typeof layer.shapeProps === 'object') ? this._fastObjectSig(layer.shapeProps) : '';
+      const textPropsSig = (layer.textProps && typeof layer.textProps === 'object') ? this._fastObjectSig(layer.textProps) : '';
+      const maskSig = (layer.masks || layer.maskProps) ? (this._fastObjectSig(layer.masks) + '|' + this._fastObjectSig(layer.maskProps)) : '';
 
       return [
         idx,
@@ -602,7 +609,7 @@
      * (new adjustment layer, new Null layer, new effect, keyframes, expressions, etc.).
      * Returns true if any range was invalidated.
      */
-    invalidateSmartDiff(beforeSnapshot, afterLayers = null, compId = null) {
+    invalidateSmartDiff(beforeSnapshot, afterLayers = null, compId = null, precomputedSnapshot = null) {
       const list = Array.isArray(afterLayers)
         ? afterLayers
         : ((typeof window !== 'undefined' && window.currentProjectState && Array.isArray(window.currentProjectState.layers))
@@ -622,8 +629,9 @@
         if (!l) continue;
         const key = l.id || `__idx_${i}`;
         seenKeys.add(key);
-        const nowBounds = this.getLayerBounds(l);
-        const nowSig = this.getLayerSignature(l, i);
+        const currentEntry = (precomputedSnapshot instanceof Map) ? precomputedSnapshot.get(key) : null;
+        const nowBounds = currentEntry ? { startSec: currentEntry.startSec, endSec: currentEntry.endSec } : this.getLayerBounds(l);
+        const nowSig = currentEntry ? currentEntry.sig : this.getLayerSignature(l, i);
         const prev = beforeSnapshot.get(key);
         if (!prev) {
           // Newly added layer (e.g., Adjustment layer, Null layer, Solid, Shape, Precomp)
@@ -784,7 +792,7 @@
         return compChanged;
       }
 
-      const diffInvalidated = this.invalidateSmartDiff(prevSnapshot, layers, targetComp);
+      const diffInvalidated = this.invalidateSmartDiff(prevSnapshot, layers, targetComp, currentSnapshot);
       if (compChanged || diffInvalidated) {
         if (this._unreadyFrames) this._unreadyFrames.clear();
       }

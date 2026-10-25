@@ -73,23 +73,23 @@
     if (devMem <= 2) {
       return {
         isMobile: true,
-        maxRamFramesPerSource: 900,
-        maxTotalRamFrames: 1800,
-        maxTargetDim: 640,
-        maxDecodeQueue: 6,
-        maxPendingBitmaps: 4,
+        maxRamFramesPerSource: 90,
+        maxTotalRamFrames: 150,
+        maxTargetDim: 540,
+        maxDecodeQueue: 4,
+        maxPendingBitmaps: 3,
         dbBatchSize: 4
       };
     }
     if (mobile || devMem <= 4) {
       return {
         isMobile: mobile,
-        maxRamFramesPerSource: 1800,
-        maxTotalRamFrames: 3600,
-        maxTargetDim: 720,
-        maxDecodeQueue: 10,
-        maxPendingBitmaps: 8,
-        dbBatchSize: 6
+        maxRamFramesPerSource: 150,
+        maxTotalRamFrames: 240,
+        maxTargetDim: 540,
+        maxDecodeQueue: 6,
+        maxPendingBitmaps: 4,
+        dbBatchSize: 5
       };
     }
     return {
@@ -101,6 +101,9 @@
       maxPendingBitmaps: 12,
       dbBatchSize: 10
     };
+  }
+  if (typeof window !== 'undefined') {
+    window._getFishDeviceRamTier = getDeviceRamTier;
   }
 
   function retainBitmap(bmp, sourceKey) {

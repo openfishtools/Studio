@@ -378,7 +378,11 @@
      */
     static getNaturalSize(layer) {
       if (!layer) return { width: 320, height: 100 };
-      const p = Object.assign({}, DEFAULT_TEXT_PROPS, layer.textProps || {});
+      const rawTp = layer.textProps || {};
+      if (!layer._textDirty && layer._cachedNaturalSize && layer._cachedNatTpRef === rawTp && layer._cachedNatText === rawTp.text && layer._cachedNatFontSize === rawTp.fontSize) {
+        return layer._cachedNaturalSize;
+      }
+      const p = Object.assign({}, DEFAULT_TEXT_PROPS, rawTp);
       const font = (p.fontStyle || 'normal') + ' ' + (p.fontWeight || 'bold') + ' ' + (p.fontSize || 64) + 'px ' + (p.fontFamily || 'Cal Sans');
       
       if (!this._measureCanvas) {
@@ -395,7 +399,7 @@
       const w = Math.max(40, Math.ceil(measure.width + padX + shadowPad * 2));
       const h = Math.max(30, Math.ceil(measure.height + padY + shadowPad * 2));
 
-      return {
+      const res = {
         width: w,
         height: h,
         textWidth: measure.width,
@@ -403,6 +407,11 @@
         lines: measure.lines,
         lineHeight: measure.lineHeight
       };
+      layer._cachedNaturalSize = res;
+      layer._cachedNatTpRef = rawTp;
+      layer._cachedNatText = rawTp.text;
+      layer._cachedNatFontSize = rawTp.fontSize;
+      return res;
     }
 
     /**
@@ -423,7 +432,14 @@
       const ctx = canvas.getContext('2d');
       if (!ctx) return canvas;
 
-      const p = Object.assign({}, DEFAULT_TEXT_PROPS, layer.textProps || {});
+      const rawTp = layer.textProps || {};
+      if (layer._textDirty || !layer._cachedTextProps || layer._cachedTextPropsRef !== rawTp || layer._cachedTextContent !== layer.text) {
+        layer._cachedTextProps = Object.assign({}, DEFAULT_TEXT_PROPS, rawTp);
+        layer._cachedTextPKey = JSON.stringify(layer._cachedTextProps);
+        layer._cachedTextPropsRef = rawTp;
+        layer._cachedTextContent = layer.text;
+      }
+      const p = layer._cachedTextProps;
 
       const MAX_BUFFER_DIM = 4096;
       const baseFontSize = Number(p.fontSize) || 64;
@@ -457,7 +473,7 @@
                     ? 'steady'
                     : Math.round(localSec * quant))));
 
-      const pKey = JSON.stringify(p);
+      const pKey = layer._cachedTextPKey;
       const _mbE = (typeof window !== 'undefined') ? window.FishMotionBlurEngine : null;
       let mbSig = '0';
       if (_mbE && layer && typeof _mbE.isLayerActive === 'function' && _mbE.isLayerActive(layer)) {
