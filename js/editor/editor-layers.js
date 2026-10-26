@@ -4,11 +4,79 @@
  * text typography controls, vector shape canvas rendering, layer parenting/linking, and 3D Camera orbit/pan/dolly controls.
  */
 (function() {
+    function getLayerInsertionIndex() {
+      if (!currentProjectState || !Array.isArray(currentProjectState.layers) || currentProjectState.layers.length === 0) {
+        return 0;
+      }
+      const layers = currentProjectState.layers;
+      const selectedIds = new Set();
+      if (window.selectedLayerId) selectedIds.add(String(window.selectedLayerId));
+      if (window.selectedLayerIds) {
+        if (typeof window.selectedLayerIds.forEach === 'function') {
+          window.selectedLayerIds.forEach(id => { if (id) selectedIds.add(String(id)); });
+        } else if (Array.isArray(window.selectedLayerIds)) {
+          window.selectedLayerIds.forEach(id => { if (id) selectedIds.add(String(id)); });
+        }
+      }
+      if (selectedIds.size === 0) {
+        const domSelected = document.querySelectorAll('.timeline-clip.is-selected, .timeline-layer.is-selected, [data-layer-id].is-selected');
+        domSelected.forEach(el => {
+          const lid = el.dataset.layerId || el.getAttribute('data-id');
+          if (lid) selectedIds.add(String(lid));
+        });
+      }
+      if (selectedIds.size === 0) {
+        return 0;
+      }
+      for (let i = 0; i < layers.length; i++) {
+        if (layers[i] && selectedIds.has(String(layers[i].id))) {
+          return i;
+        }
+      }
+      return 0;
+    }
+
+    function insertLayerIntoCurrentProject(newLayer) {
+      currentProjectState.layers = currentProjectState.layers || [];
+      const insertIdx = getLayerInsertionIndex();
+      if (insertIdx >= 0 && insertIdx <= currentProjectState.layers.length) {
+        currentProjectState.layers.splice(insertIdx, 0, newLayer);
+      } else {
+        currentProjectState.layers.unshift(newLayer);
+      }
+      return insertIdx;
+    }
+    window.getLayerInsertionIndex = getLayerInsertionIndex;
+    window.insertLayerIntoCurrentProject = insertLayerIntoCurrentProject;
+
+    function getSelectedLayerTiming() {
+      const layers = (currentProjectState && currentProjectState.layers) || [];
+      const insertIdx = getLayerInsertionIndex();
+      const selId = window.selectedLayerId || (window.selectedLayerIds && window.selectedLayerIds.size === 1 ? Array.from(window.selectedLayerIds)[0] : null);
+      let selLayer = layers.find(l => l && String(l.id) === String(selId));
+      if (!selLayer && insertIdx >= 0 && insertIdx < layers.length) {
+        selLayer = layers[insertIdx];
+      }
+      if (selLayer) {
+        return {
+          durationSec: selLayer.durationSec !== undefined ? selLayer.durationSec : null,
+          startSec: selLayer.startSec !== undefined ? selLayer.startSec : null
+        };
+      }
+      return { durationSec: null, startSec: null };
+    }
+    window.getSelectedLayerTiming = getSelectedLayerTiming;
+
     function addCameraLayer(customDur = null, customStart = null) {
       currentProjectState.layers = currentProjectState.layers || [];
       const pps = window.currentPixelsPerSecond || 80;
-      const currentSec = (customStart !== null && typeof customStart === 'number') ? customStart : (Math.abs(window.timelinePanX || 0) / pps);
-      const defaultDur = (customDur !== null && typeof customDur === 'number') ? customDur : (currentProjectState.defaultDuration || 5);
+      const timing = (customStart === null && customDur === null) ? getSelectedLayerTiming() : {};
+      const currentSec = (customStart !== null && typeof customStart === 'number')
+        ? customStart
+        : (timing.startSec !== null && timing.startSec !== undefined ? timing.startSec : (Math.abs(window.timelinePanX || 0) / pps));
+      const defaultDur = (customDur !== null && typeof customDur === 'number')
+        ? customDur
+        : (timing.durationSec !== null && timing.durationSec !== undefined ? timing.durationSec : (currentProjectState.defaultDuration || 5));
       const widthPx = Math.max(80, Math.round(defaultDur * pps));
       const startPx = Math.round(currentSec * pps);
 
@@ -48,7 +116,7 @@
         cameraLensPreset: 'standard'
       };
 
-      currentProjectState.layers.unshift(newLayer);
+      insertLayerIntoCurrentProject(newLayer);
       if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(newLayer);
       saveCurrentProjectLayers();
       renderTimelineLayers();
@@ -66,8 +134,13 @@
     function addOverlapCameraLayer(customDur = null, customStart = null) {
       currentProjectState.layers = currentProjectState.layers || [];
       const pps = window.currentPixelsPerSecond || 80;
-      const currentSec = (customStart !== null && typeof customStart === 'number') ? customStart : (Math.abs(window.timelinePanX || 0) / pps);
-      const defaultDur = (customDur !== null && typeof customDur === 'number') ? customDur : (currentProjectState.defaultDuration || 5);
+      const timing = (customStart === null && customDur === null) ? getSelectedLayerTiming() : {};
+      const currentSec = (customStart !== null && typeof customStart === 'number')
+        ? customStart
+        : (timing.startSec !== null && timing.startSec !== undefined ? timing.startSec : (Math.abs(window.timelinePanX || 0) / pps));
+      const defaultDur = (customDur !== null && typeof customDur === 'number')
+        ? customDur
+        : (timing.durationSec !== null && timing.durationSec !== undefined ? timing.durationSec : (currentProjectState.defaultDuration || 5));
       const widthPx = Math.max(80, Math.round(defaultDur * pps));
       const startPx = Math.round(currentSec * pps);
 
@@ -109,7 +182,7 @@
         overlapChannels: []
       };
 
-      currentProjectState.layers.unshift(newLayer);
+      insertLayerIntoCurrentProject(newLayer);
       if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(newLayer);
       saveCurrentProjectLayers();
       renderTimelineLayers();
@@ -131,16 +204,21 @@
       currentProjectState.layers = currentProjectState.layers || [];
       const pps = window.currentPixelsPerSecond || 80;
       
+      const timing = getSelectedLayerTiming();
       let currentSec = Math.abs(window.timelinePanX || 0) / pps;
       if (options && typeof options.startSec === 'number' && isFinite(options.startSec)) {
         currentSec = Math.max(0, options.startSec);
       } else if (options && typeof options.targetSec === 'number' && isFinite(options.targetSec)) {
         currentSec = Math.max(0, options.targetSec);
+      } else if (timing.startSec !== null && timing.startSec !== undefined) {
+        currentSec = Math.max(0, timing.startSec);
       }
       
       let defaultDur = currentProjectState.defaultDuration || 5;
       if (options && typeof options.durationSec === 'number' && isFinite(options.durationSec)) {
         defaultDur = Math.max(0.1, options.durationSec);
+      } else if (timing.durationSec !== null && timing.durationSec !== undefined) {
+        defaultDur = Math.max(0.1, timing.durationSec);
       }
 
       const widthPx = Math.max(80, Math.round(defaultDur * pps));
@@ -173,16 +251,7 @@
         opacity: 1.0
       };
 
-      if (window.selectedLayerId) {
-        const selIdx = currentProjectState.layers.findIndex(l => l.id === window.selectedLayerId);
-        if (selIdx >= 0) {
-          currentProjectState.layers.splice(selIdx, 0, newLayer);
-        } else {
-          currentProjectState.layers.unshift(newLayer);
-        }
-      } else {
-        currentProjectState.layers.unshift(newLayer);
-      }
+      insertLayerIntoCurrentProject(newLayer);
 
       if (autoLink && (window.selectedLayerId || (window.selectedLayerIds && window.selectedLayerIds.size > 0))) {
         const idSet = new Set();
@@ -221,9 +290,20 @@
     function addOverlapNullLayer(autoLink = false, options = {}) {
       currentProjectState.layers = currentProjectState.layers || [];
       const pps = window.currentPixelsPerSecond || 80;
+      const timing = getSelectedLayerTiming();
       const isTargetSec = options && typeof options.targetSec === 'number' && isFinite(options.targetSec);
-      const currentSec = isTargetSec ? Math.max(0, options.targetSec) : (Math.abs(window.timelinePanX || 0) / pps);
-      const defaultDur = currentProjectState.defaultDuration || 5;
+      let currentSec = isTargetSec ? Math.max(0, options.targetSec) : (Math.abs(window.timelinePanX || 0) / pps);
+      if (options && typeof options.startSec === 'number' && isFinite(options.startSec)) {
+        currentSec = Math.max(0, options.startSec);
+      } else if (!isTargetSec && timing.startSec !== null && timing.startSec !== undefined) {
+        currentSec = Math.max(0, timing.startSec);
+      }
+      let defaultDur = currentProjectState.defaultDuration || 5;
+      if (options && typeof options.durationSec === 'number' && isFinite(options.durationSec)) {
+        defaultDur = Math.max(0.1, options.durationSec);
+      } else if (timing.durationSec !== null && timing.durationSec !== undefined) {
+        defaultDur = Math.max(0.1, timing.durationSec);
+      }
       const widthPx = Math.max(80, Math.round(defaultDur * pps));
       const startPx = Math.round(currentSec * pps);
 
@@ -255,7 +335,7 @@
         opacity: 1.0
       };
 
-      currentProjectState.layers.unshift(newLayer);
+      insertLayerIntoCurrentProject(newLayer);
 
       if (autoLink && (window.selectedLayerId || (window.selectedLayerIds && window.selectedLayerIds.size > 0))) {
         const idSet = new Set();
@@ -294,8 +374,13 @@
     function addAdjustmentLayer(customDur = null, customStart = null) {
       currentProjectState.layers = currentProjectState.layers || [];
       const pps = window.currentPixelsPerSecond || 80;
-      const currentSec = (customStart !== null && typeof customStart === 'number') ? customStart : (Math.abs(window.timelinePanX || 0) / pps);
-      const defaultDur = (customDur !== null && typeof customDur === 'number') ? customDur : (currentProjectState.defaultDuration || 5);
+      const timing = (customStart === null && customDur === null) ? getSelectedLayerTiming() : {};
+      const currentSec = (customStart !== null && typeof customStart === 'number')
+        ? customStart
+        : (timing.startSec !== null && timing.startSec !== undefined ? timing.startSec : (Math.abs(window.timelinePanX || 0) / pps));
+      const defaultDur = (customDur !== null && typeof customDur === 'number')
+        ? customDur
+        : (timing.durationSec !== null && timing.durationSec !== undefined ? timing.durationSec : (currentProjectState.defaultDuration || 5));
       const widthPx = (customDur !== null && typeof customDur === 'number') ? Math.max(1, Math.round(defaultDur * pps)) : Math.max(80, Math.round(defaultDur * pps));
       const startPx = Math.round(currentSec * pps);
 
@@ -328,7 +413,7 @@
         effects: []
       };
 
-      currentProjectState.layers.unshift(newLayer);
+      insertLayerIntoCurrentProject(newLayer);
       if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(newLayer);
       saveCurrentProjectLayers();
       renderTimelineLayers();
@@ -364,8 +449,13 @@
     function addSolidLayer(customDur = null, customStart = null, colorOption = false) {
       currentProjectState.layers = currentProjectState.layers || [];
       const pps = window.currentPixelsPerSecond || 80;
-      const currentSec = (customStart !== null && typeof customStart === 'number') ? customStart : (Math.abs(window.timelinePanX || 0) / pps);
-      const defaultDur = (customDur !== null && typeof customDur === 'number') ? customDur : (currentProjectState.defaultDuration || 5);
+      const timing = (customStart === null && customDur === null) ? getSelectedLayerTiming() : {};
+      const currentSec = (customStart !== null && typeof customStart === 'number')
+        ? customStart
+        : (timing.startSec !== null && timing.startSec !== undefined ? timing.startSec : (Math.abs(window.timelinePanX || 0) / pps));
+      const defaultDur = (customDur !== null && typeof customDur === 'number')
+        ? customDur
+        : (timing.durationSec !== null && timing.durationSec !== undefined ? timing.durationSec : (currentProjectState.defaultDuration || 5));
       const widthPx = Math.max(80, Math.round(defaultDur * pps));
       const startPx = Math.round(currentSec * pps);
 
@@ -421,7 +511,7 @@
         opacity: 1.0
       };
 
-      currentProjectState.layers.unshift(newLayer);
+      insertLayerIntoCurrentProject(newLayer);
       if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(newLayer);
       if (typeof writeEmergencySnapshot === 'function') writeEmergencySnapshot();
       saveCurrentProjectLayers(true);
@@ -443,9 +533,20 @@
     function addTextLayer(presetId = 'default', options = {}) {
       currentProjectState.layers = currentProjectState.layers || [];
       const pps = window.currentPixelsPerSecond || 80;
+      const timing = getSelectedLayerTiming();
       const isTargetSec = options && typeof options.targetSec === 'number' && isFinite(options.targetSec);
-      const currentSec = isTargetSec ? Math.max(0, options.targetSec) : (Math.abs(window.timelinePanX || 0) / pps);
-      const defaultDur = currentProjectState.defaultDuration || 5;
+      let currentSec = isTargetSec ? Math.max(0, options.targetSec) : (Math.abs(window.timelinePanX || 0) / pps);
+      if (options && typeof options.startSec === 'number' && isFinite(options.startSec)) {
+        currentSec = Math.max(0, options.startSec);
+      } else if (!isTargetSec && timing.startSec !== null && timing.startSec !== undefined) {
+        currentSec = Math.max(0, timing.startSec);
+      }
+      let defaultDur = currentProjectState.defaultDuration || 5;
+      if (options && typeof options.durationSec === 'number' && isFinite(options.durationSec)) {
+        defaultDur = Math.max(0.1, options.durationSec);
+      } else if (timing.durationSec !== null && timing.durationSec !== undefined) {
+        defaultDur = Math.max(0.1, timing.durationSec);
+      }
       const widthPx = Math.max(80, Math.round(defaultDur * pps));
       const startPx = Math.round(currentSec * pps);
 
@@ -506,7 +607,7 @@
         effects: []
       };
 
-      currentProjectState.layers.unshift(newLayer);
+      insertLayerIntoCurrentProject(newLayer);
       if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(newLayer);
       saveCurrentProjectLayers();
 
@@ -1220,16 +1321,21 @@
       currentProjectState.layers = currentProjectState.layers || [];
       const pps = window.currentPixelsPerSecond || 80;
       
+      const timing = getSelectedLayerTiming();
       let currentSec = Math.abs(window.timelinePanX || 0) / pps;
       if (options && typeof options.startSec === 'number' && isFinite(options.startSec)) {
         currentSec = Math.max(0, options.startSec);
       } else if (options && typeof options.targetSec === 'number' && isFinite(options.targetSec)) {
         currentSec = Math.max(0, options.targetSec);
+      } else if (timing.startSec !== null && timing.startSec !== undefined) {
+        currentSec = Math.max(0, timing.startSec);
       }
       
       let defaultDur = currentProjectState.defaultDuration || 5;
       if (options && typeof options.durationSec === 'number' && isFinite(options.durationSec)) {
         defaultDur = Math.max(0.1, options.durationSec);
+      } else if (timing.durationSec !== null && timing.durationSec !== undefined) {
+        defaultDur = Math.max(0.1, timing.durationSec);
       }
 
       const widthPx = Math.max(80, Math.round(defaultDur * pps));
@@ -1344,7 +1450,7 @@
         window.syncVectorLayerBounds(newLayer, true);
       }
 
-      currentProjectState.layers.unshift(newLayer);
+      insertLayerIntoCurrentProject(newLayer);
       if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(newLayer);
       if (typeof writeEmergencySnapshot === 'function') writeEmergencySnapshot();
       saveCurrentProjectLayers(true);

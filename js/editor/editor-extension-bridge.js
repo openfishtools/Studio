@@ -1651,35 +1651,40 @@
           // --- TOOLBOX: CREATE ---
           case 'SHA': {
             if (typeof addShapeLayer === 'function') {
-              addShapeLayer('rectangle');
+              const timing = (typeof getSelectedLayerTiming === 'function') ? getSelectedLayerTiming() : {};
+              addShapeLayer('rectangle', { durationSec: timing.durationSec, startSec: timing.startSec });
               showEditorToast('Shape Layer baru dibuat');
             }
             return true;
           }
           case 'SOL': {
             if (typeof addSolidLayer === 'function') {
-              addSolidLayer();
+              const timing = (typeof getSelectedLayerTiming === 'function') ? getSelectedLayerTiming() : {};
+              addSolidLayer(timing.durationSec, timing.startSec, args[0]);
               showEditorToast('Solid Layer baru dibuat');
             }
             return true;
           }
           case 'NUL': {
             if (typeof addNullLayer === 'function') {
-              addNullLayer();
+              const timing = (typeof getSelectedLayerTiming === 'function') ? getSelectedLayerTiming() : {};
+              addNullLayer(args[0] === true, { durationSec: timing.durationSec, startSec: timing.startSec });
               showEditorToast('Null Object baru dibuat');
             }
             return true;
           }
           case 'CAM': {
             if (typeof addCameraLayer === 'function') {
-              addCameraLayer();
+              const timing = (typeof getSelectedLayerTiming === 'function') ? getSelectedLayerTiming() : {};
+              addCameraLayer(timing.durationSec, timing.startSec);
               showEditorToast('Camera Layer baru dibuat');
             }
             return true;
           }
           case 'ADJ': {
             if (typeof addAdjustmentLayer === 'function') {
-              addAdjustmentLayer();
+              const timing = (typeof getSelectedLayerTiming === 'function') ? getSelectedLayerTiming() : {};
+              addAdjustmentLayer(timing.durationSec, timing.startSec);
               showEditorToast('Adjustment Layer baru dibuat');
             }
             return true;

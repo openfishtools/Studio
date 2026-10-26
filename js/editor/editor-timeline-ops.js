@@ -1819,8 +1819,13 @@ function initTimelineOperations() {
           newPastedIds.push(newId);
         });
 
-        // Insert in exact original top-to-bottom stack order
-        currentProjectState.layers.unshift(...newPastedLayers);
+        // Insert in exact original top-to-bottom stack order directly above selected layer
+        const pasteInsertIdx = (typeof window.getLayerInsertionIndex === 'function') ? window.getLayerInsertionIndex() : 0;
+        if (pasteInsertIdx >= 0 && pasteInsertIdx <= currentProjectState.layers.length) {
+          currentProjectState.layers.splice(pasteInsertIdx, 0, ...newPastedLayers);
+        } else {
+          currentProjectState.layers.unshift(...newPastedLayers);
+        }
 
         saveCurrentProjectLayers();
         renderTimelineLayers();
@@ -6120,7 +6125,11 @@ function initTimelineOperations() {
             collapseTransformations: item.collapseTransformations !== undefined ? !!item.collapseTransformations : false,
             layers: Array.isArray(item.layers) ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(item.layers) : (Array.isArray(item.layers) ? [] : {})) : []
           };
-          currentProjectState.layers.unshift(newPrecompLayer);
+          if (typeof window.insertLayerIntoCurrentProject === 'function') {
+            window.insertLayerIntoCurrentProject(newPrecompLayer);
+          } else {
+            currentProjectState.layers.unshift(newPrecompLayer);
+          }
           selectTimelineLayer(newPrecompLayer.id);
           renderTimelineLayers();
           updateEditorHeaderMode();
@@ -6200,7 +6209,11 @@ function initTimelineOperations() {
           fitLayerToComposition(newLayer, natW, natH);
         }
 
-        currentProjectState.layers.unshift(newLayer);
+        if (typeof window.insertLayerIntoCurrentProject === 'function') {
+          window.insertLayerIntoCurrentProject(newLayer);
+        } else {
+          currentProjectState.layers.unshift(newLayer);
+        }
         invalidatePreviewCacheForLayer(newLayer);
         saveCurrentProjectLayers();
         renderTimelineLayers();
