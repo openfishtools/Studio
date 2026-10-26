@@ -322,10 +322,6 @@
       const extractor = (typeof window !== 'undefined') ? window.VideoFrameExtractor : null;
 
       if (!isExporting && !precompLayer._dirty && extractor) {
-        if (precompLayer._lightweightFastPath || (typeof extractor._isPrecompLightweightContent === 'function' && extractor._isPrecompLightweightContent(precompLayer))) {
-          precompLayer._lightweightFastPath = true;
-          return { el: null, innerSec, fromSequence: false, hasUnreadyMedia: false };
-        }
         const sourceKey = extractor._getSourceKey(precompLayer);
         const source = extractor.getSourceCache(sourceKey);
         if (source && source.frames && source.frames.size > 0) {
@@ -336,6 +332,10 @@
             precompLayer._renderedExactVideoFrame = true;
             return { el: bmp, innerSec, fromSequence: true, hasUnreadyMedia: false };
           }
+        }
+        if (precompLayer._lightweightFastPath || (typeof extractor._isPrecompLightweightContent === 'function' && extractor._isPrecompLightweightContent(precompLayer))) {
+          precompLayer._lightweightFastPath = true;
+          return { el: null, innerSec, fromSequence: false, hasUnreadyMedia: false };
         }
         if (!isIdleCache && !source?.isExtracting) {
           const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();

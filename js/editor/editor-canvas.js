@@ -152,8 +152,8 @@
         if (!child._precompBufferCanvas || !(child._precompBufferCanvas instanceof HTMLCanvasElement) || typeof child._precompBufferCanvas.getContext !== 'function') {
           child._precompBufferCanvas = document.createElement('canvas');
         }
-        const childW = Math.round(Math.abs(child.mediaWidth || child.scaleW || pw));
-        const childH = Math.round(Math.abs(child.mediaHeight || child.scaleH || ph));
+        const childW = Math.round(Math.abs(child.mediaWidth || pw));
+        const childH = Math.round(Math.abs(child.mediaHeight || ph));
         if (child._precompBufferCanvas.width !== childW || child._precompBufferCanvas.height !== childH) {
           child._precompBufferCanvas.width = childW;
           child._precompBufferCanvas.height = childH;
@@ -669,10 +669,10 @@
       if (precompLayer.id) visitedPrecomps.add(precompLayer.id);
       const pctx = targetCanvas.getContext('2d');
       if (!pctx) return;
-      const pw = targetW || targetCanvas.width || precompLayer.mediaWidth || Math.round(Math.abs(precompLayer.scaleW)) || 1920;
-      const ph = targetH || targetCanvas.height || precompLayer.mediaHeight || Math.round(Math.abs(precompLayer.scaleH)) || 1080;
-      const baseW = Math.round(Math.abs(precompLayer.mediaWidth || precompLayer.scaleW || pw || 1920));
-      const baseH = Math.round(Math.abs(precompLayer.mediaHeight || precompLayer.scaleH || ph || 1080));
+      const pw = targetW || targetCanvas.width || precompLayer.mediaWidth || 1920;
+      const ph = targetH || targetCanvas.height || precompLayer.mediaHeight || 1080;
+      const baseW = Math.round(Math.abs(precompLayer.mediaWidth || pw || 1920));
+      const baseH = Math.round(Math.abs(precompLayer.mediaHeight || ph || 1080));
 
       const fps = (typeof getProjectFps === 'function') ? getProjectFps() : 60;
       const pps = window.currentPixelsPerSecond || 80;
@@ -711,8 +711,8 @@
         const effSpeed = (childEff && childEff.speed !== undefined) ? childEff.speed : (child.speed !== undefined && child.speed > 0 ? child.speed : 1);
 
         if (child.type === 'precomp') {
-          const childBaseW = Math.round(Math.abs(child.mediaWidth || child.scaleW || baseW));
-          const childBaseH = Math.round(Math.abs(child.mediaHeight || child.scaleH || baseH));
+          const childBaseW = Math.round(Math.abs(child.mediaWidth || baseW));
+          const childBaseH = Math.round(Math.abs(child.mediaHeight || baseH));
           const childW = isExport ? childBaseW : Math.max(1, Math.round(childBaseW * (pw / baseW)));
           const childH = isExport ? childBaseH : Math.max(1, Math.round(childBaseH * (ph / baseH)));
           const precompRes = (window.VideoCompEngine && typeof window.VideoCompEngine.resolvePrecompElement === 'function')
@@ -2057,8 +2057,8 @@
             return; // Skip normal single-layer pass for this collapsed precomp
           }
 
-          const basePw = Math.round(Math.abs(layer.mediaWidth || layer.scaleW || baseW));
-          const basePh = Math.round(Math.abs(layer.mediaHeight || layer.scaleH || baseH));
+          const basePw = Math.round(Math.abs(layer.mediaWidth || baseW));
+          const basePh = Math.round(Math.abs(layer.mediaHeight || baseH));
           const pw = isExport ? basePw : Math.max(1, Math.round(basePw * bufferScale));
           const ph = isExport ? basePh : Math.max(1, Math.round(basePh * bufferScale));
           const precompRes = (window.VideoCompEngine && typeof window.VideoCompEngine.resolvePrecompElement === 'function')
@@ -2871,6 +2871,13 @@
         if (canvas.width !== targetW || canvas.height !== targetH) {
           canvas.width = targetW;
           canvas.height = targetH;
+          if (window.PreviewCacheManager && typeof window.PreviewCacheManager.clearAll === 'function') {
+            window.PreviewCacheManager.clearAll('all');
+            window.PreviewCacheManager.updateRulerUI();
+            if (window.PreviewCacheManager.idleCacheEnabled) {
+              window.PreviewCacheManager.scheduleIdleCheck(true);
+            }
+          }
           redrawComposition('fitPreviewCanvasBox');
         }
       }

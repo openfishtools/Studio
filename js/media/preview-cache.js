@@ -46,16 +46,18 @@
 
     get maxFrames() {
       const fps = this.fps || 60;
-      const devMem = this._devMem || 4;
-      // Device-aware RAM frame cap: hold up to 3s on mobile/low-RAM and 6s on desktop at preview resolution
-      // Keeps GPU texture allocations strictly below browser limits (< 500MB) to prevent freeze / Not Responding
-      if (devMem <= 2) {
-        return Math.min(120, Math.max(60, Math.round(2 * fps)));
+      let totalDur = 0;
+      if (typeof window !== 'undefined') {
+        if (typeof window.getProjectTotalDuration === 'function') {
+          totalDur = window.getProjectTotalDuration();
+        } else if (window.currentProjectState && typeof window.currentProjectState.duration === 'number') {
+          totalDur = window.currentProjectState.duration;
+        }
       }
-      if (this._isMobile || devMem <= 4) {
-        return Math.min(180, Math.max(90, Math.round(3 * fps)));
-      }
-      return Math.min(360, Math.max(180, Math.round(6 * fps)));
+      const projectFrames = totalDur > 0 ? Math.ceil(totalDur * fps) : Math.round(60 * fps);
+      // Adapt dynamically to project duration so entire timeline can be cached without premature eviction,
+      // adding buffer headroom so boundary frames are never pruned.
+      return Math.max(projectFrames + 120, Math.round(60 * fps));
     }
 
     get frames() {
@@ -174,10 +176,18 @@
       const entry = pool.get(frameIndex);
       if (!entry) return false;
       if (entry.isAudioOnly) return true;
-      if (expectedWidth && expectedHeight && entry.width && entry.height) {
-        const entryAspect = entry.width / entry.height;
-        const expectedAspect = expectedWidth / expectedHeight;
-        if (Math.abs(entryAspect - expectedAspect) > 0.15) {
+      let expW = expectedWidth;
+      let expH = expectedHeight;
+      if ((!expW || !expH) && typeof document !== 'undefined') {
+        const activeCanvas = document.getElementById('editor-active-canvas');
+        if (activeCanvas && activeCanvas.width > 0 && activeCanvas.height > 0) {
+          expW = activeCanvas.width;
+          expH = activeCanvas.height;
+        }
+      }
+      if (expW && expH && entry.width && entry.height) {
+        if (Math.abs(entry.width - expW) > 2 || Math.abs(entry.height - expH) > 2) {
+          this.deleteFrame(frameIndex, false, compId || this.activeCompId);
           return false;
         }
       }
@@ -191,10 +201,18 @@
       if (entry.isAudioOnly) {
         return entry.bitmap || this._getAudioOnlyCanvas(expectedWidth, expectedHeight);
       }
-      if (expectedWidth && expectedHeight && entry.width && entry.height) {
-        const entryAspect = entry.width / entry.height;
-        const expectedAspect = expectedWidth / expectedHeight;
-        if (Math.abs(entryAspect - expectedAspect) > 0.15) {
+      let expW = expectedWidth;
+      let expH = expectedHeight;
+      if ((!expW || !expH) && typeof document !== 'undefined') {
+        const activeCanvas = document.getElementById('editor-active-canvas');
+        if (activeCanvas && activeCanvas.width > 0 && activeCanvas.height > 0) {
+          expW = activeCanvas.width;
+          expH = activeCanvas.height;
+        }
+      }
+      if (expW && expH && entry.width && entry.height) {
+        if (Math.abs(entry.width - expW) > 2 || Math.abs(entry.height - expH) > 2) {
+          this.deleteFrame(frameIndex, false, compId || this.activeCompId);
           return null;
         }
       }

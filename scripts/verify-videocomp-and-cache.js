@@ -283,6 +283,52 @@ assert.strictEqual(pcm.isTimeReadyToCache(8.0), true, 'isTimeReadyToCache must r
 
 console.log('✓ syncStateWithProject auto-invalidation and buffer reset verified.');
 
+// Test: Dynamic maxFrames based on project duration
+global.getProjectTotalDuration = () => 15.0; // 15 seconds
+assert(pcm.maxFrames >= 15 * 60 + 120, 'maxFrames must adapt dynamically to project total duration');
+
+// Test: hasFrame and getFrame resolution enforcement
+pcm.clearAll('all');
+const mockFrameBmp = { width: 960, height: 540 };
+pcm.getPool('root').set(10, { bitmap: mockFrameBmp, width: 960, height: 540, isDraft: false });
+assert.strictEqual(pcm.hasFrame(10, 960, 540), true, 'hasFrame must return true for matching resolution');
+assert.strictEqual(pcm.getFrame(10, 960, 540), mockFrameBmp, 'getFrame must return bitmap for matching resolution');
+// When resolution mismatches (e.g. preview resized to 1280x720)
+assert.strictEqual(pcm.hasFrame(10, 1280, 720), false, 'hasFrame must reject mismatched resolution');
+assert.strictEqual(pcm.getPool('root').has(10), false, 'hasFrame must auto-prune mismatched resolution frame');
+
+// Test: VideoCompEngine.resolvePrecompElement prioritizes baked source.frames
+const bakedPrecomp = {
+  id: 'precomp_baked_test',
+  type: 'precomp',
+  startSec: 0,
+  durationSec: 5,
+  speed: 1.0,
+  sourceOffsetSec: 0,
+  layers: [{ id: 'child_1', type: 'text', startSec: 0, durationSec: 5 }]
+};
+const mockBakedBmp = { width: 1920, height: 1080 };
+const vfeMockSource = {
+  sourceKey: 'precomp_precomp_baked_test',
+  frames: new Map([[0, mockBakedBmp]]),
+  fps: 60
+};
+const origVfe = global.VideoFrameExtractor;
+try {
+  global.VideoFrameExtractor = {
+    _getSourceKey: (l) => 'precomp_' + l.id,
+    getSourceCache: (k) => (k === vfeMockSource.sourceKey ? vfeMockSource : null),
+    getInterpolatedFrame: () => mockBakedBmp,
+    _isPrecompLightweightContent: () => true
+  };
+  const resBaked = engine.resolvePrecompElement(bakedPrecomp, { currentSec: 0 });
+  assert.strictEqual(resBaked.fromSequence, true, 'resolvePrecompElement must prioritize baked sequence frames over lightweight live check');
+  assert.strictEqual(resBaked.el, mockBakedBmp, 'resolvePrecompElement must return baked bitmap');
+} finally {
+  global.VideoFrameExtractor = origVfe;
+}
+console.log('✓ Dynamic maxFrames, cache resolution matching & baked precomp priority verified.');
+
 // 3. Test applyFitOrStretchToComposition
 // Load editor-canvas.js dependencies
 mockProject.layers = [fullLayer];
