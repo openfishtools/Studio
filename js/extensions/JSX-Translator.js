@@ -989,7 +989,7 @@
       offset: 0
     };
 
-    const ampSlider = createSlider('Amp', 0.5, 0, 5, 0.05, '');
+    const ampSlider = createSlider('Amp', 50, 0, 200, 1, '%');
     const decaySlider = createSlider('Decay', 18, 0.1, 100, 0.5, '');
     const attackSlider = createSlider('Attack', 0, 0, 100, 1, '');
     adj.effects = [expoFx, ampSlider, decaySlider, attackSlider];

@@ -644,7 +644,7 @@
           adjLayer.name = 'Exposure Flash Beat';
           adjLayer.effects = adjLayer.effects || [];
           adjLayer.expressions = adjLayer.expressions || {};
-          addSlider(adjLayer, 'Max Exposure', 1.5);
+          addSlider(adjLayer, 'Max Exposure', 50);
           addSlider(adjLayer, 'Decay', 5.0);
           const expoFx = reg ? reg.createInstance('exposure-gamma', 'Exposure / Gamma') : null;
           if (expoFx) {

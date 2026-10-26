@@ -289,7 +289,8 @@
         },
         onMove: (rawDelta, e) => {
           const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 3.0 : 1.0);
-          const rate = (span > 0 && Number.isFinite(span)) ? (span / tapeW) : 1.0;
+          const rawRate = (span > 0 && Number.isFinite(span)) ? (span / tapeW) : 1.0;
+          const rate = (span > 600) ? Math.min(1.0, Math.max(0.1, (step || 1) * 0.5)) : rawRate;
           // Drag right (rawDelta > 0) decreases value, drag left (rawDelta < 0) increases value
           const nextVal = startVal - rawDelta * rate * speed;
           currentVal = Math.max(min, Math.min(max, nextVal));
@@ -334,7 +335,8 @@
         if (!isDragging) return;
         const speed = (e && e.shiftKey) ? 0.2 : ((e && e.altKey) ? 3.0 : 1.0);
         const delta = e.clientX - startX;
-        const rate = (span > 0 && Number.isFinite(span)) ? (span / tapeW) : 1.0;
+        const rawRate = (span > 0 && Number.isFinite(span)) ? (span / tapeW) : 1.0;
+        const rate = (span > 600) ? Math.min(1.0, Math.max(0.1, (step || 1) * 0.5)) : rawRate;
         const nextVal = startVal - delta * rate * speed;
         currentVal = Math.max(min, Math.min(max, nextVal));
         const quantVal = (decimals > 0)
