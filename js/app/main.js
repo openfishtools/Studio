@@ -2075,6 +2075,42 @@ window.onNativeDeepLinkReceived = function (url) {
   }
 };
 
+window.importNativeOftsFile = async function (fileName, base64Data) {
+  if (!base64Data) return;
+  try {
+    const binary = atob(base64Data);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: 'application/octet-stream' });
+    const file = new File([blob], fileName || 'imported.ofts', { type: 'application/octet-stream' });
+    if (window.FishDatabase && typeof window.FishDatabase.importOFTSPackage === 'function') {
+      const proj = await window.FishDatabase.importOFTSPackage(file);
+      if (proj) {
+        showDashboardToast(`Preset ${(proj && proj.name) || fileName || ''} successfully imported!`, 3000, 'success');
+        if (typeof window.renderSavedProjectsList === 'function') {
+          window.renderSavedProjectsList();
+        }
+        if (proj.id && typeof window.openEditorWithProject === 'function') {
+          window.openEditorWithProject(proj.id);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Native preset import error:', err);
+  }
+};
+
+if (typeof window !== 'undefined' && window.__PENDING_NATIVE_FILE__) {
+  const pending = window.__PENDING_NATIVE_FILE__;
+  window.__PENDING_NATIVE_FILE__ = null;
+  setTimeout(() => {
+    if (typeof window.importNativeOftsFile === 'function') {
+      window.importNativeOftsFile(pending.name, pending.data);
+    }
+  }, 500);
+}
+
+
 async function checkIncomingProjectImportLink() {
   const url = new URL(window.location.href);
   let importId = url.searchParams.get('import') || url.searchParams.get('p') || url.searchParams.get('project');
