@@ -6814,6 +6814,7 @@ function initTimelineOperations() {
         layer.sourceOffsetSec = newSourceOffsetSec;
         layer.isDurationExplicit = true;
         layer._userTrimmed = true;
+        layer.userTrimmed = true;
         layer.sourceLayerId = layer.sourceLayerId || layer.id;
         layer._cachedStartSec = currentSec;
         layer._cachedEndSec = endSec;
@@ -6997,6 +6998,8 @@ function initTimelineOperations() {
           normY: (effPosY - effScaleH / 2) / baseH,
           _userResized: true,
           _userTrimmed: true,
+          userTrimmed: true,
+          isDurationExplicit: true,
           effects: clonedEffects,
           audioEffects: clonedAudioEffects,
           keyframes: rightKeyframes,
@@ -7030,6 +7033,8 @@ function initTimelineOperations() {
           layer.sourceOffsetSec = (layer.sourceOffsetSec || 0) + rightDurSec * Math.abs(layer.speed);
         }
         layer.isDurationExplicit = true;
+        layer._userTrimmed = true;
+        layer.userTrimmed = true;
         layer._cachedStartSec = startSec;
         layer._cachedEndSec = rightStartSec;
 
@@ -7165,6 +7170,7 @@ function initTimelineOperations() {
         }
         layer.isDurationExplicit = true;
         layer._userTrimmed = true;
+        layer.userTrimmed = true;
         layer.sourceLayerId = layer.sourceLayerId || layer.id;
         layer._cachedStartSec = startSec;
         layer._cachedEndSec = startSec + remainingDurSec;

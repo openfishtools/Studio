@@ -1250,9 +1250,14 @@
       }
       // ─────────────────────────────────────────────────────────────────────────
 
-      const aspect = currentProjectState.aspectRatio || '16:9';
-      const res = currentProjectState.resolution || '1080p';
-      let baseDims = window.getProjectDimensions(res, aspect);
+      const aspect = (isExport && currentProjectState._nativeAspect) ? currentProjectState._nativeAspect : (currentProjectState.aspectRatio || '16:9');
+      const res = (isExport && currentProjectState._nativeRes) ? currentProjectState._nativeRes : (currentProjectState.resolution || '1080p');
+      let baseDims;
+      if (isExport && currentProjectState._nativeBaseW && currentProjectState._nativeBaseH) {
+        baseDims = [currentProjectState._nativeBaseW, currentProjectState._nativeBaseH];
+      } else {
+        baseDims = window.getProjectDimensions(res, aspect);
+      }
       if (currentActivePrecomp) {
         const cw = Math.round(Math.abs(currentActivePrecomp.mediaWidth || baseDims[0]));
         const ch = Math.round(Math.abs(currentActivePrecomp.mediaHeight || baseDims[1]));
@@ -1260,7 +1265,9 @@
       }
       const baseW = baseDims[0];
       const baseH = baseDims[1];
-      let bufferScale = w / baseW;
+      let bufferScaleX = w / baseW;
+      let bufferScaleY = h / baseH;
+      let bufferScale = (Math.abs(bufferScaleX - bufferScaleY) < 0.001) ? bufferScaleX : Math.min(bufferScaleX, bufferScaleY);
 
       // Find all layers overlapping currentSec (strictly visible only when playhead is inside layer boundary)
       const layers = currentProjectState.layers || [];
@@ -1355,7 +1362,9 @@
             ctx = dCtx;
             w = rw;
             h = rh;
-            bufferScale = w / baseW;
+            bufferScaleX = w / baseW;
+            bufferScaleY = h / baseH;
+            bufferScale = (Math.abs(bufferScaleX - bufferScaleY) < 0.001) ? bufferScaleX : Math.min(bufferScaleX, bufferScaleY);
             useAdaptiveBuffer = true;
             window._inAdaptiveDraftBuffer = true;
           }
@@ -1570,10 +1579,10 @@
             ? getLayerEffectivePropsAtTime(layer, currentSec)
             : layer;
 
-          const cx = (effProps.posX !== undefined ? effProps.posX : (baseW / 2)) * bufferScale;
-          const cy = (effProps.posY !== undefined ? effProps.posY : (baseH / 2)) * bufferScale;
-          const bw = (effProps.scaleW !== undefined ? effProps.scaleW : baseW) * bufferScale;
-          const bh = (effProps.scaleH !== undefined ? effProps.scaleH : baseH) * bufferScale;
+          const cx = (effProps.posX !== undefined ? effProps.posX : (baseW / 2)) * bufferScaleX;
+          const cy = (effProps.posY !== undefined ? effProps.posY : (baseH / 2)) * bufferScaleY;
+          const bw = (effProps.scaleW !== undefined ? effProps.scaleW : baseW) * bufferScaleX;
+          const bh = (effProps.scaleH !== undefined ? effProps.scaleH : baseH) * bufferScaleY;
           const rotZ = effProps.rotZ !== undefined ? effProps.rotZ : (effProps.rotation || 0);
           const skewX = effProps.skewX || 0;
           const skewY = effProps.skewY || 0;
@@ -1581,8 +1590,8 @@
           const signY = Math.sign(bh) || 1;
           const absW = Math.abs(bw);
           const absH = Math.abs(bh);
-          const ax = (effProps.anchorX || 0) * bufferScale;
-          const ay = (effProps.anchorY || 0) * bufferScale;
+          const ax = (effProps.anchorX || 0) * bufferScaleX;
+          const ay = (effProps.anchorY || 0) * bufferScaleY;
 
           const animLayer = Object.assign({}, layer, effProps);
           animLayer.rotX = 0;
@@ -2165,8 +2174,13 @@
                      (media && media.poster && media.poster.naturalHeight > 0 ? media.poster.naturalHeight : 0) ||
                      null;
 
-          const aspect = currentProjectState.aspectRatio || '16:9';
-          let baseDims = window.getProjectDimensions(res, aspect);
+          const aspect = (isExport && currentProjectState._nativeAspect) ? currentProjectState._nativeAspect : (currentProjectState.aspectRatio || '16:9');
+          let baseDims;
+          if (isExport && currentProjectState._nativeBaseW && currentProjectState._nativeBaseH) {
+            baseDims = [currentProjectState._nativeBaseW, currentProjectState._nativeBaseH];
+          } else {
+            baseDims = window.getProjectDimensions(res, aspect);
+          }
           if (currentActivePrecomp) {
             const cw = Math.round(Math.abs(currentActivePrecomp.mediaWidth || currentActivePrecomp.scaleW || baseDims[0]));
             const ch = Math.round(Math.abs(currentActivePrecomp.mediaHeight || currentActivePrecomp.scaleH || baseDims[1]));
@@ -2174,7 +2188,9 @@
           }
           const baseW = baseDims[0];
           const baseH = baseDims[1];
-          const bufferScale = w / baseW;
+          const bScaleX = w / baseW;
+          const bScaleY = h / baseH;
+          const bufferScale = (Math.abs(bScaleX - bScaleY) < 0.001) ? bScaleX : Math.min(bScaleX, bScaleY);
           compositionBufferScale = bufferScale;
 
           if (mw && mh && layer.type !== 'precomp' && layer.type !== 'shape' && layer.type !== 'text') {
@@ -2283,10 +2299,10 @@
                   opacity: (layer.opacity !== undefined && layer.opacity !== null) ? (Number(layer.opacity) > 1.0 ? Math.max(0, Math.min(1, Number(layer.opacity) / 100)) : Math.max(0, Math.min(1, Number(layer.opacity)))) : 1.0
                 };
 
-            const cx = effProps.posX * bufferScale;
-            const cy = effProps.posY * bufferScale;
-            const bw = effProps.scaleW * bufferScale;
-            const bh = effProps.scaleH * bufferScale;
+            const cx = effProps.posX * (typeof bScaleX === 'number' ? bScaleX : bufferScale);
+            const cy = effProps.posY * (typeof bScaleY === 'number' ? bScaleY : bufferScale);
+            const bw = effProps.scaleW * (typeof bScaleX === 'number' ? bScaleX : bufferScale);
+            const bh = effProps.scaleH * (typeof bScaleY === 'number' ? bScaleY : bufferScale);
             const rotZ = effProps.rotZ !== undefined ? effProps.rotZ : (effProps.rotation || 0);
             const rotX = effProps.rotX || 0;
             const rotY = effProps.rotY || 0;
@@ -2407,8 +2423,8 @@
                 }
                 window.FishEffects.applyToContext(ctx, animLayer2D);
               }
-              const ax = (effProps.anchorX || 0) * bufferScale;
-              const ay = (effProps.anchorY || 0) * bufferScale;
+              const ax = (effProps.anchorX || 0) * (typeof bScaleX === 'number' ? bScaleX : bufferScale);
+              const ay = (effProps.anchorY || 0) * (typeof bScaleY === 'number' ? bScaleY : bufferScale);
               ctx.translate(cx + ax * signX, cy + ay * signY);
               const posZ = (effProps.posZ || 0) * bufferScale;
               const camDist = 1000 * bufferScale;
@@ -2506,7 +2522,7 @@
                 }
 
                 if (window.FishEffects && typeof window.FishEffects.applyPostEffects === 'function') {
-                  window.FishEffects.applyPostEffects(ctx, el, animLayerPost, { x: -absW / 2 - ax, y: -absH / 2 - ay, w: absW, h: absH });
+                  window.FishEffects.applyPostEffects(ctx, el, animLayerPost, { x: -absW / 2 - ax, y: -absH / 2 - ay, w: absW, h: absH, bufferScale: bufferScale, unitScale: bufferScale, baseW: baseW, baseH: baseH });
                 }
               } catch (_) {
                 try { ctx.drawImage(el, -absW / 2 - ax, -absH / 2 - ay, absW, absH); } catch (e) {}
@@ -2720,7 +2736,9 @@
           ctx = outerCtx;
           w = outerW;
           h = outerH;
-          bufferScale = outerW / baseW;
+          bufferScaleX = outerW / baseW;
+          bufferScaleY = outerH / baseH;
+          bufferScale = (Math.abs(bufferScaleX - bufferScaleY) < 0.001) ? bufferScaleX : Math.min(bufferScaleX, bufferScaleY);
 
           ctx.clearRect(0, 0, w, h);
           const prevSmooth = ctx.imageSmoothingEnabled;

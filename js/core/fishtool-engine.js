@@ -343,7 +343,10 @@
         ph = layer._baseH;
       } else if (typeof window !== 'undefined' && window.currentProjectState) {
         const ps = window.currentProjectState;
-        if (ps.baseW && ps.baseH) {
+        if (ps._nativeBaseW && ps._nativeBaseH) {
+          pw = ps._nativeBaseW;
+          ph = ps._nativeBaseH;
+        } else if (ps.baseW && ps.baseH) {
           pw = ps.baseW;
           ph = ps.baseH;
         } else if (ps.width && ps.height) {
@@ -1581,7 +1584,7 @@
           }
 
           if (window.FishEffects && typeof window.FishEffects.applyPostEffects === 'function') {
-            window.FishEffects.applyPostEffects(ctx, el, layer, { x: drawX, y: drawY, w: absW, h: absH });
+            window.FishEffects.applyPostEffects(ctx, el, layer, { x: drawX, y: drawY, w: absW, h: absH, bufferScale: bounds.bufferScale || bufferScale || 1, unitScale: bounds.bufferScale || bufferScale || 1 });
           }
         } catch (fxErr) {
           console.warn('[Engine] Effect render failed, falling back to base image:', fxErr);
@@ -2821,7 +2824,7 @@
         }
 
         if (window.FishEffects && typeof window.FishEffects.applyPostEffects === 'function') {
-          window.FishEffects.applyPostEffects(ctx, this.glCanvas, layer, { x: sx, y: sy, w: sw, h: sh });
+          window.FishEffects.applyPostEffects(ctx, this.glCanvas, layer, { x: sx, y: sy, w: sw, h: sh, bufferScale: (bounds && bounds.bufferScale) || bufferScale || 1, unitScale: (bounds && bounds.bufferScale) || bufferScale || 1 });
         }
         ctx.restore();
       } catch (_) {}

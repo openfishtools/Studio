@@ -323,8 +323,8 @@
                   const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
                   const srcOff = l.sourceOffsetSec || 0;
                   const targetDur = Math.max(0.05, (trueDur - srcOff) / spd);
-                  const isTrimmed = !!(l._userTrimmed || l.userTrimmed || (l.isDurationExplicit && l.durationSec && l.durationSec < targetDur - 0.05));
-                  if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; }
+                  const isTrimmed = !!(l._userTrimmed || l.userTrimmed || l.isDurationExplicit || (l.durationSec && l.durationSec < targetDur - 0.001));
+                  if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; l.isDurationExplicit = true; }
                   if (!isTrimmed && (!l.durationSec || Math.abs(l.durationSec - targetDur) > 0.01)) {
                     l.durationSec = targetDur;
                     l.widthPx = Math.max(10, Math.round(targetDur * pps));
@@ -422,8 +422,8 @@
                 const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
                 const srcOff = l.sourceOffsetSec || 0;
                 const targetDur = Math.max(0.05, (trueDur - srcOff) / spd);
-                const isTrimmed = !!(l._userTrimmed || l.userTrimmed || (l.isDurationExplicit && l.durationSec && l.durationSec < targetDur - 0.05));
-                if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; }
+                const isTrimmed = !!(l._userTrimmed || l.userTrimmed || l.isDurationExplicit || (l.durationSec && l.durationSec < targetDur - 0.001));
+                if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; l.isDurationExplicit = true; }
                 if (!isTrimmed && (!l.durationSec || Math.abs(l.durationSec - targetDur) > 0.01)) {
                   l.durationSec = targetDur;
                   l.widthPx = Math.max(10, Math.round(targetDur * pps));
@@ -2864,8 +2864,8 @@
                           const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
                           const srcOff = l.sourceOffsetSec || 0;
                           const targetDur = Math.max(0.05, (meta.duration - srcOff) / spd);
-                          const isTrimmed = !!(l._userTrimmed || l.userTrimmed || (l.isDurationExplicit && l.durationSec && l.durationSec < targetDur - 0.05));
-                          if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; }
+                          const isTrimmed = !!(l._userTrimmed || l.userTrimmed || l.isDurationExplicit || (l.durationSec && l.durationSec < targetDur - 0.001));
+                          if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; l.isDurationExplicit = true; }
                           if (!isTrimmed) {
                             l.durationSec = targetDur;
                             l.widthPx = Math.max(10, Math.round(targetDur * pps));
@@ -2925,8 +2925,8 @@
                         const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
                         const srcOff = l.sourceOffsetSec || 0;
                         const targetDur = Math.max(0.05, (a.duration - srcOff) / spd);
-                        const isTrimmed = !!(l._userTrimmed || l.userTrimmed || (l.isDurationExplicit && l.durationSec && l.durationSec < targetDur - 0.05));
-                        if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; }
+                        const isTrimmed = !!(l._userTrimmed || l.userTrimmed || l.isDurationExplicit || (l.durationSec && l.durationSec < targetDur - 0.001));
+                        if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; l.isDurationExplicit = true; }
                         if (!isTrimmed) {
                           l.durationSec = targetDur;
                           l.widthPx = Math.max(10, Math.round(targetDur * pps));

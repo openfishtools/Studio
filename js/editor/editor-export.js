@@ -2179,10 +2179,19 @@
               const fnInput = document.getElementById('export-video-filename');
               const customName = fnInput ? fnInput.value.trim() : '';
 
-              // Temporarily override resolution/fps on project state for this export
+              // Temporarily override resolution/fps on project state for this export while preserving authored native space
               const _origRes = currentProjectState.resolution;
               const _origFps = currentProjectState.fps;
               const _origAspect = currentProjectState.aspectRatio;
+              const _origBaseW = currentProjectState._baseW;
+              const _origBaseH = currentProjectState._baseH;
+
+              const nativeBaseDims = (window.getProjectDimensions ? window.getProjectDimensions(_origRes, _origAspect) : [1920, 1080]);
+              currentProjectState._nativeBaseW = _origBaseW || nativeBaseDims[0];
+              currentProjectState._nativeBaseH = _origBaseH || nativeBaseDims[1];
+              currentProjectState._nativeRes = _origRes;
+              currentProjectState._nativeAspect = _origAspect;
+
               currentProjectState.resolution = res;
               currentProjectState.fps = fps;
               currentProjectState.aspectRatio = selectedRatio;
@@ -2193,6 +2202,10 @@
                 currentProjectState.resolution = _origRes;
                 currentProjectState.fps = _origFps;
                 currentProjectState.aspectRatio = _origAspect;
+                delete currentProjectState._nativeBaseW;
+                delete currentProjectState._nativeBaseH;
+                delete currentProjectState._nativeRes;
+                delete currentProjectState._nativeAspect;
               }
               break;
             }
@@ -2236,6 +2249,15 @@
               const _origRes2 = currentProjectState.resolution;
               const _origFps2 = currentProjectState.fps;
               const _origAspect2 = currentProjectState.aspectRatio;
+              const _origBaseW2 = currentProjectState._baseW;
+              const _origBaseH2 = currentProjectState._baseH;
+
+              const nativeBaseDims2 = (window.getProjectDimensions ? window.getProjectDimensions(_origRes2, _origAspect2) : [1920, 1080]);
+              currentProjectState._nativeBaseW = _origBaseW2 || nativeBaseDims2[0];
+              currentProjectState._nativeBaseH = _origBaseH2 || nativeBaseDims2[1];
+              currentProjectState._nativeRes = _origRes2;
+              currentProjectState._nativeAspect = _origAspect2;
+
               currentProjectState.resolution = seqRes;
               currentProjectState.fps = seqFps;
               currentProjectState.aspectRatio = seqSelectedRatio;
@@ -2253,6 +2275,10 @@
                 currentProjectState.resolution = _origRes2;
                 currentProjectState.fps = _origFps2;
                 currentProjectState.aspectRatio = _origAspect2;
+                delete currentProjectState._nativeBaseW;
+                delete currentProjectState._nativeBaseH;
+                delete currentProjectState._nativeRes;
+                delete currentProjectState._nativeAspect;
               }
               break;
             }

@@ -401,7 +401,7 @@
       } catch (_) {}
     }
     // 2. Try window._activeMediaMap or window.importedMediaMap
-    var mediaId = layer.mediaId;
+    var mediaId = layer.mediaId || layer.id;
     if (mediaId) {
       if (window._activeMediaMap && window._activeMediaMap.has(mediaId)) {
         var mItem = window._activeMediaMap.get(mediaId);
@@ -443,7 +443,31 @@
         } catch (_) {}
       }
     }
+    // Match by layer.name in _activeMediaMap if not found by ID
+    if (window._activeMediaMap && layer.name) {
+      for (var mapItem of window._activeMediaMap.values()) {
+        if (mapItem && mapItem.name === layer.name) {
+          if (mapItem.blob) return mapItem.blob;
+          if (mapItem.buffer) return new Blob([mapItem.buffer], { type: mapItem.mimeType || 'video/mp4' });
+          if (mapItem.dataUrl) {
+            try {
+              var rM = await fetch(mapItem.dataUrl);
+              if (rM.ok) return await rM.blob();
+            } catch (_) {}
+          }
+        }
+      }
+    }
     // 3. Try DOM media element in layerMediaCache
+    if (window.layerMediaCache) {
+      try {
+        var cached = window.layerMediaCache.get(layer.id) || (layer.mediaId && window.layerMediaCache.get(layer.mediaId));
+        if (cached && cached.el && cached.el.src) {
+          var rC = await fetch(cached.el.src);
+          if (rC.ok) return await rC.blob();
+        }
+      } catch (_) {}
+    }
     if (window.getOrLoadLayerMedia) {
       try {
         var med = window.getOrLoadLayerMedia(layer);
@@ -888,7 +912,7 @@
 
   // ── WebCodecs In-Memory Audio Encoding (AAC / Opus) ───────────────────────────
   async function encodeAudioIntoMuxer(audioBuffer, muxer, preferredCodec) {
-    if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined') return false;
+    if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined' || !audioBuffer || !muxer) return false;
     var codecsToTry = preferredCodec ? [preferredCodec] : ['mp4a.40.2', 'opus'];
     var audioCfg = null;
     for (var ci = 0; ci < codecsToTry.length; ci++) {
@@ -906,21 +930,45 @@
         }
       } catch (_) {}
     }
-    if (!audioCfg) return false;
+    if (!audioCfg) {
+      logExportWarn('WebCodecs:Audio', 'No supported audio encoder profile found for candidate codecs');
+      return false;
+    }
+
+    var isAac = (audioCfg.codec && audioCfg.codec.startsWith('mp4a'));
+    var sampleRate = audioBuffer.sampleRate || 48000;
+    var numChannels = audioBuffer.numberOfChannels || 2;
+    var totalFrames = audioBuffer.length;
+    var chunkSize = isAac ? 1024 : 960; // AAC requires strictly 1024 samples per frame
+    var chunkDurMicros = Math.round((chunkSize / sampleRate) * 1000000);
 
     var encErr = null;
+    var chunksWritten = 0;
     var aEnc = new AudioEncoder({
       output: function(chunk, meta) {
-        try { muxer.addAudioChunk(chunk, meta); } catch (e) { encErr = e; }
+        try {
+          var data = new Uint8Array(chunk.byteLength);
+          chunk.copyTo(data);
+          var ts = (Number.isFinite(chunk.timestamp) && chunk.timestamp >= 0)
+            ? chunk.timestamp
+            : (chunksWritten * chunkDurMicros);
+          var dur = (Number.isFinite(chunk.duration) && chunk.duration > 0)
+            ? chunk.duration
+            : chunkDurMicros;
+          muxer.addAudioChunkRaw(data, chunk.type, ts, dur, meta);
+          chunksWritten++;
+        } catch (e) {
+          encErr = e;
+          logExportWarn('WebCodecs:Audio', 'Error writing audio chunk to muxer:', e);
+        }
       },
-      error: function(e) { encErr = e; }
+      error: function(e) {
+        encErr = e;
+        logExportWarn('WebCodecs:Audio', 'AudioEncoder error event:', e);
+      }
     });
     aEnc.configure(audioCfg);
 
-    var sampleRate = audioBuffer.sampleRate;
-    var numChannels = audioBuffer.numberOfChannels;
-    var totalFrames = audioBuffer.length;
-    var chunkSize = 960; // 20ms @ 48kHz (compatible with both Opus and AAC)
     var ch0 = audioBuffer.getChannelData(0);
     var ch1 = numChannels > 1 ? audioBuffer.getChannelData(1) : ch0;
 
@@ -930,15 +978,15 @@
         await new Promise(function(r) { setTimeout(r, 2); });
       }
       var chunkFrames = Math.min(chunkSize, totalFrames - offset);
-      var planarData = new Float32Array(chunkFrames * numChannels);
+      var planarData = new Float32Array(chunkSize * numChannels);
       planarData.set(ch0.subarray(offset, offset + chunkFrames), 0);
       if (numChannels > 1) {
-        planarData.set(ch1.subarray(offset, offset + chunkFrames), chunkFrames);
+        planarData.set(ch1.subarray(offset, offset + chunkFrames), chunkSize);
       }
       var audioData = new AudioData({
         format: 'f32-planar',
         sampleRate: sampleRate,
-        numberOfFrames: chunkFrames,
+        numberOfFrames: chunkSize,
         numberOfChannels: numChannels,
         timestamp: Math.round((offset / sampleRate) * 1000000),
         data: planarData
@@ -951,7 +999,9 @@
       await aEnc.flush();
     }
     try { aEnc.close(); } catch (_) {}
-    return !encErr && !isCancelled;
+    var success = !encErr && !isCancelled && chunksWritten > 0;
+    logExportInfo('WebCodecs:Audio', 'AudioEncoder finished. Chunks written=' + chunksWritten + ', success=' + success);
+    return success;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1292,11 +1342,12 @@
 
 
       var audioResult = null;
+      var audioEncodedSuccessfully = false;
       if (hasAudio) {
         updateProgress(95, 'Mixing & encoding audio...', onProgress);
         logExportInfo('WebCodecs:Audio', 'Mixing audio tracks (duration=' + totalDur.toFixed(2) + 's)...');
         try {
-          audioResult = await mixAudioBuffer(totalDur, canWebCodecsAudio);
+          audioResult = await mixAudioBuffer(totalDur, false); // Always create wavBlob for fallback safety
         } catch (aErr) {
           logExportWarn('WebCodecs:Audio', 'Audio mix error:', aErr);
         }
@@ -1304,9 +1355,9 @@
 
         if (canWebCodecsAudio && audioResult && audioResult.buffer) {
           logExportInfo('WebCodecs:Audio', 'Encoding in-memory ' + webCodecsAudioCodec + ' audio into muxer...');
-          await encodeAudioIntoMuxer(audioResult.buffer, muxer, webCodecsAudioCodec);
+          audioEncodedSuccessfully = await encodeAudioIntoMuxer(audioResult.buffer, muxer, webCodecsAudioCodec);
           audioResult.buffer = null;
-          logExport('WebCodecs:Audio', 'Audio encoding finished.');
+          logExport('WebCodecs:Audio', 'Audio encoding finished (success=' + audioEncodedSuccessfully + ').');
         }
       }
 
@@ -1317,7 +1368,7 @@
       logExport('WebCodecs:Muxer', 'Mp4Muxer finalized! Container size: ' + (videoBuffer.byteLength / 1024 / 1024).toFixed(2) + ' MB');
       var finalBlob   = null;
 
-      if (canWebCodecsAudio) {
+      if (audioEncodedSuccessfully) {
         // Audio already muxed inside videoBuffer via WebCodecs AAC/Opus
         finalBlob = new Blob([videoBuffer], { type: 'video/mp4' });
       } else if (hasAudio && canFfmpegMerge && audioResult && audioResult.wavBlob && audioResult.wavBlob.size > 100 && videoBuffer.byteLength < 180 * 1024 * 1024) {
