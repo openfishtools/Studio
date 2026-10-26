@@ -323,12 +323,14 @@
                   const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
                   const srcOff = l.sourceOffsetSec || 0;
                   const targetDur = Math.max(0.05, (trueDur - srcOff) / spd);
-                  if (!l._userTrimmed && (!l.durationSec || Math.abs(l.durationSec - targetDur) > 0.01)) {
+                  const isTrimmed = !!(l._userTrimmed || l.userTrimmed || (l.isDurationExplicit && l.durationSec && l.durationSec < targetDur - 0.05));
+                  if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; }
+                  if (!isTrimmed && (!l.durationSec || Math.abs(l.durationSec - targetDur) > 0.01)) {
                     l.durationSec = targetDur;
                     l.widthPx = Math.max(10, Math.round(targetDur * pps));
                     l.isDurationExplicit = true;
                     updated = true;
-                  } else if (l._userTrimmed && l.speedMode !== 'time_remap' && l.durationSec > targetDur + 0.01) {
+                  } else if (isTrimmed && l.speedMode !== 'time_remap' && l.durationSec > targetDur + 0.01) {
                     l.durationSec = targetDur;
                     l.widthPx = Math.max(10, Math.round(targetDur * pps));
                     updated = true;
@@ -420,12 +422,14 @@
                 const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
                 const srcOff = l.sourceOffsetSec || 0;
                 const targetDur = Math.max(0.05, (trueDur - srcOff) / spd);
-                if (!l._userTrimmed && (!l.durationSec || Math.abs(l.durationSec - targetDur) > 0.01)) {
+                const isTrimmed = !!(l._userTrimmed || l.userTrimmed || (l.isDurationExplicit && l.durationSec && l.durationSec < targetDur - 0.05));
+                if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; }
+                if (!isTrimmed && (!l.durationSec || Math.abs(l.durationSec - targetDur) > 0.01)) {
                   l.durationSec = targetDur;
                   l.widthPx = Math.max(10, Math.round(targetDur * pps));
                   l.isDurationExplicit = true;
                   updated = true;
-                } else if (l._userTrimmed && l.speedMode !== 'time_remap' && l.durationSec > targetDur + 0.01) {
+                } else if (isTrimmed && l.speedMode !== 'time_remap' && l.durationSec > targetDur + 0.01) {
                   l.durationSec = targetDur;
                   l.widthPx = Math.max(10, Math.round(targetDur * pps));
                   updated = true;
@@ -2860,7 +2864,9 @@
                           const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
                           const srcOff = l.sourceOffsetSec || 0;
                           const targetDur = Math.max(0.05, (meta.duration - srcOff) / spd);
-                          if (!l._userTrimmed) {
+                          const isTrimmed = !!(l._userTrimmed || l.userTrimmed || (l.isDurationExplicit && l.durationSec && l.durationSec < targetDur - 0.05));
+                          if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; }
+                          if (!isTrimmed) {
                             l.durationSec = targetDur;
                             l.widthPx = Math.max(10, Math.round(targetDur * pps));
                             l.isDurationExplicit = true;
@@ -2919,7 +2925,9 @@
                         const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
                         const srcOff = l.sourceOffsetSec || 0;
                         const targetDur = Math.max(0.05, (a.duration - srcOff) / spd);
-                        if (!l._userTrimmed) {
+                        const isTrimmed = !!(l._userTrimmed || l.userTrimmed || (l.isDurationExplicit && l.durationSec && l.durationSec < targetDur - 0.05));
+                        if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; }
+                        if (!isTrimmed) {
                           l.durationSec = targetDur;
                           l.widthPx = Math.max(10, Math.round(targetDur * pps));
                           l.isDurationExplicit = true;

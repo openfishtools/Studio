@@ -5400,6 +5400,9 @@ function initTimelineOperations() {
                       child.startPx = Math.round(child.startSec * pps);
                       child.durationSec = Number(newDurSec.toFixed(3));
                       child.widthPx = Math.round(child.durationSec * pps);
+                      child._userTrimmed = true;
+                      child.userTrimmed = true;
+                      child.isDurationExplicit = true;
 
                       const newGlobalStartPx = Math.round((parentStartSec + child.startSec) * pps);
                       childClipEl.style.left = `${newGlobalStartPx}px`;
@@ -5443,6 +5446,9 @@ function initTimelineOperations() {
                       const newDurSec = Math.max(0.1, origChildDurSec + deltaSec);
                       child.durationSec = Number(newDurSec.toFixed(3));
                       child.widthPx = Math.round(child.durationSec * pps);
+                      child._userTrimmed = true;
+                      child.userTrimmed = true;
+                      child.isDurationExplicit = true;
                       childClipEl.style.width = `${child.widthPx}px`;
                       renderLayerKeyframes(child, childClipEl);
 

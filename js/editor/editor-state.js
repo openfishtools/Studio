@@ -1258,6 +1258,8 @@
                 mediaWidth: l.mediaWidth || null,
                 mediaHeight: l.mediaHeight || null,
                 _userResized: !!l._userResized,
+                _userTrimmed: !!(l._userTrimmed || l.userTrimmed),
+                userTrimmed: !!(l._userTrimmed || l.userTrimmed),
                 hidden: !!l.hidden,
                 motionBlur: !!l.motionBlur,
                 is3D: !!l.is3D,
@@ -2804,6 +2806,18 @@
       currentProjectState.defaultDuration = parseFloat((currentProject && currentProject.defaultDuration) || durParam || 5);
       currentProjectState.bgColor = (currentProject && currentProject.bgColor) || bgParam || 'transparent';
       currentProjectState.layers = (currentProject && Array.isArray(currentProject.layers)) ? currentProject.layers : [];
+      const hydrateLayerTrims = (layerList) => {
+        if (!Array.isArray(layerList)) return;
+        layerList.forEach(l => {
+          if (!l) return;
+          if (l.userTrimmed || l._userTrimmed) {
+            l._userTrimmed = true;
+            l.userTrimmed = true;
+          }
+          if (Array.isArray(l.layers)) hydrateLayerTrims(l.layers);
+        });
+      };
+      hydrateLayerTrims(currentProjectState.layers);
       currentProjectState.beatmarks = (currentProject && Array.isArray(currentProject.beatmarks)) ? currentProject.beatmarks.slice().sort((a, b) => a - b) : [];
       currentProjectState.markerNames = (currentProject && currentProject.markerNames && typeof currentProject.markerNames === 'object') ? { ...currentProject.markerNames } : {};
       currentProjectState.isTemplate = !!(currentProject && currentProject.isTemplate);
