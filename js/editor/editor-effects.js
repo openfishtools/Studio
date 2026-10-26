@@ -305,10 +305,10 @@
               return;
             }
 
-            if (pType === 'select') {
+            if (pType === 'select' || pType === 'layer') {
               const val = (hasKf && effFx && effFx[pId] !== undefined)
                 ? effFx[pId]
-                : (fx[pId] !== undefined ? fx[pId] : (pDef.default || 'normal'));
+                : (fx[pId] !== undefined ? fx[pId] : (pDef.default !== undefined ? pDef.default : (pType === 'layer' ? '' : 'normal')));
               const dd = card.querySelector(`.custom-dropdown[data-param="${pId}"]`);
               if (dd) {
                 dd.dataset.value = val;
@@ -317,9 +317,18 @@
                   items.find(it => String(it.dataset.val).toLowerCase() === String(val).toLowerCase());
                 const label = dd.querySelector('.custom-dropdown-label');
                 if (targetItem && label) {
-                  label.textContent = targetItem.textContent;
+                  const richContent = targetItem.querySelector('.layer-dropdown-item-content');
+                  if (richContent) {
+                    label.innerHTML = richContent.outerHTML;
+                  } else {
+                    label.textContent = targetItem.textContent;
+                  }
                 } else if (label) {
-                  label.textContent = String(val).replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                  if (pType === 'layer') {
+                    label.innerHTML = '<div class="layer-dropdown-item-content"><span class="layer-dropdown-thumb is-none" aria-hidden="true"><i class="fticon fticon-close-3" aria-hidden="true"></i></span><span class="layer-dropdown-name">None</span></div>';
+                  } else {
+                    label.textContent = String(val).replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                  }
                 }
                 items.forEach(item => {
                   item.classList.toggle('is-selected', String(item.dataset.val).toLowerCase() === String(val).toLowerCase());
@@ -1234,6 +1243,20 @@
                 }
               });
 
+              // Auto-detect dropup positioning when near viewport or container bottom
+              try {
+                const rect = dropdown.getBoundingClientRect();
+                const scrollParent = dropdown.closest('.effects-rack-content, .drawer-body') || document.body;
+                const parentRect = scrollParent.getBoundingClientRect();
+                const spaceBelow = parentRect.bottom - rect.bottom;
+                const spaceAbove = rect.top - parentRect.top;
+                if (spaceBelow < 220 && spaceAbove > spaceBelow) {
+                  dropdown.classList.add('is-dropup');
+                } else {
+                  dropdown.classList.remove('is-dropup');
+                }
+              } catch (_) {}
+
               const isOpen = dropdown.classList.toggle('is-open');
               trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
               card.classList.toggle('has-dropdown-open', isOpen);
@@ -1246,7 +1269,14 @@
               if (param) selectEffectParam(fx.id, param);
               const val = item.dataset.val;
               dropdown.dataset.value = val;
-              if (label) label.textContent = item.textContent;
+              if (label) {
+                const richContent = item.querySelector('.layer-dropdown-item-content');
+                if (richContent) {
+                  label.innerHTML = richContent.outerHTML;
+                } else {
+                  label.textContent = item.textContent;
+                }
+              }
 
               items.forEach(i => i.classList.remove('is-selected'));
               item.classList.add('is-selected');

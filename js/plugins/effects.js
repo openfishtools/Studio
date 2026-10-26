@@ -1573,30 +1573,20 @@
           const compState = (typeof window !== 'undefined' && (window.currentActivePrecomp || window.currentProjectState)) || null;
           const allLayers = (compState && Array.isArray(compState.layers)) ? compState.layers : [];
 
-          const opts = [{ value: '', label: 'None' }];
-          allLayers.forEach((l, idx) => {
-            if (!l || (layer && String(l.id) === String(layer.id))) return;
-            const lName = l.name || (`Layer ${idx + 1}`);
-            opts.push({ value: String(l.id), label: `${idx + 1}. ${lName}` });
-          });
-
-          const selectedOpt = opts.find(o => String(o.value) === String(currentVal)) || opts[0];
-          const dropdownHTML = (typeof FishElements !== 'undefined' && FishElements.renderDropdownHTML)
-            ? FishElements.renderDropdownHTML({
+          const dropdownHTML = (typeof FishElements !== 'undefined' && typeof FishElements.renderLayerDropdownHTML === 'function')
+            ? FishElements.renderLayerDropdownHTML({
                 param: p.id,
                 value: String(currentVal),
-                options: opts,
+                layers: allLayers,
+                excludeLayerId: layer ? String(layer.id) : '',
                 title: `Select ${p.label || p.id}`
               })
             : `
-                <div class="custom-dropdown effects-custom-dropdown" data-param="${p.id}" data-value="${currentVal}">
+                <div class="custom-dropdown effects-custom-dropdown effects-layer-dropdown" data-param="${p.id}" data-value="${currentVal}">
                   <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" title="Select ${p.label || p.id}">
-                    <span class="custom-dropdown-label">${selectedOpt.label}</span>
+                    <span class="custom-dropdown-label">${currentVal || 'None'}</span>
                     <i class='fticon fticon-select-animation-target custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
                   </button>
-                  <div class="custom-dropdown-menu" role="listbox">
-                    ${opts.map(opt => `<div class="custom-dropdown-item ${String(opt.value) === String(currentVal) ? 'is-selected' : ''}" role="option" data-val="${opt.value}" title="${opt.label}">${opt.label}</div>`).join('')}
-                  </div>
                 </div>
               `.trim();
 
