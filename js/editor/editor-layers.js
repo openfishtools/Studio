@@ -4909,7 +4909,8 @@
 
             // High performance pin append during playback (O(1) DOM operation)
             if (isPlayingNow && typeof addedSec === 'number') {
-              const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+              const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId) ||
+                            (currentProjectState.layers || []).find(l => l.type === 'audio');
               const layerStart = layer && layer.startSec !== undefined ? layer.startSec : 0;
               const layerDur = layer && layer.durationSec !== undefined ? layer.durationSec : (layer ? (layer.mediaDuration || 5) : 5);
               const beatmarks = Array.isArray(currentProjectState.beatmarks) ? currentProjectState.beatmarks : [];

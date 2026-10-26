@@ -4671,8 +4671,6 @@
           layer._textDirty = true;
           if (layer._textBufferCanvas) layer._textBufferCanvas._lastRenderKey = null;
           if (layer._textMbCanvas) layer._textMbCanvas._lastRenderKey = null;
-        } else if (layer.type === 'precomp') {
-          if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
         }
 
         if (typeof recordLayerPropertyChange === 'function') {

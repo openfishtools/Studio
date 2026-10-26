@@ -1105,7 +1105,7 @@
           return;
         }
 
-        const pps = pixelsPerSecond;
+        const pps = window.currentPixelsPerSecond || (typeof pixelsPerSecond !== 'undefined' ? pixelsPerSecond : 80);
         const rulerFrag = document.createDocumentFragment();
         const layersFrag = document.createDocumentFragment();
 
@@ -1159,17 +1159,12 @@
         if (!Array.isArray(currentProjectState.beatmarks)) {
           currentProjectState.beatmarks = [];
         }
-        const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
-        let currentSec = Math.max(0, -panX / pps);
-
-        // When playing with audio, capture the instantaneous master audio clock so beatmarks land exactly on beat
-        if (isPlaying && window.FishAudioEngine) {
-          const layers = currentProjectState.layers || [];
-          const audioSec = window.FishAudioEngine.getMasterAudioTime(layers, currentSec, pps);
-          if (audioSec !== null && !isNaN(audioSec) && Number.isFinite(audioSec) && audioSec >= 0) {
-            currentSec = audioSec;
-          }
-        }
+        const pps = window.currentPixelsPerSecond || (typeof pixelsPerSecond !== 'undefined' ? pixelsPerSecond : 80);
+        const currentSec = (typeof getCurrentPlayheadTime === 'function')
+          ? getCurrentPlayheadTime()
+          : (typeof window.getCurrentPlayheadTime === 'function'
+            ? window.getCurrentPlayheadTime()
+            : Math.max(0, -(window.timelinePanX !== undefined ? window.timelinePanX : panX) / pps));
 
         // Strictly quantize beatmark timestamp to project FPS frame boundary
         const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || currentFps || 60);

@@ -47,14 +47,15 @@
     get maxFrames() {
       const fps = this.fps || 60;
       const devMem = this._devMem || 4;
-      // Device-aware RAM frame cap: hold up to 60s on mobile/4GB and 120s on desktop at preview resolution
+      // Device-aware RAM frame cap: hold up to 3s on mobile/low-RAM and 6s on desktop at preview resolution
+      // Keeps GPU texture allocations strictly below browser limits (< 500MB) to prevent freeze / Not Responding
       if (devMem <= 2) {
-        return Math.min(1800, Math.max(600, Math.round(30 * fps)));
+        return Math.min(120, Math.max(60, Math.round(2 * fps)));
       }
       if (this._isMobile || devMem <= 4) {
-        return Math.min(3600, Math.max(1200, Math.round(60 * fps)));
+        return Math.min(180, Math.max(90, Math.round(3 * fps)));
       }
-      return Math.min(7200, Math.max(2400, Math.round(120 * fps)));
+      return Math.min(360, Math.max(180, Math.round(6 * fps)));
     }
 
     get frames() {
@@ -335,8 +336,8 @@
         : 0;
       const currentFps = this.fps || 60;
       const totalProjectFrames = Math.ceil(totalDur * currentFps);
-      const memCap = this.maxFrames || Math.round(60 * currentFps);
-      const effectiveMax = Math.max(memCap, totalProjectFrames + 60);
+      const memCap = this.maxFrames || Math.round(5 * currentFps);
+      const effectiveMax = memCap;
       if (pool.size <= effectiveMax) return;
 
       const pps = (typeof window !== 'undefined' && window.currentPixelsPerSecond) ? window.currentPixelsPerSecond : 80;
@@ -1061,7 +1062,7 @@
       const totalFrames = Math.ceil(totalDur * this.fps);
 
       // Prune orphan frames outside project duration so shrinking project duration removes zombie frames
-      for (const f of Array.from(this.frames.keys())) {
+      for (const f of this.frames.keys()) {
         if (f < 0 || f > totalFrames) {
           this.deleteFrame(f, false);
         }
@@ -1119,11 +1120,19 @@
         }
       };
 
+      let _lastPointerYield = 0;
       const onPointerMove = (e) => {
-        // Pause idle caching during active drag/scrubbing or rapid mouse movement so UI stays 100% responsive
+        // Pause idle caching during active drag/scrubbing or any mouse movement so UI stays 100% responsive
         if (!e) return;
+        const now = Date.now();
         if (e.buttons > 0 || window.isTimelineScrubbing || window.isTimelinePanning || window.isTransformInteracting) {
           onActivity(e);
+        } else if (this.isIdleRunning && (now - _lastPointerYield > 100)) {
+          _lastPointerYield = now;
+          this.stopIdleWorker();
+          if (this.idleCacheEnabled) {
+            this.scheduleIdleCheck();
+          }
         }
       };
 
@@ -1208,19 +1217,18 @@
         this._idleUsedRAF = false;
         this._idleUsedRIC = false;
       }
-      if (delayMs <= 16 && typeof requestAnimationFrame === 'function') {
-        this._idleUsedRAF = true;
-        this.idleWorkerId = requestAnimationFrame(() => this.runIdleStep(null));
+      const safeDelay = Math.max(delayMs, 60);
+      if (typeof requestIdleCallback === 'function') {
+        this._idleUsedRIC = true;
+        this.idleWorkerId = requestIdleCallback(() => {
+          if (!this.isIdleRunning) return;
+          this.runIdleStep(null);
+        }, { timeout: 350 });
       } else {
         this.idleWorkerId = setTimeout(() => {
           if (!this.isIdleRunning) return;
-          if (typeof requestAnimationFrame === 'function') {
-            this._idleUsedRAF = true;
-            this.idleWorkerId = requestAnimationFrame(() => this.runIdleStep(null));
-          } else {
-            this.runIdleStep(null);
-          }
-        }, delayMs);
+          this.runIdleStep(null);
+        }, safeDelay);
       }
     }
 
@@ -1348,8 +1356,8 @@
       const targetH = activeCanvas.height;
 
       const tStart = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-      const budgetMs = this._isMobile ? 8.0 : 12.0;
-      const maxBatch = this._isMobile ? 4 : 8;
+      const budgetMs = this._isMobile ? 3.0 : 5.0;
+      const maxBatch = this._isMobile ? 2 : 3;
       let cachedInBatch = 0;
       let sawUnready = false;
 
@@ -1471,7 +1479,7 @@
       }
 
       if (this.isIdleRunning) {
-        this._scheduleNextIdleTick(0);
+        this._scheduleNextIdleTick(60);
       }
     }
 
@@ -1590,8 +1598,8 @@
 
       const targetW = activeCanvas.width;
       const targetH = activeCanvas.height;
-      const effectiveBudget = budgetMs !== null ? budgetMs : (this._isMobile ? 4.0 : 7.0);
-      const maxBatch = this._isMobile ? 3 : 6;
+      const effectiveBudget = budgetMs !== null ? budgetMs : (this._isMobile ? 2.0 : 3.5);
+      const maxBatch = this._isMobile ? 2 : 3;
       const tStart = (typeof performance !== 'undefined') ? performance.now() : Date.now();
 
       // Lookahead range: from nextFrame up to nextFrame + 60 (up to 1.5 seconds ahead of playhead)

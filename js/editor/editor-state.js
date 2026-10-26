@@ -890,7 +890,8 @@
             layer._textDirty = true;
             if (layer._textBufferCanvas) layer._textBufferCanvas._lastRenderKey = null;
           }
-          if (layer.type === 'precomp') {
+          if (layer.type === 'precomp' && layer._forceBakeInvalidation) {
+            layer._forceBakeInvalidation = false;
             layer._dirty = true;
             if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
             if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.invalidatePrecomp === 'function') {
@@ -931,7 +932,8 @@
           layer._textDirty = true;
           if (layer._textBufferCanvas) layer._textBufferCanvas._lastRenderKey = null;
         }
-        if (layer.type === 'precomp') {
+        if (layer.type === 'precomp' && layer._forceBakeInvalidation) {
+          layer._forceBakeInvalidation = false;
           layer._dirty = true;
           if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
           if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.invalidatePrecomp === 'function') {
