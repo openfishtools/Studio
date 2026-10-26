@@ -5,6 +5,18 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.6] - 2026-10-26
+
+### Added
+- **Dual Blur Beat Effect & Mobile 2-Second Hold Support (`Extension/beat_effects.jsx`, `js/extensions/extension-manager.js`, `js/ui/elements/card-builder.js`, `js/extensions/JSX-Translator.js`, `js/extensions/openfishtools-controller.js`, `js/editor/editor-extension-bridge.js`, `js/extensions/fishtools-adapter.js`)**: Updated the Beat Effects extension card to support dual blur modes on the `BLUR` tool button: left-click applies Fast Box Blur (`fast-box-blur`), while right-click applies Camera Lens Blur (`camera-lens-blur`). Added long-press detection (2 seconds / 2000ms hold with optional haptic vibration) in `card-builder.js` for touch/mobile devices to trigger the secondary contextmenu action seamlessly without requiring a physical mouse.
+
+### Improved
+- **Exposure-Like Beat Blur Decay & Calibrated Amplitude (`js/extensions/JSX-Translator.js`, `js/extensions/openfishtools-controller.js`, `js/editor/editor-extension-bridge.js`)**: Calibrated blur beat expression behavior to match Exposure Flash (`EXPO`), removing the artificial `t <= 0.5s` cutoff and tuning default `Decay` to `5.0` so each beatmark flashes instantly and decays smoothly towards the next marker. Reduced default `Amp` from 10–50 px down to a subtle 4 px for Fast Box Blur and 2.5 px for Camera Lens Blur.
+- **Precompose Baking Performance & Event Loop Macro-Yielding (`js/media/frame-extractor.js`, `js/media/preview-cache.js`)**: Eliminated browser "Not Responding" tab freezes during precompose baking by replacing zero-delay microtask yields with guaranteed 5–8ms macro-yields (10–14ms on mobile) between frames and batches, expanding the lightweight precomp threshold from 8 to 24 layers so non-video precomps render live at 0ms without baking, batch-filling static hold intervals in O(1) time, and throttling progress listeners and `pruneBakingFrames` cache scans to avoid event loop choking.
+
+### Fixed
+- **Baking Range Cache Protection & Invalidation (`js/media/preview-cache.js`, `js/media/frame-extractor.js`, `js/editor/editor-canvas.js`)**: Guarded the preview cache manager against caching frames within active baking time ranges, properly mapped nested video bounds within precompositions, and ensured cache cleanup immediately prunes frames when trimming layer in/out points or adjusting duration.
+
 ## [0.6.5] - 2026-10-25
 
 ### Added
