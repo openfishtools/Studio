@@ -635,13 +635,7 @@
           return true;
         }
       } else if (layer.type === 'precomp') {
-        if (layer._dirty || layer._isExtracting) return true;
-        if (sourceKey && this.sources && this.sources.has(sourceKey)) {
-          const src = this.sources.get(sourceKey);
-          if (src && (src.isExtracting || (src.pendingFrames && src.pendingFrames.size > 0))) {
-            return true;
-          }
-        }
+        return false; // True After Effects model: precomps render on-the-fly and are never baking
       }
 
       return false;
@@ -2043,32 +2037,15 @@
         if (source.cachedFrameIndices) source.cachedFrameIndices.clear();
       }
       if (typeof precompLayer === 'object') {
-        precompLayer._lightweightFastPath = false;
+        precompLayer._lightweightFastPath = true;
         precompLayer._complexityAnalysis = null;
-        precompLayer._extractProgress = 0;
-        precompLayer._extractComplete = false;
-        delete precompLayer._lastRenderedFrame;
+        precompLayer._extractProgress = 1;
+        precompLayer._extractComplete = true;
         this.updateLayerProgressBar(precompLayer);
-        this._schedulePrecompReExtract(precompLayer);
       }
     }
 
-    _schedulePrecompReExtract(precompLayer) {
-      if (!precompLayer || precompLayer.type !== 'precomp') return;
-      if (precompLayer._reExtractTimer) clearTimeout(precompLayer._reExtractTimer);
-      precompLayer._reExtractTimer = setTimeout(() => {
-        precompLayer._reExtractTimer = null;
-        if (this._isUserInteracting()) {
-          this._schedulePrecompReExtract(precompLayer);
-          return;
-        }
-        precompLayer._dirty = false;
-        this.extractLayerRange(precompLayer);
-      }, 280);
-      if (precompLayer._reExtractTimer && typeof precompLayer._reExtractTimer.unref === 'function') {
-        precompLayer._reExtractTimer.unref();
-      }
-    }
+    _schedulePrecompReExtract(precompLayer) {}
 
     /**
      * Check whether a precomp's visual output is completely static across its timeline duration
@@ -2294,66 +2271,19 @@
     }
 
     /**
-     * Extract a Precomp layer (and any nested video/precomp layers inside it) into RAM ImageBitmaps.
-     * Strictly processes innermost children 1-by-1 before baking the outer precomp.
+     * Precomposition extraction (True After Effects Model):
+     * Precomps evaluate on-the-fly via renderPrecompToCanvas into their intermediate container buffer.
+     * They are never baked frame-by-frame to ImageBitmaps in RAM.
+     * PreviewCacheManager on the timeline handles RAM caching of the final composed preview.
      */
     async extractPrecompRange(precompLayer) {
       if (!precompLayer || precompLayer.type !== 'precomp') return;
-
-      // 1. Strictly extract nested precomp & video children 1-by-1 (innermost first) and wait for each to finish!
-      const childLayers = Array.isArray(precompLayer.layers) ? precompLayer.layers : [];
-      for (const child of childLayers) {
-        if (child && (child.type === 'video' || child.type === 'precomp') && !child.hidden) {
-          await this.extractLayerRange(child);
-          await this._waitForLayerExtractionDone(child);
-        }
-      }
-
-      // 2. If precomp has Collapse Transformations enabled, children render directly in 3D space
-      const isCollapsed = (typeof window !== 'undefined' && typeof window.isPrecompEffectivelyCollapsed === 'function')
-        ? window.isPrecompEffectivelyCollapsed(precompLayer)
-        : !!precompLayer.collapseTransformations;
-      if (isCollapsed) {
-        precompLayer._lightweightFastPath = false;
-        precompLayer._extractProgress = 1;
-        precompLayer._extractComplete = true;
-        this.updateLayerProgressBar(precompLayer);
-        return;
-      }
-
+      precompLayer._lightweightFastPath = true;
+      precompLayer._extractProgress = 1;
+      precompLayer._extractComplete = true;
+      precompLayer._isExtracting = false;
       const sourceKey = this._getSourceKey(precompLayer);
-      if (!sourceKey) return;
-
-      if (precompLayer._dirty) {
-        const existing = this.sources.get(sourceKey);
-        if (existing) {
-          existing.isExtracting = false;
-          if (existing.pendingFrames) existing.pendingFrames.clear();
-          if (existing.frames) {
-            const closedSet = new Set();
-            for (const bmp of existing.frames.values()) {
-              if (bmp && !closedSet.has(bmp) && typeof bmp.close === 'function') {
-                closedSet.add(bmp);
-                try { bmp.close(); } catch (_) {}
-              }
-            }
-            existing.frames.clear();
-          }
-          if (existing.cachedFrameIndices) existing.cachedFrameIndices.clear();
-        }
-        precompLayer._dirty = false;
-      }
-
-      // 3. SMART LIGHTWEIGHT FAST-PATH:
-      // If precomp only has simple animations (e.g. transform/position/scale/rotation/opacity keyframes or simple expressions
-      // on static photos/shapes/text without video or heavy pixel effects), DO NOT bake 300+ frames like a video!
-      // Instead, mark it ready immediately (0ms) and let renderPrecompToCanvas draw its lightweight 2D/3D transforms on-the-fly.
-      const complexity = this._analyzePrecompComplexity(precompLayer);
-      precompLayer._complexityAnalysis = complexity;
-      if (complexity.mode === 'lightweight') {
-        precompLayer._lightweightFastPath = true;
-        precompLayer._extractProgress = 1;
-        precompLayer._extractComplete = true;
+      if (sourceKey) {
         const taskKey = `bake_${sourceKey}`;
         if (this._activeTasks && this._activeTasks.has(taskKey)) {
           const lt = this._activeTasks.get(taskKey);
@@ -2361,280 +2291,19 @@
           this._activeTasks.delete(taskKey);
           this._notifyProgress();
         }
-        this.updateLayerProgressBar(precompLayer);
-        if (typeof window !== 'undefined' && window.PreviewCacheManager && !window.isTimelinePlaying && window.PreviewCacheManager.idleCacheEnabled) {
-          if (window.PreviewCacheManager._unreadyFrames) window.PreviewCacheManager._unreadyFrames.clear();
-          window.PreviewCacheManager.scheduleIdleCheck(true);
-        }
-        return;
       }
-      precompLayer._lightweightFastPath = false;
-
-      const source = this._getOrCreateSource(sourceKey, '', precompLayer.name || 'Precomp', precompLayer.id, true);
-      source.fps = this.targetFps;
-
-      const { startIdx, endIdx } = this.getLayerFrameRange(precompLayer);
-      source.duration = Math.max(source.duration || 0, (endIdx + 1) / source.fps);
-
-      const missing = [];
-      for (let i = startIdx; i <= endIdx; i++) {
-        const hasRam = source.frames && source.frames.has(i);
-        const hasCached = source.cachedFrameIndices && source.cachedFrameIndices.has(i);
-        if (!hasRam && !hasCached) {
-          missing.push(i);
-        }
-      }
-
-      if (missing.length === 0) {
-        precompLayer._extractProgress = 1;
-        precompLayer._extractComplete = true;
-        this.updateLayerProgressBar(precompLayer);
-        return;
-      }
-
-      if (!source.pendingFrames) source.pendingFrames = new Set();
-      missing.forEach(idx => source.pendingFrames.add(idx));
-
-      if (source.isExtracting) {
-        if (source._extractPromise) await source._extractPromise;
-        return;
-      }
-
-      // Serialize precomp baking 1-by-1 so multiple precomps never fight in parallel
-      if (!this._precompExtractionQueue) this._precompExtractionQueue = [];
-      const anyPrecompExtracting = Array.from(this.sources.values()).some(
-        s => s && s.isPrecomp && s.isExtracting && s.sourceKey !== source.sourceKey
-      );
-      if (anyPrecompExtracting) {
-        let queuedEntry = this._precompExtractionQueue.find(q => q.source.sourceKey === source.sourceKey);
-        if (!queuedEntry) {
-          let resolveQueue;
-          const queuePromise = new Promise(r => { resolveQueue = r; });
-          queuedEntry = { source, precompLayer, resolve: resolveQueue, promise: queuePromise };
-          source._extractPromise = queuePromise;
-          this._precompExtractionQueue.push(queuedEntry);
-        }
-        await queuedEntry.promise;
-        return;
-      }
-
-      await this._startPrecompExtractionNow(source, precompLayer);
-    }
-
-    async _startPrecompExtractionNow(source, precompLayer) {
-      if (!source || source.isExtracting) return;
-      source.isExtracting = true;
-      const runPromise = this._runPrecompExtractionLoop(source, precompLayer).finally(() => {
-        source.isExtracting = false;
-        source._extractPromise = null;
-        this._scheduleBlobEncodeDrain();
-        this._notifyLayersForSource(source.sourceKey, true);
-        this._pumpNextQueuedPrecompExtraction();
-      });
-      source._extractPromise = runPromise;
-      await runPromise;
-    }
-
-    _pumpNextQueuedPrecompExtraction() {
-      if (!this._precompExtractionQueue || this._precompExtractionQueue.length === 0) return;
-      for (const s of this.sources.values()) {
-        if (s && s.isPrecomp && s.isExtracting) return;
-      }
-      while (this._precompExtractionQueue.length > 0) {
-        const next = this._precompExtractionQueue.shift();
-        if (next && next.source && next.source.pendingFrames && next.source.pendingFrames.size > 0 && !next.source.isExtracting) {
-          this._startPrecompExtractionNow(next.source, next.precompLayer).finally(() => {
-            if (typeof next.resolve === 'function') next.resolve();
-          });
-          return;
-        } else if (next && typeof next.resolve === 'function') {
-          next.resolve();
-        }
+      this.updateLayerProgressBar(precompLayer);
+      if (typeof window !== 'undefined' && window.PreviewCacheManager && !window.isTimelinePlaying && window.PreviewCacheManager.idleCacheEnabled) {
+        if (window.PreviewCacheManager._unreadyFrames) window.PreviewCacheManager._unreadyFrames.clear();
+        window.PreviewCacheManager.scheduleIdleCheck(true);
       }
     }
 
-    async _runPrecompExtractionLoop(source, precompLayer) {
-      if (typeof document === 'undefined' || typeof window === 'undefined' || typeof window.renderPrecompToCanvas !== 'function' || typeof createImageBitmap !== 'function') {
-        return;
-      }
+    async _startPrecompExtractionNow(source, precompLayer) {}
 
-      // Wait if any nested video or precomp children are still extracting
-      const childAsyncLayers = (precompLayer.layers || []).filter(c => c && (c.type === 'video' || c.type === 'precomp') && !c.hidden);
-      for (const child of childAsyncLayers) {
-        await this._waitForLayerExtractionDone(child);
-      }
+    _pumpNextQueuedPrecompExtraction() {}
 
-      // Wait briefly if any static image children inside the precomp are still loading their DOM Image
-      const childImages = (precompLayer.layers || []).filter(c => c && (c.type === 'image' || c.fillType === 'media') && !c.hidden);
-      if (childImages.length > 0 && typeof window.getOrLoadLayerMedia === 'function') {
-        let imgWait = 0;
-        while (imgWait < 25) {
-          const allReady = childImages.every(ci => {
-            const m = window.getOrLoadLayerMedia(ci);
-            return m && m.el && (!m.el.tagName || m.el.tagName !== 'IMG' || (m.el.complete && m.el.naturalWidth > 0));
-          });
-          if (allReady) break;
-          imgWait++;
-          await new Promise(r => setTimeout(r, 20));
-        }
-      }
-
-      const ps = window.currentProjectState || {};
-      const projDims = (typeof window !== 'undefined' && typeof window.getProjectDimensions === 'function' && ps.resolution && ps.aspectRatio) ? window.getProjectDimensions(ps.resolution, ps.aspectRatio) : null;
-      const baseW = Math.round(Math.abs(precompLayer.mediaWidth || precompLayer.scaleW || ps._baseW || ps.baseW || ps.width || (projDims ? projDims[0] : 0)));
-      const baseH = Math.round(Math.abs(precompLayer.mediaHeight || precompLayer.scaleH || ps._baseH || ps.baseH || ps.height || (projDims ? projDims[1] : 0)));
-      const tier = this._deviceTier || getDeviceRamTier();
-      const maxDim = tier.maxTargetDim || 960;
-      const scale = Math.min(1, maxDim / Math.max(baseW, baseH));
-      const targetW = Math.max(160, Math.round(baseW * scale));
-      const targetH = Math.max(90, Math.round(baseH * scale));
-      source.width = targetW;
-      source.height = targetH;
-
-      const workCanvas = document.createElement('canvas');
-      const testCtx = workCanvas && typeof workCanvas.getContext === 'function' ? workCanvas.getContext('2d') : null;
-      if (!testCtx || typeof testCtx.save !== 'function') return;
-      workCanvas.width = targetW;
-      workCanvas.height = targetH;
-
-      const complexity = precompLayer._complexityAnalysis || this._analyzePrecompComplexity(precompLayer);
-
-      // FAST-PATH 1: If precomp contains only static content (e.g. 1 static photo/shape with no keyframes),
-      // render ONCE and share the single ImageBitmap across all frames in <2ms!
-      if (complexity.mode === 'static') {
-        const pendingAll = Array.from(source.pendingFrames || []);
-        source.pendingFrames.clear();
-        if (pendingAll.length > 0) {
-          const fps = source.fps || this.targetFps || 60;
-          const sampleSec = pendingAll[0] / fps;
-          workCanvas._lastRenderKey = null;
-          window.renderPrecompToCanvas(precompLayer, workCanvas, sampleSec, targetW, targetH, 'precomp-extract');
-          try {
-            const singleBmp = await createImageBitmap(workCanvas);
-            if (singleBmp && this.sources.has(source.sourceKey) && !precompLayer._dirty) {
-              if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
-              for (let i = 0; i < pendingAll.length; i++) {
-                const idx = pendingAll[i];
-                retainBitmap(singleBmp, source.sourceKey);
-                source.frames.set(idx, singleBmp);
-                source.cachedFrameIndices.add(idx);
-              }
-              source._hasNewExtractedFrames = true;
-              this._notifyLayersForSource(source.sourceKey, true, pendingAll[0]);
-              return;
-            } else if (singleBmp && typeof singleBmp.close === 'function') {
-              singleBmp.close();
-            }
-          } catch (_) {}
-        }
-        return;
-      }
-
-      // Helper to check if a given innerSec falls inside any animated interval of the heavy precomp
-      const animRanges = Array.isArray(complexity.animatedRanges) ? complexity.animatedRanges : [];
-      const isSecAnimated = (sec) => {
-        if (animRanges.length === 0) return true;
-        for (let r = 0; r < animRanges.length; r++) {
-          if (sec >= animRanges[r][0] && sec <= animRanges[r][1]) return true;
-        }
-        return false;
-      };
-
-      let lastHoldBmp = null;
-      let lastWasStaticHold = false;
-
-      while (source.pendingFrames && source.pendingFrames.size > 0) {
-        if (!this.sources.has(source.sourceKey) || !source.isExtracting || precompLayer._dirty) break;
-
-        if ((window.isExporting && !source._forceExtraction) || this._isUserInteracting()) {
-          await new Promise(r => setTimeout(r, 80));
-          continue;
-        }
-
-        const batch = this._claimContiguousFrameBatch(source, tier.isMobile ? 8 : 12);
-        if (batch.length === 0) break;
-
-        const curPlayheadFIdx = this._getVideoFrameForPlayhead(source);
-        let framesSinceNotify = 0;
-        let lastNotifyTime = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-        const fps = source.fps || this.targetFps || 60;
-
-        for (let i = 0; i < batch.length; i++) {
-          const targetIdx = batch[i];
-          if (!this.sources.has(source.sourceKey) || !source.isExtracting || precompLayer._dirty) break;
-          if (source.frames.has(targetIdx) || (source.cachedFrameIndices && source.cachedFrameIndices.has(targetIdx))) {
-            continue;
-          }
-
-          const innerSec = targetIdx / fps;
-          const animatedHere = isSecAnimated(innerSec);
-
-          // FAST-PATH 2 (Static Hold Reuse inside Heavy Precomp):
-          // If this frame is outside the animated keyframe/clip window and we already rendered the static hold bitmap,
-          // reuse that exact ImageBitmap in O(1) without re-rendering or calling createImageBitmap!
-          if (!animatedHere && lastWasStaticHold && lastHoldBmp) {
-            retainBitmap(lastHoldBmp, source.sourceKey);
-            source.frames.set(targetIdx, lastHoldBmp);
-            if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
-            source.cachedFrameIndices.add(targetIdx);
-            source._hasNewExtractedFrames = true;
-
-            // Batch fill subsequent static frames in this batch
-            while (i + 1 < batch.length) {
-              const nextIdx = batch[i + 1];
-              const nextSec = nextIdx / fps;
-              if (isSecAnimated(nextSec) || source.frames.has(nextIdx)) break;
-              i++;
-              retainBitmap(lastHoldBmp, source.sourceKey);
-              source.frames.set(nextIdx, lastHoldBmp);
-              source.cachedFrameIndices.add(nextIdx);
-              framesSinceNotify++;
-            }
-          } else {
-            workCanvas._lastRenderKey = null;
-            window.renderPrecompToCanvas(precompLayer, workCanvas, innerSec, targetW, targetH, 'precomp-extract');
-
-            try {
-              const bmp = await createImageBitmap(workCanvas);
-              if (bmp && this.sources.has(source.sourceKey) && !precompLayer._dirty) {
-                retainBitmap(bmp, source.sourceKey);
-                source.frames.set(targetIdx, bmp);
-                if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
-                source.cachedFrameIndices.add(targetIdx);
-                source._hasNewExtractedFrames = true;
-                this._evictOldestFrame(source, targetIdx);
-                if (!animatedHere) {
-                  lastHoldBmp = bmp;
-                  lastWasStaticHold = true;
-                } else {
-                  lastHoldBmp = null;
-                  lastWasStaticHold = false;
-                }
-              } else if (bmp && typeof bmp.close === 'function') {
-                bmp.close();
-              }
-            } catch (_) {}
-          }
-
-          framesSinceNotify++;
-          const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-          const isPlayhead = (Math.abs(targetIdx - curPlayheadFIdx) <= 1);
-          if (isPlayhead || framesSinceNotify >= (tier.isMobile ? 5 : 8) || (now - lastNotifyTime) >= 100) {
-            this._notifyLayersForSource(source.sourceKey, false, targetIdx);
-            framesSinceNotify = 0;
-            lastNotifyTime = now;
-          }
-
-          if (i % (tier.isMobile ? 2 : 3) === 1) {
-            await yieldToUI(tier.isMobile ? 10 : 5);
-          }
-        }
-
-        // Notify at end of batch and yield cleanly to allow UI/interaction events
-        this._notifyLayersForSource(source.sourceKey, false);
-        await yieldToUI(tier.isMobile ? 14 : 8);
-      }
-    }
+    async _runPrecompExtractionLoop(source, precompLayer) {}
 
     /**
      * Request frame extraction for a video or precomp layer's active range

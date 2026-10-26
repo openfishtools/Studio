@@ -6,9 +6,13 @@ console.log('--- Deep Verification: VideoCompEngine, PreviewCacheManager & Compo
 
 // Set up mock browser environment
 global.window = global;
+global.window.location = { search: '', href: '' };
+global.localStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
 global.window.addEventListener = () => {};
 global.window.removeEventListener = () => {};
 global.document = {
+  addEventListener: () => {},
+  removeEventListener: () => {},
   getElementById: (id) => null,
   createElement: (tag) => ({
     tagName: tag.toUpperCase(),
@@ -597,6 +601,45 @@ assert.strictEqual(prefetchCalledWith, 10, 'resolveLayerVideoElement must proact
 vfe.sources.delete('src_pre_test_1');
 vfe.sources.delete('src_cb_test');
 vfe.sources.delete('stream_test');
+
+// Test: True After Effects Model for Precompositions
+const livePrecomp = {
+  id: 'precomp_live_ae_test',
+  type: 'precomp',
+  startSec: 0,
+  durationSec: 5,
+  speed: 1.0,
+  sourceOffsetSec: 0,
+  layers: [{ id: 'child_txt', type: 'text', startSec: 0, durationSec: 5 }]
+};
+const resLive = engine.resolvePrecompElement(livePrecomp, { currentSec: 1.0 });
+assert.strictEqual(resLive.fromSequence, false, 'resolvePrecompElement must not use sequence for live precomps');
+assert.strictEqual(resLive.hasUnreadyMedia, false, 'live precomps must be marked ready immediately without waiting for baking');
+
+// Test: VideoFrameExtractor.extractPrecompRange completes in 0ms
+const pExtract = vfe.extractPrecompRange(livePrecomp);
+assert(pExtract && typeof pExtract.then === 'function', 'extractPrecompRange must return a promise');
+assert.strictEqual(livePrecomp._extractComplete, true, 'extractPrecompRange must mark precomp complete immediately');
+assert.strictEqual(livePrecomp._extractProgress, 1, 'extractPrecompRange must mark precomp progress 100% immediately');
+
+// Test: Modifying precomp container transform preserves _precompBufferCanvas._lastRenderKey
+livePrecomp._precompBufferCanvas = { width: 960, height: 540, _lastRenderKey: 'frame_60_960_540' };
+mockProject.layers = [livePrecomp];
+pcm.syncStateWithProject(mockProject, 'root');
+livePrecomp.posX = 500;
+livePrecomp.scaleW = 120;
+livePrecomp.rotation = 45;
+pcm.syncStateWithProject(mockProject, 'root');
+assert.strictEqual(livePrecomp._precompBufferCanvas._lastRenderKey, 'frame_60_960_540', 'Outer precomp container transform changes must preserve inner buffer _lastRenderKey');
+
+// Test: getProjectDimensions toast notification on invalid resolution
+require(path.join(__dirname, '../js/editor/editor-state.js'));
+let toastCalledWith = null;
+global.window.showToast = (msg, type) => { toastCalledWith = { msg, type }; };
+const invalidDims = window.getProjectDimensions('INVALID_RES', 'INVALID_ASPECT');
+assert(toastCalledWith && toastCalledWith.type === 'error', 'getProjectDimensions must trigger error toast on invalid resolution');
+assert(Array.isArray(invalidDims) && invalidDims[0] > 0, 'getProjectDimensions must return safe fallback tuple');
+console.log('✓ True After Effects Model & precomp transform isolation verified.');
 
 console.log('✓ VideoFrameExtractor verified (retain/release deduplication, reverse eviction inversion, seamless reverse split, proactive streaming prefetch, upcoming frame sort order, precomp RAM eviction protection, extraction circuit breaker, mobile VRAM cap, precomp sequence resolution, and invalidation).');
 

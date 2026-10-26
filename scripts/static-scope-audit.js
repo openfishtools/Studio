@@ -19,7 +19,7 @@ const BUILTIN_GLOBALS = new Set([
   'ArrayBuffer', 'DataView', 'Blob', 'File', 'FileReader', 'FormData', 'Image',
   'Audio', 'AudioContext', 'OfflineAudioContext', 'webkitAudioContext',
   'CanvasRenderingContext2D', 'Path2D', 'ImageData', 'HTMLCanvasElement',
-  'HTMLVideoElement', 'HTMLAudioElement', 'HTMLImageElement', 'HTMLElement',
+  'HTMLVideoElement', 'HTMLAudioElement', 'HTMLImageElement', 'HTMLAnchorElement', 'HTMLElement',
   'Element', 'Node', 'Event', 'CustomEvent', 'MouseEvent', 'KeyboardEvent',
   'PointerEvent', 'TouchEvent', 'DragEvent', 'WheelEvent', 'ResizeObserver',
   'IntersectionObserver', 'MutationObserver', 'AbortController', 'URL',

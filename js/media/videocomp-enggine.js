@@ -333,20 +333,12 @@
             return { el: bmp, innerSec, fromSequence: true, hasUnreadyMedia: false };
           }
         }
-        if (precompLayer._lightweightFastPath || (typeof extractor._isPrecompLightweightContent === 'function' && extractor._isPrecompLightweightContent(precompLayer))) {
-          precompLayer._lightweightFastPath = true;
-          return { el: null, innerSec, fromSequence: false, hasUnreadyMedia: false };
-        }
-        if (!isIdleCache && !source?.isExtracting) {
-          const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-          if (!precompLayer._lastExtractRequestMs || (now - precompLayer._lastExtractRequestMs) >= 1500) {
-            precompLayer._lastExtractRequestMs = now;
-            extractor.extractLayerRange(precompLayer);
-          }
-        }
       }
 
-      return { el: null, innerSec, fromSequence: false, hasUnreadyMedia: true };
+      // True After Effects Model: Precompositions render dynamically on-the-fly via renderPrecompToCanvas.
+      // Never trigger VideoFrameExtractor baking; precomp layers are always ready.
+      precompLayer._lightweightFastPath = true;
+      return { el: null, innerSec, fromSequence: false, hasUnreadyMedia: false };
     }
 
     /**

@@ -2074,10 +2074,6 @@
           if (precompRes && precompRes.fromSequence && precompRes.el) {
             el = precompRes.el;
           } else {
-            if (isIdleCache && (precompRes?.hasUnreadyMedia || (window.PreviewCacheManager && typeof window.PreviewCacheManager.isLayerBaking === 'function' && window.PreviewCacheManager.isLayerBaking(layer)))) {
-              hasUnreadyMedia = true;
-              return;
-            }
             if (!layer._precompBufferCanvas || !(layer._precompBufferCanvas instanceof HTMLCanvasElement) || typeof layer._precompBufferCanvas.getContext !== 'function') {
               layer._precompBufferCanvas = document.createElement('canvas');
             }

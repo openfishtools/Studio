@@ -24,10 +24,18 @@
         if (parts.length === 2) {
           const w = parseInt(parts[0], 10);
           const h = parseInt(parts[1], 10);
-          if (!isNaN(w) && !isNaN(h)) return [w, h];
+          if (!isNaN(w) && !isNaN(h) && w > 0 && h > 0) return [w, h];
         }
       }
-      return (window.resMap && window.resMap[res] && window.resMap[res][aspect]) || [1920, 1080];
+      if (window.resMap && window.resMap[res] && window.resMap[res][aspect]) {
+        return window.resMap[res][aspect];
+      }
+      if (typeof window !== 'undefined' && typeof window.showToast === 'function') {
+        window.showToast(`Error: Resolusi project '${res}' (${aspect}) tidak valid!`, 'error');
+      } else if (typeof console !== 'undefined' && console.error) {
+        console.error(`[Resolution Error] Invalid resolution '${res}' (${aspect})`);
+      }
+      return (window.resMap && window.resMap['1080p'] && window.resMap['1080p']['16:9']) || [1920, 1080];
     };
 
     window.toggleResolutionUI = function(containerId, aspectVal) {
@@ -2804,7 +2812,7 @@
       if (currentProject && currentProject.motionBlur) {
         currentProjectState.motionBlur = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(currentProject.motionBlur) : (Array.isArray(currentProject.motionBlur) ? [] : {}));
       } else {
-        const storedGlobalMb = localStorage.getItem('oft_global_motion_blur') === 'true';
+        const storedGlobalMb = (typeof localStorage !== 'undefined') ? (localStorage.getItem('oft_global_motion_blur') === 'true') : false;
         if (!currentProjectState.motionBlur) {
           currentProjectState.motionBlur = {
             enabled: storedGlobalMb,

@@ -860,7 +860,7 @@
           l._fillDirty = true;
           if (l._shapeBufferCanvas) l._shapeBufferCanvas._lastShapeKey = null;
           if (l._fillBufferCanvas) l._fillBufferCanvas._lastRenderKey = null;
-          if (l._precompBufferCanvas) l._precompBufferCanvas._lastRenderKey = null;
+          if (l.type !== 'precomp' && l._precompBufferCanvas) l._precompBufferCanvas._lastRenderKey = null;
           l._textDirty = true;
           if (l._textBufferCanvas) l._textBufferCanvas._lastRenderKey = null;
           if (l._textMbCanvas) l._textMbCanvas._lastRenderKey = null;
@@ -1300,7 +1300,7 @@
       } else if (layer.type === 'video' || layer.mediaType === 'video') {
         if (!layer._extractComplete) return true;
       } else if (layer.type === 'precomp') {
-        if (layer._dirty || layer._isExtracting) return true;
+        return false;
       }
 
       if (typeof window !== 'undefined' && window.FishBgRemovalEngine) {
@@ -1461,10 +1461,6 @@
             }
           }
           if (l.type === 'precomp' && Array.isArray(l.layers)) {
-            if (l._dirty || l._isExtracting) return false;
-            if (!l.collapseTransformations && window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isVideoFrameReady === 'function') {
-              if (window.VideoFrameExtractor.isVideoFrameReady(l, sec)) continue;
-            }
             const precompTime = (sec - start) * (l.speed || 1.0) + (l.sourceOffsetSec || 0);
             for (let j = 0; j < l.layers.length; j++) {
               const sub = l.layers[j];
