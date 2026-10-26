@@ -139,7 +139,7 @@
         this.rulerCtx = this.rulerCanvas.getContext('2d');
       }
       this.setupUserActivityListeners();
-      const savedIdle = typeof localStorage !== 'undefined' ? localStorage.getItem('oft_idle_cache') !== 'false' : true;
+      const savedIdle = typeof localStorage !== 'undefined' ? localStorage.getItem('oft_idle_cache') === 'true' : false;
       this.idleCacheEnabled = (typeof window !== 'undefined' && window.isPreviewCacheEnabled !== false) && savedIdle;
     }
 
@@ -481,6 +481,9 @@
       if (this._unreadyFrames) {
         this._unreadyFrames.delete(inFlightKey);
       }
+      if (this._missedPlaybackFrames) {
+        this._missedPlaybackFrames.delete(frameIndex);
+      }
       const pool = this.getPool(targetComp);
       const entry = pool.get(frameIndex);
       if (entry) {
@@ -538,11 +541,16 @@
           changed = true;
         }
       }
+      if (this._missedPlaybackFrames) {
+        for (let f = startFrame; f <= endFrame; f++) {
+          this._missedPlaybackFrames.delete(f);
+        }
+      }
       if (this.ensureAudioOnlyFullCache(null, targetComp)) {
         return;
       }
       if (!compId || compId === this.activeCompId) {
-        this.updateRulerUI();
+        this.updateRulerUI(true);
       }
       if (this.idleCacheEnabled) {
         this.scheduleIdleCheck();
@@ -866,6 +874,9 @@
       if (this._unreadyFrames) {
         this._unreadyFrames.clear();
       }
+      if (this._missedPlaybackFrames) {
+        this._missedPlaybackFrames.clear();
+      }
       const closedBitmaps = new Set();
       if (scope === 'all') {
         for (const pool of this.pools.values()) {
@@ -890,7 +901,7 @@
       if (this.ensureAudioOnlyFullCache(null, compId || this.activeCompId)) {
         return;
       }
-      this.updateRulerUI();
+      this.updateRulerUI(true);
       if (this.idleCacheEnabled) {
         this.scheduleIdleCheck();
       }
@@ -1010,7 +1021,12 @@
       this.updateRulerUI();
     }
 
-    updateRulerUI() {
+    updateRulerUI(immediate = false) {
+      if (immediate) {
+        this._rulerRafScheduled = false;
+        this._renderRuler();
+        return;
+      }
       if (this._rulerRafScheduled) return;
       this._rulerRafScheduled = true;
       const schedule = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame : (fn) => setTimeout(fn, 16);
@@ -1022,14 +1038,14 @@
 
     _renderRuler() {
       if (typeof window !== 'undefined' && window.isExporting) return;
-      if (!this.rulerCanvas) {
-        this.rulerCanvas = document.getElementById('timeline-cache-ruler-bar');
+      if (!this.rulerCanvas || !this.rulerCanvas.isConnected) {
+        this.rulerCanvas = typeof document !== 'undefined' ? document.getElementById('timeline-cache-ruler-bar') : null;
         if (this.rulerCanvas) this.rulerCtx = this.rulerCanvas.getContext('2d');
       }
       if (!this.rulerCanvas || !this.rulerCtx) return;
 
-      const pps = window.currentPixelsPerSecond || 80;
-      const totalDur = (typeof window.getProjectTotalDuration === 'function') ? window.getProjectTotalDuration() : 0;
+      const pps = (typeof window !== 'undefined' && window.currentPixelsPerSecond) || 80;
+      const totalDur = (typeof window !== 'undefined' && typeof window.getProjectTotalDuration === 'function') ? window.getProjectTotalDuration() : 0;
       const trackWidth = Math.ceil(totalDur * pps);
 
       if (this.rulerCanvas.width !== trackWidth || this.rulerCanvas.height !== 3) {
@@ -1040,7 +1056,17 @@
       }
 
       this.rulerCtx.clearRect(0, 0, this.rulerCanvas.width, 3);
-      if (totalDur <= 0 || this.frames.size === 0 || window.isPreviewCacheEnabled === false) return;
+      if (totalDur <= 0 || this.frames.size === 0 || (typeof window !== 'undefined' && window.isPreviewCacheEnabled === false)) return;
+
+      const totalFrames = Math.ceil(totalDur * this.fps);
+
+      // Prune orphan frames outside project duration so shrinking project duration removes zombie frames
+      for (const f of Array.from(this.frames.keys())) {
+        if (f < 0 || f > totalFrames) {
+          this.deleteFrame(f, false);
+        }
+      }
+      if (this.frames.size === 0) return;
 
       if (!this._cachedPrimaryColor || (Date.now() - (this._lastColorQuery || 0) > 3000)) {
         this._cachedPrimaryColor = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#98ce7b';
@@ -1049,7 +1075,6 @@
       this.rulerCtx.fillStyle = this._cachedPrimaryColor;
 
       const pxPerFrame = pps / this.fps;
-      const totalFrames = Math.ceil(totalDur * this.fps);
 
       let runStart = -1;
       for (let f = 0; f <= totalFrames; f++) {

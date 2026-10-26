@@ -4477,6 +4477,12 @@ function initTimelineOperations() {
                         renderLayerKeyframes(m.layer, m.clipEl);
                       }
                     }
+                    if (typeof invalidatePreviewCacheForLayer === 'function') {
+                      const uStart = Math.min(m.initialStartSec, m.layer.startSec);
+                      const mCurDur = m.layer.durationSec !== undefined ? m.layer.durationSec : ((m.layer.widthPx || 320) / pps);
+                      const uEnd = Math.max(m.initialEndSec, m.layer.startSec + mCurDur);
+                      invalidatePreviewCacheForLayer(m.layer, uStart, uEnd);
+                    }
                   });
                 } else {
                   // Single layer drag
@@ -4547,6 +4553,13 @@ function initTimelineOperations() {
                       });
                     }
                   }
+
+                  if (typeof invalidatePreviewCacheForLayer === 'function') {
+                    const uStart = Math.min(initialSlideStartSec, layer.startSec);
+                    const curDur = layer.durationSec !== undefined ? layer.durationSec : (durPx / pps);
+                    const uEnd = Math.max(initialSlideEndSec, layer.startSec + curDur);
+                    invalidatePreviewCacheForLayer(layer, uStart, uEnd);
+                  }
                 }
 
                 if (!slideRedrawRaf) {
@@ -4614,11 +4627,21 @@ function initTimelineOperations() {
                   if (isMultiDragging && multiDragLayers.length > 0) {
                     multiDragLayers.forEach(m => {
                       if (m.clipEl) m.clipEl.classList.remove('is-sliding');
-                      invalidatePreviewCacheForLayer(m.layer, m.initialStartSec, m.initialEndSec);
+                      if (typeof invalidatePreviewCacheForLayer === 'function') {
+                        const uStart = Math.min(m.initialStartSec, m.layer.startSec);
+                        const mCurDur = m.layer.durationSec !== undefined ? m.layer.durationSec : (m.initialDurSec || 5);
+                        const uEnd = Math.max(m.initialEndSec, m.layer.startSec + mCurDur);
+                        invalidatePreviewCacheForLayer(m.layer, uStart, uEnd);
+                      }
                     });
                   } else {
                     clipEl.classList.remove('is-sliding');
-                    invalidatePreviewCacheForLayer(layer, initialSlideStartSec, initialSlideEndSec);
+                    if (typeof invalidatePreviewCacheForLayer === 'function') {
+                      const uStart = Math.min(initialSlideStartSec, layer.startSec);
+                      const curDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
+                      const uEnd = Math.max(initialSlideEndSec, layer.startSec + curDur);
+                      invalidatePreviewCacheForLayer(layer, uStart, uEnd);
+                    }
                   }
                   try {
                     clipEl.releasePointerCapture(upEvent.pointerId);
@@ -4644,10 +4667,22 @@ function initTimelineOperations() {
                             });
                           }
                         }
+                        if (typeof invalidatePreviewCacheForLayer === 'function') {
+                          const uStart = Math.min(m.initialStartSec, m.layer.startSec);
+                          const mCurDur = m.layer.durationSec !== undefined ? m.layer.durationSec : (m.initialDurSec || 5);
+                          const uEnd = Math.max(m.initialEndSec, m.layer.startSec + mCurDur);
+                          invalidatePreviewCacheForLayer(m.layer, uStart, uEnd);
+                        }
                       });
                     } else {
                       layer.startSec = Math.round(layer.startSec * fps) / fps;
                       layer.startPx = Math.round(layer.startSec * pps);
+                      if (typeof invalidatePreviewCacheForLayer === 'function') {
+                        const uStart = Math.min(initialSlideStartSec, layer.startSec);
+                        const curDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
+                        const uEnd = Math.max(initialSlideEndSec, layer.startSec + curDur);
+                        invalidatePreviewCacheForLayer(layer, uStart, uEnd);
+                      }
                     }
                     if (Array.isArray(window.selectedKeyframes) && window.selectedKeyframes.length > 0) {
                       window.selectedKeyframes.forEach(item => {
@@ -4800,8 +4835,7 @@ function initTimelineOperations() {
                       initialOffsetSec: l.sourceOffsetSec || 0,
                       totalMediaDur: (l.type === 'video' || l.type === 'audio') ? getLayerMediaDuration(l) : null,
                       clipEl: sClipEl,
-                      lane: sLane,
-                      initialKeyframes: l.keyframes ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.keyframes) : (Array.isArray(l.keyframes) ? [] : JSON.parse(JSON.stringify(l.keyframes)))) : null
+                      lane: sLane
                     };
                   });
                 } else {
@@ -4816,8 +4850,7 @@ function initTimelineOperations() {
                     initialOffsetSec: initialOffsetSec,
                     totalMediaDur: totalMediaDur,
                     clipEl: clipEl,
-                    lane: lane,
-                    initialKeyframes: layer.keyframes ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(layer.keyframes) : (Array.isArray(layer.keyframes) ? [] : JSON.parse(JSON.stringify(layer.keyframes)))) : null
+                    lane: lane
                   }];
                 }
 
@@ -4908,18 +4941,10 @@ function initTimelineOperations() {
                       }
                     }
 
-                    // Shift layer keyframes synchronously with startSec change
-                    if (m.initialKeyframes && mLayer.keyframes) {
-                      const shiftedStartSec = mLayer.startSec - m.initialStartSec;
-                      for (const [p, kfs] of Object.entries(m.initialKeyframes)) {
-                        if (!Array.isArray(kfs) || !Array.isArray(mLayer.keyframes[p])) continue;
-                        kfs.forEach((initKf, idx) => {
-                          const curKf = mLayer.keyframes[p][idx];
-                          if (curKf) {
-                            curKf.time = Math.max(0, Number((initKf.time + shiftedStartSec).toFixed(4)));
-                          }
-                        });
-                      }
+                    if (typeof invalidatePreviewCacheForLayer === 'function') {
+                      const uStart = Math.min(m.initialStartSec, mLayer.startSec);
+                      const uEnd = Math.max(m.initialEndSec, mLayer.startSec + mLayer.durationSec);
+                      invalidatePreviewCacheForLayer(mLayer, uStart, uEnd);
                     }
 
                     if (m.clipEl) {
@@ -4972,7 +4997,11 @@ function initTimelineOperations() {
                       }
                       if (mLayer.type === 'audio') renderAudioClipWaveform(mLayer, m.clipEl);
                     }
-                    invalidatePreviewCacheForLayer(mLayer, m.initialStartSec, m.initialEndSec);
+                    if (typeof invalidatePreviewCacheForLayer === 'function') {
+                      const uStart = Math.min(m.initialStartSec, mLayer.startSec);
+                      const uEnd = Math.max(m.initialEndSec, mLayer.startSec + mLayer.durationSec);
+                      invalidatePreviewCacheForLayer(mLayer, uStart, uEnd);
+                    }
                     if ((mLayer.type === 'video' || mLayer.type === 'precomp') && window.VideoFrameExtractor) {
                       window.VideoFrameExtractor.extractLayerRange(mLayer);
                     }
@@ -5116,6 +5145,12 @@ function initTimelineOperations() {
                     mLayer.isDurationExplicit = true;
                     mLayer._userTrimmed = true;
 
+                    if (typeof invalidatePreviewCacheForLayer === 'function') {
+                      const uStart = Math.min(m.initialStartSec, mCurStartSec);
+                      const uEnd = Math.max(m.initialEndSec, mCurStartSec + mLayer.durationSec);
+                      invalidatePreviewCacheForLayer(mLayer, uStart, uEnd);
+                    }
+
                     if (m.clipEl) {
                       m.clipEl.style.width = `${mLayer.widthPx}px`;
                       if (!isDesktop || !mLayer._kfExpanded) {
@@ -5171,7 +5206,11 @@ function initTimelineOperations() {
                       }
                       if (mLayer.type === 'audio') renderAudioClipWaveform(mLayer, m.clipEl);
                     }
-                    invalidatePreviewCacheForLayer(mLayer, m.initialStartSec, m.initialEndSec);
+                    if (typeof invalidatePreviewCacheForLayer === 'function') {
+                      const uStart = Math.min(m.initialStartSec, curStartSec);
+                      const uEnd = Math.max(m.initialEndSec, curStartSec + mLayer.durationSec);
+                      invalidatePreviewCacheForLayer(mLayer, uStart, uEnd);
+                    }
                     if ((mLayer.type === 'video' || mLayer.type === 'precomp') && window.VideoFrameExtractor) {
                       window.VideoFrameExtractor.extractLayerRange(mLayer);
                     }
@@ -6762,9 +6801,6 @@ function initTimelineOperations() {
         const remainingDurSec = Math.max(minDuration, Math.round((endSec - currentSec) * fps) / fps);
         const newSourceOffsetSec = computeLayerSourceOffsetAtTime(layer, currentSec, startSec);
 
-        // Invalidate original span BEFORE redrawing
-        invalidatePreviewCacheForLayer(layer, startSec, endSec);
-
         layer.startSec = currentSec;
         layer.durationSec = remainingDurSec;
         layer.startPx = Math.round(currentSec * pps);
@@ -6775,6 +6811,8 @@ function initTimelineOperations() {
         layer.sourceLayerId = layer.sourceLayerId || layer.id;
         layer._cachedStartSec = currentSec;
         layer._cachedEndSec = endSec;
+
+        invalidatePreviewCacheForLayer(layer, startSec, endSec);
 
         renderTimelineLayers();
         redrawComposition();
@@ -7112,9 +7150,6 @@ function initTimelineOperations() {
 
         const remainingDurSec = Math.max(minDuration, Math.round((currentSec - startSec) * fps) / fps);
 
-        // Invalidate original span BEFORE redrawing
-        invalidatePreviewCacheForLayer(layer, startSec, endSec);
-
         layer.startSec = startSec;
         layer.durationSec = remainingDurSec;
         layer.startPx = Math.round(startSec * pps);
@@ -7127,6 +7162,8 @@ function initTimelineOperations() {
         layer.sourceLayerId = layer.sourceLayerId || layer.id;
         layer._cachedStartSec = startSec;
         layer._cachedEndSec = startSec + remainingDurSec;
+
+        invalidatePreviewCacheForLayer(layer, startSec, endSec);
 
         renderTimelineLayers();
         redrawComposition();
@@ -7156,14 +7193,14 @@ function initTimelineOperations() {
           newDurSec = Math.min(newDurSec, maxDurSec);
         }
 
-        invalidatePreviewCacheForLayer(layer, startSec, endSec);
-
         layer.durationSec = newDurSec;
         layer.widthPx = Math.round(newDurSec * pps);
         layer.isDurationExplicit = true;
         layer._userTrimmed = true;
         layer._cachedStartSec = startSec;
         layer._cachedEndSec = startSec + newDurSec;
+
+        invalidatePreviewCacheForLayer(layer, startSec, startSec + newDurSec);
 
         renderTimelineLayers();
         redrawComposition();
@@ -7188,8 +7225,6 @@ function initTimelineOperations() {
         const newStartSec = currentSec - durSec;
         const deltaSec = newStartSec - startSec;
 
-        invalidatePreviewCacheForLayer(layer, startSec, endSec);
-
         layer.startSec = newStartSec;
         layer.startPx = Math.round(newStartSec * pps);
         layer.isDurationExplicit = true;
@@ -7205,6 +7240,8 @@ function initTimelineOperations() {
             }
           });
         }
+
+        invalidatePreviewCacheForLayer(layer, Math.min(startSec, newStartSec), Math.max(endSec, newStartSec + durSec));
 
         renderTimelineLayers();
         redrawComposition();
@@ -7229,8 +7266,6 @@ function initTimelineOperations() {
         const newStartSec = Math.max(0, currentSec);
         const deltaSec = newStartSec - startSec;
 
-        invalidatePreviewCacheForLayer(layer, startSec, endSec);
-
         layer.startSec = newStartSec;
         layer.startPx = Math.round(newStartSec * pps);
         layer.isDurationExplicit = true;
@@ -7246,6 +7281,8 @@ function initTimelineOperations() {
             }
           });
         }
+
+        invalidatePreviewCacheForLayer(layer, Math.min(startSec, newStartSec), Math.max(endSec, newStartSec + durSec));
 
         renderTimelineLayers();
         redrawComposition();
@@ -7283,8 +7320,6 @@ function initTimelineOperations() {
           layer.sourceOffsetSec = Math.max(0, currentOffset - actualExtend * effSpeed);
         }
 
-        invalidatePreviewCacheForLayer(layer, startSec, endSec);
-
         layer.startSec = actualStartSec;
         layer.startPx = Math.round(actualStartSec * pps);
         layer.durationSec = actualDurSec;
@@ -7293,6 +7328,8 @@ function initTimelineOperations() {
         layer._userTrimmed = true;
         layer._cachedStartSec = actualStartSec;
         layer._cachedEndSec = endSec;
+
+        invalidatePreviewCacheForLayer(layer, Math.min(startSec, actualStartSec), Math.max(endSec, actualStartSec + actualDurSec));
 
         renderTimelineLayers();
         redrawComposition();
@@ -7352,8 +7389,6 @@ function initTimelineOperations() {
           const endSec = startSec + durSec;
           const effSpeed = (layer.speed !== undefined && layer.speed !== 0) ? Math.abs(layer.speed) : 1.0;
 
-          invalidatePreviewCacheForLayer(layer, startSec, endSec);
-
           if (currentSec <= startSec) {
             // Playhead before or at start: expand left towards playhead
             const extendSec = startSec - currentSec;
@@ -7404,6 +7439,8 @@ function initTimelineOperations() {
             layer._cachedStartSec = currentSec;
             layer._cachedEndSec = currentSec + minDur;
           }
+
+          invalidatePreviewCacheForLayer(layer, Math.min(startSec, layer.startSec), Math.max(endSec, layer.startSec + layer.durationSec));
         });
 
         renderTimelineLayers();
@@ -7436,8 +7473,6 @@ function initTimelineOperations() {
           const startSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
           const durSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
           const endSec = startSec + durSec;
-
-          invalidatePreviewCacheForLayer(layer, startSec, endSec);
 
           if (currentSec >= endSec) {
             // Playhead after or at end: expand right towards playhead
@@ -7477,6 +7512,8 @@ function initTimelineOperations() {
             layer._cachedStartSec = newStart;
             layer._cachedEndSec = currentSec;
           }
+
+          invalidatePreviewCacheForLayer(layer, Math.min(startSec, layer.startSec), Math.max(endSec, layer.startSec + layer.durationSec));
         });
 
         renderTimelineLayers();
@@ -7513,8 +7550,6 @@ function initTimelineOperations() {
           const newStartSec = Math.max(0, currentSec);
           const deltaSec = newStartSec - startSec;
 
-          invalidatePreviewCacheForLayer(layer, startSec, endSec);
-
           layer.startSec = newStartSec;
           layer.startPx = Math.round(newStartSec * pps);
           layer.isDurationExplicit = true;
@@ -7530,6 +7565,8 @@ function initTimelineOperations() {
               }
             });
           }
+
+          invalidatePreviewCacheForLayer(layer, Math.min(startSec, newStartSec), Math.max(endSec, newStartSec + durSec));
         });
 
         renderTimelineLayers();
@@ -7566,8 +7603,6 @@ function initTimelineOperations() {
           const newStartSec = Math.max(0, currentSec - durSec);
           const deltaSec = newStartSec - startSec;
 
-          invalidatePreviewCacheForLayer(layer, startSec, endSec);
-
           layer.startSec = newStartSec;
           layer.startPx = Math.round(newStartSec * pps);
           layer.isDurationExplicit = true;
@@ -7583,6 +7618,8 @@ function initTimelineOperations() {
               }
             });
           }
+
+          invalidatePreviewCacheForLayer(layer, Math.min(startSec, newStartSec), Math.max(endSec, newStartSec + durSec));
         });
 
         renderTimelineLayers();

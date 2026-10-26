@@ -913,7 +913,6 @@
       let maxEnd = -Infinity;
 
       if (customStartSec !== null && customStartSec !== undefined && customEndSec !== null && customEndSec !== undefined) {
-        minStart = Math.min(customStartSec, customStartSec);
         minStart = Math.min(customStartSec, customEndSec);
         maxEnd = Math.max(customStartSec, customEndSec);
       }
@@ -1704,7 +1703,7 @@
       // 6. Sync Background Idle Caching Dropdown
       const idleDropdown = document.getElementById('dropdown-idle-caching');
       if (idleDropdown && !isPrecomp) {
-        const idleVal = currentProjectState.idleCache !== undefined ? currentProjectState.idleCache : (localStorage.getItem('oft_idle_cache') !== 'false');
+        const idleVal = currentProjectState.idleCache !== undefined ? currentProjectState.idleCache : (localStorage.getItem('oft_idle_cache') === 'true');
         idleDropdown.dataset.value = idleVal ? 'true' : 'false';
         const label = idleDropdown.querySelector('.custom-dropdown-label');
         if (label) label.textContent = idleVal ? 'Enabled' : 'Disabled';
@@ -2986,8 +2985,8 @@
       }
 
       // Initialize RAM Preview Cache BEFORE initial preview canvas rendering
-      // Idle cache enabled by default when preview cache is active
-      const savedIdleCache = localStorage.getItem('oft_idle_cache') !== 'false'; // default TRUE
+      // Idle cache disabled by default (can be toggled in Project Settings)
+      const savedIdleCache = localStorage.getItem('oft_idle_cache') === 'true'; // default FALSE
       currentProjectState.idleCache = savedIdleCache;
       const initialFps = currentProjectState.fps || 60;
       window.currentTimelineFps = initialFps;
