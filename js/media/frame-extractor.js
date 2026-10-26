@@ -606,6 +606,47 @@
       return cached >= total;
     }
 
+    isLayerBaking(layer) {
+      if (!layer || layer.hidden) return false;
+      const sourceKey = this._getSourceKey(layer);
+
+      // 1. Check if an active baking task is registered in this._activeTasks
+      if (this._activeTasks && this._activeTasks.size > 0) {
+        for (const t of this._activeTasks.values()) {
+          if (!t.cancelled && (t.percent === undefined || t.percent < 100) && t.status !== 'done' && t.status !== 'Video Baked (100% Ready)') {
+            if (t.layerId === layer.id || (sourceKey && t.sourceKey === sourceKey)) {
+              return true;
+            }
+          }
+        }
+      }
+
+      // 2. Check source extraction status
+      if (this.sources && sourceKey) {
+        const src = this.sources.get(sourceKey);
+        if (src && (src.isExtracting || (src.pendingFrames && src.pendingFrames.size > 0))) {
+          return true;
+        }
+      }
+
+      // 3. Layer bake completeness
+      if (layer.type === 'video') {
+        if (!layer._extractComplete && !this.isLayerBaked(layer)) {
+          return true;
+        }
+      } else if (layer.type === 'precomp') {
+        if (layer._dirty || layer._isExtracting) return true;
+        if (sourceKey && this.sources && this.sources.has(sourceKey)) {
+          const src = this.sources.get(sourceKey);
+          if (src && (src.isExtracting || (src.pendingFrames && src.pendingFrames.size > 0))) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
     init(options = {}) {
       if (options && options.defaultFps) {
         const parsed = parseInt(options.defaultFps, 10);

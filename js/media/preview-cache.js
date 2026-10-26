@@ -142,6 +142,7 @@
         this.rulerCtx = this.rulerCanvas.getContext('2d');
       }
       this.setupUserActivityListeners();
+      this._bindBakingListeners();
       const savedIdle = typeof localStorage !== 'undefined' ? localStorage.getItem('oft_idle_cache') === 'true' : false;
       this.idleCacheEnabled = (typeof window !== 'undefined' && window.isPreviewCacheEnabled !== false) && savedIdle;
     }
@@ -430,6 +431,9 @@
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (!sourceCanvas || sourceCanvas.width === 0 || sourceCanvas.height === 0) return;
       const targetComp = compId || this.activeCompId;
+      const currentFps = this.fps || 60;
+      const targetSec = frameIndex / currentFps;
+      if (this.isTimeBaking(targetSec)) return;
       if (this.ensureAudioOnlyFullCache(null, targetComp)) return;
       const targetPool = this.getPool(targetComp);
       if (this.hasFrame(frameIndex, sourceCanvas.width, sourceCanvas.height, targetComp)) return;
@@ -454,7 +458,7 @@
         // Direct GPU-to-GPU createImageBitmap without intermediate canvas copy (0ms main-thread overhead)
         const bitmap = await createImageBitmap(sourceCanvas);
         // Re-check after await: frame may have been cleared/invalidated or superseded by a newer render
-        if (!this._inFlightFrames.has(inFlightKey) || this._frameGen.get(inFlightKey) !== gen) {
+        if (!this._inFlightFrames.has(inFlightKey) || this._frameGen.get(inFlightKey) !== gen || this.isTimeBaking(targetSec)) {
           if (bitmap && typeof bitmap.close === 'function') {
             try { bitmap.close(); } catch (_) {}
           }
@@ -1164,6 +1168,8 @@
     scheduleIdleCheck(immediate = false) {
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (this.ensureAudioOnlyFullCache()) return;
+      this._bindBakingListeners();
+      this.pruneBakingFrames();
       if (!this.idleCacheEnabled) return;
       if (this.idleTimer) clearTimeout(this.idleTimer);
       const delay = immediate ? 32 : 180;
@@ -1250,7 +1256,177 @@
       }
     }
 
+    _bindBakingListeners() {
+      if (this._bakingListenersBound) return;
+      if (typeof window === 'undefined') return;
+
+      if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.addProgressListener === 'function') {
+        window.VideoFrameExtractor.addProgressListener((tasks) => {
+          this.pruneBakingFrames();
+          const hasActive = Array.isArray(tasks) && tasks.some(t => !t.cancelled && (t.percent === undefined || t.percent < 100));
+          if (!hasActive && this.idleCacheEnabled) {
+            this.scheduleIdleCheck(true);
+          }
+        });
+        this._bakingListenersBound = true;
+      }
+
+      if (window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.addProgressListener === 'function') {
+        window.FishBgRemovalEngine.addProgressListener((tasks) => {
+          this.pruneBakingFrames();
+          const hasActive = Array.isArray(tasks) && tasks.some(t => !t.cancelled && (t.percent === undefined || t.percent < 100));
+          if (!hasActive && this.idleCacheEnabled) {
+            this.scheduleIdleCheck(true);
+          }
+        });
+      }
+    }
+
+    isLayerBaking(layer) {
+      if (!layer || layer.hidden) return false;
+
+      if (typeof window !== 'undefined' && window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isLayerBaking === 'function') {
+        if (window.VideoFrameExtractor.isLayerBaking(layer)) return true;
+      } else if (layer.type === 'video' || layer.mediaType === 'video') {
+        if (!layer._extractComplete) return true;
+      } else if (layer.type === 'precomp') {
+        if (layer._dirty || layer._isExtracting) return true;
+      }
+
+      if (typeof window !== 'undefined' && window.FishBgRemovalEngine) {
+        const bg = window.FishBgRemovalEngine;
+        if (typeof bg.isLayerMattingActive === 'function' && bg.isLayerMattingActive(layer)) {
+          if (typeof bg.getActiveTasks === 'function') {
+            const bgTasks = bg.getActiveTasks();
+            const sourceKey = (layer.mediaId || layer.dataUrl || layer.id);
+            if (bgTasks.some(t => !t.cancelled && (t.percent === undefined || t.percent < 100) && t.status !== 'done' && (t.layerId === layer.id || (sourceKey && t.sourceKey === sourceKey)))) {
+              return true;
+            }
+          }
+          if (layer.type !== 'video' && typeof bg.getPhotoCutout === 'function' && !bg.getPhotoCutout(layer)) {
+            return true;
+          }
+        }
+      }
+
+      return false;
+    }
+
+    getBakingTimeRanges(projectState = null) {
+      const ps = projectState || ((typeof window !== 'undefined' && window.currentProjectState) ? window.currentProjectState : null);
+      if (!ps || !Array.isArray(ps.layers)) return [];
+      const targetComp = this.activeCompId || 'root';
+      const layers = (targetComp === 'root' || !targetComp)
+        ? (ps.layers || [])
+        : ((window.currentActivePrecomp && Array.isArray(window.currentActivePrecomp.layers))
+          ? window.currentActivePrecomp.layers
+          : (ps.layers || []));
+      const pps = (typeof window !== 'undefined' && window.currentPixelsPerSecond) ? window.currentPixelsPerSecond : 80;
+
+      const ranges = [];
+      for (let i = 0; i < layers.length; i++) {
+        const l = layers[i];
+        if (!l || l.hidden) continue;
+        const start = l.startSec !== undefined ? Number(l.startSec) : ((l.startPx || 0) / pps);
+        const dur = l.durationSec !== undefined ? Number(l.durationSec) : ((l.widthPx || 240) / pps);
+        if (l.type === 'precomp' && Array.isArray(l.layers)) {
+          if (this.isLayerBaking(l)) {
+            ranges.push([Math.max(0, start), Math.max(0, start + dur)]);
+          } else {
+            const speed = l.speed || 1.0;
+            const offset = l.sourceOffsetSec || 0;
+            for (let j = 0; j < l.layers.length; j++) {
+              const sub = l.layers[j];
+              if (!sub || sub.hidden) continue;
+              if (this.isLayerBaking(sub)) {
+                const subStart = sub.startSec !== undefined ? Number(sub.startSec) : 0;
+                const subDur = sub.durationSec !== undefined ? Number(sub.durationSec) : 5;
+                const mappedStart = Math.max(start, start + (subStart - offset) / speed);
+                const mappedEnd = Math.min(start + dur, start + (subStart + subDur - offset) / speed);
+                if (mappedEnd > mappedStart) {
+                  ranges.push([Math.max(0, mappedStart), Math.max(0, mappedEnd)]);
+                }
+              }
+            }
+          }
+        } else if (this.isLayerBaking(l)) {
+          ranges.push([Math.max(0, start), Math.max(0, start + dur)]);
+        }
+      }
+      return ranges;
+    }
+
+    isTimeBaking(sec, projectState = null) {
+      if (typeof sec !== 'number' || isNaN(sec) || sec < 0) return false;
+      const ranges = this.getBakingTimeRanges(projectState);
+      if (!ranges || ranges.length === 0) return false;
+      const fps = this.fps || 60;
+      const targetFrame = Math.round(sec * fps);
+      for (let i = 0; i < ranges.length; i++) {
+        const [rStart, rEnd] = ranges[i];
+        const startFrame = Math.max(0, Math.floor(rStart * fps));
+        const endFrame = Math.ceil(rEnd * fps);
+        if (targetFrame >= startFrame && targetFrame < endFrame) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    hasActiveBakingTasks() {
+      if (typeof window !== 'undefined') {
+        if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getAllBakingTasks === 'function') {
+          const tasks = window.VideoFrameExtractor.getAllBakingTasks();
+          if (tasks.some(t => !t.cancelled && (t.percent === undefined || t.percent < 100) && t.status !== 'done')) {
+            return true;
+          }
+        }
+        if (window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.getActiveTasks === 'function') {
+          const bgTasks = window.FishBgRemovalEngine.getActiveTasks();
+          if (bgTasks.some(t => !t.cancelled && (t.percent === undefined || t.percent < 100) && t.status !== 'done')) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    pruneBakingFrames(projectState = null, compId = null) {
+      const ranges = this.getBakingTimeRanges(projectState);
+      if (!ranges || ranges.length === 0) return false;
+      const targetComp = compId || this.activeCompId || 'root';
+      const pool = this.getPool(targetComp);
+      if (!pool || pool.size === 0) return false;
+
+      let anyPruned = false;
+      const fps = this.fps || 60;
+      for (let r = 0; r < ranges.length; r++) {
+        const [startSec, endSec] = ranges[r];
+        const startFrame = Math.max(0, Math.floor(startSec * fps));
+        const endFrame = Math.ceil(endSec * fps);
+        for (let f = startFrame; f <= endFrame; f++) {
+          if (pool.has(f)) {
+            const entry = pool.get(f);
+            if (entry && !entry.shared && entry.bitmap && typeof entry.bitmap.close === 'function') {
+              try { entry.bitmap.close(); } catch (_) {}
+            }
+            pool.delete(f);
+            const inFlightKey = `${targetComp}:${f}`;
+            if (this._inFlightFrames) this._inFlightFrames.delete(inFlightKey);
+            if (this._pendingFrames) this._pendingFrames.delete(inFlightKey);
+            anyPruned = true;
+          }
+        }
+      }
+
+      if (anyPruned) {
+        this.scheduleRulerUpdate();
+      }
+      return anyPruned;
+    }
+
     isTimeReadyToCache(sec, projectState = null) {
+      if (this.isTimeBaking(sec, projectState)) return false;
       const ps = projectState || ((typeof window !== 'undefined' && window.currentProjectState) ? window.currentProjectState : null);
       if (!ps || !Array.isArray(ps.layers)) return true;
       const targetComp = this.activeCompId || 'root';
@@ -1266,6 +1442,7 @@
         const start = l.startSec !== undefined ? Number(l.startSec) : ((l.startPx || 0) / pps);
         const dur = l.durationSec !== undefined ? Number(l.durationSec) : ((l.widthPx || 240) / pps);
         if (sec >= start && sec < start + dur) {
+          if (this.isLayerBaking(l)) return false;
           if (l.type === 'video' || l.mediaType === 'video') {
             if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isVideoFrameReady === 'function') {
               if (!window.VideoFrameExtractor.isVideoFrameReady(l, sec)) return false;
@@ -1274,6 +1451,7 @@
             }
           }
           if (l.type === 'precomp' && Array.isArray(l.layers)) {
+            if (l._dirty || l._isExtracting) return false;
             if (!l.collapseTransformations && window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isVideoFrameReady === 'function') {
               if (window.VideoFrameExtractor.isVideoFrameReady(l, sec)) continue;
             }
@@ -1284,12 +1462,29 @@
               const subStart = sub.startSec !== undefined ? Number(sub.startSec) : 0;
               const subDur = sub.durationSec !== undefined ? Number(sub.durationSec) : 5;
               if (precompTime >= subStart && precompTime < subStart + subDur) {
+                if (this.isLayerBaking(sub)) return false;
                 if (sub.type === 'video' || sub.mediaType === 'video') {
                   if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isVideoFrameReady === 'function') {
                     if (!window.VideoFrameExtractor.isVideoFrameReady(sub, precompTime)) return false;
                   } else {
                     return false;
                   }
+                }
+              }
+            }
+          }
+          if (typeof window !== 'undefined' && window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.isLayerMattingActive === 'function') {
+            if (window.FishBgRemovalEngine.isLayerMattingActive(l)) {
+              if (l.type === 'video') {
+                const sourceKey = (l.mediaId || l.dataUrl || l.id);
+                const fps = this.fps || 60;
+                const fIdx = Math.round((sec - start) * fps);
+                if (typeof window.FishBgRemovalEngine.getVideoCutoutFrame === 'function') {
+                  if (!window.FishBgRemovalEngine.getVideoCutoutFrame(sourceKey, fIdx)) return false;
+                }
+              } else {
+                if (typeof window.FishBgRemovalEngine.getPhotoCutout === 'function') {
+                  if (!window.FishBgRemovalEngine.getPhotoCutout(l)) return false;
                 }
               }
             }
@@ -1379,6 +1574,8 @@
       let cachedInBatch = 0;
       let sawUnready = false;
 
+      this.pruneBakingFrames();
+
       while (this.isIdleRunning && cachedInBatch < maxBatch) {
         if (((typeof performance !== 'undefined') ? performance.now() : Date.now()) - tStart >= budgetMs) {
           break;
@@ -1403,7 +1600,8 @@
             if (!this.frames.has(mf)) {
               const inFlightKey = `${targetComp}:${mf}`;
               const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
-              if (!isInFlight && this.isTimeReadyToCache(mf / currentFps)) {
+              const mSec = mf / currentFps;
+              if (!isInFlight && !this.isTimeBaking(mSec) && this.isTimeReadyToCache(mSec)) {
                 targetFrame = mf;
                 break;
               }
@@ -1419,7 +1617,8 @@
               const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
               const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
               if (!isInFlight && !isMarkedUnready) {
-                if (this.isTimeReadyToCache(f / currentFps)) {
+                const targetSec = f / currentFps;
+                if (!this.isTimeBaking(targetSec) && this.isTimeReadyToCache(targetSec)) {
                   targetFrame = f;
                   break;
                 } else {
@@ -1440,7 +1639,8 @@
               const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
               const isMarkedUnready = !!(this._unreadyFrames && this._unreadyFrames.has(inFlightKey));
               if (!isInFlight && !isMarkedUnready) {
-                if (this.isTimeReadyToCache(f / currentFps)) {
+                const targetSec = f / currentFps;
+                if (!this.isTimeBaking(targetSec) && this.isTimeReadyToCache(targetSec)) {
                   targetFrame = f;
                   break;
                 } else {
@@ -1455,8 +1655,9 @@
 
         if (targetFrame === -1) {
           if (sawUnready) {
+            const delay = this.hasActiveBakingTasks() ? 350 : 100;
             if (this._unreadyFrames) this._unreadyFrames.clear();
-            this._scheduleNextIdleTick(60);
+            this._scheduleNextIdleTick(delay);
             return;
           }
           this.stopIdleWorker();
@@ -1516,6 +1717,7 @@
      */
     bakeSingleFrameOffscreen(frameIndex, targetSec, compId = null) {
       if (typeof window !== 'undefined' && window.isExporting) return false;
+      if (this.isTimeBaking(targetSec) || !this.isTimeReadyToCache(targetSec)) return false;
       const targetComp = compId || this.activeCompId || 'root';
       const pool = this.getPool(targetComp);
       if (pool.has(frameIndex)) return true;
@@ -1636,7 +1838,7 @@
         if (this._unreadyFrames && this._unreadyFrames.has(inFlightKey)) continue;
 
         const targetSec = f / currentFps;
-        if (!this.isTimeReadyToCache(targetSec)) continue;
+        if (this.isTimeBaking(targetSec) || !this.isTimeReadyToCache(targetSec)) continue;
 
         const offscreen = this._idleCanvasPool[this._idlePoolIdx % this._idleCanvasPool.length];
         this._idlePoolIdx++;
