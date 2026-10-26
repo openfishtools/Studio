@@ -156,9 +156,87 @@
           }
         };
 
+        let holdTimer = null;
+        let isLongPressed = false;
+        let startX = 0;
+        let startY = 0;
+
+        const invokeContextMenu = (e) => {
+          btn.classList.add('tool-btn--active');
+          setTimeout(() => btn.classList.remove('tool-btn--active'), 180);
+          const pcm = getPCM();
+          const beforeSnap = (pcm && typeof pcm.captureStateSnapshot === 'function') ? pcm.captureStateSnapshot() : null;
+          try {
+            opts.onContextMenu(e, ctx);
+          } catch (err) {
+            console.error(`[Card:${ctx.id}] Context menu error:`, err);
+            ctx.showToast(`Error: ${err.message}`);
+          } finally {
+            if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
+              if (pcm.invalidateSmartDiff(beforeSnap)) {
+                redrawHost(`extContext:${ctx.id}`);
+              }
+            }
+          }
+        };
+
+        if (typeof opts.onContextMenu === 'function') {
+          btn.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            if (holdTimer) {
+              clearTimeout(holdTimer);
+              holdTimer = null;
+            }
+            if (isLongPressed) {
+              isLongPressed = false;
+              return;
+            }
+            invokeContextMenu(e);
+          });
+
+          // Mobile / touch hold 2 seconds (2000ms) to trigger right-click / contextmenu
+          btn.addEventListener('pointerdown', (e) => {
+            if (e.pointerType === 'mouse' && e.button !== 0) return;
+            isLongPressed = false;
+            startX = e.clientX;
+            startY = e.clientY;
+            if (holdTimer) clearTimeout(holdTimer);
+            holdTimer = setTimeout(() => {
+              holdTimer = null;
+              isLongPressed = true;
+              if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+                try { navigator.vibrate(50); } catch (_) {}
+              }
+              invokeContextMenu(e);
+            }, 2000);
+          });
+
+          btn.addEventListener('pointermove', (e) => {
+            if (!holdTimer) return;
+            const dist = Math.hypot(e.clientX - startX, e.clientY - startY);
+            if (dist > 10) {
+              clearTimeout(holdTimer);
+              holdTimer = null;
+            }
+          });
+
+          const cancelHold = () => {
+            if (holdTimer) {
+              clearTimeout(holdTimer);
+              holdTimer = null;
+            }
+          };
+          btn.addEventListener('pointerup', cancelHold);
+          btn.addEventListener('pointercancel', cancelHold);
+        }
+
         if (typeof opts.onClick === 'function') {
           btn.addEventListener('click', (e) => {
             e.preventDefault();
+            if (isLongPressed) {
+              isLongPressed = false;
+              return;
+            }
             btn.classList.add('tool-btn--active');
             setTimeout(() => btn.classList.remove('tool-btn--active'), 180);
             const pcm = getPCM();
@@ -172,28 +250,6 @@
               if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
                 if (pcm.invalidateSmartDiff(beforeSnap)) {
                   redrawHost(`extClick:${ctx.id}`);
-                }
-              }
-            }
-          });
-        }
-
-        if (typeof opts.onContextMenu === 'function') {
-          btn.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            btn.classList.add('tool-btn--active');
-            setTimeout(() => btn.classList.remove('tool-btn--active'), 180);
-            const pcm = getPCM();
-            const beforeSnap = (pcm && typeof pcm.captureStateSnapshot === 'function') ? pcm.captureStateSnapshot() : null;
-            try {
-              opts.onContextMenu(e, ctx);
-            } catch (err) {
-              console.error(`[Card:${ctx.id}] Context menu error:`, err);
-              ctx.showToast(`Error: ${err.message}`);
-            } finally {
-              if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
-                if (pcm.invalidateSmartDiff(beforeSnap)) {
-                  redrawHost(`extContext:${ctx.id}`);
                 }
               }
             }

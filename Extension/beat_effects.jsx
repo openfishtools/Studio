@@ -24,7 +24,14 @@ Card({
     ui.grid({ cols: 5 }, [
       ui.button({ label: 'FLASH', icon: 'flash_on', title: 'Exposure Flash', onClick() { ctx.runTool('EXPO'); } }),
       ui.button({ label: 'SHAKY', icon: 'vibration', title: 'Continuous Shaky Beat', onClick() { ctx.runTool('SHAKY'); } }),
-      ui.button({ label: 'LENS', icon: 'blur_circular', title: 'Lens Blur Pulse', onClick() { ctx.runTool('LENS'); } }),
+      ui.button({
+        label: 'BLUR',
+        icon: 'blur_on',
+        title: 'Fast Box Blur Beat (Left Click)',
+        rightTitle: 'Lens Blur Beat (Right Click / Hold 2s)',
+        onClick() { ctx.runTool('LENS', false); },
+        onContextMenu() { ctx.runTool('LENS', true); }
+      }),
       ui.button({ label: 'OSCILLATE', icon: 'wifi', title: 'Oscillate Bounce', onClick() { ctx.runTool('OSCILLATE'); } }),
       ui.button({ label: 'Y BEAT', icon: 'south', title: 'Vertical Y Beat', onClick() { ctx.runTool('Y_BEAT'); } }),
       ui.button({ label: 'Y FLIP', icon: 'swap_vert', title: 'Alternating Y Flip', onClick() { ctx.runTool('Y_FLIP'); } }),

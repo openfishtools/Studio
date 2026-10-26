@@ -589,14 +589,16 @@
         return true;
       }
 
-      function applyAdjustmentBeatEffect(toolName, targets) {
+      function applyAdjustmentBeatEffect(toolName, targets, args = []) {
         if (toolName === 'GHST' && typeof window.applyBeatGhostEffect === 'function') return window.applyBeatGhostEffect();
         if (toolName === 'WARP' && typeof window.applyBeatWarpEffect === 'function') return window.applyBeatWarpEffect();
         if (toolName === 'FISHEYE' && typeof window.applyBeatFisheyeEffect === 'function') return window.applyBeatFisheyeEffect();
         if (toolName === 'MIDWAVE' && typeof window.applyBeatMidwaveEffect === 'function') return window.applyBeatMidwaveEffect();
         if (toolName === 'HUESPIN' && typeof window.applyBeatHuespinEffect === 'function') return window.applyBeatHuespinEffect();
         if ((toolName === 'EXPO' || toolName === 'FLASH') && typeof window.applyBeatFlashEffect === 'function') return window.applyBeatFlashEffect();
-        if (toolName === 'LENS' && typeof window.applyBeatBlurEffect === 'function') return window.applyBeatBlurEffect();
+        if ((toolName === 'LENS' || toolName === 'BLUR') && typeof window.applyBeatBlurEffect === 'function') {
+          return window.applyBeatBlurEffect(args && (args[0] === true || args[0] === 'lens' || args[0] === 'right'));
+        }
         if ((toolName === 'SHAKY' || toolName === 'SHKE') && typeof window.applyBeatNullTool === 'function') return window.applyBeatNullTool('SHAKY');
         if (!targets || !targets.length) {
           const msg = `Pilih layer terlebih dahulu untuk ${toolName}`;
@@ -666,18 +668,20 @@
               '}'
             ].join('\n');
           }
-        } else if (toolName === 'LENS') {
+        } else if (toolName === 'LENS' || toolName === 'BLUR') {
+          const isLensBlur = args && (args[0] === true || args[0] === 'lens' || args[0] === 'right');
           adjLayer = addAdjustmentLayer(durationSec, inPoint);
           if (!adjLayer) return false;
-          adjLayer.name = 'Lens Blur Beat';
+          adjLayer.name = isLensBlur ? 'Lens Blur Beat' : 'Fast Box Blur Beat';
           adjLayer.effects = adjLayer.effects || [];
           adjLayer.expressions = adjLayer.expressions || {};
-          addSlider(adjLayer, 'Max Blur', 50);
-          addSlider(adjLayer, 'Decay', 6.0);
-          const lensFx = reg ? reg.createInstance('camera-lens-blur', 'Camera Lens Blur') : null;
-          if (lensFx) {
-            adjLayer.effects.push(lensFx);
-            adjLayer.expressions[`${lensFx.id}:radius`] = [
+          const maxBlur = isLensBlur ? 2.5 : 4;
+          addSlider(adjLayer, 'Max Blur', maxBlur);
+          addSlider(adjLayer, 'Decay', 5.0);
+          const blurFx = reg ? (isLensBlur ? reg.createInstance('camera-lens-blur', 'Camera Lens Blur') : reg.createInstance('fast-box-blur', 'Fast Box Blur')) : null;
+          if (blurFx) {
+            adjLayer.effects.push(blurFx);
+            adjLayer.expressions[`${blurFx.id}:radius`] = [
               'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
               'maxBlur = effect("Max Blur")("ADBE Slider Control-0001");',
               'decay = effect("Decay")("ADBE Slider Control-0001");',
@@ -687,7 +691,11 @@
               '    if (m.key(n).time > time) n--;',
               '    if (n > 0) {',
               '        t = time - m.key(n).time;',
-              '        maxBlur / Math.exp(t * decay);',
+              '        if (t >= 0) {',
+              '            maxBlur / Math.exp(t * decay);',
+              '        } else {',
+              '            0;',
+              '        }',
               '    } else {',
               '        0;',
               '    }',
@@ -1744,6 +1752,7 @@
 
           case 'EXPO':
           case 'LENS':
+          case 'BLUR':
           case 'SHAKY':
           case 'GHST':
           case 'WARP':
@@ -1756,7 +1765,7 @@
               showEditorToast(msg, 2400, 'error');
               return { error: true, message: msg };
             }
-            return applyAdjustmentBeatEffect(toolName, targets);
+            return applyAdjustmentBeatEffect(toolName, targets, args);
           }
 
           case 'PRESET_WARP1':

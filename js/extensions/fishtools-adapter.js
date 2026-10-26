@@ -750,12 +750,12 @@ window.FishToolsBridge = (function () {
           return fn();
         }
       }
-      if (type === 'LENS') {
+      if (type === 'LENS' || type === 'BLUR') {
         const fn = (typeof window.applyBeatBlurEffect === 'function')
           ? window.applyBeatBlurEffect
           : (window.parent && typeof window.parent.applyBeatBlurEffect === 'function' ? window.parent.applyBeatBlurEffect : null);
         if (typeof fn === 'function') {
-          return fn(false);
+          return fn(args && (args[0] === true || args[0] === 'lens' || args[0] === 'right'));
         }
       }
 
@@ -940,7 +940,7 @@ window.FishToolsBridge = (function () {
       const fnBlur = (typeof window.applyBeatBlurEffect === 'function')
         ? window.applyBeatBlurEffect
         : (window.parent && typeof window.parent.applyBeatBlurEffect === 'function' ? window.parent.applyBeatBlurEffect : null);
-      if (typeof fnBlur === 'function' && toolName === 'LENS') {
+      if (typeof fnBlur === 'function' && (toolName === 'LENS' || toolName === 'BLUR')) {
         return fnBlur(...args);
       }
     }
@@ -949,7 +949,7 @@ window.FishToolsBridge = (function () {
     if (toolName === 'EXPO' || toolName === 'FLASH') {
       return applyBeatKeyframes(toolName);
     }
-    if (toolName === 'LENS') {
+    if (toolName === 'LENS' || toolName === 'BLUR') {
       const fnBlur = (typeof window.applyBeatBlurEffect === 'function')
         ? window.applyBeatBlurEffect
         : (window.parent && typeof window.parent.applyBeatBlurEffect === 'function' ? window.parent.applyBeatBlurEffect : null);

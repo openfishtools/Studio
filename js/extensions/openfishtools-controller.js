@@ -1681,7 +1681,7 @@
     // - Left click: Fast Box Blur
     // - Right click: Lens Blur with bloom = 0, max blur = 5px
     let blurFx = null;
-    const maxBlur = isLensBlur ? 5 : 10;
+    const maxBlur = isLensBlur ? 2.5 : 4;
 
     if (isLensBlur) {
       const fx = (window.FishEffects && window.FishEffects.registry && typeof window.FishEffects.registry.createInstance === 'function')
@@ -1717,8 +1717,8 @@
       blurFx.iterations = 1;
     }
 
-    const ampSlider = createSlider('Amp', maxBlur, 0, 100, 1, ' px');
-    const decaySlider = createSlider('Decay', 16, 0.1, 100, 0.5, '');
+    const ampSlider = createSlider('Amp', maxBlur, 0, 100, isLensBlur ? 0.5 : 1, ' px');
+    const decaySlider = createSlider('Decay', 5.0, 0.1, 100, 0.5, '');
     const attackSlider = createSlider('Attack', 0, 0, 100, 1, '');
 
     adj.effects = [blurFx, ampSlider, decaySlider, attackSlider];
@@ -1742,7 +1742,7 @@
       '        markerTime = m.key(n).time;',
       '        if (markerTime >= inPoint && markerTime <= outPoint) {',
       '            t = time - markerTime;',
-      '            if (t >= 0 && t <= 0.5) {',
+      '            if (t >= 0) {',
       '                env = (attack > 0) ? (1 - Math.exp(-t * attack)) : 1;',
       '                res = value + (amp * env) / Math.exp(t * decay);',
       '            }',
@@ -2712,6 +2712,7 @@
       case 'FLASH':
         return applyBeatFlashEffect();
       case 'LENS':
+      case 'BLUR':
         return applyBeatBlurEffect(args[0]);
       case 'PRESET_WARP1':
       case 'WARP1':
