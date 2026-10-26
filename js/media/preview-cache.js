@@ -1261,10 +1261,15 @@
       if (typeof window === 'undefined') return;
 
       if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.addProgressListener === 'function') {
+        let lastTaskSig = '';
         window.VideoFrameExtractor.addProgressListener((tasks) => {
-          this.pruneBakingFrames();
-          const hasActive = Array.isArray(tasks) && tasks.some(t => !t.cancelled && (t.percent === undefined || t.percent < 100));
-          if (!hasActive && this.idleCacheEnabled) {
+          const activeTasks = Array.isArray(tasks) ? tasks.filter(t => !t.cancelled && (t.percent === undefined || t.percent < 100)) : [];
+          const taskSig = activeTasks.map(t => `${t.id || t.sourceKey}:${t.percent === 100}`).join('|');
+          if (taskSig !== lastTaskSig) {
+            lastTaskSig = taskSig;
+            this.pruneBakingFrames();
+          }
+          if (activeTasks.length === 0 && this.idleCacheEnabled) {
             this.scheduleIdleCheck(true);
           }
         });
@@ -1272,10 +1277,15 @@
       }
 
       if (window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.addProgressListener === 'function') {
+        let lastBgSig = '';
         window.FishBgRemovalEngine.addProgressListener((tasks) => {
-          this.pruneBakingFrames();
-          const hasActive = Array.isArray(tasks) && tasks.some(t => !t.cancelled && (t.percent === undefined || t.percent < 100));
-          if (!hasActive && this.idleCacheEnabled) {
+          const activeTasks = Array.isArray(tasks) ? tasks.filter(t => !t.cancelled && (t.percent === undefined || t.percent < 100)) : [];
+          const bgSig = activeTasks.map(t => `${t.id || t.sourceKey}:${t.percent === 100}`).join('|');
+          if (bgSig !== lastBgSig) {
+            lastBgSig = bgSig;
+            this.pruneBakingFrames();
+          }
+          if (activeTasks.length === 0 && this.idleCacheEnabled) {
             this.scheduleIdleCheck(true);
           }
         });

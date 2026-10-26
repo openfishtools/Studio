@@ -2133,7 +2133,9 @@
       ]);
 
       let isCompletelyStatic = true;
-      let hasHeavyContent = children.length > 8 || !!(precompLayer.motionBlur || precompLayer.mblur);
+      const tier = this._deviceTier || getDeviceRamTier();
+      const maxChildLightweight = tier.isMobile ? 16 : 24;
+      let hasHeavyContent = children.length > maxChildLightweight || !!(precompLayer.motionBlur || precompLayer.mblur);
       const animatedRanges = [];
 
       const addAnimatedRange = (sSec, eSec) => {
@@ -2552,12 +2554,15 @@
         const batch = this._claimContiguousFrameBatch(source, tier.isMobile ? 8 : 12);
         if (batch.length === 0) break;
 
+        const curPlayheadFIdx = this._getVideoFrameForPlayhead(source);
+        let framesSinceNotify = 0;
+        let lastNotifyTime = (typeof performance !== 'undefined') ? performance.now() : Date.now();
         const fps = source.fps || this.targetFps || 60;
+
         for (let i = 0; i < batch.length; i++) {
           const targetIdx = batch[i];
           if (!this.sources.has(source.sourceKey) || !source.isExtracting || precompLayer._dirty) break;
           if (source.frames.has(targetIdx) || (source.cachedFrameIndices && source.cachedFrameIndices.has(targetIdx))) {
-            this._notifyLayersForSource(source.sourceKey, false, targetIdx);
             continue;
           }
 
@@ -2573,40 +2578,61 @@
             if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
             source.cachedFrameIndices.add(targetIdx);
             source._hasNewExtractedFrames = true;
-            this._notifyLayersForSource(source.sourceKey, false, targetIdx);
-            continue;
+
+            // Batch fill subsequent static frames in this batch
+            while (i + 1 < batch.length) {
+              const nextIdx = batch[i + 1];
+              const nextSec = nextIdx / fps;
+              if (isSecAnimated(nextSec) || source.frames.has(nextIdx)) break;
+              i++;
+              retainBitmap(lastHoldBmp, source.sourceKey);
+              source.frames.set(nextIdx, lastHoldBmp);
+              source.cachedFrameIndices.add(nextIdx);
+              framesSinceNotify++;
+            }
+          } else {
+            workCanvas._lastRenderKey = null;
+            window.renderPrecompToCanvas(precompLayer, workCanvas, innerSec, targetW, targetH, 'precomp-extract');
+
+            try {
+              const bmp = await createImageBitmap(workCanvas);
+              if (bmp && this.sources.has(source.sourceKey) && !precompLayer._dirty) {
+                retainBitmap(bmp, source.sourceKey);
+                source.frames.set(targetIdx, bmp);
+                if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
+                source.cachedFrameIndices.add(targetIdx);
+                source._hasNewExtractedFrames = true;
+                this._evictOldestFrame(source, targetIdx);
+                if (!animatedHere) {
+                  lastHoldBmp = bmp;
+                  lastWasStaticHold = true;
+                } else {
+                  lastHoldBmp = null;
+                  lastWasStaticHold = false;
+                }
+              } else if (bmp && typeof bmp.close === 'function') {
+                bmp.close();
+              }
+            } catch (_) {}
           }
 
-          workCanvas._lastRenderKey = null;
-          window.renderPrecompToCanvas(precompLayer, workCanvas, innerSec, targetW, targetH, 'precomp-extract');
+          framesSinceNotify++;
+          const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+          const isPlayhead = (Math.abs(targetIdx - curPlayheadFIdx) <= 1);
+          if (isPlayhead || framesSinceNotify >= (tier.isMobile ? 5 : 8) || (now - lastNotifyTime) >= 100) {
+            this._notifyLayersForSource(source.sourceKey, false, targetIdx);
+            framesSinceNotify = 0;
+            lastNotifyTime = now;
+          }
 
-          try {
-            const bmp = await createImageBitmap(workCanvas);
-            if (bmp && this.sources.has(source.sourceKey) && !precompLayer._dirty) {
-              retainBitmap(bmp, source.sourceKey);
-              source.frames.set(targetIdx, bmp);
-              if (!source.cachedFrameIndices) source.cachedFrameIndices = new Set();
-              source.cachedFrameIndices.add(targetIdx);
-              source._hasNewExtractedFrames = true;
-              this._evictOldestFrame(source, targetIdx);
-              if (!animatedHere) {
-                lastHoldBmp = bmp;
-                lastWasStaticHold = true;
-              } else {
-                lastHoldBmp = null;
-                lastWasStaticHold = false;
-              }
-            } else if (bmp && typeof bmp.close === 'function') {
-              bmp.close();
-            }
-          } catch (_) {}
-
-          this._notifyLayersForSource(source.sourceKey, false, targetIdx);
           if (i % (tier.isMobile ? 2 : 3) === 1) {
-            await yieldToUI(tier.isMobile ? 4 : 0);
+            await yieldToUI(tier.isMobile ? 10 : 5);
           }
         }
-        await yieldToUI(tier.isMobile ? 4 : 0);
+
+        // Notify at end of batch and yield cleanly to allow UI/interaction events
+        this._notifyLayersForSource(source.sourceKey, false);
+        await yieldToUI(tier.isMobile ? 14 : 8);
       }
     }
 
