@@ -335,6 +335,37 @@
       return s;
     }
 
+    _getProjectViewport(bufferScale = 1, layer = null) {
+      let pw = 1920;
+      let ph = 1080;
+      if (layer && layer._baseW && layer._baseH) {
+        pw = layer._baseW;
+        ph = layer._baseH;
+      } else if (typeof window !== 'undefined' && window.currentProjectState) {
+        const ps = window.currentProjectState;
+        if (ps.baseW && ps.baseH) {
+          pw = ps.baseW;
+          ph = ps.baseH;
+        } else if (ps.width && ps.height) {
+          pw = ps.width;
+          ph = ps.height;
+        } else if (typeof window.getProjectDimensions === 'function' && ps.resolution && ps.aspectRatio) {
+          const dims = window.getProjectDimensions(ps.resolution, ps.aspectRatio);
+          if (dims && dims[0] && dims[1]) {
+            pw = dims[0];
+            ph = dims[1];
+          }
+        }
+      } else if (this.glCanvas && this.glCanvas.width > 0 && this.glCanvas.height > 0) {
+        pw = this.glCanvas.width / (bufferScale || 1);
+        ph = this.glCanvas.height / (bufferScale || 1);
+      }
+      return {
+        vw: pw * (bufferScale || 1),
+        vh: ph * (bufferScale || 1)
+      };
+    }
+
     _hasValidDimensions(el) {
       if (!el) return false;
       if (el.tagName === 'AUDIO' || (typeof HTMLAudioElement !== 'undefined' && el instanceof HTMLAudioElement)) {
@@ -863,8 +894,13 @@
         const totalZoom = lensFactor * zoomFactor;
         const D = CAMERA_DISTANCE * lensFactor * bScale;
 
-        const vw = params.vw || (params.bufferScale ? 1920 * params.bufferScale : 1920);
-        const vh = params.vh || (params.bufferScale ? 1080 * params.bufferScale : 1080);
+        let vw = params.vw;
+        let vh = params.vh;
+        if (!vw || !vh) {
+          const vp = this._getProjectViewport(params.bufferScale || 1);
+          if (!vw) vw = vp.vw;
+          if (!vh) vh = vp.vh;
+        }
         let worldX = anchorWorldX + x3;
         let worldY = anchorWorldY + y3;
         let worldZ = z3;
@@ -1153,8 +1189,13 @@
       const maxZ = camDist - nearPlane;
       const lensDistort = this._getLensDistort(effectiveCamera);
 
-      const vw = viewportW || (1920 * bufferScale);
-      const vh = viewportH || (1080 * bufferScale);
+      let vw = viewportW;
+      let vh = viewportH;
+      if (!vw || !vh) {
+        const vp = this._getProjectViewport(bufferScale, layer);
+        if (!vw) vw = vp.vw;
+        if (!vh) vh = vp.vh;
+      }
 
       const boundsForMVP = {
         cx, cy,
@@ -1437,7 +1478,12 @@
     renderLayer(ctx, el, layer, bufferScale = 1, camera = null, currentSec = null) {
       if (!ctx || !el || !this._hasValidDimensions(el)) return;
 
-      const bounds = this.getBounds(layer, bufferScale, camera);
+      const targetCanvas = ctx.canvas;
+      const vp = this._getProjectViewport(bufferScale, layer);
+      const vw = targetCanvas ? targetCanvas.width : vp.vw;
+      const vh = targetCanvas ? targetCanvas.height : vp.vh;
+
+      const bounds = this.getBounds(layer, bufferScale, camera, vw, vh);
       if (bounds.isBehindCamera) {
         return; // Clipped out of camera view: layer has passed behind camera near plane
       }
@@ -1548,9 +1594,6 @@
       }
 
       // 2. Hardware 3D Perspective Path: Single Quad GPU Draw
-      const targetCanvas = ctx.canvas;
-      const vw = targetCanvas ? targetCanvas.width : (bounds.cx * 2 || 1920);
-      const vh = targetCanvas ? targetCanvas.height : (bounds.cy * 2 || 1080);
 
       // Edge-on guard around 90 deg: skip invisible edge-on slivers (only when true layer bounds are also sliver)
       if ((bounds.aabbW < 1.0 && bounds.w < 1.0) || (bounds.aabbH < 1.0 && bounds.h < 1.0)) {
@@ -2812,7 +2855,12 @@
       const animLayer = curEff ? Object.assign({}, layer, curEff) : layer;
       animLayer._currentSec = evalSec;
 
-      const bounds = this.getBounds(animLayer, bufferScale, camera);
+      const targetCanvas = ctx.canvas;
+      const vp = this._getProjectViewport(bufferScale, layer);
+      const vw = targetCanvas ? targetCanvas.width : vp.vw;
+      const vh = targetCanvas ? targetCanvas.height : vp.vh;
+
+      const bounds = this.getBounds(animLayer, bufferScale, camera, vw, vh);
       if (bounds.isBehindCamera || ((bounds.aabbW < 1.0 && bounds.w < 1.0) || (bounds.aabbH < 1.0 && bounds.h < 1.0))) {
         return;
       }
@@ -2837,10 +2885,6 @@
         this.renderLayer(ctx, el, layer, bufferScale, camera, currentSec);
         return;
       }
-
-      const targetCanvas = ctx.canvas;
-      const vw = targetCanvas ? targetCanvas.width : (bounds.cx * 2 || 1920);
-      const vh = targetCanvas ? targetCanvas.height : (bounds.cy * 2 || 1080);
 
       // Pre-process 2D effects onto local offscreen canvas if needed
       const processed = this._getEffectProcessedElement(el, animLayer, bounds, evalSec);
@@ -2956,7 +3000,7 @@
           subAnimLayer = window.FishMotionBlurEngine.compensateTextPad(layer, sourceEl, subAnimLayer);
         }
 
-        const subBounds = this.getBounds(subAnimLayer, bufferScale, subCamera);
+        const subBounds = this.getBounds(subAnimLayer, bufferScale, subCamera, vw, vh);
         if (subBounds.isBehindCamera) continue;
 
         // Fresh depth for every sample: self-occlusion inside the sample,
@@ -3031,7 +3075,8 @@
      */
     _ensureSceneBlurGL(vw, vh) {
       const gl = this.gl;
-      if (!gl || this._sceneGLFailed) return false;
+      if (!gl || (this._sceneGLFailCount && this._sceneGLFailCount > 3)) return false;
+      if (vw <= 0 || vh <= 0) return false;
       try {
         if (!this._sceneBlitProg) {
           const vs = this._compileShader(gl.VERTEX_SHADER,
@@ -3043,7 +3088,7 @@
           gl.attachShader(pr, fs);
           gl.linkProgram(pr);
           if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) {
-            this._sceneGLFailed = true;
+            this._sceneGLFailCount = (this._sceneGLFailCount || 0) + 1;
             return false;
           }
           this._sceneBlitProg = pr;
@@ -3075,10 +3120,15 @@
         gl.bindFramebuffer(gl.FRAMEBUFFER, this._sceneFbo);
         const ok = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        if (!ok) { this._sceneGLFailed = true; return false; }
+        if (!ok) {
+          this._sceneGLFailCount = (this._sceneGLFailCount || 0) + 1;
+          return false;
+        }
+        this._sceneGLFailCount = 0;
+        this._sceneGLFailed = false;
         return true;
       } catch (_) {
-        this._sceneGLFailed = true;
+        this._sceneGLFailCount = (this._sceneGLFailCount || 0) + 1;
         return false;
       }
     }
@@ -3127,8 +3177,9 @@
       }
 
       const targetCanvas = ctx.canvas;
-      const vw = targetCanvas ? targetCanvas.width : 1920;
-      const vh = targetCanvas ? targetCanvas.height : 1080;
+      const vp = this._getProjectViewport(bufferScale);
+      const vw = targetCanvas ? targetCanvas.width : vp.vw;
+      const vh = targetCanvas ? targetCanvas.height : vp.vh;
       if (vw <= 0 || vh <= 0) return false;
       if (this.glCanvas.width !== vw || this.glCanvas.height !== vh) {
         this.glCanvas.width = vw;
@@ -3199,7 +3250,7 @@
           if (subAnimLayer.type === 'text' && window.FishMotionBlurEngine && typeof window.FishMotionBlurEngine.compensateTextPad === 'function') {
             subAnimLayer = window.FishMotionBlurEngine.compensateTextPad(m.item.layer, srcEl, subAnimLayer);
           }
-          const subBounds = this.getBounds(subAnimLayer, bufferScale, subCamera);
+          const subBounds = this.getBounds(subAnimLayer, bufferScale, subCamera, vw, vh);
           if (subBounds.isBehindCamera || ((subBounds.aabbW < 1.0 && subBounds.w < 1.0) || (subBounds.aabbH < 1.0 && subBounds.h < 1.0))) continue;
           const mvpCamera = subBounds.is3D ? subCamera : null;
           const mvp = this._computeMVP(subBounds, vw, vh, mi * 0.00002, mvpCamera);
@@ -3252,8 +3303,9 @@
       // Members are effect-free by construction: plain blit (no shadow/split/post).
       if (completed > 0) {
         try { ctx.drawImage(this.glCanvas, 0, 0); } catch (_) { return false; }
+        return true;
       }
-      return true;
+      return false;
     }
 
     /**
@@ -3285,8 +3337,13 @@
     renderScene(ctx, renderList, bufferScale = 1, camera = null, currentSec = null) {
       if (!ctx || !renderList || renderList.length === 0) return;
 
+      const targetCanvas = ctx.canvas;
+      const vp = this._getProjectViewport(bufferScale);
+      const vw = targetCanvas ? targetCanvas.width : vp.vw;
+      const vh = targetCanvas ? targetCanvas.height : vp.vh;
+
       const has3D = renderList.some(item => {
-        const b = this.getBounds(item.animLayer || item.layer, bufferScale, camera);
+        const b = this.getBounds(item.animLayer || item.layer, bufferScale, camera, vw, vh);
         return b.is3D;
       });
 
@@ -3299,10 +3356,6 @@
         return;
       }
 
-      const targetCanvas = ctx.canvas;
-      const vw = targetCanvas ? targetCanvas.width : 1920;
-      const vh = targetCanvas ? targetCanvas.height : 1080;
-
       let currentBatch = [];
 
       const flushBatch = () => {
@@ -3313,7 +3366,7 @@
 
       renderList.forEach((item, idx) => {
         const layer = item.animLayer || item.layer;
-        const b = this.getBounds(layer, bufferScale, camera);
+        const b = this.getBounds(layer, bufferScale, camera, vw, vh);
 
         // In After Effects, 2D layers break 3D space:
         // Flush any preceding 3D layers in the depth buffer, composite the 2D layer, then resume 3D batching
@@ -3374,7 +3427,7 @@
         const el = item.el;
         if (!el || !this._hasValidDimensions(el)) return;
 
-        const bounds = this.getBounds(layer, bufferScale, camera);
+        const bounds = this.getBounds(layer, bufferScale, camera, vw, vh);
         if (bounds.isBehindCamera || ((bounds.aabbW < 1.0 && bounds.w < 1.0) || (bounds.aabbH < 1.0 && bounds.h < 1.0))) {
           return;
         }

@@ -1484,7 +1484,7 @@
             layersToRender.forEach(item => {
               const rawLayer = item.layer;
               const isMbActive = mbEngine && mbEngine.isLayerActive(rawLayer, compState, activeCamera) && mbEngine.hasMotion(rawLayer, currentSec, null, (typeof getProjectFps === 'function' ? getProjectFps() : 60), (compState && compState.layers) || (currentProjectState && currentProjectState.layers) || [], activeCamera);
-              const bounds = engine ? engine.getBounds(item.animLayer || rawLayer, compositionBufferScale, camEff) : null;
+              const bounds = engine ? engine.getBounds(item.animLayer || rawLayer, compositionBufferScale, camEff, w, h) : null;
               // Plain-3D run member (static or blurred): shared depth pass.
               // Collapsed precomp children join the shared depth pass when static,
               // or keep the legacy sampled path when per-sample world-transform blur is active.
@@ -1661,7 +1661,9 @@
 
           // Snapshot composition below adjustment layer
           bufCtx.clearRect(0, 0, w, h);
-          bufCtx.drawImage(canvas, 0, 0);
+          if (canvas && canvas.width > 0 && canvas.height > 0) {
+            bufCtx.drawImage(canvas, 0, 0);
+          }
 
           const isAdjMbActive = mbEngine && mbEngine.isLayerActive(layer, compState) && (mbEngine.hasMovementEffect(layer) || mbEngine.hasMotion(layer, currentSec, null, (typeof getProjectFps === 'function' ? getProjectFps() : 60), (compState && compState.layers) || (currentProjectState && currentProjectState.layers) || []));
 
@@ -1735,7 +1737,9 @@
           if (isFullCompAdj) {
             // Draw full-canvas processed image in identity screen space, no boundary clip
             ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.drawImage(proc, 0, 0, w, h);
+            if (proc && proc.width > 0 && proc.height > 0 && w > 0 && h > 0) {
+              ctx.drawImage(proc, 0, 0, w, h);
+            }
             ctx.restore();
             return;
           }
@@ -1758,7 +1762,9 @@
 
           // Draw full-canvas processed image in identity screen space
           ctx.setTransform(1, 0, 0, 1, 0, 0);
-          ctx.drawImage(proc, 0, 0, w, h);
+          if (proc && proc.width > 0 && proc.height > 0 && w > 0 && h > 0) {
+            ctx.drawImage(proc, 0, 0, w, h);
+          }
           ctx.restore();
 
           return;
@@ -2291,7 +2297,7 @@
             const signY = Math.sign(bh) || 1;
             const absW = Math.abs(bw);
             const absH = Math.abs(bh);
-            if ((layer.type === 'image' || layer.type === 'video') && (!layer.fillType || layer.fillType === 'media') && typeof window.getFittedMediaElement === 'function') {
+            if (!layer.is3D && (layer.type === 'image' || layer.type === 'video') && (!layer.fillType || layer.fillType === 'media') && typeof window.getFittedMediaElement === 'function') {
               el = window.getFittedMediaElement(layer, el, absW, absH);
             }
 
@@ -2620,7 +2626,7 @@
           layersToRender.forEach(item => {
             const rawLayer = item.layer;
             const isMbActive = mbEngine && mbEngine.isLayerActive(rawLayer, compState, activeCamera) && mbEngine.hasMotion(rawLayer, currentSec, null, (typeof getProjectFps === 'function' ? getProjectFps() : 60), (compState && compState.layers) || (currentProjectState && currentProjectState.layers) || [], activeCamera);
-            const bounds = engine ? engine.getBounds(item.animLayer || rawLayer, compositionBufferScale, camEff) : null;
+            const bounds = engine ? engine.getBounds(item.animLayer || rawLayer, compositionBufferScale, camEff, w, h) : null;
             // Plain-3D run member (static or blurred): shared depth pass.
             // Collapsed precomp children join the shared depth pass when static,
             // or keep the legacy sampled path when per-sample world-transform blur is active.

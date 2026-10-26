@@ -722,10 +722,11 @@
     function getFittedMediaElement(layer, el, boxW, boxH) {
       if (!layer || !el || (layer.type !== 'image' && layer.type !== 'video')) return el;
       if (el === _unreadyPlaceholderCanvas) return el;
+      if (el.tagName === 'IMG' && (!el.complete || !el.naturalWidth || !el.naturalHeight)) return el;
       const fitMode = layer.fillMediaFit || 'fill';
       if (fitMode === 'stretch') return el;
-      const iw = el.videoWidth || el.naturalWidth || el.width || 0;
-      const ih = el.videoHeight || el.naturalHeight || el.height || 0;
+      const iw = el.videoWidth || el.naturalWidth || (el.tagName === 'IMG' ? 0 : (el.width || 0));
+      const ih = el.videoHeight || el.naturalHeight || (el.tagName === 'IMG' ? 0 : (el.height || 0));
       const bw = Math.abs(Number(boxW) || 0);
       const bh = Math.abs(Number(boxH) || 0);
       if (iw <= 0 || ih <= 0 || bw <= 0 || bh <= 0) return el;
@@ -755,6 +756,7 @@
       fctx.clearRect(0, 0, cw, ch);
       drawElementWithMediaFit(fctx, el, 0, 0, cw, ch, fitMode);
       fc._lastFitKey = isDynamicVideo ? null : fitKey;
+      fc._contentVersion = (fc._contentVersion || 0) + 1;
       return fc;
     }
     window.getFittedMediaElement = getFittedMediaElement;
