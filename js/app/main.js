@@ -2220,8 +2220,8 @@ async function updateStorageDurabilityUI() {
   if (info.usage && info.quota) {
     const pct = (info.usage / info.quota) * 100;
     if (usedEl) usedEl.textContent = fmtBytes(info.usage);
-    if (totalEl) totalEl.textContent = '/ ' + fmtBytes(info.quota);
-    if (statusEl) statusEl.textContent = pct.toFixed(1) + '% used • ' + (info.persisted ? 'Protected database' : 'Offline storage active');
+    if (totalEl) totalEl.textContent = '/ ' + fmtBytes(info.quota) + ' quota';
+    if (statusEl) statusEl.textContent = pct.toFixed(1) + '% quota used • ' + (info.persisted ? 'Protected persistent database' : 'Sandbox storage expands on demand');
     renderBar(pct);
   } else if (info.usage) {
     if (usedEl) usedEl.textContent = fmtBytes(info.usage);
