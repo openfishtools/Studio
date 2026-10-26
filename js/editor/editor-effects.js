@@ -1317,11 +1317,12 @@
                   const hexInput = card.querySelector(`.fx-hex-${param}`);
                   if (hexInput) hexInput.value = hex.toUpperCase();
 
-                  if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+                  if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
                   if (typeof redrawComposition === 'function') redrawComposition('effect-color-change');
                 },
                 onCommit: (hex, alpha) => {
                   fx[param] = hex;
+                  if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
                   if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
                 }
               });
@@ -1427,8 +1428,6 @@
           window.activeScrubbingParam = propKey;
           window.isTransformInteracting = true;
           selectEffectParam(fx.id, paramName);
-          const isActivelyPlaying = isAnyPlaybackActive();
-          if (!isActivelyPlaying && typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
 
           startVal = fx[paramName] !== undefined ? Number(fx[paramName]) : (defParam && defParam.default !== undefined ? Number(defParam.default) : 0);
           currentVal = startVal;
@@ -1532,27 +1531,21 @@
           const badge = liveCard.querySelector(`.fx-badge-${paramName}`);
           if (badge) badge.textContent = badgeText;
 
-          if (typeof recordLayerPropertyChange === 'function') {
-            recordLayerPropertyChange(layer, propKey);
+          // If property is keyframed and a keyframe exists at the current playhead, update its value in-place without heavy cache thrashing
+          if (layer.keyframes && Array.isArray(layer.keyframes[propKey])) {
+            const pps = window.currentPixelsPerSecond || 80;
+            const curSec = Number((Math.abs(window.timelinePanX || 0) / pps).toFixed(3));
+            const fps = (typeof getProjectFps === 'function') ? getProjectFps() : 60;
+            const frameTol = Math.max(0.04, 0.5 / fps);
+            const kf = (typeof getKeyframeAtTime === 'function') ? getKeyframeAtTime(layer, propKey, curSec, frameTol) : null;
+            if (kf) {
+              kf.value = fx[paramName];
+            }
           }
 
           if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
-          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
           if (typeof redrawComposition === 'function') {
-            if (!window._scrubberRedrawRafPending) {
-              window._scrubberRedrawRafPending = true;
-              requestAnimationFrame(() => {
-                window._scrubberRedrawRafPending = false;
-                redrawComposition('effect-scrubber');
-              });
-            }
-          }
-          const curveWidget = card.querySelector('.effects-curve-editor');
-          if (curveWidget && typeof curveWidget._updateCurveSVG === 'function') curveWidget._updateCurveSVG();
-
-          if (typeof syncEffectsKeyframeState === 'function') syncEffectsKeyframeState(layer);
-          if (typeof updateTimelineKeyframeMarkersHighlight === 'function') {
-            updateTimelineKeyframeMarkersHighlight();
+            redrawComposition('effect-scrubber');
           }
 
           return { consumedStep };
@@ -1569,12 +1562,11 @@
           if (typeof recordLayerPropertyChange === 'function') {
             recordLayerPropertyChange(layer, propKey);
           }
-          if (window.PreviewCacheManager && typeof window.PreviewCacheManager.invalidateAll === 'function') {
-            window.PreviewCacheManager.invalidateAll();
+          // Selectively invalidate RAM preview cache ONLY for the affected layer range (never invalidateAll)
+          if (typeof invalidatePreviewCacheForLayer === 'function') {
+            invalidatePreviewCacheForLayer(layer);
           }
-          if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
           if (!isAnyPlaybackActive() && typeof redrawComposition === 'function') {
-            window._scrubberRedrawRafPending = false;
             redrawComposition('effect-scrubber-end');
           }
           if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
@@ -1582,6 +1574,8 @@
           if (typeof updateTimelineKeyframeMarkersHighlight === 'function') {
             updateTimelineKeyframeMarkersHighlight();
           }
+          const curveWidget = card.querySelector('.effects-curve-editor');
+          if (curveWidget && typeof curveWidget._updateCurveSVG === 'function') curveWidget._updateCurveSVG();
           if (!hasDragged && isBadgeClick) {
             const badgeBtn = card.querySelector(`.fx-badge-${paramName}`);
             if (badgeBtn) badgeBtn.click();

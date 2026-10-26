@@ -2428,7 +2428,7 @@
 
             const isPlaying = typeof window.isAnyPlaybackActive === 'function' ? window.isAnyPlaybackActive() : !!window.isTimelinePlaying;
             if (!isPlaying) {
-              if (typeof window.invalidatePreviewCacheForLayer === 'function') window.invalidatePreviewCacheForLayer(layer);
+              if (typeof window.invalidateEffectivePropsCache === 'function') window.invalidateEffectivePropsCache();
               if (typeof window.redrawComposition === 'function') window.redrawComposition('curve-drag');
             }
           }

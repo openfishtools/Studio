@@ -3400,10 +3400,9 @@
           updateJogScrubberVisuals(jogBlendOpacity, boundedPct, 0, 100);
         }
 
-        invalidatePreviewCacheForLayer(layer);
-        updateBlendKeyframeBtnState();
-
         if (commit) {
+          invalidatePreviewCacheForLayer(layer);
+          updateBlendKeyframeBtnState();
           if (typeof recordLayerPropertyChange === 'function') {
             recordLayerPropertyChange(layer, 'opacity');
           }
@@ -3412,12 +3411,9 @@
           }
           redrawComposition();
         } else {
-          if (!window._blendRedrawRafPending) {
-            window._blendRedrawRafPending = true;
-            requestAnimationFrame(() => {
-              window._blendRedrawRafPending = false;
-              redrawComposition('blend-opacity-scrub');
-            });
+          if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
+          if (typeof redrawComposition === 'function') {
+            redrawComposition('blend-opacity-scrub');
           }
         }
       }
@@ -3755,13 +3751,13 @@
           }
         }
 
-        invalidatePreviewCacheForLayer(layer);
         updateVolumeKeyframeBtnState();
         if (typeof updateVolumeAndSpeedBtnState === 'function') {
           updateVolumeAndSpeedBtnState(layer);
         }
 
         if (commit) {
+          invalidatePreviewCacheForLayer(layer);
           if (typeof recordLayerPropertyChange === 'function') {
             recordLayerPropertyChange(layer, 'volume');
           }
@@ -4701,9 +4697,8 @@
           }
         }
 
-        invalidatePreviewCacheForLayer(layer);
-
         if (commit) {
+          invalidatePreviewCacheForLayer(layer);
           if (typeof recordLayerPropertyChange === 'function') {
             recordLayerPropertyChange(layer, 'speed');
           }
@@ -4888,9 +4883,8 @@
           }
         }
 
-        invalidatePreviewCacheForLayer(layer);
-
         if (commit) {
+          invalidatePreviewCacheForLayer(layer);
           // Auto-record keyframe if keyframes exist on timeRemap
           if (!layer.keyframes) layer.keyframes = {};
           if (!Array.isArray(layer.keyframes.timeRemap)) layer.keyframes.timeRemap = [];
