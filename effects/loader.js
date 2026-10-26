@@ -141,7 +141,7 @@
   }
 
   // 5b. Evaluate custom / contributor effects added directly into effects/
-  var customFiles = [];
+  var customFiles = ["exposure_gamma.js"];
   for (var c = 0; c < customFiles.length; c++) {
     try {
       var cXhr = new XMLHttpRequest();

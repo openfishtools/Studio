@@ -3922,7 +3922,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.6.7</span>
+          <span class="welcome-badge">v0.6.8</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3952,11 +3952,26 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.8 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.8</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Oct 27, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">After Effects Photographic Exposure Calibration (`effects/exposure_gamma.js`, `effects/loader.js`)</span>
+                  <span class="changelog-item-desc">Fixed severe discontinuity and non-monotonic brightness curve in the Exposure / Gamma effect. Removed the arbitrary `abs(exposure) &gt; 20 ? exposure / 50` step condition that previously caused 0–1 to explode by 200% and values above 20 to drop by ~800,000x back to near-normal. Standardized slider to After Effects EV Stops (`min: -5, max: 5, step: 0.1, decimals: 2, unit: 'EV'`), enabling smooth, precise jog wheel scrubbing and fine-grain decimal tuning for beat flash keyframing.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.7 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.7</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Oct 26, 2026</span>
               </div>
               <div class="welcome-changelog-item">

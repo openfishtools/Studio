@@ -5,6 +5,11 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.8] - 2026-10-27
+
+### Fixed
+- **After Effects Photographic Exposure Calibration (`effects/exposure_gamma.js`, `effects/loader.js`)**: Fixed severe discontinuity and non-monotonic brightness curve in the Exposure / Gamma effect. Removed the arbitrary `abs(exposure) > 20 ? exposure / 50` step condition that previously caused 0–1 to explode by 200% and values above 20 to drop by ~800,000x back to near-normal. Standardized slider to After Effects EV Stops (`min: -5, max: 5, step: 0.1, decimals: 2, unit: 'EV'`), enabling smooth, precise jog wheel scrubbing and fine-grain decimal tuning for beat flash keyframing.
+
 ## [0.6.7] - 2026-10-26
 
 ### Added
