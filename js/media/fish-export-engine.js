@@ -797,6 +797,10 @@
 
   // ── Download Helper ────────────────────────────────────────────────────────────
   function triggerDownload(blob, filename) {
+    if (typeof window.saveBlobViaNativeBridge === 'function' && window.AndroidBridge) {
+      window.saveBlobViaNativeBridge(blob, filename, (blob && blob.type) || 'video/mp4');
+      return;
+    }
     var url = URL.createObjectURL(blob);
     var a   = document.createElement('a');
     a.href     = url;

@@ -1976,6 +1976,10 @@ window.FishDatabase = (function () {
    */
   function downloadFile(filename, content, type) {
     var blob = new Blob([content], { type: type || 'application/octet-stream' });
+    if (typeof window.saveBlobViaNativeBridge === 'function' && window.AndroidBridge) {
+      window.saveBlobViaNativeBridge(blob, filename, type || 'application/octet-stream');
+      return;
+    }
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;

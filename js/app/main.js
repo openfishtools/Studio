@@ -2138,6 +2138,116 @@ if (typeof window !== 'undefined' && window.__PENDING_NATIVE_FILE__) {
   }, 500);
 }
 
+// Native Download & Export Pipeline for Standalone App
+window.saveBlobViaNativeBridge = function (blob, filename, mimeType) {
+  if (!window.AndroidBridge) return false;
+  const mime = mimeType || (blob && blob.type) || 'application/octet-stream';
+  const name = filename || ('download_' + Date.now());
+  const CHUNK_SIZE = 512 * 1024; // 512KB chunks
+
+  if (!blob || blob.size <= CHUNK_SIZE) {
+    const reader = new FileReader();
+    reader.onloadend = function () {
+      try {
+        const res = reader.result || '';
+        const b64 = res.indexOf(',') !== -1 ? res.split(',')[1] : res;
+        if (window.AndroidBridge && typeof window.AndroidBridge.saveBlobToDownloads === 'function') {
+          window.AndroidBridge.saveBlobToDownloads(name, b64, mime);
+        }
+      } catch (e) {
+        console.warn('saveBlobViaNativeBridge single error:', e);
+      }
+    };
+    reader.readAsDataURL(blob || new Blob([]));
+  } else {
+    try {
+      if (typeof window.AndroidBridge.startChunkedDownload === 'function') {
+        window.AndroidBridge.startChunkedDownload(name, mime, blob.size);
+      }
+    } catch (e) {
+      console.warn('startChunkedDownload error:', e);
+      return false;
+    }
+
+    let offset = 0;
+    function sendNext() {
+      if (offset >= blob.size) {
+        if (window.AndroidBridge && typeof window.AndroidBridge.finishChunkedDownload === 'function') {
+          window.AndroidBridge.finishChunkedDownload();
+        }
+        return;
+      }
+      const slice = blob.slice(offset, offset + CHUNK_SIZE);
+      const chunkReader = new FileReader();
+      chunkReader.onloadend = function () {
+        try {
+          const res = chunkReader.result || '';
+          const b64Chunk = res.indexOf(',') !== -1 ? res.split(',')[1] : res;
+          if (window.AndroidBridge && typeof window.AndroidBridge.appendDownloadChunk === 'function') {
+            window.AndroidBridge.appendDownloadChunk(b64Chunk);
+          }
+          offset += CHUNK_SIZE;
+          sendNext();
+        } catch (e) {
+          console.error('appendDownloadChunk error:', e);
+          if (window.AndroidBridge && typeof window.AndroidBridge.cancelChunkedDownload === 'function') {
+            window.AndroidBridge.cancelChunkedDownload();
+          }
+        }
+      };
+      chunkReader.readAsDataURL(slice);
+    }
+    sendNext();
+  }
+  return true;
+};
+
+// Global HTMLAnchorElement click hook for native app
+(function installNativeDownloadHook() {
+  if (typeof window === 'undefined' || window.__NATIVE_DOWNLOAD_HOOK_INSTALLED__) return;
+  window.__NATIVE_DOWNLOAD_HOOK_INSTALLED__ = true;
+
+  const origClick = HTMLAnchorElement.prototype.click;
+  HTMLAnchorElement.prototype.click = function () {
+    try {
+      const hasDownload = this.hasAttribute('download');
+      const href = this.href || '';
+      const downloadName = this.getAttribute('download') || this.download || 'download';
+
+      if (hasDownload && href && window.AndroidBridge) {
+        if (href.startsWith('blob:')) {
+          fetch(href)
+            .then(res => res.blob())
+            .then(b => {
+              window.saveBlobViaNativeBridge(b, downloadName, b.type);
+            })
+            .catch(e => {
+              console.warn('fetch blob fail:', e);
+              origClick.call(this);
+            });
+          return;
+        } else if (href.startsWith('data:')) {
+          const parts = href.split(',');
+          const mime = parts[0].indexOf(':') !== -1 ? parts[0].split(':')[1].split(';')[0] : 'application/octet-stream';
+          const b64 = parts[1] || '';
+          if (window.AndroidBridge && typeof window.AndroidBridge.saveBlobToDownloads === 'function') {
+            window.AndroidBridge.saveBlobToDownloads(downloadName, b64, mime);
+            return;
+          }
+        } else if (href.startsWith('http://') || href.startsWith('https://')) {
+          if (window.AndroidBridge && typeof window.AndroidBridge.downloadFromUrl === 'function') {
+            window.AndroidBridge.downloadFromUrl(href, downloadName, '');
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('download hook error:', err);
+    }
+    return origClick.call(this);
+  };
+})();
+
 
 async function checkIncomingProjectImportLink() {
   const url = new URL(window.location.href);
