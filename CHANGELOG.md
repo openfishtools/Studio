@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.6.8] - 2026-10-27
 
 ### Fixed
-- **After Effects Photographic Exposure Calibration (`effects/exposure_gamma.js`, `effects/loader.js`)**: Fixed severe discontinuity and non-monotonic brightness curve in the Exposure / Gamma effect. Removed the arbitrary `abs(exposure) > 20 ? exposure / 50` step condition that previously caused 0–1 to explode by 200% and values above 20 to drop by ~800,000x back to near-normal. Standardized slider to After Effects EV Stops (`min: -5, max: 5, step: 0.1, decimals: 2, unit: 'EV'`), enabling smooth, precise jog wheel scrubbing and fine-grain decimal tuning for beat flash keyframing.
+- **After Effects Exposure Calibration & Core WASM Binary Compilation (`effects/effects.wasm`, `effects/backup/exposure_gamma.js`, `effects/loader.js`)**: Compiled and encrypted the calibrated Exposure / Gamma effect directly into the official `effects.wasm` core bundle. Removed the `abs(exposure) > 20 ? exposure / 50` discontinuity hack, preventing 0–1 from exploding by 200% and values above 20 from dropping by ~800,000x. Standardized parameters to After Effects EV Stops (`min: -5, max: 5, step: 0.05, decimals: 2, unit: 'EV'`), reducing jog wheel slider sensitivity to a delicate 0.025 EV/pixel (40 pixels per 1 EV) for smooth scrubbing.
+- **Effect Expression State Isolation & Accumulation Prevention (`js/editor/editor-animation.js`)**: Fixed a state mutation bug in `getLayerEffectivePropsAtTime` where `baseProps.effects` shared references with `layer.effects` in project state due to missing prefix matches on scoped effect expression keys. Now always clones `baseProps.effects` per frame, ensuring beat flash expressions (`res = value + ...`) never mutate `layer.effects` in place and preventing brightness from accumulating across successive beats.
 
 ## [0.6.7] - 2026-10-26
 

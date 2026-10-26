@@ -1360,9 +1360,7 @@
       };
 
       if (Array.isArray(layer.effects)) {
-        const hasFxAnim = (layer.keyframes && Object.keys(layer.keyframes).some(k => k.startsWith('fx:') || k === 'effects')) ||
-          (layer.expressions && Object.keys(layer.expressions).some(k => k.startsWith('fx:')));
-        baseProps.effects = hasFxAnim ? layer.effects.map(fx => Object.assign({}, fx)) : layer.effects;
+        baseProps.effects = layer.effects.map(fx => Object.assign({}, fx));
       }
 
       if (layer.keyframes) {
