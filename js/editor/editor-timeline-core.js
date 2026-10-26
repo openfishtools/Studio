@@ -2257,7 +2257,7 @@
 
         let effectiveDeltaSec;
         if (isFirstTick) {
-          effectiveDeltaSec = Math.min(frameDuration, Math.max(0, rawDeltaSec)) * playbackSpeed;
+          effectiveDeltaSec = Math.max(frameDuration, Math.min(frameDuration * 2.0, rawDeltaSec || frameDuration)) * playbackSpeed;
         } else if (isCacheEnabled && !isNextFrameCached) {
           effectiveDeltaSec = (canMultiStepCatchUp ? (frameDuration * 2) : frameDuration) * playbackSpeed;
         } else {
@@ -2268,9 +2268,10 @@
         if (isCacheEnabled && !isNextFrameCached && Math.abs(playbackSpeed - 1.0) < 0.01) {
           // Contiguous frame stepping (1 frame, or 2 frames if intermediate frame was just baked above)
           nextSec = (canMultiStepCatchUp ? (nextFrameIdx + 1) : nextFrameIdx) / fps;
-        } else if ((isCurrentAndNextCached || !isCacheEnabled) && Math.abs(playbackSpeed - 1.0) < 0.01 && window.FishAudioEngine && typeof window.FishAudioEngine.getMasterAudioTime === 'function') {
+        } else if (_playTickCount >= 3 && (isCurrentAndNextCached || !isCacheEnabled) && Math.abs(playbackSpeed - 1.0) < 0.01 && window.FishAudioEngine && typeof window.FishAudioEngine.getMasterAudioTime === 'function') {
           // When frames are cached (including audio-only timelines), slave playhead to hardware audio clock
           // so the timeline never outruns or fights the audio element!
+          // Only engage after _playTickCount >= 3 to allow the audio element to start streaming without clamping the first frames.
           const masterAudioSec = window.FishAudioEngine.getMasterAudioTime(layers, nextSec, pixelsPerSecond);
           if (masterAudioSec !== null && isFinite(masterAudioSec) && masterAudioSec >= currentSec && Math.abs(masterAudioSec - nextSec) < 0.25) {
             nextSec = masterAudioSec;
@@ -2454,10 +2455,6 @@
               if (typeof window.PreviewCacheManager.ensureAudioOnlyFullCache === 'function') {
                 window.PreviewCacheManager.ensureAudioOnlyFullCache(currentProjectState);
               }
-              if (typeof window.PreviewCacheManager.primePlaybackLookahead === 'function') {
-                const pFps = (typeof getProjectFps === 'function') ? getProjectFps() : 60;
-                window.PreviewCacheManager.primePlaybackLookahead(startSec, pFps);
-              }
             }
 
             isPlaying = true;
@@ -2478,7 +2475,7 @@
                 if (media) media._targetTime = undefined;
               }
             });
-            lastTime = 0;
+            lastTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
             _playTickCount = 0;
             // Synchronously prime audio playback inside direct user activation gesture
             const initialPlaybackSpeed = (typeof window.timelinePlaybackSpeed === 'number' && window.timelinePlaybackSpeed > 0)

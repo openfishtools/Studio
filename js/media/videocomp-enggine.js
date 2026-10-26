@@ -454,11 +454,11 @@
       // so each slow-mo plateau plays smoothly before the next step ("jeda sebelum slowmo selanjutnya").
       const isSlowMoStepped = (typeof window !== 'undefined' && typeof window._nleSteppedAudioRatio === 'number' && window._nleSteppedAudioRatio < 0.95);
       const driftThreshold = isVid
-        ? Math.max(0.16, 0.12 * safeSpeed)
+        ? Math.max(0.65, 0.50 * safeSpeed)
         : (isSlowMoStepped
-          ? Math.max(0.26, 0.20 * safeSpeed)
-          : (drift > 0 ? Math.max(0.20, 0.14 * safeSpeed) : Math.max(0.24, 0.16 * safeSpeed)));
-      const seekCooldownMs = isVid ? 240 : (isSlowMoStepped ? 450 : 380);
+          ? Math.max(0.35, 0.25 * safeSpeed)
+          : (drift > 0 ? Math.max(0.30, 0.20 * safeSpeed) : Math.max(0.35, 0.25 * safeSpeed)));
+      const seekCooldownMs = isVid ? 1200 : (isSlowMoStepped ? 600 : 500);
 
       if (absDrift > driftThreshold && (!el._lastHardSeekTime || (nowMs - el._lastHardSeekTime > seekCooldownMs))) {
         try {

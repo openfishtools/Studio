@@ -525,14 +525,21 @@
     }
 
     getMasterAudioTime(layers, currentSec, pixelsPerSecond = 80) {
-      if (!layers || !layers.length) return null;
+      if (!layers || !layers.length) {
+        this._masterAudioElement = null;
+        return null;
+      }
       const flatItems = this._flattenPlayableLayers(layers, 0, 1.0, false, 1.0, pixelsPerSecond);
+
+      // Pass 1: Dedicated Audio Tracks (layer.type === 'audio')
+      // Pure audio streams run on the soundcard hardware buffer with sub-ms jitter and zero video decode overhead.
+      // They ALWAYS take precedence over video layers as the master clock.
+      let masterItem = null;
       for (let i = 0; i < flatItems.length; i++) {
         const item = flatItems[i];
         const layer = item.layer;
+        if (layer.type !== 'audio') continue;
         if (item.isMuted) continue;
-        // Audio and unmuted video layers with audio tracks serve as master audio clock
-        if (layer.type !== 'audio' && layer.type !== 'video') continue;
         if (layer.speedMode === 'time_remap' || (item.parentLayer && item.parentLayer.speedMode === 'time_remap')) continue;
         if (layer.keyframes && layer.keyframes.speed && layer.keyframes.speed.length > 0) continue;
         if (item.effectiveSpeed !== 1.0) continue;
@@ -541,60 +548,98 @@
         if (!media || !media.el) continue;
         const el = media.el;
         if (el.paused || el.seeking || el.readyState < 2) continue;
+        if (el._suppressAudioUntil && Date.now() < el._suppressAudioUntil + 30) continue;
 
-        // Skip master audio synchronization if element is suppressing stale audio
-        if (el._suppressAudioUntil && Date.now() < el._suppressAudioUntil + 30) {
-          continue;
-        }
+        masterItem = item;
+        break;
+      }
 
-        // Detect if audio element currentTime is stalled using wall-clock time (> 500ms)
-        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-        if (el._lastReportedTime === undefined || Math.abs(el.currentTime - el._lastReportedTime) >= 0.0005) {
-          el._lastReportedTime = el.currentTime;
-          el._lastAdvanceWallTime = now;
-        } else if (now - (el._lastAdvanceWallTime || now) > 500) {
-          // Audio decoder is truly stalled for > 500ms — do not sync timeline to frozen clock
-          continue;
-        }
+      // Pass 2: Fall back to Video Tracks (layer.type === 'video') only if NO dedicated audio layer is active
+      if (!masterItem) {
+        for (let i = 0; i < flatItems.length; i++) {
+          const item = flatItems[i];
+          const layer = item.layer;
+          if (layer.type !== 'video') continue;
+          if (item.isMuted || layer.muted || layer.volume === 0) continue;
+          if (layer.speedMode === 'time_remap' || (item.parentLayer && item.parentLayer.speedMode === 'time_remap')) continue;
+          if (layer.keyframes && layer.keyframes.speed && layer.keyframes.speed.length > 0) continue;
+          if (item.effectiveSpeed !== 1.0) continue;
 
-        // Interpolate smooth continuous time between discrete browser currentTime ticks
-        // Capped at 40ms to prevent runaway phantom advance during any decoder lag
-        const wallElapsedSec = Math.min(0.040, Math.max(0, (now - (el._lastAdvanceWallTime || now)) / 1000));
-        const interpolatedTime = el._lastReportedTime + (wallElapsedSec * (el.playbackRate || 1.0));
+          const media = window.getOrLoadLayerMedia ? window.getOrLoadLayerMedia(layer) : null;
+          if (!media || !media.el) continue;
+          const el = media.el;
+          if (el.mozHasAudio === false) continue;
+          if (el.paused || el.seeking || el.readyState < 2) continue;
+          if (el._suppressAudioUntil && Date.now() < el._suppressAudioUntil + 30) continue;
 
-        const startSec = item.rootStartSec;
-        const endSec = item.rootEndSec;
-        const timeInClip = interpolatedTime - (item.sourceOffsetSec || 0);
-
-        // Guard against reporting time before audio element actually begins advancing
-        if ((currentSec - startSec) > 0.03 && timeInClip <= 0.001) {
-          continue;
-        }
-
-        let timelineSec = startSec + timeInClip;
-
-        // Reject master audio sync only on massive jump across timeline (> 1.0s)
-        if (Math.abs(timelineSec - currentSec) > 1.0) {
-          el._lastMasterSec = null;
-          continue;
-        }
-
-        // Master clock invariant: strictly monotonic forward advance during playback
-        if (el._lastMasterSec !== undefined && el._lastMasterSec !== null) {
-          if (timelineSec < el._lastMasterSec) {
-            timelineSec = el._lastMasterSec;
-          }
-        }
-        el._lastMasterSec = timelineSec;
-
-        if (timelineSec >= startSec - 0.2 && timelineSec <= endSec + 0.3) {
-          return timelineSec;
+          masterItem = item;
+          break;
         }
       }
+
+      if (!masterItem) {
+        this._masterAudioElement = null;
+        return null;
+      }
+
+      const item = masterItem;
+      const layer = item.layer;
+      const media = window.getOrLoadLayerMedia ? window.getOrLoadLayerMedia(layer) : null;
+      const el = media.el;
+
+      // Detect if audio element currentTime is stalled using wall-clock time (> 500ms)
+      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      if (el._lastReportedTime === undefined || Math.abs(el.currentTime - el._lastReportedTime) >= 0.0005) {
+        el._lastReportedTime = el.currentTime;
+        el._lastAdvanceWallTime = now;
+      } else if (now - (el._lastAdvanceWallTime || now) > 500) {
+        // Audio decoder is truly stalled for > 500ms — do not sync timeline to frozen clock
+        this._masterAudioElement = null;
+        return null;
+      }
+
+      // Interpolate smooth continuous time between discrete browser currentTime ticks
+      // Capped at 40ms to prevent runaway phantom advance during any decoder lag
+      const wallElapsedSec = Math.min(0.040, Math.max(0, (now - (el._lastAdvanceWallTime || now)) / 1000));
+      const interpolatedTime = el._lastReportedTime + (wallElapsedSec * (el.playbackRate || 1.0));
+
+      const startSec = item.rootStartSec;
+      const endSec = item.rootEndSec;
+      const timeInClip = interpolatedTime - (item.sourceOffsetSec || 0);
+
+      // Guard against reporting time before audio element actually begins advancing
+      if ((currentSec - startSec) > 0.03 && timeInClip <= 0.001) {
+        this._masterAudioElement = null;
+        return null;
+      }
+
+      let timelineSec = startSec + timeInClip;
+
+      // Reject master audio sync only on massive jump across timeline (> 1.0s)
+      if (Math.abs(timelineSec - currentSec) > 1.0) {
+        el._lastMasterSec = null;
+        this._masterAudioElement = null;
+        return null;
+      }
+
+      // Master clock invariant: strictly monotonic forward advance during playback
+      if (el._lastMasterSec !== undefined && el._lastMasterSec !== null) {
+        if (timelineSec < el._lastMasterSec) {
+          timelineSec = el._lastMasterSec;
+        }
+      }
+      el._lastMasterSec = timelineSec;
+      this._masterAudioElement = el;
+
+      if (timelineSec >= startSec - 0.2 && timelineSec <= endSec + 0.3) {
+        return timelineSec;
+      }
+      this._masterAudioElement = null;
       return null;
     }
 
     handleLoopReset(layers, targetSec, pixelsPerSecond = 80, actualSpeedRatio = 1.0) {
+      this._masterAudioElement = null;
       const allKnownElements = new Set([...this.knownMediaElements, ...this.sources.keys()]);
       allKnownElements.forEach(el => {
         el._lastMasterSec = null;
@@ -827,7 +872,7 @@
               ? Math.max(0, el.duration - 0.01)
               : Infinity;
             const clampedTarget = Math.min(Math.max(0, targetTime), maxSeek);
-            if (Math.abs((el.currentTime || 0) - clampedTarget) > 0.025) {
+            if (Math.abs((el.currentTime || 0) - clampedTarget) > 0.08) {
               try {
                 el.currentTime = clampedTarget;
               } catch (_) {}
@@ -863,7 +908,17 @@
               el.muted = !!isMuted;
             }
           } catch (_) {}
-          window.VideoCompEngine.correctPlaybackDrift(el, targetTime, currentSpeed, nowMs);
+          const isMaster = (this._masterAudioElement === el);
+          if (isMaster) {
+            // Master clock element: runs freely on hardware soundcard clock.
+            // Do NOT hard seek or steer rate during continuous playback, as the timeline is slaved to it!
+            const safeSpeed = Math.max(0.0625, Math.min(8.0, currentSpeed || 1.0));
+            if (Math.abs((el.playbackRate || safeSpeed) - safeSpeed) > 0.002) {
+              try { el.playbackRate = safeSpeed; } catch (_) {}
+            }
+          } else {
+            window.VideoCompEngine.correctPlaybackDrift(el, targetTime, currentSpeed, nowMs);
+          }
         }
       });
 
@@ -939,6 +994,7 @@
         }
       });
       this.invalidateLayerCache();
+      this._masterAudioElement = null;
       FishAudioEngine.suppressMediaSession();
     }
   }
