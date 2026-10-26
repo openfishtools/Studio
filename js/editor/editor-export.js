@@ -2150,18 +2150,26 @@
               // Read settings
               const aspectGrid = document.getElementById('export-video-aspect-grid');
               const selectedRatio = aspectGrid?.querySelector('.aspect-ratio-frame.is-selected')?.dataset.val || currentProjectState.aspectRatio || '16:9';
-              let res = '1080p';
+              let res = '';
               if (selectedRatio === 'Custom') {
                 const cw = parseInt(document.getElementById('export-video-custom-res-w')?.value, 10);
                 const ch = parseInt(document.getElementById('export-video-custom-res-h')?.value, 10);
-                if (cw > 0 && ch > 0) {
-                  res = `${cw}x${ch}`;
-                } else {
-                  res = currentProjectState.resolution || '1080p';
+                if (!cw || !ch || cw <= 0 || ch <= 0 || isNaN(cw) || isNaN(ch)) {
+                  if (typeof showEditorToast === 'function') {
+                    showEditorToast('Resolusi video kustom tidak valid! Masukkan angka lebar dan tinggi yang benar.', 3000, 'error');
+                  }
+                  return;
                 }
+                res = `${cw}x${ch}`;
               } else {
                 const dd = document.getElementById('dropdown-export-video-resolution');
-                res = dd?.dataset.value || '1080p';
+                res = dd?.dataset.value;
+                if (!res) {
+                  if (typeof showEditorToast === 'function') {
+                    showEditorToast('Pilih resolusi video yang valid!', 3000, 'error');
+                  }
+                  return;
+                }
               }
 
               const fpsEl = document.getElementById('export-video-fps');
@@ -2198,18 +2206,26 @@
               // Read sequence settings
               const seqAspectGrid = document.getElementById('export-seq-aspect-grid');
               const seqSelectedRatio = seqAspectGrid?.querySelector('.aspect-ratio-frame.is-selected')?.dataset.val || currentProjectState.aspectRatio || '16:9';
-              let seqRes = '1080p';
+              let seqRes = '';
               if (seqSelectedRatio === 'Custom') {
                 const cw = parseInt(document.getElementById('export-seq-custom-res-w')?.value, 10);
                 const ch = parseInt(document.getElementById('export-seq-custom-res-h')?.value, 10);
-                if (cw > 0 && ch > 0) {
-                  seqRes = `${cw}x${ch}`;
-                } else {
-                  seqRes = currentProjectState.resolution || '1080p';
+                if (!cw || !ch || cw <= 0 || ch <= 0 || isNaN(cw) || isNaN(ch)) {
+                  if (typeof showEditorToast === 'function') {
+                    showEditorToast('Resolusi image sequence kustom tidak valid! Masukkan angka lebar dan tinggi yang benar.', 3000, 'error');
+                  }
+                  return;
                 }
+                seqRes = `${cw}x${ch}`;
               } else {
                 const dd = document.getElementById('dropdown-export-seq-resolution');
-                seqRes = dd?.dataset.value || '1080p';
+                seqRes = dd?.dataset.value;
+                if (!seqRes) {
+                  if (typeof showEditorToast === 'function') {
+                    showEditorToast('Pilih resolusi image sequence yang valid!', 3000, 'error');
+                  }
+                  return;
+                }
               }
 
               const seqFpsEl = document.getElementById('export-seq-fps');

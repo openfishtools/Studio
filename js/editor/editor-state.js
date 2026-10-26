@@ -1570,8 +1570,8 @@
       let baseH = (window.currentProjectState && (window.currentProjectState._baseH || window.currentProjectState.baseH || window.currentProjectState.height)) || 0;
 
       if (window.currentActivePrecomp) {
-        baseW = Math.round(Math.abs(window.currentActivePrecomp.mediaWidth || window.currentActivePrecomp.scaleW || baseW || 0));
-        baseH = Math.round(Math.abs(window.currentActivePrecomp.mediaHeight || window.currentActivePrecomp.scaleH || baseH || 0));
+        baseW = Math.round(Math.abs(window.currentActivePrecomp.mediaWidth || baseW || 0));
+        baseH = Math.round(Math.abs(window.currentActivePrecomp.mediaHeight || baseH || 0));
       }
 
       if (!baseW || !baseH) {
@@ -2162,13 +2162,27 @@
       if (!modal) return;
 
       const selectedRatio = modal.querySelector('.modal-aspect-grid .aspect-ratio-frame.is-selected')?.dataset.val || '16:9';
-      let selectedRes = '1080p';
+      let selectedRes = '';
       if (selectedRatio === 'Custom') {
-        const w = (document.getElementById('custom-res-w') || document.getElementById('settings-custom-res-w'))?.value || '1920';
-        const h = (document.getElementById('custom-res-h') || document.getElementById('settings-custom-res-h'))?.value || '1080';
+        const wVal = (document.getElementById('custom-res-w') || document.getElementById('settings-custom-res-w'))?.value;
+        const hVal = (document.getElementById('custom-res-h') || document.getElementById('settings-custom-res-h'))?.value;
+        const w = parseInt(wVal, 10);
+        const h = parseInt(hVal, 10);
+        if (isNaN(w) || isNaN(h) || w <= 0 || h <= 0) {
+          if (typeof showEditorToast === 'function') {
+            showEditorToast('Resolusi kustom tidak valid! Masukkan angka lebar dan tinggi yang benar.', 3000, 'error');
+          }
+          return;
+        }
         selectedRes = `${w}x${h}`;
       } else {
-        selectedRes = document.getElementById('dropdown-resolution')?.dataset.value || '1080p';
+        selectedRes = document.getElementById('dropdown-resolution')?.dataset.value;
+        if (!selectedRes) {
+          if (typeof showEditorToast === 'function') {
+            showEditorToast('Pilih resolusi project yang valid!', 3000, 'error');
+          }
+          return;
+        }
       }
       const selectedFps = parseInt(document.getElementById('input-fps')?.value || document.getElementById('settings-input-fps')?.value || document.getElementById('dropdown-fps')?.dataset.value || '60', 10);
       const selectedDur = parseFloat(document.getElementById('dropdown-duration')?.dataset.value || '5');

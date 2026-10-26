@@ -1254,8 +1254,8 @@
       const res = currentProjectState.resolution || '1080p';
       let baseDims = window.getProjectDimensions(res, aspect);
       if (currentActivePrecomp) {
-        const cw = Math.round(Math.abs(currentActivePrecomp.mediaWidth || currentActivePrecomp.scaleW || baseDims[0]));
-        const ch = Math.round(Math.abs(currentActivePrecomp.mediaHeight || currentActivePrecomp.scaleH || baseDims[1]));
+        const cw = Math.round(Math.abs(currentActivePrecomp.mediaWidth || baseDims[0]));
+        const ch = Math.round(Math.abs(currentActivePrecomp.mediaHeight || baseDims[1]));
         baseDims = [cw, ch];
       }
       const baseW = baseDims[0];
@@ -2819,9 +2819,9 @@
       const resStr = currentProjectState.resolution || '1080p';
       let aspect = 16 / 9;
       if (currentActivePrecomp) {
-        const cw = Math.round(Math.abs(currentActivePrecomp.mediaWidth || currentActivePrecomp.scaleW || 1920));
-        const ch = Math.round(Math.abs(currentActivePrecomp.mediaHeight || currentActivePrecomp.scaleH || 1080));
-        aspect = (cw && ch) ? (cw / ch) : (16 / 9);
+        const cw = Math.round(Math.abs(currentActivePrecomp.mediaWidth || 0));
+        const ch = Math.round(Math.abs(currentActivePrecomp.mediaHeight || 0));
+        aspect = (cw > 0 && ch > 0) ? (cw / ch) : (16 / 9);
       } else {
         const baseDims = window.getProjectDimensions(resStr, aspectStr);
         if (baseDims && baseDims[0] > 0 && baseDims[1] > 0) {
@@ -2853,8 +2853,8 @@
         const res = currentProjectState.resolution || '1080p';
         let baseDims = window.getProjectDimensions(res, aspect);
         if (currentActivePrecomp) {
-          const cw = Math.round(Math.abs(currentActivePrecomp.mediaWidth || currentActivePrecomp.scaleW || baseDims[0]));
-          const ch = Math.round(Math.abs(currentActivePrecomp.mediaHeight || currentActivePrecomp.scaleH || baseDims[1]));
+          const cw = Math.round(Math.abs(currentActivePrecomp.mediaWidth || baseDims[0]));
+          const ch = Math.round(Math.abs(currentActivePrecomp.mediaHeight || baseDims[1]));
           baseDims = [cw, ch];
         }
         currentProjectState._baseW = baseDims[0];
@@ -4530,8 +4530,8 @@
       let compH = 0;
 
       if (window.currentActivePrecomp) {
-        compW = Math.round(Math.abs(window.currentActivePrecomp.mediaWidth || window.currentActivePrecomp.scaleW || 0));
-        compH = Math.round(Math.abs(window.currentActivePrecomp.mediaHeight || window.currentActivePrecomp.scaleH || 0));
+        compW = Math.round(Math.abs(window.currentActivePrecomp.mediaWidth || 0));
+        compH = Math.round(Math.abs(window.currentActivePrecomp.mediaHeight || 0));
       }
       if (!compW || !compH) {
         if (ps._baseW && ps._baseH) {

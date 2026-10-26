@@ -928,14 +928,24 @@ async function saveProjectSettingsAction() {
   if (!projectId || !window.FishDatabase) return;
 
   const newName = nameInput && nameInput.value.trim() ? nameInput.value.trim() : 'Project';
-    const selectedRatio = document.querySelector('#settings-options-aspect-ratio .aspect-ratio-frame.is-selected')?.dataset.val || '16:9';
-  let selectedRes = '1080p';
+  const selectedRatio = document.querySelector('#settings-options-aspect-ratio .aspect-ratio-frame.is-selected')?.dataset.val || '16:9';
+  let selectedRes = '';
   if (selectedRatio === 'Custom') {
-    const w = document.getElementById('settings-custom-res-w')?.value || '1920';
-    const h = document.getElementById('settings-custom-res-h')?.value || '1080';
+    const wVal = document.getElementById('settings-custom-res-w')?.value;
+    const hVal = document.getElementById('settings-custom-res-h')?.value;
+    const w = parseInt(wVal, 10);
+    const h = parseInt(hVal, 10);
+    if (isNaN(w) || isNaN(h) || w <= 0 || h <= 0) {
+      showDashboardToast('Resolusi kustom tidak valid! Masukkan angka lebar dan tinggi yang benar.', 3000, 'error');
+      return;
+    }
     selectedRes = `${w}x${h}`;
   } else {
-    selectedRes = document.getElementById('settings-dropdown-resolution')?.dataset.value || '1080p';
+    selectedRes = document.getElementById('settings-dropdown-resolution')?.dataset.value;
+    if (!selectedRes) {
+      showDashboardToast('Pilih resolusi project yang valid!', 3000, 'error');
+      return;
+    }
   }
   const selectedFps = document.getElementById('settings-input-fps')?.value || '60';
   const selectedBg = document.querySelector('#settings-options-bgcolor .modal-color-swatch.is-selected')?.dataset.val || 'transparent';
@@ -1314,14 +1324,32 @@ async function createNewProjectAction() {
     const nameInput = document.getElementById('project-input-name');
     const name = nameInput && nameInput.value.trim() ? nameInput.value.trim() : 'New_Project';
     
-        const selectedRatio = document.querySelector('#options-aspect-ratio .aspect-ratio-frame.is-selected')?.dataset.val || '16:9';
-    let selectedRes = '1080p';
+    const selectedRatio = document.querySelector('#options-aspect-ratio .aspect-ratio-frame.is-selected')?.dataset.val || '16:9';
+    let selectedRes = '';
     if (selectedRatio === 'Custom') {
-      const w = document.getElementById('custom-res-w')?.value || '1920';
-      const h = document.getElementById('custom-res-h')?.value || '1080';
+      const wVal = document.getElementById('custom-res-w')?.value;
+      const hVal = document.getElementById('custom-res-h')?.value;
+      const w = parseInt(wVal, 10);
+      const h = parseInt(hVal, 10);
+      if (isNaN(w) || isNaN(h) || w <= 0 || h <= 0) {
+        showDashboardToast('Resolusi kustom tidak valid! Masukkan angka lebar dan tinggi yang benar.', 3000, 'error');
+        if (createBtn) {
+          createBtn.removeAttribute('disabled');
+          createBtn.style.pointerEvents = 'auto';
+        }
+        return;
+      }
       selectedRes = `${w}x${h}`;
     } else {
-      selectedRes = document.getElementById('dropdown-resolution')?.dataset.value || '1080p';
+      selectedRes = document.getElementById('dropdown-resolution')?.dataset.value;
+      if (!selectedRes) {
+        showDashboardToast('Pilih resolusi project yang valid!', 3000, 'error');
+        if (createBtn) {
+          createBtn.removeAttribute('disabled');
+          createBtn.style.pointerEvents = 'auto';
+        }
+        return;
+      }
     }
     const selectedFps = document.getElementById('input-fps')?.value || '60';
     const selectedBg = document.querySelector('#options-bgcolor .modal-color-swatch.is-selected')?.dataset.val || 'transparent';
