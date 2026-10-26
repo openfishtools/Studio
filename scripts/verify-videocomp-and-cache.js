@@ -641,8 +641,62 @@ assert(toastCalledWith && toastCalledWith.type === 'error', 'getProjectDimension
 assert(Array.isArray(invalidDims) && invalidDims[0] > 0, 'getProjectDimensions must return safe fallback tuple');
 console.log('✓ True After Effects Model & precomp transform isolation verified.');
 
+// Test: Algoritma 5 (Temporal Occupancy Partitioning & Void Realtime Bypass)
+global.window.getProjectTotalDuration = () => 60;
+const mixedProject = {
+  fps: 60,
+  resolution: '1080p',
+  aspectRatio: '16:9',
+  duration: 60,
+  bgColor: '#0a0d07',
+  layers: [
+    { id: 'anim_layer', type: 'text', startSec: 0, durationSec: 6 },
+    { id: 'bg_audio', type: 'audio', startSec: 0, durationSec: 60 }
+  ]
+};
+
+pcm.syncStateWithProject(mixedProject, 'root');
+assert.strictEqual(pcm.hasActiveVisualContentAt(3.0), true, 'hasActiveVisualContentAt must be true during visual layer interval');
+assert.strictEqual(pcm.hasActiveVisualContentAt(6.0), false, 'hasActiveVisualContentAt must be false once visual layer ends');
+assert.strictEqual(pcm.hasActiveVisualContentAt(10.0), false, 'hasActiveVisualContentAt must be false during audio-only span');
+assert.strictEqual(pcm.isTimeInVoidSpan(10.0), true, 'isTimeInVoidSpan must be true during audio-only span');
+
+const vIntervals = pcm._compVisualIntervals.get('root');
+const voidIntervals = pcm._compVoidIntervals.get('root');
+assert(Array.isArray(vIntervals) && vIntervals.length === 1, 'There must be exactly 1 merged visual interval');
+assert.strictEqual(vIntervals[0][0], 0);
+assert.strictEqual(vIntervals[0][1], 6);
+assert(Array.isArray(voidIntervals) && voidIntervals.length === 1, 'There must be exactly 1 void interval');
+assert.strictEqual(voidIntervals[0][0], 6);
+assert.strictEqual(voidIntervals[0][1], 60);
+
+// Verify Virtual Cache Hit: 0 memory allocated in frames pool for void span
+const pool = pcm.getPool('root');
+assert.strictEqual(pool.has(600), false, 'Void span frames must NOT be allocated in frames pool');
+assert.strictEqual(pcm.hasFrame(600), true, 'hasFrame must return true virtually for void span');
+const voidCanvas = pcm.getFrame(600, 1920, 1080);
+assert(voidCanvas !== null, 'getFrame must return shared background canvas for void span');
+assert.strictEqual(pcm.isContiguousPlaybackFrame(600), true, 'Void span must always be treated as contiguous playback frame');
+
+// Verify dynamic mutation: adding a layer at 15s splits void intervals seamlessly
+mixedProject.layers.push({ id: 'mid_text', type: 'text', startSec: 15, durationSec: 5 });
+pcm.syncStateWithProject(mixedProject, 'root');
+assert.strictEqual(pcm.hasActiveVisualContentAt(16.0), true, 'Added layer at 15s must be detected as active visual');
+assert.strictEqual(pcm.hasActiveVisualContentAt(10.0), false, '10s must still be in void interval');
+assert.strictEqual(pcm.hasActiveVisualContentAt(25.0), false, '25s must be in void interval');
+
+const voidIntervalsUpdated = pcm._compVoidIntervals.get('root');
+assert.strictEqual(voidIntervalsUpdated.length, 2, 'Void intervals must be split into 2 spans [6..15] and [20..60]');
+assert.strictEqual(voidIntervalsUpdated[0][0], 6);
+assert.strictEqual(voidIntervalsUpdated[0][1], 15);
+assert.strictEqual(voidIntervalsUpdated[1][0], 20);
+assert.strictEqual(voidIntervalsUpdated[1][1], 60);
+
+console.log('✓ Algoritma 5: Temporal Occupancy Partitioning, Virtual Void Cache & Dynamic Mutation verified cleanly.');
+
 console.log('✓ VideoFrameExtractor verified (retain/release deduplication, reverse eviction inversion, seamless reverse split, proactive streaming prefetch, upcoming frame sort order, precomp RAM eviction protection, extraction circuit breaker, mobile VRAM cap, precomp sequence resolution, and invalidation).');
 
 console.log('\n========================================');
 console.log('ALL DEEP VERIFICATION TESTS PASSED! (100%)');
 console.log('========================================\n');
+process.exit(0);

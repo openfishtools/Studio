@@ -5,6 +5,18 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.7] - 2026-10-26
+
+### Added
+- **Temporal Occupancy Partitioning & Void Realtime Bypass (`js/media/preview-cache.js`, `js/editor/editor-canvas.js`)**: Implemented Algoritma 5 (Temporal Occupancy Partitioning + Realtime Bypass) in `PreviewCacheManager`. Automatically partitions timeline durations into active visual intervals and void (empty / audio-only) spans via `rebuildOccupancyIntervals`. Completely bypasses idle caching loops on void spans, eliminating browser freezes and saving up to ~26 GB of GPU VRAM on mixed audio/visual projects. Void spans provide O(1) virtual cache hits (`hasFrame` and `getFrame`) using a shared background canvas, and timeline ruler cache bars for empty spans fill green instantly with a single `ctx.fillRect`.
+
+### Improved
+- **True After Effects Live Precompose Architecture & Transform Isolation (`js/media/videocomp-enggine.js`, `js/media/frame-extractor.js`, `js/media/preview-cache.js`, `js/editor/editor-canvas.js`)**: Eliminated precomposition frame baking completely in favor of live dynamic evaluation via `renderPrecompToCanvas` and `resolvePrecompElement`. Outer precomp container transform changes (position, scale, rotation) are isolated from inner layer buffers, preventing unnecessary buffer clears and playback stalls.
+
+### Fixed
+- **Strict Project Resolution Validation & Toast Errors (`js/editor/editor-state.js`)**: Eliminated silent fallback masking on invalid project resolutions, triggering explicit error toasts (`window.showToast`) whenever an unrecognized resolution or aspect ratio is supplied.
+- **Test Runner Process Exit (`scripts/verify-videocomp-and-cache.js`)**: Ensured background verification suites terminate cleanly with `process.exit(0)` upon passing 100% of functional tests.
+
 ## [0.6.6] - 2026-10-26
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "openfishtools-studio",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "description": "Professional lightweight browser-based motion graphics video editor in the browser",
   "main": "js/app/main.js",
   "scripts": {

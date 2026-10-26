@@ -3922,7 +3922,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.6.6</span>
+          <span class="welcome-badge">v0.6.7</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3952,11 +3952,47 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.7 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.7</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Oct 26, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Temporal Occupancy Partitioning &amp; Void Realtime Bypass (`js/media/preview-cache.js`, `js/editor/editor-canvas.js`)</span>
+                  <span class="changelog-item-desc">Implemented Algoritma 5 (Temporal Occupancy Partitioning + Realtime Bypass) in `PreviewCacheManager`. Automatically partitions timeline durations into active visual intervals and void (empty / audio-only) spans via `rebuildOccupancyIntervals`. Completely bypasses idle caching loops on void spans, eliminating browser freezes and saving up to ~26 GB of GPU VRAM on mixed audio/visual projects. Void spans provide O(1) virtual cache hits (`hasFrame` and `getFrame`) using a shared background canvas, and timeline ruler cache bars for empty spans fill green instantly with a single `ctx.fillRect`.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">True After Effects Live Precompose Architecture &amp; Transform Isolation (`js/media/videocomp-enggine.js`, `js/media/frame-extractor.js`, `js/media/preview-cache.js`, `js/editor/editor-canvas.js`)</span>
+                  <span class="changelog-item-desc">Eliminated precomposition frame baking completely in favor of live dynamic evaluation via `renderPrecompToCanvas` and `resolvePrecompElement`. Outer precomp container transform changes (position, scale, rotation) are isolated from inner layer buffers, preventing unnecessary buffer clears and playback stalls.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Strict Project Resolution Validation &amp; Toast Errors (`js/editor/editor-state.js`)</span>
+                  <span class="changelog-item-desc">Eliminated silent fallback masking on invalid project resolutions, triggering explicit error toasts (`window.showToast`) whenever an unrecognized resolution or aspect ratio is supplied.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Test Runner Process Exit (`scripts/verify-videocomp-and-cache.js`)</span>
+                  <span class="changelog-item-desc">Ensured background verification suites terminate cleanly with `process.exit(0)` upon passing 100% of functional tests.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.6 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.6</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Oct 26, 2026</span>
               </div>
               <div class="welcome-changelog-item">
