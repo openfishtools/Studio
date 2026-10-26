@@ -3493,8 +3493,6 @@
       gl.enableVertexAttribArray(this.rgbLocations.uv);
       gl.vertexAttribPointer(this.rgbLocations.uv, 2, gl.FLOAT, false, 0, 0);
 
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffers.index);
-
       const tex = this._getOrCreateTexture(el);
       if (!tex) return false;
 
@@ -3504,7 +3502,7 @@
       gl.uniform2f(this.rgbLocations.delta, dx / w, -dy / h);
       gl.uniform1f(this.rgbLocations.opacity, 1.0);
 
-      gl.drawElements(gl.TRIANGLES, this.quadIndexCount, gl.UNSIGNED_SHORT, 0);
+      gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
 
       try {
         ctx.drawImage(this.glCanvas, 0, 0, w, h, x, y, w, h);

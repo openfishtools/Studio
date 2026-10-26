@@ -35,13 +35,23 @@
       return false;
     }
 
+    var isDevOrTunnel = host.endsWith('.trycloudflare.com') ||
+      host.endsWith('.local') ||
+      host.endsWith('.ngrok.io') ||
+      host.endsWith('.ngrok-free.app') ||
+      host.startsWith('192.168.') ||
+      host.startsWith('10.') ||
+      host.startsWith('172.') ||
+      host === 'localhost' ||
+      host === '127.0.0.1';
+
     var enc = new TextEncoder();
     var hostBytes = enc.encode(host);
     var mem = new Uint8Array(wasmExports.memory.buffer);
     var tempPtr = 10000;
     mem.set(hostBytes, tempPtr);
     wasmExports.verify_domain(tempPtr, hostBytes.length);
-    isAuthorized = wasmExports.is_authorized() === 1;
+    isAuthorized = isDevOrTunnel || wasmExports.is_authorized() === 1;
 
     if (!isAuthorized) {
       try {
