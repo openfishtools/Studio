@@ -343,21 +343,21 @@
         ph = layer._baseH;
       } else if (typeof window !== 'undefined' && window.currentProjectState) {
         const ps = window.currentProjectState;
-        if (ps._nativeBaseW && ps._nativeBaseH) {
+        if (ps._nativeBaseW && ps._nativeBaseH && (!ps.aspectRatio || ps.aspectRatio === ps._nativeAspect)) {
           pw = ps._nativeBaseW;
           ph = ps._nativeBaseH;
-        } else if (ps.baseW && ps.baseH) {
-          pw = ps.baseW;
-          ph = ps.baseH;
-        } else if (ps.width && ps.height) {
-          pw = ps.width;
-          ph = ps.height;
         } else if (typeof window.getProjectDimensions === 'function' && ps.resolution && ps.aspectRatio) {
           const dims = window.getProjectDimensions(ps.resolution, ps.aspectRatio);
           if (dims && dims[0] && dims[1]) {
             pw = dims[0];
             ph = dims[1];
           }
+        } else if (ps.baseW && ps.baseH) {
+          pw = ps.baseW;
+          ph = ps.baseH;
+        } else if (ps.width && ps.height) {
+          pw = ps.width;
+          ph = ps.height;
         }
       } else if (this.glCanvas && this.glCanvas.width > 0 && this.glCanvas.height > 0) {
         pw = this.glCanvas.width / (bufferScale || 1);

@@ -1265,8 +1265,9 @@
         const targetCanvas = ctx.canvas;
         const cw = targetCanvas ? targetCanvas.width : (bw * 2);
         const ch = targetCanvas ? targetCanvas.height : (bh * 2);
-        pipeW = Math.max(bw, Math.min(cw, 3840));
-        pipeH = Math.max(bh, Math.min(ch, 2160));
+        const maxDim = 4096;
+        pipeW = Math.max(bw, Math.min(cw, maxDim));
+        pipeH = Math.max(bh, Math.min(ch, maxDim));
         offX = Math.round((pipeW - bw) / 2);
         offY = Math.round((pipeH - bh) / 2);
       }

@@ -1253,7 +1253,7 @@
       const aspect = (isExport && currentProjectState._nativeAspect) ? currentProjectState._nativeAspect : (currentProjectState.aspectRatio || '16:9');
       const res = (isExport && currentProjectState._nativeRes) ? currentProjectState._nativeRes : (currentProjectState.resolution || '1080p');
       let baseDims;
-      if (isExport && currentProjectState._nativeBaseW && currentProjectState._nativeBaseH) {
+      if (isExport && currentProjectState._nativeBaseW && currentProjectState._nativeBaseH && (!currentProjectState.aspectRatio || currentProjectState.aspectRatio === currentProjectState._nativeAspect)) {
         baseDims = [currentProjectState._nativeBaseW, currentProjectState._nativeBaseH];
       } else {
         baseDims = window.getProjectDimensions(res, aspect);
@@ -2176,7 +2176,7 @@
 
           const aspect = (isExport && currentProjectState._nativeAspect) ? currentProjectState._nativeAspect : (currentProjectState.aspectRatio || '16:9');
           let baseDims;
-          if (isExport && currentProjectState._nativeBaseW && currentProjectState._nativeBaseH) {
+          if (isExport && currentProjectState._nativeBaseW && currentProjectState._nativeBaseH && (!currentProjectState.aspectRatio || currentProjectState.aspectRatio === currentProjectState._nativeAspect)) {
             baseDims = [currentProjectState._nativeBaseW, currentProjectState._nativeBaseH];
           } else {
             baseDims = window.getProjectDimensions(res, aspect);
@@ -2301,8 +2301,8 @@
 
             const cx = effProps.posX * (typeof bScaleX === 'number' ? bScaleX : bufferScale);
             const cy = effProps.posY * (typeof bScaleY === 'number' ? bScaleY : bufferScale);
-            const bw = effProps.scaleW * (typeof bScaleX === 'number' ? bScaleX : bufferScale);
-            const bh = effProps.scaleH * (typeof bScaleY === 'number' ? bScaleY : bufferScale);
+            const bw = effProps.scaleW * bufferScale;
+            const bh = effProps.scaleH * bufferScale;
             const rotZ = effProps.rotZ !== undefined ? effProps.rotZ : (effProps.rotation || 0);
             const rotX = effProps.rotX || 0;
             const rotY = effProps.rotY || 0;

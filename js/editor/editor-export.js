@@ -2186,15 +2186,16 @@
               const _origBaseW = currentProjectState._baseW;
               const _origBaseH = currentProjectState._baseH;
 
-              const nativeBaseDims = (window.getProjectDimensions ? window.getProjectDimensions(_origRes, _origAspect) : [1920, 1080]);
-              currentProjectState._nativeBaseW = _origBaseW || nativeBaseDims[0];
-              currentProjectState._nativeBaseH = _origBaseH || nativeBaseDims[1];
-              currentProjectState._nativeRes = _origRes;
-              currentProjectState._nativeAspect = _origAspect;
+              const targetAspect = selectedRatio || _origAspect || '16:9';
+              const targetBaseDims = (window.getProjectDimensions ? window.getProjectDimensions('1080p', targetAspect) : [1920, 1080]);
+              currentProjectState._nativeBaseW = targetBaseDims[0];
+              currentProjectState._nativeBaseH = targetBaseDims[1];
+              currentProjectState._nativeRes = res;
+              currentProjectState._nativeAspect = targetAspect;
 
               currentProjectState.resolution = res;
               currentProjectState.fps = fps;
-              currentProjectState.aspectRatio = selectedRatio;
+              currentProjectState.aspectRatio = targetAspect;
 
               try {
                 await exportVideoMP4(preset, customName, 'mp4');
@@ -2202,6 +2203,8 @@
                 currentProjectState.resolution = _origRes;
                 currentProjectState.fps = _origFps;
                 currentProjectState.aspectRatio = _origAspect;
+                if (_origBaseW !== undefined) currentProjectState._baseW = _origBaseW; else delete currentProjectState._baseW;
+                if (_origBaseH !== undefined) currentProjectState._baseH = _origBaseH; else delete currentProjectState._baseH;
                 delete currentProjectState._nativeBaseW;
                 delete currentProjectState._nativeBaseH;
                 delete currentProjectState._nativeRes;
@@ -2252,15 +2255,16 @@
               const _origBaseW2 = currentProjectState._baseW;
               const _origBaseH2 = currentProjectState._baseH;
 
-              const nativeBaseDims2 = (window.getProjectDimensions ? window.getProjectDimensions(_origRes2, _origAspect2) : [1920, 1080]);
-              currentProjectState._nativeBaseW = _origBaseW2 || nativeBaseDims2[0];
-              currentProjectState._nativeBaseH = _origBaseH2 || nativeBaseDims2[1];
-              currentProjectState._nativeRes = _origRes2;
-              currentProjectState._nativeAspect = _origAspect2;
+              const seqTargetAspect = seqSelectedRatio || _origAspect2 || '16:9';
+              const seqBaseDims = (window.getProjectDimensions ? window.getProjectDimensions('1080p', seqTargetAspect) : [1920, 1080]);
+              currentProjectState._nativeBaseW = seqBaseDims[0];
+              currentProjectState._nativeBaseH = seqBaseDims[1];
+              currentProjectState._nativeRes = seqRes;
+              currentProjectState._nativeAspect = seqTargetAspect;
 
               currentProjectState.resolution = seqRes;
               currentProjectState.fps = seqFps;
-              currentProjectState.aspectRatio = seqSelectedRatio;
+              currentProjectState.aspectRatio = seqTargetAspect;
 
               try {
                 if (seqFormat === 'zip') {
@@ -2275,6 +2279,8 @@
                 currentProjectState.resolution = _origRes2;
                 currentProjectState.fps = _origFps2;
                 currentProjectState.aspectRatio = _origAspect2;
+                if (_origBaseW2 !== undefined) currentProjectState._baseW = _origBaseW2; else delete currentProjectState._baseW;
+                if (_origBaseH2 !== undefined) currentProjectState._baseH = _origBaseH2; else delete currentProjectState._baseH;
                 delete currentProjectState._nativeBaseW;
                 delete currentProjectState._nativeBaseH;
                 delete currentProjectState._nativeRes;

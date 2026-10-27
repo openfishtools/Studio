@@ -378,7 +378,10 @@
             rootDurSec: lDur / parentSpeed,
             sourceOffsetSec: layer.sourceOffsetSec || 0,
             effectiveSpeed: effectiveSpeed,
-            effectiveGain: effectiveGain
+            effectiveGain: effectiveGain,
+            parentGain: parentGain,
+            parentOffsetSec: parentOffsetSec,
+            parentSpeed: parentSpeed
           });
         }
       } else if (layer.type === 'precomp' && Array.isArray(layer.layers)) {
@@ -393,10 +396,11 @@
   // ── Locate Media Blob for a Layer ──────────────────────────────────────────
   async function getLayerBlob(layer) {
     if (!layer) return null;
-    // 1. Try layer.dataUrl
-    if (layer.dataUrl && typeof layer.dataUrl === 'string' && !layer.dataUrl.startsWith('data:image')) {
+    // 1. Try layer.dataUrl, layer.audioUrl, layer.mediaUrl, layer.url, layer.src
+    var directUrl = layer.dataUrl || layer.audioUrl || layer.mediaUrl || layer.url || layer.src;
+    if (directUrl && typeof directUrl === 'string' && !directUrl.startsWith('data:image')) {
       try {
-        var r = await fetch(layer.dataUrl);
+        var r = await fetch(directUrl);
         if (r.ok) return await r.blob();
       } catch (_) {}
     }
@@ -762,8 +766,21 @@
         }
 
         var gain = ctx.createGain();
-        var vol  = item.effectiveGain !== undefined ? item.effectiveGain : 1.0;
-        if (!isFinite(vol)) vol = 1.0;
+        var pGain = (item.parentGain !== undefined && isFinite(item.parentGain)) ? item.parentGain : 1.0;
+        var pSpeed = (item.parentSpeed !== undefined && item.parentSpeed > 0) ? item.parentSpeed : 1.0;
+        var pOffset = (item.parentOffsetSec !== undefined) ? item.parentOffsetSec : 0;
+
+        function getTrackVolAt(rootT) {
+          var layerT = (rootT - pOffset) * pSpeed;
+          var eff = (typeof window.getLayerEffectivePropsAtTime === 'function')
+            ? window.getLayerEffectivePropsAtTime(layer, layerT)
+            : null;
+          var v = (eff && eff.volume !== undefined)
+            ? Number(eff.volume)
+            : (layer.volume !== undefined ? Number(layer.volume) : 1.0);
+          if (!isFinite(v)) v = 1.0;
+          return Math.max(0, Math.min(10.0, v * pGain));
+        }
 
         // Route through layer audio effects (e.g. Reverb, Delay) if present
         var fxChain = createOfflineAudioEffectsChain(ctx, layer.audioEffects);
@@ -775,19 +792,34 @@
         }
         gain.connect(ctx.destination);
 
+        var hasVolKeyframes = layer.keyframes && Array.isArray(layer.keyframes.volume) && layer.keyframes.volume.length > 0;
+        var initialVol = getTrackVolAt(startSec);
+
         // Schedule hard cut at clip boundary (with 2ms micro-fade to eliminate digital pop)
         if (startSec > 0) {
           gain.gain.setValueAtTime(0, 0);
-          gain.gain.setValueAtTime(vol, startSec);
+          gain.gain.setValueAtTime(initialVol, startSec);
         } else {
-          gain.gain.setValueAtTime(vol, 0);
+          gain.gain.setValueAtTime(initialVol, 0);
         }
-        var cutStart = Math.max(startSec, endSec - 0.002);
-        if (cutStart < endSec) {
-          gain.gain.setValueAtTime(vol, cutStart);
+
+        if (hasVolKeyframes) {
+          var step = 1.0 / 30.0;
+          for (var tStep = startSec + step; tStep < endSec - 0.005; tStep += step) {
+            var stepVol = getTrackVolAt(tStep);
+            gain.gain.linearRampToValueAtTime(stepVol, tStep);
+          }
+          var endVol = getTrackVolAt(endSec - 0.002);
+          gain.gain.linearRampToValueAtTime(endVol, Math.max(startSec, endSec - 0.002));
           gain.gain.linearRampToValueAtTime(0, endSec);
         } else {
-          gain.gain.setValueAtTime(0, endSec);
+          var cutStart = Math.max(startSec, endSec - 0.002);
+          if (cutStart < endSec) {
+            gain.gain.setValueAtTime(initialVol, cutStart);
+            gain.gain.linearRampToValueAtTime(0, endSec);
+          } else {
+            gain.gain.setValueAtTime(0, endSec);
+          }
         }
 
         src.start(startSec, offsetSec, durSec);
@@ -795,7 +827,7 @@
         var fxDesc = (fxChain && Array.isArray(layer.audioEffects))
           ? layer.audioEffects.filter(function(f) { return !f.disabled; }).map(function(f) { return f.type; }).join(',')
           : 'none';
-        logExportInfo('Audio:Mix', '✅ Mixed track ' + (i + 1) + ': "' + (layer.name || layer.id) + '" (start=' + startSec.toFixed(2) + 's, dur=' + durSec.toFixed(2) + 's, vol=' + vol.toFixed(2) + ', fx=' + fxDesc + ')');
+        logExportInfo('Audio:Mix', '✅ Mixed track ' + (i + 1) + ': "' + (layer.name || layer.id) + '" (start=' + startSec.toFixed(2) + 's, dur=' + durSec.toFixed(2) + 's, vol=' + initialVol.toFixed(2) + ', fx=' + fxDesc + ')');
       } catch (err) {
         logExportWarn('Audio:Mix', 'Error mixing layer "' + (layer.name || layer.id) + '":', err);
       }
