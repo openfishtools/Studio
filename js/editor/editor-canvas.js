@@ -63,20 +63,48 @@
       const mw22 = mp02 * mc20 + mp12 * mc21 + mp22 * mc22;
 
       const m02Clamped = Math.max(-1, Math.min(1, mw02));
-      const ry = -Math.asin(m02Clamped);
-      const cosY = Math.cos(ry);
-      let rx, rz;
-      if (Math.abs(cosY) > 0.0001) {
-        rx = Math.atan2(mw12, mw22);
-        rz = Math.atan2(mw01, mw00);
+      const ry1 = -Math.asin(m02Clamped);
+      const cosY1 = Math.cos(ry1);
+      let rx1, rz1;
+      if (Math.abs(cosY1) > 0.0001) {
+        rx1 = Math.atan2(mw12, mw22);
+        rz1 = Math.atan2(mw01, mw00);
       } else {
-        rx = 0;
-        rz = Math.atan2(-mw10, mw11);
+        rx1 = 0;
+        rz1 = Math.atan2(-mw10, mw11);
       }
 
-      target.rotX = (rx * 180) / Math.PI;
-      target.rotY = (ry * 180) / Math.PI;
-      target.rotZ = (rz * 180) / Math.PI;
+      const degX1 = (rx1 * 180) / Math.PI;
+      const degY1 = (ry1 * 180) / Math.PI;
+      const degZ1 = (rz1 * 180) / Math.PI;
+
+      // Mathematically equivalent alternate Euler solution:
+      const degY2 = (degY1 >= 0 ? 180 - degY1 : -180 - degY1);
+      const degX2 = degX1 > 0 ? degX1 - 180 : degX1 + 180;
+      const degZ2 = degZ1 > 0 ? degZ1 - 180 : degZ1 + 180;
+
+      const expX = (pRotX || 0) + (cRotX || 0);
+      const expY = (pRotY || 0) + (cRotY || 0);
+      const expZ = (pRotZ || 0) + (cRotZ || 0);
+
+      // Unwrap full 360 revolutions to preserve keyframe revolution counts
+      const unwrap = (deg, exp) => deg + Math.round((exp - deg) / 360) * 360;
+
+      const cand1X = unwrap(degX1, expX), cand1Y = unwrap(degY1, expY), cand1Z = unwrap(degZ1, expZ);
+      const cand2X = unwrap(degX2, expX), cand2Y = unwrap(degY2, expY), cand2Z = unwrap(degZ2, expZ);
+
+      const d1 = Math.hypot(cand1X - expX, cand1Y - expY, cand1Z - expZ);
+      const d2 = Math.hypot(cand2X - expX, cand2Y - expY, cand2Z - expZ);
+
+      if (d2 < d1) {
+        target.rotX = cand2X;
+        target.rotY = cand2Y;
+        target.rotZ = cand2Z;
+      } else {
+        target.rotX = cand1X;
+        target.rotY = cand1Y;
+        target.rotZ = cand1Z;
+      }
       return target;
     }
     window.composeEulerRotations = composeEulerRotations;
@@ -677,7 +705,17 @@
 
       const fps = (typeof getProjectFps === 'function') ? getProjectFps() : 60;
       const pps = window.currentPixelsPerSecond || 80;
-      const childLayers = precompLayer.layers || [];
+      let childLayers = precompLayer.layers;
+      if (!Array.isArray(childLayers) || childLayers.length === 0) {
+        if (precompLayer.mediaId && typeof currentProjectState !== 'undefined' && Array.isArray(currentProjectState.layers)) {
+          const sibling = currentProjectState.layers.find(l => l && l.id !== precompLayer.id && l.mediaId === precompLayer.mediaId && Array.isArray(l.layers) && l.layers.length > 0);
+          if (sibling) {
+            childLayers = sibling.layers;
+            precompLayer.layers = sibling.layers;
+          }
+        }
+      }
+      if (!Array.isArray(childLayers)) childLayers = [];
 
       // Frame key strictly bound to playhead time within precomp (at project FPS resolution)
       const frameKey = `${Math.round(innerSec * fps)}_${pw}_${ph}`;
@@ -1914,7 +1952,17 @@
 
             // Concatenate precomp 3D transform with each child layer and push to 3D scene batch
             const pps = window.currentPixelsPerSecond || 80;
-            const childLayers = layer.layers || [];
+            let childLayers = layer.layers;
+            if (!Array.isArray(childLayers) || childLayers.length === 0) {
+              if (layer.mediaId && typeof currentProjectState !== 'undefined' && Array.isArray(currentProjectState.layers)) {
+                const sibling = currentProjectState.layers.find(l => l && l.id !== layer.id && l.mediaId === layer.mediaId && Array.isArray(l.layers) && l.layers.length > 0);
+                if (sibling) {
+                  childLayers = sibling.layers;
+                  layer.layers = sibling.layers;
+                }
+              }
+            }
+            if (!Array.isArray(childLayers)) childLayers = [];
             const activeChildren = childLayers.filter(child => {
               const cs = child.startSec !== undefined ? child.startSec : ((child.startPx || 0) / pps);
               const cd = child.durationSec !== undefined ? child.durationSec : ((child.widthPx || 320) / pps);

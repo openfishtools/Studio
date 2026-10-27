@@ -2818,6 +2818,27 @@
         });
       };
       hydrateLayerTrims(currentProjectState.layers);
+      const hydratePrecompLayers = (layerList, allLayers = layerList) => {
+        if (!Array.isArray(layerList)) return;
+        layerList.forEach(l => {
+          if (!l) return;
+          if (l.type === 'precomp' && (!Array.isArray(l.layers) || l.layers.length === 0)) {
+            if (l.mediaId) {
+              const sibling = allLayers.find(s => s && s !== l && s.mediaId === l.mediaId && Array.isArray(s.layers) && s.layers.length > 0);
+              if (sibling) {
+                l.layers = sibling.layers;
+              } else if (currentProject && Array.isArray(currentProject.media)) {
+                const mediaItem = currentProject.media.find(m => m && m.id === l.mediaId && Array.isArray(m.layers) && m.layers.length > 0);
+                if (mediaItem) {
+                  l.layers = mediaItem.layers;
+                }
+              }
+            }
+          }
+          if (Array.isArray(l.layers)) hydratePrecompLayers(l.layers, allLayers);
+        });
+      };
+      hydratePrecompLayers(currentProjectState.layers);
       currentProjectState.beatmarks = (currentProject && Array.isArray(currentProject.beatmarks)) ? currentProject.beatmarks.slice().sort((a, b) => a - b) : [];
       currentProjectState.markerNames = (currentProject && currentProject.markerNames && typeof currentProject.markerNames === 'object') ? { ...currentProject.markerNames } : {};
       currentProjectState.isTemplate = !!(currentProject && currentProject.isTemplate);

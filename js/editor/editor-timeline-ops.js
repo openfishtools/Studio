@@ -3083,8 +3083,16 @@ function initTimelineOperations() {
         const targetPrecomp = layers.find(l => l.id === precompId);
         if (!targetPrecomp || targetPrecomp.type !== 'precomp') return;
 
-        if (!Array.isArray(targetPrecomp.layers)) {
-          targetPrecomp.layers = [];
+        if (!Array.isArray(targetPrecomp.layers) || targetPrecomp.layers.length === 0) {
+          if (targetPrecomp.mediaId && Array.isArray(layers)) {
+            const sibling = layers.find(l => l && l.id !== targetPrecomp.id && l.mediaId === targetPrecomp.mediaId && Array.isArray(l.layers) && l.layers.length > 0);
+            if (sibling) {
+              targetPrecomp.layers = sibling.layers;
+            }
+          }
+          if (!Array.isArray(targetPrecomp.layers)) {
+            targetPrecomp.layers = [];
+          }
         }
 
         const currentPan = window.timelinePanX !== undefined ? window.timelinePanX : (typeof panX !== 'undefined' ? panX : 0);
@@ -3174,6 +3182,18 @@ function initTimelineOperations() {
         currentActivePrecomp = parentState.parentPrecomp;
         window.currentActivePrecomp = currentActivePrecomp;
         currentProjectState.layers = parentState.layers;
+
+        // Synchronize exiting precomp's updated layers to ALL sibling slices sharing the same mediaId
+        if (exitingPrecomp && Array.isArray(parentState.layers)) {
+          const syncedLayers = exitingPrecomp.layers;
+          parentState.layers.forEach(l => {
+            if (l && l.type === 'precomp' && l.mediaId && l.mediaId === exitingPrecomp.mediaId) {
+              l.layers = syncedLayers;
+              l._dirty = true;
+              l._precompBufferCanvas = null;
+            }
+          });
+        }
 
         selectedLayerId = parentState.selectedLayerId;
         window.selectedLayerId = selectedLayerId;
@@ -6964,6 +6984,12 @@ function initTimelineOperations() {
         layer._userTrimmed = true;
         if (layer.textStyle) layer.textStyle = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(layer.textStyle) : (Array.isArray(layer.textStyle) ? [] : {}));
         if (layer.shapeProps) layer.shapeProps = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(layer.shapeProps) : (Array.isArray(layer.shapeProps) ? [] : {}));
+
+        if (layer.type === 'precomp' && (!Array.isArray(layer.layers) || layer.layers.length === 0)) {
+          const allL = (currentProjectState && Array.isArray(currentProjectState.layers)) ? currentProjectState.layers : [];
+          const sibling = allL.find(l => l && l.id !== layer.id && l.mediaId === layer.mediaId && Array.isArray(l.layers) && l.layers.length > 0);
+          if (sibling) layer.layers = sibling.layers;
+        }
 
         // Potongan kanan (setelah playhead)
         const newLayer = {
