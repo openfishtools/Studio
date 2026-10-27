@@ -2194,14 +2194,18 @@
           compositionBufferScale = bufferScale;
 
           if (mw && mh && layer.type !== 'precomp' && layer.type !== 'shape' && layer.type !== 'text') {
-            if (!layer._userResized) {
-              const curAspect = (layer.scaleW && layer.scaleH) ? (layer.scaleW / layer.scaleH) : null;
-              const mediaAspect = mw / mh;
-              if (!curAspect || Math.abs(curAspect - mediaAspect) > 0.02 || layer.normW === undefined) {
+            if (!isExport) {
+              if (!layer._userResized) {
+                const curAspect = (layer.scaleW && layer.scaleH) ? (layer.scaleW / layer.scaleH) : null;
+                const mediaAspect = mw / mh;
+                if (!curAspect || Math.abs(curAspect - mediaAspect) > 0.02 || layer.normW === undefined) {
+                  fitLayerToComposition(layer, mw, mh);
+                }
+              } else if (layer.normX === undefined || layer.normY === undefined || layer.normW === undefined || layer.normH === undefined ||
+                  layer.scaleW === undefined || layer.scaleH === undefined) {
                 fitLayerToComposition(layer, mw, mh);
               }
-            } else if (layer.normX === undefined || layer.normY === undefined || layer.normW === undefined || layer.normH === undefined ||
-                layer.scaleW === undefined || layer.scaleH === undefined) {
+            } else if (layer.scaleW === undefined || layer.scaleH === undefined) {
               fitLayerToComposition(layer, mw, mh);
             }
           }

@@ -2187,11 +2187,18 @@
               const _origBaseH = currentProjectState._baseH;
 
               const targetAspect = selectedRatio || _origAspect || '16:9';
-              const targetBaseDims = (window.getProjectDimensions ? window.getProjectDimensions('1080p', targetAspect) : [1920, 1080]);
-              currentProjectState._nativeBaseW = targetBaseDims[0];
-              currentProjectState._nativeBaseH = targetBaseDims[1];
-              currentProjectState._nativeRes = res;
+              const baseRes = _origRes || '1080p';
+              const authoredDims = (window.getProjectDimensions ? window.getProjectDimensions(baseRes, _origAspect || targetAspect) : [1920, 1080]);
+              const nativeBaseW = _origBaseW || authoredDims[0];
+              const nativeBaseH = _origBaseH || authoredDims[1];
+
+              currentProjectState._nativeBaseW = nativeBaseW;
+              currentProjectState._nativeBaseH = nativeBaseH;
+              currentProjectState._nativeRes = baseRes;
               currentProjectState._nativeAspect = targetAspect;
+
+              currentProjectState._baseW = nativeBaseW;
+              currentProjectState._baseH = nativeBaseH;
 
               currentProjectState.resolution = res;
               currentProjectState.fps = fps;
@@ -2256,11 +2263,18 @@
               const _origBaseH2 = currentProjectState._baseH;
 
               const seqTargetAspect = seqSelectedRatio || _origAspect2 || '16:9';
-              const seqBaseDims = (window.getProjectDimensions ? window.getProjectDimensions('1080p', seqTargetAspect) : [1920, 1080]);
-              currentProjectState._nativeBaseW = seqBaseDims[0];
-              currentProjectState._nativeBaseH = seqBaseDims[1];
-              currentProjectState._nativeRes = seqRes;
+              const seqBaseRes = _origRes2 || '1080p';
+              const seqAuthoredDims = (window.getProjectDimensions ? window.getProjectDimensions(seqBaseRes, _origAspect2 || seqTargetAspect) : [1920, 1080]);
+              const seqNativeBaseW = _origBaseW2 || seqAuthoredDims[0];
+              const seqNativeBaseH = _origBaseH2 || seqAuthoredDims[1];
+
+              currentProjectState._nativeBaseW = seqNativeBaseW;
+              currentProjectState._nativeBaseH = seqNativeBaseH;
+              currentProjectState._nativeRes = seqBaseRes;
               currentProjectState._nativeAspect = seqTargetAspect;
+
+              currentProjectState._baseW = seqNativeBaseW;
+              currentProjectState._baseH = seqNativeBaseH;
 
               currentProjectState.resolution = seqRes;
               currentProjectState.fps = seqFps;

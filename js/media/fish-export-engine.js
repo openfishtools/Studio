@@ -795,35 +795,53 @@
         var hasVolKeyframes = layer.keyframes && Array.isArray(layer.keyframes.volume) && layer.keyframes.volume.length > 0;
         var initialVol = getTrackVolAt(startSec);
 
+        var lastSchedT = -1;
+        function safeSetValue(val, t) {
+          t = Math.max(0, Math.min(totalDur, t));
+          if (t <= lastSchedT) t = lastSchedT + 0.0001;
+          gain.gain.setValueAtTime(val, t);
+          lastSchedT = t;
+        }
+        function safeRamp(val, t) {
+          t = Math.max(0, Math.min(totalDur, t));
+          if (t <= lastSchedT) t = lastSchedT + 0.0001;
+          gain.gain.linearRampToValueAtTime(val, t);
+          lastSchedT = t;
+        }
+
         // Schedule hard cut at clip boundary (with 2ms micro-fade to eliminate digital pop)
         if (startSec > 0) {
-          gain.gain.setValueAtTime(0, 0);
-          gain.gain.setValueAtTime(initialVol, startSec);
+          safeSetValue(0, 0);
+          safeSetValue(initialVol, startSec);
         } else {
-          gain.gain.setValueAtTime(initialVol, 0);
+          safeSetValue(initialVol, 0);
         }
 
         if (hasVolKeyframes) {
           var step = 1.0 / 30.0;
           for (var tStep = startSec + step; tStep < endSec - 0.005; tStep += step) {
             var stepVol = getTrackVolAt(tStep);
-            gain.gain.linearRampToValueAtTime(stepVol, tStep);
+            safeRamp(stepVol, tStep);
           }
-          var endVol = getTrackVolAt(endSec - 0.002);
-          gain.gain.linearRampToValueAtTime(endVol, Math.max(startSec, endSec - 0.002));
-          gain.gain.linearRampToValueAtTime(0, endSec);
+          var endVol = getTrackVolAt(Math.max(startSec, endSec - 0.002));
+          safeRamp(endVol, Math.max(startSec + 0.0001, endSec - 0.002));
+          safeRamp(0, endSec);
         } else {
-          var cutStart = Math.max(startSec, endSec - 0.002);
+          var cutStart = Math.max(startSec + 0.0001, endSec - 0.002);
           if (cutStart < endSec) {
-            gain.gain.setValueAtTime(initialVol, cutStart);
-            gain.gain.linearRampToValueAtTime(0, endSec);
+            safeSetValue(initialVol, cutStart);
+            safeRamp(0, endSec);
           } else {
-            gain.gain.setValueAtTime(0, endSec);
+            safeRamp(0, endSec);
           }
         }
 
-        src.start(startSec, offsetSec, durSec);
-        count++;
+        var maxAvailDur = (decoded && isFinite(decoded.duration)) ? Math.max(0, decoded.duration - offsetSec) : durSec;
+        var playDur = Math.min(durSec, maxAvailDur > 0 ? maxAvailDur : durSec);
+        if (playDur > 0) {
+          src.start(startSec, offsetSec, playDur);
+          count++;
+        }
         var fxDesc = (fxChain && Array.isArray(layer.audioEffects))
           ? layer.audioEffects.filter(function(f) { return !f.disabled; }).map(function(f) { return f.type; }).join(',')
           : 'none';
@@ -1195,9 +1213,23 @@
           } catch (_) {}
         }
       }
-      var canFfmpegMerge = hasAudio;
+      var canFfmpegMerge = false;
+      if (hasAudio && !canWebCodecsAudio) {
+        try {
+          var testFfmpeg = await getFFmpeg();
+          canFfmpegMerge = !!(testFfmpeg && testFfmpeg.isLoaded());
+        } catch (_) {
+          canFfmpegMerge = false;
+        }
+      }
 
       logExportInfo('WebCodecs:Audio', 'Audio tracks=' + playableItems.length + ' | Native WebCodecs Audio=' + (canWebCodecsAudio ? webCodecsAudioCodec : 'false') + ' | Fast FFmpeg Remux=' + canFfmpegMerge);
+
+      if (hasAudio && !canWebCodecsAudio && !canFfmpegMerge) {
+        logExportWarn('WebCodecs:Audio', 'Native WebCodecs AAC & FFmpeg remux are unavailable in this environment. ↳ Gracefully delegating to Tier 2: GPU MediaRecorder to preserve audio.');
+        try { if (exportCanvas.parentNode) exportCanvas.parentNode.removeChild(exportCanvas); } catch (_) {}
+        return false;
+      }
 
       var muxerOptions = {
         target: new Mp4Muxer.ArrayBufferTarget(),
@@ -1428,9 +1460,14 @@
           logExportWarn('WebCodecs:AudioMerge', 'Audio merge via FFmpeg failed:', mergeErr);
         }
         if (!ffmpegOk) {
-          logExportWarn('WebCodecs', '⚠️ Audio merge could not be completed. Falling back to video without audio to preserve crisp frames.');
-          finalBlob = new Blob([videoBuffer], { type: 'video/mp4' });
+          logExportWarn('WebCodecs', 'Audio merge could not be completed in Tier 1. ↳ Falling back to Tier 2: GPU MediaRecorder...');
+          try { if (exportCanvas.parentNode) exportCanvas.parentNode.removeChild(exportCanvas); } catch (_) {}
+          return false;
         }
+      } else if (hasAudio && !audioEncodedSuccessfully) {
+        logExportWarn('WebCodecs', 'Audio was not encoded into Tier 1 container. ↳ Falling back to Tier 2: GPU MediaRecorder...');
+        try { if (exportCanvas.parentNode) exportCanvas.parentNode.removeChild(exportCanvas); } catch (_) {}
+        return false;
       } else {
         finalBlob = new Blob([videoBuffer], { type: 'video/mp4' });
       }
