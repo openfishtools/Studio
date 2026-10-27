@@ -391,11 +391,16 @@
         : null;
 
       // Determine base composition dimensions (unscaled project space)
-      const aspect = (compState && compState.aspectRatio) || '16:9';
-      const res = (compState && compState.resolution) || '1080p';
-      let baseDims = (typeof window !== 'undefined' && typeof window.getProjectDimensions === 'function')
-        ? window.getProjectDimensions(res, aspect)
-        : [1920, 1080];
+      const aspect = (compState && (compState._nativeAspect || compState.aspectRatio)) || '16:9';
+      const res = (compState && (compState._nativeRes || compState.resolution)) || '1080p';
+      let baseDims;
+      if (compState && compState._nativeBaseW && compState._nativeBaseH && (!compState.aspectRatio || compState.aspectRatio === compState._nativeAspect)) {
+        baseDims = [compState._nativeBaseW, compState._nativeBaseH];
+      } else {
+        baseDims = (typeof window !== 'undefined' && typeof window.getProjectDimensions === 'function')
+          ? window.getProjectDimensions(res, aspect)
+          : [1920, 1080];
+      }
       if (window && window.currentActivePrecomp) {
         const cw = Math.round(Math.abs(window.currentActivePrecomp.mediaWidth || window.currentActivePrecomp.scaleW || baseDims[0]));
         const ch = Math.round(Math.abs(window.currentActivePrecomp.mediaHeight || window.currentActivePrecomp.scaleH || baseDims[1]));

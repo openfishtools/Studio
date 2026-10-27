@@ -673,6 +673,7 @@
       const ph = targetH || targetCanvas.height || precompLayer.mediaHeight || 1080;
       const baseW = Math.round(Math.abs(precompLayer.mediaWidth || pw || 1920));
       const baseH = Math.round(Math.abs(precompLayer.mediaHeight || ph || 1080));
+      const precompBufferScale = baseW > 0 ? (pw / baseW) : 1;
 
       const fps = (typeof getProjectFps === 'function') ? getProjectFps() : 60;
       const pps = window.currentPixelsPerSecond || 80;
@@ -767,7 +768,7 @@
                 pctx.globalCompositeOperation = resolveBlendMode(child.blendMode);
               }
               try {
-                window.FishEffects.renderLayer(pctx, snap, animChild, { x: 0, y: 0, w: pw, h: ph }, innerSec);
+                window.FishEffects.renderLayer(pctx, snap, animChild, { x: 0, y: 0, w: pw, h: ph, bufferScale: precompBufferScale, unitScale: precompBufferScale, baseW: pw, baseH: ph }, innerSec);
               } catch (e) {
                 console.warn('[Precomp Adjustment] Effect render error:', e);
               }
@@ -981,7 +982,7 @@
           try {
             if (window.FishEffects && typeof window.FishEffects.renderLayer === 'function' && Array.isArray(targetChild.effects) && targetChild.effects.length > 0) {
               const childRenderSec = (eff && typeof eff._currentSec === 'number') ? eff._currentSec : innerSec;
-              window.FishEffects.renderLayer(targetCtx, targetEl, Object.assign({}, targetChild, eff), { x: -curAbsW / 2 - curAx, y: -curAbsH / 2 - curAy, w: curAbsW, h: curAbsH }, childRenderSec);
+              window.FishEffects.renderLayer(targetCtx, targetEl, Object.assign({}, targetChild, eff), { x: -curAbsW / 2 - curAx, y: -curAbsH / 2 - curAy, w: curAbsW, h: curAbsH, bufferScale: precompBufferScale, unitScale: precompBufferScale, baseW: curAbsW, baseH: curAbsH }, childRenderSec);
             } else {
               targetCtx.drawImage(targetEl, -curAbsW / 2 - curAx, -curAbsH / 2 - curAy, curAbsW, curAbsH);
             }
@@ -2471,7 +2472,7 @@
                   const drawX = -drawW / 2 - ax;
                   const drawY = -drawH / 2 - ay;
                   if (window.FishEffects && typeof window.FishEffects.renderLayer === 'function') {
-                    window.FishEffects.renderLayer(ctx, el, animLayerPost, { x: drawX, y: drawY, w: drawW, h: drawH, bufferScale: bufferScale, unitScale: bufferScale }, currentSec);
+                    window.FishEffects.renderLayer(ctx, el, animLayerPost, { x: drawX, y: drawY, w: drawW, h: drawH, bufferScale: bufferScale, unitScale: bufferScale, baseW: baseW, baseH: baseH }, currentSec);
                   } else {
                     ctx.drawImage(el, drawX, drawY, drawW, drawH);
                   }
@@ -2488,7 +2489,7 @@
                   const drawX = -drawW / 2 - ax;
                   const drawY = -drawH / 2 - ay;
                   if (window.FishEffects && typeof window.FishEffects.renderLayer === 'function') {
-                    window.FishEffects.renderLayer(ctx, el, animLayerPost, { x: drawX, y: drawY, w: drawW, h: drawH, bufferScale: bufferScale, unitScale: bufferScale }, currentSec);
+                    window.FishEffects.renderLayer(ctx, el, animLayerPost, { x: drawX, y: drawY, w: drawW, h: drawH, bufferScale: bufferScale, unitScale: bufferScale, baseW: baseW, baseH: baseH }, currentSec);
                   } else {
                     ctx.drawImage(el, drawX, drawY, drawW, drawH);
                   }
@@ -2516,7 +2517,7 @@
                     ctx.clip();
                   }
                   if (window.FishEffects && typeof window.FishEffects.renderLayer === 'function') {
-                    window.FishEffects.renderLayer(ctx, el, animLayerPost, { x: -absW / 2 - ax, y: -absH / 2 - ay, w: absW, h: absH, bufferScale: bufferScale, unitScale: bufferScale }, currentSec);
+                    window.FishEffects.renderLayer(ctx, el, animLayerPost, { x: -absW / 2 - ax, y: -absH / 2 - ay, w: absW, h: absH, bufferScale: bufferScale, unitScale: bufferScale, baseW: baseW, baseH: baseH }, currentSec);
                   } else {
                     ctx.drawImage(el, -absW / 2 - ax, -absH / 2 - ay, absW, absH);
                   }
