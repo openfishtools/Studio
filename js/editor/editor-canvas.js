@@ -2013,6 +2013,7 @@
                 anchorY: worldAnchorY,
                 anchorZ: worldAnchorZ,
                 opacity: worldOpacity,
+                is3D: !!(layer.is3D || child.is3D || Math.abs(worldRotX) > 0.001 || Math.abs(worldRotY) > 0.001 || Math.abs(worldPosZ) > 0.001),
                 mediaWidth: child.mediaWidth || Math.abs(worldScaleW),
                 mediaHeight: child.mediaHeight || Math.abs(worldScaleH),
                 _isCollapsedPrecompChild: true,
