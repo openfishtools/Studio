@@ -55,7 +55,7 @@
         <h1 class="brand-title">FishTools</h1>
         <div class="brand-subtitle-row">
           <span class="brand-subtitle">Studio</span>
-          <span class="badge-pre-alpha" id="studio-version-badge">0.6.9</span>
+          <span class="badge-pre-alpha" id="studio-version-badge">0.6.10</span>
         </div>
 
         <!-- Desktop Folders Shelf in Photo 2 area -->
@@ -783,7 +783,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">FishTools Studio</h3>
-          <span class="welcome-badge">v0.6.9</span>
+          <span class="welcome-badge">v0.6.10</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
@@ -819,11 +819,54 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.10 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.10</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Oct 31, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Texture Flux Background Fill Effect &amp; Automated WASM Bundle Compilation (`effects/backup/texture_flux.js`, `effects/effects.wasm`, `effects/manifest.json`, `effects/loader.js`, `scripts/sync-effects.js`, `js/media/frame-extractor.js`)</span>
+                  <span class="changelog-item-desc">Added `Texture Flux` (`id: 'texture-flux'`) under the `background` category, synthesizing animated multi-octave swirling turbulence (`Flux Scale`, `Flux Speed`, `Flux Color 1`, `Flux Color 2`, `Roughness`, `Opacity`, `Blend`) directly as a full layer/alpha fill without the outer outline ring of `Solid Aura (Flux)`. Integrated automatic SplitMix64 encryption and `effects.wasm` compilation into `scripts/sync-effects.js` so `npm run sync:effects` and `npm test` automatically rebuild `effects/effects.wasm` whenever effects are added or modified.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Web Audio Clip Scheduler (default-enabled) (`js/media/fish-audio-scheduler.js`, `js/media/fish-audio-engine.js`, `js/editor/editor-timeline-core.js`, `js/media/fish-export-engine.js`, `editor.html`, `desktop.html`)</span>
+                  <span class="changelog-item-desc">`FishAudioScheduler` decodes each audio / video clip's audio once into an `AudioBuffer` (sequential decode queue, LRU memory budget 640 MB desktop / 192 MB mobile) and plays it with an `AudioBufferSourceNode` scheduled on the `AudioContext` clock (250 ms tick, 2 s lookahead). The same clock (output-latency compensated) drives the playhead during cached playback, so picture (`VideoFrameExtractor` frames rendered at timeline time) and sound share one sample-accurate clock and cannot drift; loop / seek simply reschedule sources instead of seeking media elements. Supports root and nested `precomp` clips (with parent window clamping, source offset, speed, and gain scaling), reverse playback (`speed &lt; 0` via cached sample-reversed `AudioBuffer`), time remap (`speedMode === 'time_remap'` on layer or parent precomp) and speed keyframes (`keyframes.speed`) via `playbackRate` automation, volume keyframes / expressions via `GainNode` automation, and per-voice Web Audio effect chains (`reverb`, `delay` on clip and parent precomp). Enabled by default (`localStorage.setItem('oft_audio_engine', 'legacy')` to force legacy element engine).</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Playback Lag From Per-Tick Media Lookups (`js/editor/editor-media.js`)</span>
+                  <span class="changelog-item-desc">`getOrLoadLayerMedia` runs on every playback tick and triggered `VideoFrameExtractor.extractLayerRange`, which begins with an IndexedDB `getProjectMedia()` query, 60–120 times per second even when every frame was cached. Requests are now throttled per layer (once per 1.5 s, never while one is in flight).</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Stutter After Loop / Seek (`js/editor/editor-timeline-core.js`)</span>
+                  <span class="changelog-item-desc">The playhead no longer hard-snaps to the media element audio clock (which stalls after every seek); wall-clock drives motion and audio pulls it gently, with a 450 ms settle window after play / loop.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Export Dimension Fallback (`js/editor/editor-export.js`)</span>
+                  <span class="changelog-item-desc">MediaRecorder bitrate now uses the already-resolved composition dimensions instead of a hardcoded `1080p` / `16:9` fallback.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.9 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.9</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Oct 31, 2026</span>
               </div>
               <div class="welcome-changelog-item">

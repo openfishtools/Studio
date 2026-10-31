@@ -5,7 +5,7 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.10] - 2026-10-31
 
 ### Added
 - **Texture Flux Background Fill Effect & Automated WASM Bundle Compilation (`effects/backup/texture_flux.js`, `effects/effects.wasm`, `effects/manifest.json`, `effects/loader.js`, `scripts/sync-effects.js`, `js/media/frame-extractor.js`)**: Added `Texture Flux` (`id: 'texture-flux'`) under the `background` category, synthesizing animated multi-octave swirling turbulence (`Flux Scale`, `Flux Speed`, `Flux Color 1`, `Flux Color 2`, `Roughness`, `Opacity`, `Blend`) directly as a full layer/alpha fill without the outer outline ring of `Solid Aura (Flux)`. Integrated automatic SplitMix64 encryption and `effects.wasm` compilation into `scripts/sync-effects.js` so `npm run sync:effects` and `npm test` automatically rebuild `effects/effects.wasm` whenever effects are added or modified.
