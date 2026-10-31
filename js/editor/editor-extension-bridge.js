@@ -577,19 +577,73 @@
               '}'
             ].join('\n');
           }
-        } else if (toolName === 'IDLE_MOVE_1' || toolName === 'IDLE_MOVE_2') {
-          const isPattern2 = (toolName === 'IDLE_MOVE_2');
-          nullLayer.name = isPattern2 ? 'IDLE MOVE 2' : 'IDLE MOVE 1';
+        } else if (typeof toolName === 'string' && toolName.indexOf('IDLE_MOVE_') === 0) {
+          const scaleP1 = '[0, 55.8333, 0, 55.8333, 0, 55.8333, 0]';
+          const glideP1 = 'bezier(0.343, -2.0 * yMult, 0.511, 1 + 1.0 * yMult, progress)';
+          const scaleP2 = '[0, 19.1667, 59.1667, -19.9167, 52.5, -43.3333, 59.1667]';
+          const glideP2 = 'bezier(0.532, -0.436 * yMult, 0.379, 1 + 0.415 * yMult, progress)';
+
+          const idleSpecs = {
+            IDLE_MOVE_1: {
+              name: 'IDLE MOVE 1',
+              scaleSteps: scaleP1,
+              glideEase: glideP1
+            },
+            IDLE_MOVE_2: {
+              name: 'IDLE MOVE 2',
+              scaleSteps: scaleP2,
+              glideEase: glideP2
+            },
+            IDLE_MOVE_3: {
+              name: 'IDLE MOVE 3',
+              scaleSteps: scaleP1,
+              glideEase: glideP1,
+              posDefault: 45,
+              stepX: '[0, -0.6, 0.55, -0.5, 0.6, -0.35]',
+              stepY: '[0, -0.35, 0.4, 0.45, -0.35, -0.45]'
+            },
+            IDLE_MOVE_4: {
+              name: 'IDLE MOVE 4',
+              scaleSteps: scaleP1,
+              glideEase: glideP1,
+              rotDefault: 5,
+              stepRot: '[0, 1.0, -1.0, 0.75]'
+            },
+            IDLE_MOVE_5: {
+              name: 'IDLE MOVE 5',
+              scaleSteps: scaleP2,
+              glideEase: glideP2,
+              posDefault: 45,
+              stepX: '[0, 0.55, -0.6, 0.45, -0.5, 0.35]',
+              stepY: '[0, -0.4, 0.35, -0.45, 0.4, -0.3]',
+              rotDefault: 5,
+              stepRot: '[0, -1.0, 1.0, -0.75]'
+            },
+            IDLE_MOVE_6: {
+              name: 'IDLE MOVE 6',
+              scaleSteps: scaleP1,
+              glideEase: glideP1,
+              posDefault: 45,
+              stepX: '[0, -0.6, 0.55, -0.5, 0.6, -0.35]',
+              stepY: '[0, -0.35, 0.4, 0.45, -0.35, -0.45]',
+              rotDefault: 5,
+              stepRot: '[0, 1.0, -1.0, 0.75]'
+            }
+          };
+          const spec = idleSpecs[toolName] || idleSpecs.IDLE_MOVE_1;
+          nullLayer.name = spec.name;
+
           addSlider(nullLayer, 'Amp', 100);
+          if (spec.posDefault !== undefined) {
+            addSlider(nullLayer, 'Position', spec.posDefault);
+          }
+          if (spec.rotDefault !== undefined) {
+            addSlider(nullLayer, 'Rotation', spec.rotDefault);
+          }
           addSlider(nullLayer, 'Overshoot', 100);
           addSlider(nullLayer, 'Skip Beats', 4);
-          const stepValsLiteral = isPattern2
-            ? '[0, 19.1667, 59.1667, -19.9167, 52.5, -43.3333, 59.1667]'
-            : '[0, 55.8333, 0, 55.8333, 0, 55.8333, 0]';
-          const glideEaseExpr = isPattern2
-            ? 'bezier(0.532, -0.436 * yMult, 0.379, 1 + 0.415 * yMult, progress)'
-            : 'bezier(0.343, -2.0 * yMult, 0.511, 1 + 1.0 * yMult, progress)';
-          nullLayer.expressions.scale = [
+
+          const bezierFnBlock = [
             'function bezier(x1, y1, x2, y2, t) {',
             '    if (t <= 0) return 0;',
             '    if (t >= 1) return 1;',
@@ -604,7 +658,12 @@
             '    }',
             '    var omP = 1 - p;',
             '    return 3 * omP * omP * p * y1 + 3 * omP * p * p * y2 + p * p * p;',
-            '}',
+            '}'
+          ];
+
+          // Scale expression: untouched original Pattern 1 / Pattern 2 beat-skipping graph
+          nullLayer.expressions.scale = [
+            ...bezierFnBlock,
             '',
             'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
             'amp = effect("Amp")("ADBE Slider Control-0001") / 100;',
@@ -612,7 +671,7 @@
             'skipBeats = Math.max(0, Math.round(effect("Skip Beats")("ADBE Slider Control-0001")));',
             'yMult = overshoot / 100;',
             'cycleBeats = 6 + skipBeats;',
-            'stepVals = ' + stepValsLiteral + ';',
+            'stepVals = ' + spec.scaleSteps + ';',
             '',
             'if (time < inPoint || time > outPoint) {',
             '    value;',
@@ -630,18 +689,24 @@
             '        endKey = (stepIdx < 5) ? (startKey + 1) : (1 + (cycleIdx + 1) * cycleBeats);',
             '        if (startKey <= m.numKeys) {',
             '            t1 = m.key(startKey).time;',
-            '            t2 = (endKey <= m.numKeys) ? m.key(endKey).time : ((startKey < m.numKeys) ? m.key(m.numKeys).time : outPoint);',
-            '            dur = Math.max(0.0001, t2 - t1);',
-            '            s0 = stepVals[stepIdx] * amp;',
+            '            s0 = ((cycleIdx > 0 && stepIdx === 0) ? stepVals[6] : stepVals[stepIdx]) * amp;',
             '            s1 = stepVals[stepIdx + 1] * amp;',
-            '            if (t2 <= t1 + 0.0001 || time >= t2) {',
-            '                val = (endKey <= m.numKeys) ? s1 : s0;',
+            '            if (startKey >= m.numKeys) {',
+            '                val = s0;',
             '            } else {',
-            '                progress = Math.max(0, Math.min(1, (time - t1) / dur));',
-            '                eased = (stepIdx < 5)',
-            '                    ? bezier(0.229, -0.924 * yMult, 0.77, -0.839 * yMult, progress)',
-            '                    : ' + glideEaseExpr + ';',
-            '                val = s0 + (s1 - s0) * eased;',
+            '                t2 = (endKey <= m.numKeys) ? m.key(endKey).time : m.key(m.numKeys).time;',
+            '                dur = Math.max(0.0001, t2 - t1);',
+            '                if (t2 <= t1 + 0.0001) {',
+            '                    val = s0;',
+            '                } else if (time >= t2) {',
+            '                    val = s1;',
+            '                } else {',
+            '                    progress = Math.max(0, Math.min(1, (time - t1) / dur));',
+            '                    eased = (stepIdx < 5)',
+            '                        ? bezier(0.229, -0.924 * yMult, 0.77, -0.839 * yMult, progress)',
+            '                        : ' + spec.glideEase + ';',
+            '                    val = s0 + (s1 - s0) * eased;',
+            '                }',
             '            }',
             '            value + [val, val];',
             '        } else {',
@@ -652,6 +717,74 @@
             '    value;',
             '}'
           ].join('\n');
+
+          // Spaced Easy Ease builder (triggers on odd beatmarks 1, 3, 5, 7... with smooth Easy Ease graph)
+          const buildSpacedEasyEaseExpr = (headerLines, calcLines, outExpr) => [
+            ...bezierFnBlock,
+            '',
+            'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+            ...headerLines,
+            '',
+            'if (time < inPoint || time > outPoint) {',
+            '    value;',
+            '} else if (m && m.numKeys > 0) {',
+            '    n = m.nearestKey(time).index;',
+            '    if (m.key(n).time > time) n--;',
+            '    if (n <= 0) {',
+            '        value;',
+            '    } else {',
+            '        slotIdx = Math.floor((n - 1) / 2);',
+            '        startKey = 1 + slotIdx * 2;',
+            '        endKey = startKey + 2;',
+            '        t1 = m.key(startKey).time;',
+            '        canAnim = (startKey < m.numKeys);',
+            '        t2 = (endKey <= m.numKeys) ? m.key(endKey).time : (canAnim ? m.key(m.numKeys).time : outPoint);',
+            '        dur = Math.max(0.0001, t2 - t1);',
+            '        progress = canAnim ? Math.max(0, Math.min(1, (time - t1) / dur)) : 0;',
+            '        eased = bezier(0.42, 0.0, 0.58, 1.0, progress);',
+            ...calcLines,
+            '        ' + outExpr + ';',
+            '    }',
+            '} else {',
+            '    value;',
+            '}'
+          ].join('\n');
+
+          if (spec.stepX && spec.stepY) {
+            nullLayer.expressions.move = buildSpacedEasyEaseExpr(
+              [
+                'posAmp = effect("Position")("ADBE Slider Control-0001");',
+                'stepX = ' + spec.stepX + ';',
+                'stepY = ' + spec.stepY + ';'
+              ],
+              [
+                '        idx0 = slotIdx % stepX.length;',
+                '        idx1 = (slotIdx + 1) % stepX.length;',
+                '        x0 = stepX[idx0] * posAmp; x1 = stepX[idx1] * posAmp;',
+                '        y0 = stepY[idx0] * posAmp; y1 = stepY[idx1] * posAmp;',
+                '        dx = x0 + (x1 - x0) * eased;',
+                '        dy = y0 + (y1 - y0) * eased;'
+              ],
+              'value + [dx, dy]'
+            );
+          }
+
+          if (spec.stepRot) {
+            nullLayer.expressions.rotate = buildSpacedEasyEaseExpr(
+              [
+                'rotAmp = effect("Rotation")("ADBE Slider Control-0001");',
+                'stepRot = ' + spec.stepRot + ';'
+              ],
+              [
+                '        idx0 = slotIdx % stepRot.length;',
+                '        idx1 = (slotIdx + 1) % stepRot.length;',
+                '        r0 = stepRot[idx0] * rotAmp;',
+                '        r1 = stepRot[idx1] * rotAmp;',
+                '        rotVal = r0 + (r1 - r0) * eased;'
+              ],
+              'value + rotVal'
+            );
+          }
         }
 
         selectTimelineLayer(nullLayer.id, false);
@@ -1818,7 +1951,11 @@
           case 'PANNING_MIX_PR':
           case 'PANNING_MIX_ALL':
           case 'IDLE_MOVE_1':
-          case 'IDLE_MOVE_2': {
+          case 'IDLE_MOVE_2':
+          case 'IDLE_MOVE_3':
+          case 'IDLE_MOVE_4':
+          case 'IDLE_MOVE_5':
+          case 'IDLE_MOVE_6': {
             const targets = getSelectedLayersForFishTool();
             if (!targets.length) {
               const msg = `Pilih layer terlebih dahulu untuk ${toolName}`;
@@ -1978,6 +2115,12 @@
             return createProcedural3D(toolName.replace('GEN_3D_', ''));
           }
 
+          // --- AUTO MARK / BEATMARK GENERATOR ---
+          case 'AUTO_MARK':
+          case 'AUTO_BEATMARK': {
+            return generateAutoBeatmarks(args[0]);
+          }
+
           default: {
             console.warn('[executeFishTool] Unhandled tool:', toolName, args);
             showEditorToast(`Tool: ${toolName}`);
@@ -2033,12 +2176,389 @@
       function createProceduralTunnel() { return createProcedural3D('TUNNEL'); }
       function createProceduralMC() { return createProcedural3D('MC'); }
 
+      // -------------------------------------------------------------
+      // AUTO MARK: AUTOMATIC BEATMARK MAKER ENGINE (BASS & BPM)
+      // -------------------------------------------------------------
+      async function getAudioBufferForLayer(layer) {
+        if (!layer) return null;
+        if (layer.audioBuffer && typeof layer.audioBuffer.getChannelData === 'function') {
+          return layer.audioBuffer;
+        }
+        let audioSrc = layer.dataUrl || layer.url || layer.src;
+        let blobToRevoke = null;
+
+        if (!audioSrc && layer.blob) {
+          try {
+            blobToRevoke = URL.createObjectURL(layer.blob);
+            audioSrc = blobToRevoke;
+          } catch (_) {}
+        }
+
+        if (!audioSrc && window.layerMediaCache) {
+          const entry = window.layerMediaCache.get(layer.id) || window.layerMediaCache.get(layer.mediaId);
+          if (entry && entry.el && entry.el.src && !entry.el.src.startsWith('data:,')) {
+            audioSrc = entry.el.src;
+          }
+        }
+
+        if (!audioSrc && window._activeMediaMap && layer.mediaId && window._activeMediaMap.has(layer.mediaId)) {
+          const item = window._activeMediaMap.get(layer.mediaId);
+          if (item) {
+            if (item.dataUrl) audioSrc = item.dataUrl;
+            else if (item.blob) {
+              blobToRevoke = URL.createObjectURL(item.blob);
+              audioSrc = blobToRevoke;
+            }
+          }
+        }
+
+        if (!audioSrc && layer.mediaId && window.FishDatabase && typeof window.FishDatabase.getMedia === 'function') {
+          try {
+            const item = await window.FishDatabase.getMedia(layer.mediaId);
+            if (item) {
+              if (item.dataUrl) audioSrc = item.dataUrl;
+              else if (item.blob) {
+                blobToRevoke = URL.createObjectURL(item.blob);
+                audioSrc = blobToRevoke;
+              } else if (item.buffer) {
+                const b = new Blob([item.buffer], { type: item.mimeType || 'audio/mp3' });
+                blobToRevoke = URL.createObjectURL(b);
+                audioSrc = blobToRevoke;
+              }
+            }
+          } catch (_) {}
+        }
+
+        if (!audioSrc) return null;
+
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!AudioCtx) return null;
+          const actx = new AudioCtx();
+          let arrayBuffer;
+          if (typeof audioSrc === 'string' && audioSrc.startsWith('data:')) {
+            const commaIdx = audioSrc.indexOf(',');
+            const base64Str = commaIdx !== -1 ? audioSrc.slice(commaIdx + 1) : audioSrc;
+            const binaryStr = atob(base64Str);
+            const len = binaryStr.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+              bytes[i] = binaryStr.charCodeAt(i);
+            }
+            arrayBuffer = bytes.buffer;
+          } else {
+            const res = await fetch(audioSrc);
+            arrayBuffer = await res.arrayBuffer();
+          }
+          const buf = await actx.decodeAudioData(arrayBuffer);
+          try { if (actx.state !== 'closed') actx.close(); } catch (_) {}
+          return buf;
+        } catch (err) {
+          console.warn('[AutoMark] Audio decode warning:', err);
+          return null;
+        } finally {
+          if (blobToRevoke) {
+            try { URL.revokeObjectURL(blobToRevoke); } catch (_) {}
+          }
+        }
+      }
+
+      function detectBassFromAudioBuffer(audioBuffer, sensitivity = 65, durationLimit = null) {
+        if (!audioBuffer) return [];
+        const sampleRate = audioBuffer.sampleRate;
+        const channelData = audioBuffer.getChannelData(0);
+        const totalSamples = durationLimit ? Math.min(channelData.length, Math.floor(durationLimit * sampleRate)) : channelData.length;
+
+        // 2nd Order Butterworth Low-Pass Filter at 160Hz for sub-bass & kick drum
+        const cutoff = 160;
+        const w0 = 2 * Math.PI * cutoff / sampleRate;
+        const cosw0 = Math.cos(w0);
+        const sinw0 = Math.sin(w0);
+        const alpha = sinw0 / (2 * 0.707);
+
+        const b0 = (1 - cosw0) / 2;
+        const b1 = 1 - cosw0;
+        const b2 = (1 - cosw0) / 2;
+        const a0 = 1 + alpha;
+        const a1 = -2 * cosw0;
+        const a2 = 1 - alpha;
+
+        const nb0 = b0 / a0;
+        const nb1 = b1 / a0;
+        const nb2 = b2 / a0;
+        const na1 = a1 / a0;
+        const na2 = a2 / a0;
+
+        const hopSize = Math.max(128, Math.floor(sampleRate * 0.012));
+        const numHops = Math.floor(totalSamples / hopSize);
+
+        let x1 = 0;
+        let x2 = 0;
+        let y1 = 0;
+        let y2 = 0;
+        const hopEnergies = new Float32Array(numHops);
+        let hopIdx = 0;
+        let currentHopSum = 0;
+        let hopSampleCount = 0;
+
+        for (let i = 0; i < totalSamples; i++) {
+          const x0 = channelData[i];
+          const y0 = nb0 * x0 + nb1 * x1 + nb2 * x2 - na1 * y1 - na2 * y2;
+          x2 = x1;
+          x1 = x0;
+          y2 = y1;
+          y1 = y0;
+
+          currentHopSum += y0 * y0;
+          hopSampleCount++;
+
+          if (hopSampleCount >= hopSize) {
+            hopEnergies[hopIdx] = Math.sqrt(currentHopSum / hopSampleCount);
+            currentHopSum = 0;
+            hopSampleCount = 0;
+            hopIdx++;
+            if (hopIdx >= numHops) break;
+          }
+        }
+
+        const flux = new Float32Array(numHops);
+        let maxFlux = 0;
+        for (let i = 1; i < numHops; i++) {
+          const diff = hopEnergies[i] - hopEnergies[i - 1];
+          flux[i] = diff > 0 ? diff : 0;
+          if (flux[i] > maxFlux) maxFlux = flux[i];
+        }
+
+        if (maxFlux <= 0) return [];
+
+        const winHalf = Math.max(3, Math.floor((sampleRate * 0.20) / hopSize));
+        const sensFactor = 0.45 + (100 - Math.max(1, Math.min(100, sensitivity))) * 0.024;
+        const minIntervalSec = 0.17;
+        const minHopDist = Math.max(2, Math.floor((sampleRate * minIntervalSec) / hopSize));
+
+        const beatTimes = [];
+        let lastBeatHop = -minHopDist;
+
+        for (let i = 2; i < numHops - 2; i++) {
+          if (i - lastBeatHop < minHopDist) continue;
+          if (flux[i] <= flux[i - 1] || flux[i] < flux[i + 1]) continue;
+          if (flux[i] < maxFlux * 0.06) continue;
+
+          let sum = 0;
+          let count = 0;
+          const startW = Math.max(0, i - winHalf);
+          const endW = Math.min(numHops, i + winHalf);
+          for (let k = startW; k < endW; k++) {
+            sum += flux[k];
+            count++;
+          }
+          const localMean = count > 0 ? (sum / count) : 0;
+          const thresh = localMean * (1.0 + sensFactor);
+
+          if (flux[i] > thresh) {
+            beatTimes.push((i * hopSize) / sampleRate);
+            lastBeatHop = i;
+          }
+        }
+        return beatTimes;
+      }
+
+      function detectBassFromWaveformPeaks(peaks, durationSec, sensitivity = 65) {
+        if (!peaks || peaks.length === 0) return [];
+        const numBars = peaks.length;
+        const barDur = durationSec / numBars;
+        const flux = new Float32Array(numBars);
+        let maxFlux = 0;
+        for (let i = 1; i < numBars; i++) {
+          const diff = peaks[i] - peaks[i - 1];
+          flux[i] = diff > 0 ? diff : 0;
+          if (flux[i] > maxFlux) maxFlux = flux[i];
+        }
+        const sensFactor = 0.35 + (100 - Math.max(1, Math.min(100, sensitivity))) * 0.022;
+        const minIntervalBars = Math.max(2, Math.floor(0.17 / barDur));
+        const winHalf = Math.max(2, Math.floor(0.25 / barDur));
+        const result = [];
+        let lastBar = -minIntervalBars;
+
+        for (let i = 1; i < numBars - 1; i++) {
+          if (i - lastBar < minIntervalBars) continue;
+          if (flux[i] <= flux[i - 1] || flux[i] < flux[i + 1]) continue;
+          if (flux[i] < maxFlux * 0.06) continue;
+
+          let sum = 0;
+          const startW = Math.max(0, i - winHalf);
+          const endW = Math.min(numBars, i + winHalf);
+          for (let k = startW; k < endW; k++) sum += flux[k];
+          const mean = sum / (endW - startW);
+
+          if (flux[i] > mean * (1.0 + sensFactor)) {
+            result.push(i * barDur);
+            lastBar = i;
+          }
+        }
+        return result;
+      }
+
+      function estimateBPMFromAudio(beatTimes) {
+        if (!beatTimes || beatTimes.length < 3) return 120;
+        const intervals = [];
+        for (let i = 1; i < beatTimes.length; i++) {
+          const dt = beatTimes[i] - beatTimes[i - 1];
+          if (dt >= 0.25 && dt <= 1.5) {
+            intervals.push(dt);
+          }
+        }
+        if (intervals.length === 0) return 120;
+
+        const bpmCounts = new Map();
+        intervals.forEach(dt => {
+          let bpm = Math.round(60 / dt);
+          while (bpm < 75) bpm *= 2;
+          while (bpm > 165) bpm /= 2;
+          bpm = Math.round(bpm);
+          bpmCounts.set(bpm, (bpmCounts.get(bpm) || 0) + 1);
+        });
+
+        let bestBpm = 120;
+        let maxCount = -1;
+        bpmCounts.forEach((count, bpm) => {
+          if (count > maxCount) {
+            maxCount = count;
+            bestBpm = bpm;
+          }
+        });
+        return bestBpm;
+      }
+
+      async function generateAutoBeatmarks(arg0) {
+        const opts = (arg0 && typeof arg0 === 'object') ? arg0 : {};
+        const targets = getSelectedLayersForFishTool();
+        if (!targets || targets.length === 0) {
+          const msg = 'Please select an audio layer first';
+          showEditorToast(msg, 2400, 'error');
+          return { error: true, message: msg };
+        }
+
+        const layer = targets[0];
+        const isAudio = layer && (layer.type === 'audio' || layer.mediaType === 'audio' || layer.isAudioTrack === true);
+        if (!isAudio) {
+          const msg = 'Selected layer is not an audio layer';
+          showEditorToast(msg, 2400, 'error');
+          return { error: true, message: msg };
+        }
+
+        const fps = (currentProjectState && currentProjectState.fps) || (window.currentTimelineFps) || 60;
+        const pps = window.currentPixelsPerSecond || 80;
+        const startSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
+        const durSec = layer.durationSec !== undefined ? layer.durationSec : (layer.mediaDuration || 5);
+        const endSec = startSec + durSec;
+
+        const mode = opts.mode || 'bass';
+        const sensitivity = typeof opts.sensitivity === 'number' ? opts.sensitivity : 65;
+        const bpm = Math.max(40, Math.min(240, opts.bpm || 120));
+        const division = opts.division || '1/1';
+        const clearExisting = opts.clearExisting !== false;
+
+        let detectedOffsets = [];
+
+        if (mode === 'bpm') {
+          let interval = 60 / bpm;
+          if (division === '1/2') interval /= 2;
+          else if (division === '1/4') interval /= 4;
+
+          let t = startSec;
+          while (t <= endSec + 0.001) {
+            detectedOffsets.push(t);
+            t += interval;
+          }
+        } else {
+          let audioBuffer = null;
+          try {
+            audioBuffer = await getAudioBufferForLayer(layer);
+          } catch (_) {}
+
+          if (audioBuffer) {
+            const relOffsets = detectBassFromAudioBuffer(audioBuffer, sensitivity, durSec);
+            detectedOffsets = relOffsets.map(t => startSec + t);
+          } else {
+            let peaks = null;
+            if (typeof window.getAudioPeaksForLayer === 'function') {
+              try { peaks = await window.getAudioPeaksForLayer(layer, 800); } catch (_) {}
+            }
+            if (peaks && peaks.length > 0) {
+              const relOffsets = detectBassFromWaveformPeaks(peaks, durSec, sensitivity);
+              detectedOffsets = relOffsets.map(t => startSec + t);
+            } else {
+              let interval = 0.5;
+              let t = startSec;
+              while (t <= endSec + 0.001) {
+                detectedOffsets.push(t);
+                t += interval;
+              }
+            }
+          }
+        }
+
+        const finalMarks = detectedOffsets
+          .filter(t => t >= startSec - 0.001 && t <= endSec + 0.001)
+          .map(t => Math.round(t * fps) / fps);
+
+        if (!currentProjectState) {
+          showEditorToast('Active project composition not found', 2400, 'error');
+          return { error: true, message: 'No active project' };
+        }
+
+        currentProjectState.beatmarks = currentProjectState.beatmarks || [];
+        let updated = [];
+        if (clearExisting) {
+          updated = currentProjectState.beatmarks.filter(b => b < startSec - 0.005 || b > endSec + 0.005);
+        } else {
+          updated = currentProjectState.beatmarks.slice();
+        }
+
+        finalMarks.forEach(m => {
+          if (!updated.some(u => Math.abs(u - m) <= (0.5 / fps))) {
+            updated.push(m);
+          }
+        });
+
+        updated.sort((a, b) => a - b);
+        currentProjectState.beatmarks = updated;
+        if (window.currentProjectState) {
+          window.currentProjectState.beatmarks = updated;
+        }
+
+        layer.markers = finalMarks.map(t => Number(t.toFixed(4)));
+
+        if (typeof renderTimelineBeatmarks === 'function') renderTimelineBeatmarks();
+        if (typeof window.renderTimelineBeatmarks === 'function') window.renderTimelineBeatmarks();
+        if (typeof saveCurrentProjectBeatmarks === 'function') saveCurrentProjectBeatmarks(true);
+        if (typeof window.saveCurrentProjectBeatmarks === 'function') window.saveCurrentProjectBeatmarks(true);
+        if (typeof updateTimeBadgeBeatmarkState === 'function') updateTimeBadgeBeatmarkState();
+        if (typeof window.updateTimeBadgeBeatmarkState === 'function') window.updateTimeBadgeBeatmarkState();
+        if (typeof syncDesktopMarkerLabels === 'function') syncDesktopMarkerLabels();
+        if (typeof window.syncDesktopMarkerLabels === 'function') window.syncDesktopMarkerLabels();
+        if (typeof window.syncBeatmarkDrawerUI === 'function') window.syncBeatmarkDrawerUI();
+
+        if (window.UndoRedoManager && typeof window.UndoRedoManager.recordSnapshot === 'function' && !window.UndoRedoManager.isApplying) {
+          window.UndoRedoManager.recordSnapshot();
+        }
+
+        showEditorToast(`Generated ${finalMarks.length} beatmarks`, 2400, 'info');
+        return { success: true, count: finalMarks.length, beatmarks: finalMarks };
+      }
+
       window.createProceduralCube = createProceduralCube;
       window.createProcedural3D = createProcedural3D;
       window.createProcedural2Split = createProcedural2Split;
       window.createProcedural3Split = createProcedural3Split;
       window.createProceduralTunnel = createProceduralTunnel;
       window.createProceduralMC = createProceduralMC;
+      window.generateAutoBeatmarks = generateAutoBeatmarks;
+      window.getAudioBufferForLayer = getAudioBufferForLayer;
+      window.detectBassFromAudioBuffer = detectBassFromAudioBuffer;
+      window.detectBassFromWaveformPeaks = detectBassFromWaveformPeaks;
+      window.estimateBPMFromAudio = estimateBPMFromAudio;
 
       function executeFishTool(toolName, ...args) {
         if (!toolName) return false;

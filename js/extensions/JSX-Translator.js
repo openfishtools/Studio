@@ -1164,6 +1164,10 @@
     else if (toolName === 'PANNING_MIX_ALL' || toolName === 'PANNING') nullName = 'PANNING Mix All';
     else if (toolName === 'IDLE_MOVE_1') nullName = 'IDLE MOVE 1';
     else if (toolName === 'IDLE_MOVE_2') nullName = 'IDLE MOVE 2';
+    else if (toolName === 'IDLE_MOVE_3') nullName = 'IDLE MOVE 3';
+    else if (toolName === 'IDLE_MOVE_4') nullName = 'IDLE MOVE 4';
+    else if (toolName === 'IDLE_MOVE_5') nullName = 'IDLE MOVE 5';
+    else if (toolName === 'IDLE_MOVE_6') nullName = 'IDLE MOVE 6';
 
     // Gather timeline beatmarks
     let rawMarkers = [];
@@ -1179,7 +1183,7 @@
     }
     const allMarkers = Array.from(new Set(rawMarkers.map(m => Number(m.toFixed(4))))).sort((a, b) => a - b);
     const isPanning = toolName.indexOf('PANNING') === 0;
-    const isIdleMove = (toolName === 'IDLE_MOVE_1' || toolName === 'IDLE_MOVE_2');
+    const isIdleMove = (typeof toolName === 'string' && toolName.indexOf('IDLE_MOVE_') === 0);
 
     // Auto-create initial beatmark at playhead or layer start if none exist so expressions activate immediately
     const curSec = getPlayheadSec();
@@ -1552,18 +1556,65 @@
         ].join('\n');
       }
     } else if (isIdleMove) {
+      const scaleP1 = '[0, 55.8333, 0, 55.8333, 0, 55.8333, 0]';
+      const glideP1 = 'bezier(0.343, -2.0 * yMult, 0.511, 1 + 1.0 * yMult, progress)';
+      const scaleP2 = '[0, 19.1667, 59.1667, -19.9167, 52.5, -43.3333, 59.1667]';
+      const glideP2 = 'bezier(0.532, -0.436 * yMult, 0.379, 1 + 0.415 * yMult, progress)';
+
+      const idleSpecs = {
+        IDLE_MOVE_1: {
+          scaleSteps: scaleP1,
+          glideEase: glideP1
+        },
+        IDLE_MOVE_2: {
+          scaleSteps: scaleP2,
+          glideEase: glideP2
+        },
+        IDLE_MOVE_3: {
+          scaleSteps: scaleP1,
+          glideEase: glideP1,
+          posDefault: 45,
+          stepX: '[0, -0.6, 0.55, -0.5, 0.6, -0.35]',
+          stepY: '[0, -0.35, 0.4, 0.45, -0.35, -0.45]'
+        },
+        IDLE_MOVE_4: {
+          scaleSteps: scaleP1,
+          glideEase: glideP1,
+          rotDefault: 5,
+          stepRot: '[0, 1.0, -1.0, 0.75]'
+        },
+        IDLE_MOVE_5: {
+          scaleSteps: scaleP2,
+          glideEase: glideP2,
+          posDefault: 45,
+          stepX: '[0, 0.55, -0.6, 0.45, -0.5, 0.35]',
+          stepY: '[0, -0.4, 0.35, -0.45, 0.4, -0.3]',
+          rotDefault: 5,
+          stepRot: '[0, -1.0, 1.0, -0.75]'
+        },
+        IDLE_MOVE_6: {
+          scaleSteps: scaleP1,
+          glideEase: glideP1,
+          posDefault: 45,
+          stepX: '[0, -0.6, 0.55, -0.5, 0.6, -0.35]',
+          stepY: '[0, -0.35, 0.4, 0.45, -0.35, -0.45]',
+          rotDefault: 5,
+          stepRot: '[0, 1.0, -1.0, 0.75]'
+        }
+      };
+      const spec = idleSpecs[toolName] || idleSpecs.IDLE_MOVE_1;
+
       nullLayer.effects.push(createSlider('Amp', 100, 0, 300, 1, '%'));
+      if (spec.posDefault !== undefined) {
+        nullLayer.effects.push(createSlider('Position', spec.posDefault, 0, 500, 1, ' px'));
+      }
+      if (spec.rotDefault !== undefined) {
+        nullLayer.effects.push(createSlider('Rotation', spec.rotDefault, -45, 45, 0.5, '°'));
+      }
       nullLayer.effects.push(createSlider('Overshoot', 100, 0, 200, 1, '%'));
       nullLayer.effects.push(createSlider('Skip Beats', 4, 0, 16, 1, ''));
 
-      const stepArrStr = (toolName === 'IDLE_MOVE_2')
-        ? '[0, 19.1667, 59.1667, -19.9167, 52.5, -43.3333, 59.1667]'
-        : '[0, 55.8333, 0, 55.8333, 0, 55.8333, 0]';
-      const step5BezierStr = (toolName === 'IDLE_MOVE_2')
-        ? 'bezier(0.532, -0.436 * yMult, 0.379, 1 + 0.415 * yMult, progress)'
-        : 'bezier(0.343, -2.0 * yMult, 0.511, 1 + 1.0 * yMult, progress)';
-
-      nullLayer.expressions.scale = [
+      const bezierFnBlock = [
         'function bezier(x1, y1, x2, y2, t) {',
         '    if (t <= 0) return 0; if (t >= 1) return 1; var p = t;',
         '    for (var i = 0; i < 8; i++) {',
@@ -1572,40 +1623,94 @@
         '        if (Math.abs(df) < 1e-6) break; p -= f / df; p = Math.max(0, Math.min(1, p));',
         '    }',
         '    var omP = 1 - p; return 3 * omP * omP * p * y1 + 3 * omP * p * p * y2 + p * p * p;',
-        '}',
-        'amp = effect("Amp")("ADBE Slider Control-0001"); overshoot = effect("Overshoot")("ADBE Slider Control-0001"); skipBeats = effect("Skip Beats")("ADBE Slider Control-0001");',
+        '}'
+      ];
+
+      nullLayer.expressions.scale = [
+        ...bezierFnBlock,
         'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
-        'res = value;',
-        'if (time >= inPoint && time <= outPoint && m && m.numKeys > 0) {',
-        '    validKeys = []; for (i = 1; i <= m.numKeys; i++) { kt = m.key(i).time; if (kt >= inPoint - 0.005 && kt <= outPoint + 0.005) validKeys.push(kt); }',
-        '    if (validKeys.length >= 2) {',
-        '        skipCount = Math.max(0, Math.round(skipBeats)); cycleLen = 6 + skipCount; pts = []; c = 0;',
-        '        while (c * cycleLen < validKeys.length) {',
-        '            base = c * cycleLen;',
-        '            for (s = 0; s <= 5; s++) { if (base + s < validKeys.length) pts.push({ t: validKeys[base + s], step: s, cycle: c }); }',
-        '            nextStart = base + cycleLen;',
-        '            if (nextStart >= validKeys.length) { if (base + 5 < validKeys.length - 1) pts.push({ t: validKeys[validKeys.length - 1], step: 6, cycle: c }); break; }',
-        '            c++;',
-        '        }',
-        '        if (pts.length >= 2) {',
-        '            stepVals = ' + stepArrStr + '; ampMult = amp / 100; yMult = overshoot / 100; segIdx = -1;',
-        '            for (k = 0; k < pts.length - 1; k++) { if (time >= pts[k].t && time <= pts[k + 1].t) { segIdx = k; break; } }',
-        '            if (segIdx >= 0) {',
-        '                p0 = pts[segIdx]; p1 = pts[segIdx + 1];',
-        '                s0 = (p0.step === 0 && p0.cycle > 0) ? 6 : p0.step; s1 = (p1.step === 0 && p1.cycle > 0) ? 6 : p1.step;',
-        '                v0 = stepVals[s0] * ampMult; v1 = stepVals[s1] * ampMult;',
-        '                dur = Math.max(0.0001, p1.t - p0.t); progress = Math.max(0, Math.min(1, (time - p0.t) / dur));',
-        '                eased = (p0.step === 5) ? ' + step5BezierStr + ' : bezier(0.229, -0.924 * yMult, 0.77, -0.839 * yMult, progress);',
-        '                val = v0 + (v1 - v0) * eased; res = value + [val, val];',
-        '            } else if (time > pts[pts.length - 1].t) {',
-        '                pLast = pts[pts.length - 1]; sLast = (pLast.step === 0 && pLast.cycle > 0) ? 6 : pLast.step;',
-        '                vLast = stepVals[sLast] * ampMult; res = value + [vLast, vLast];',
+        'amp = effect("Amp")("ADBE Slider Control-0001") / 100;',
+        'overshoot = effect("Overshoot")("ADBE Slider Control-0001");',
+        'skipBeats = Math.max(0, Math.round(effect("Skip Beats")("ADBE Slider Control-0001")));',
+        'yMult = overshoot / 100; cycleBeats = 6 + skipBeats; stepVals = ' + spec.scaleSteps + ';',
+        'if (time < inPoint || time > outPoint) { value; } else if (m && m.numKeys > 0) {',
+        '    n = m.nearestKey(time).index; if (m.key(n).time > time) n--;',
+        '    if (n <= 0) { value; } else {',
+        '        bIdx = n - 1; cycleIdx = Math.floor(bIdx / cycleBeats); rem = bIdx % cycleBeats;',
+        '        stepIdx = (rem < 5) ? rem : 5;',
+        '        startKey = 1 + cycleIdx * cycleBeats + stepIdx;',
+        '        endKey = (stepIdx < 5) ? (startKey + 1) : (1 + (cycleIdx + 1) * cycleBeats);',
+        '        if (startKey <= m.numKeys) {',
+        '            t1 = m.key(startKey).time;',
+        '            s0 = ((cycleIdx > 0 && stepIdx === 0) ? stepVals[6] : stepVals[stepIdx]) * amp;',
+        '            s1 = stepVals[stepIdx + 1] * amp;',
+        '            if (startKey >= m.numKeys) {',
+        '                val = s0;',
+        '            } else {',
+        '                t2 = (endKey <= m.numKeys) ? m.key(endKey).time : m.key(m.numKeys).time;',
+        '                dur = Math.max(0.0001, t2 - t1);',
+        '                if (t2 <= t1 + 0.0001) { val = s0; } else if (time >= t2) { val = s1; } else {',
+        '                    progress = Math.max(0, Math.min(1, (time - t1) / dur));',
+        '                    eased = (stepIdx < 5) ? bezier(0.229, -0.924 * yMult, 0.77, -0.839 * yMult, progress) : ' + spec.glideEase + ';',
+        '                    val = s0 + (s1 - s0) * eased;',
+        '                }',
         '            }',
-        '        }',
+        '            value + [val, val];',
+        '        } else { value; }',
         '    }',
-        '}',
-        'res;'
+        '} else { value; }'
       ].join('\n');
+
+      const buildSpacedEasyEaseExpr = (headerLines, calcLines, outExpr) => [
+        ...bezierFnBlock,
+        'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+        ...headerLines,
+        'if (time < inPoint || time > outPoint) { value; } else if (m && m.numKeys > 0) {',
+        '    n = m.nearestKey(time).index; if (m.key(n).time > time) n--;',
+        '    if (n <= 0) { value; } else {',
+        '        slotIdx = Math.floor((n - 1) / 2);',
+        '        startKey = 1 + slotIdx * 2; endKey = startKey + 2;',
+        '        t1 = m.key(startKey).time; canAnim = (startKey < m.numKeys);',
+        '        t2 = (endKey <= m.numKeys) ? m.key(endKey).time : (canAnim ? m.key(m.numKeys).time : outPoint);',
+        '        dur = Math.max(0.0001, t2 - t1);',
+        '        progress = canAnim ? Math.max(0, Math.min(1, (time - t1) / dur)) : 0;',
+        '        eased = bezier(0.42, 0.0, 0.58, 1.0, progress);',
+        ...calcLines,
+        '        ' + outExpr + ';',
+        '    }',
+        '} else { value; }'
+      ].join('\n');
+
+      if (spec.stepX && spec.stepY) {
+        const posExpr = buildSpacedEasyEaseExpr(
+          ['posAmp = effect("Position")("ADBE Slider Control-0001");', 'stepX = ' + spec.stepX + '; stepY = ' + spec.stepY + ';'],
+          [
+            '        idx0 = slotIdx % stepX.length; idx1 = (slotIdx + 1) % stepX.length;',
+            '        x0 = stepX[idx0] * posAmp; x1 = stepX[idx1] * posAmp;',
+            '        y0 = stepY[idx0] * posAmp; y1 = stepY[idx1] * posAmp;',
+            '        dx = x0 + (x1 - x0) * eased; dy = y0 + (y1 - y0) * eased;'
+          ],
+          'value + [dx, dy]'
+        );
+        nullLayer.expressions.move = posExpr;
+        nullLayer.expressions.position = posExpr;
+      }
+
+      if (spec.stepRot) {
+        const rotExpr = buildSpacedEasyEaseExpr(
+          ['rotAmp = effect("Rotation")("ADBE Slider Control-0001");', 'stepRot = ' + spec.stepRot + ';'],
+          [
+            '        idx0 = slotIdx % stepRot.length; idx1 = (slotIdx + 1) % stepRot.length;',
+            '        r0 = stepRot[idx0] * rotAmp; r1 = stepRot[idx1] * rotAmp;',
+            '        rotVal = r0 + (r1 - r0) * eased;'
+          ],
+          'value + rotVal'
+        );
+        nullLayer.expressions.rotate = rotExpr;
+        nullLayer.expressions.rotation = rotExpr;
+        nullLayer.expressions.rotZ = rotExpr;
+      }
+
       global.activeKeyframeProperty = 'scale';
     }
 
@@ -1852,6 +1957,10 @@
       case 'PANNING_MIX_ALL':
       case 'IDLE_MOVE_1':
       case 'IDLE_MOVE_2':
+      case 'IDLE_MOVE_3':
+      case 'IDLE_MOVE_4':
+      case 'IDLE_MOVE_5':
+      case 'IDLE_MOVE_6':
         return applyBeatNullTool(tool === 'PANNING' ? 'PANNING_MIX_ALL' : tool);
 
       // Velocity
@@ -2224,7 +2333,7 @@
     'GHST', 'WARP', 'FISHEYE', 'MIDWAVE', 'HUESPIN', 'EXPO', 'SHAKY', 'LENS', 'OSCILLATE',
     'Y_BEAT', 'Y_FLIP', 'X_BEAT', 'X_FLIP', 'SCALE_BEAT', 'SWING',
     'PANNING_POS', 'PANNING_ROT', 'PANNING_SCALE', 'PANNING_MIX_PR', 'PANNING_MIX_ALL',
-    'IDLE_MOVE_1', 'IDLE_MOVE_2',
+    'IDLE_MOVE_1', 'IDLE_MOVE_2', 'IDLE_MOVE_3', 'IDLE_MOVE_4', 'IDLE_MOVE_5', 'IDLE_MOVE_6',
     'TWIX', 'TMRE',
     'ALIGN_LEFT', 'ALIGN_HCENTER', 'ALIGN_RIGHT', 'ALIGN_TOP', 'ALIGN_VCENTER', 'ALIGN_BOTTOM',
     'CUT_FRONT', 'CUT_MID', 'CUT_BACK', 'CUT_LEFT', 'CUT_RIGHT',

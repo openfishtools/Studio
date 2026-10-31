@@ -51,9 +51,13 @@ Card({
     ]);
 
     ui.section('Idle Movement');
-    ui.grid({ cols: 2 }, [
-      ui.button({ label: 'PATTERN 1', icon: 'animation', title: 'Idle Movement Pattern 1 (Looping Beat Scale)', onClick() { ctx.runTool('IDLE_MOVE_1'); } }),
-      ui.button({ label: 'PATTERN 2', icon: 'motion_photos_on', title: 'Idle Movement Pattern 2 (Looping Dynamic Scale)', onClick() { ctx.runTool('IDLE_MOVE_2'); } })
+    ui.grid({ cols: 3 }, [
+      ui.button({ label: 'PATTERN 1', icon: 'animation', title: 'Idle Movement 1: Scale Bounce', onClick() { ctx.runTool('IDLE_MOVE_1'); } }),
+      ui.button({ label: 'PATTERN 2', icon: 'motion_photos_on', title: 'Idle Movement 2: Dynamic Scale', onClick() { ctx.runTool('IDLE_MOVE_2'); } }),
+      ui.button({ label: 'SCALE + POS', icon: 'open_with', title: 'Idle Movement 3: Scale + Position 2D Drift', onClick() { ctx.runTool('IDLE_MOVE_3'); } }),
+      ui.button({ label: 'SCALE + ROT', icon: 'rotate_right', title: 'Idle Movement 4: Scale + Rotation Swing', onClick() { ctx.runTool('IDLE_MOVE_4'); } }),
+      ui.button({ label: 'POS + ROT', icon: 'explore', title: 'Idle Movement 5: Position 2D + Rotation Sway + Scale', onClick() { ctx.runTool('IDLE_MOVE_5'); } }),
+      ui.button({ label: 'FULL COMBO', icon: 'auto_awesome_motion', title: 'Idle Movement 6: Dynamic Scale + Position 2D + Rotation', onClick() { ctx.runTool('IDLE_MOVE_6'); } })
     ]);
 
     ui.section('Presets');

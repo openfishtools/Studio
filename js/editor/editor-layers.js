@@ -4493,6 +4493,7 @@
         _audioDecodingPromises.set(cacheKey, decodePromise);
         return decodePromise;
       }
+      window.getAudioPeaksForLayer = getAudioPeaksForLayer;
 
       let _cachedWaveformColors = null;
 

@@ -72,6 +72,13 @@
       container,
 
       /**
+       * Create a child UI builder scoped to a sub-container
+       */
+      createSubBuilder(subContainer) {
+        return createUIBuilder(subContainer || container, ctx);
+      },
+
+      /**
        * Section / Divider label (Pembatas)
        */
       section(title, subtitle) {
@@ -434,11 +441,12 @@
       },
 
       /**
-       * Custom Slider / Ruler Scrubber using Studio/element/slider.js if available
+       * Custom Slider / Ruler Scrubber using Studio themed jog-wheel / ruler scrubber
        */
       slider(opts = {}) {
+        const targetContainer = (opts && opts.container) || (this && this.container) || container;
         const wrap = document.createElement('div');
-        wrap.className = 'extension-slider-row';
+        wrap.className = `extension-slider-row ${opts.className || ''}`.trim();
 
         if (opts.label) {
           const lbl = document.createElement('span');
@@ -447,30 +455,106 @@
           wrap.appendChild(lbl);
         }
 
-        const input = document.createElement('input');
-        input.type = 'range';
-        input.className = 'extension-range-input';
-        if (opts.id) input.id = opts.id;
-        input.min = opts.min !== undefined ? opts.min : 0;
-        input.max = opts.max !== undefined ? opts.max : 100;
-        input.step = opts.step !== undefined ? opts.step : 1;
-        input.value = opts.value !== undefined ? opts.value : 50;
+        const min = opts.min !== undefined ? opts.min : 0;
+        const max = opts.max !== undefined ? opts.max : 100;
+        const step = opts.step !== undefined ? opts.step : 1;
+        const value = opts.value !== undefined ? opts.value : 50;
+        const unit = opts.unit || '';
 
-        const valTag = document.createElement('span');
-        valTag.className = 'extension-slider-val';
-        valTag.textContent = `${input.value}${opts.unit || ''}`;
+        const fe = (typeof window !== 'undefined' && window.FishElements) ||
+                   (typeof window !== 'undefined' && window.parent && window.parent.FishElements) ||
+                   (typeof globalThis !== 'undefined' && globalThis.FishElements);
 
-        input.addEventListener('input', (e) => {
-          valTag.textContent = `${e.target.value}${opts.unit || ''}`;
-          if (typeof opts.onChange === 'function') {
-            opts.onChange(parseFloat(e.target.value), e, ctx);
-          }
-        });
+        let scrubberEl = null;
 
-        wrap.appendChild(input);
-        wrap.appendChild(valTag);
-        container.appendChild(wrap);
-        return wrap;
+        if (fe && typeof fe.createSlider === 'function') {
+          scrubberEl = fe.createSlider(wrap, {
+            id: opts.id || '',
+            min: min,
+            max: max,
+            step: step,
+            unit: unit,
+            value: value,
+            label: opts.label || 'Value',
+            ariaLabel: opts.label || 'Slider',
+            title: opts.title || opts.label || 'Drag to adjust value',
+            onChange(newVal) {
+              if (typeof opts.onChange === 'function') {
+                opts.onChange(newVal, null, ctx);
+              }
+            }
+          });
+        } else {
+          // Self-contained themed ruler scrubber fallback
+          const span = Math.max(0, max - min);
+          const tapeW = Math.max(480, span);
+          let curVal = value;
+          const ratio = span > 0 ? Math.max(0, Math.min(1, (curVal - min) / span)) : 0;
+          const initialOffset = (-ratio * tapeW).toFixed(1);
+
+          const scrubWrap = document.createElement('div');
+          scrubWrap.className = 'effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber';
+          scrubWrap.setAttribute('role', 'slider');
+          scrubWrap.setAttribute('aria-label', opts.label || 'Slider');
+          scrubWrap.setAttribute('aria-valuenow', String(curVal));
+          scrubWrap.title = opts.title || opts.label || 'Drag to adjust value';
+          scrubWrap.innerHTML = `
+            <div class="jog-wheel-track-viewport">
+              <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: ${tapeW}px; --tape-offset: ${initialOffset}px;"></div>
+            </div>
+            <div class="jog-wheel-needle"></div>
+            <span class="effects-param-pill-val">${Math.round(curVal)}${unit}</span>
+          `.trim();
+
+          const ticks = scrubWrap.querySelector('.jog-wheel-ticks');
+          const badge = scrubWrap.querySelector('.effects-param-pill-val');
+          let isDragging = false;
+          let startX = 0;
+          let startVal = curVal;
+
+          const updateVisuals = (val) => {
+            curVal = Math.max(min, Math.min(max, val));
+            const r = span > 0 ? (curVal - min) / span : 0;
+            const off = (-r * tapeW).toFixed(1);
+            if (ticks) ticks.style.setProperty('--tape-offset', `${off}px`);
+            if (badge) badge.textContent = `${Math.round(curVal)}${unit}`;
+            scrubWrap.setAttribute('aria-valuenow', String(curVal));
+          };
+
+          scrubWrap.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            isDragging = true;
+            startX = e.clientX;
+            startVal = curVal;
+            try { scrubWrap.setPointerCapture(e.pointerId); } catch (_) {}
+            e.preventDefault();
+          });
+
+          scrubWrap.addEventListener('pointermove', (e) => {
+            if (!isDragging) return;
+            const delta = e.clientX - startX;
+            const speed = (span > 0) ? (span / tapeW) : 1;
+            const nextVal = startVal - delta * speed;
+            updateVisuals(nextVal);
+            if (typeof opts.onChange === 'function') opts.onChange(curVal, e, ctx);
+          });
+
+          const onPointerEnd = (e) => {
+            if (!isDragging) return;
+            isDragging = false;
+            try { scrubWrap.releasePointerCapture(e.pointerId); } catch (_) {}
+            if (typeof opts.onChange === 'function') opts.onChange(curVal, e, ctx);
+          };
+
+          scrubWrap.addEventListener('pointerup', onPointerEnd);
+          scrubWrap.addEventListener('pointercancel', onPointerEnd);
+
+          wrap.appendChild(scrubWrap);
+          scrubberEl = scrubWrap;
+        }
+
+        targetContainer.appendChild(wrap);
+        return { container: wrap, scrubber: scrubberEl };
       },
 
       /**
@@ -602,7 +686,7 @@
           'GHST', 'WARP', 'FISHEYE', 'MIDWAVE', 'HUESPIN', 'EXPO', 'SHAKY', 'LENS', 'OSCILLATE',
           'Y_BEAT', 'Y_FLIP', 'X_BEAT', 'X_FLIP', 'SCALE_BEAT', 'SWING',
           'PANNING_POS', 'PANNING_ROT', 'PANNING_SCALE', 'PANNING_MIX_PR', 'PANNING_MIX_ALL',
-          'IDLE_MOVE_1', 'IDLE_MOVE_2',
+          'IDLE_MOVE_1', 'IDLE_MOVE_2', 'IDLE_MOVE_3', 'IDLE_MOVE_4', 'IDLE_MOVE_5', 'IDLE_MOVE_6',
           'PRESET_WARP1', 'PRESET_WARP2', 'PRESET_WARP3', 'TWIX', 'TMRE'
         ]);
 
