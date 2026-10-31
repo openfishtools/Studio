@@ -839,6 +839,97 @@ assert.strictEqual(pcm.hasFrame(240, 1920, 1080, 'root'), true, 'Newly exposed a
 
 console.log('✓ Algoritma 5: Temporal Occupancy Partitioning, Virtual Void Cache, Dynamic Mutation & Cut Mid Split Sync verified cleanly.');
 
+// Test: FishAudioScheduler (Web Audio clip scheduler + sample-accurate timeline clock)
+{
+  const savedEngine = global.window.FishAudioEngine;
+  const savedLS = global.localStorage;
+  const savedPS = global.window.currentProjectState;
+  const started = [];
+  const mockParam = () => ({
+    value: 1,
+    setValueAtTime() {}, linearRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {}
+  });
+  const mockCtx = {
+    currentTime: 10,
+    state: 'running',
+    outputLatency: 0,
+    baseLatency: 0,
+    destination: {},
+    createBufferSource() {
+      const n = {
+        buffer: null,
+        playbackRate: mockParam(),
+        onended: null,
+        connect() {}, disconnect() {}, stop() {},
+        start(when, offset, dur) { started.push({ when, offset, dur, node: n }); }
+      };
+      return n;
+    },
+    createGain() { return { gain: mockParam(), connect() {}, disconnect() {} }; }
+  };
+  global.localStorage = { getItem: (k) => (k === 'oft_audio_engine' ? 'scheduler' : null), setItem() {}, removeItem() {} };
+  const audLayer = { id: 'aud_1', type: 'audio', mediaId: 'med_a', startSec: 2, durationSec: 6, sourceOffsetSec: 1, volume: 0.5 };
+  global.window.currentProjectState = { layers: [audLayer] };
+  global.window.FishAudioEngine = {
+    ctx: mockCtx,
+    masterGain: { connect() {} },
+    _ensureContext() { return true; },
+    _flattenPlayableLayers(layers) {
+      return (layers || []).map(l => ({
+        layer: l, parentLayer: null,
+        rootStartSec: l.startSec, rootEndSec: l.startSec + l.durationSec,
+        sourceOffsetSec: l.sourceOffsetSec || 0, effectiveSpeed: 1, isMuted: false, effectiveGain: l.volume
+      }));
+    }
+  };
+  require(path.join(__dirname, '../js/media/fish-audio-scheduler.js'));
+  const sched = global.window.FishAudioScheduler;
+  assert(sched, 'FishAudioScheduler must be exported on window');
+  const near = (a, b, msg) => assert(Math.abs(a - b) < 1e-6, `${msg} (got ${a}, expected ${b})`);
+
+  assert.strictEqual(sched.handles(audLayer), false, 'Clip must stay on legacy engine until its buffer is decoded');
+  sched.buffers.set('med_a', { buffer: { duration: 30, length: 30 * 48000, numberOfChannels: 2 }, bytes: 1, lastUsed: 0 });
+  assert.strictEqual(sched.handles(audLayer), true, 'Decoded root audio clip must be handled by the scheduler');
+  assert.strictEqual(sched.handles(Object.assign({}, audLayer, { speedMode: 'time_remap' })), false, 'Time-remapped clip must stay on legacy engine');
+  assert.strictEqual(sched.handles(audLayer, { id: 'precomp_parent' }), false, 'Nested precomp child must stay on legacy engine');
+  assert.strictEqual(sched.handles(Object.assign({}, audLayer, { audioEffects: [{ type: 'reverb' }] })), false, 'Clip with audio effects must stay on legacy engine');
+  assert.strictEqual(sched.handles(Object.assign({}, audLayer, { speed: -1 })), false, 'Reverse clip must stay on legacy engine');
+
+  // Play from 3.0s: voice offset = sourceOffset 1 + (3.0 - 2.0) = 2.0, duration = clip end 8.0 - 3.0 = 5.0
+  assert.strictEqual(sched.start([audLayer], 3.0, 80, 1), true, 'start() must succeed when enabled');
+  assert.strictEqual(started.length, 1, 'Exactly one voice must be scheduled for the active clip');
+  near(started[0].offset, 2.0, 'Voice buffer offset must match timeline position');
+  near(started[0].dur, 5.0, 'Voice duration must end at the clip out-point');
+  near(started[0].when, 10.02, 'Voice must start on the anchored AudioContext time');
+
+  // Clock follows AudioContext time
+  mockCtx.currentTime = 11.02;
+  near(sched.getTimelineSec(), 4.0, 'Timeline clock must advance with AudioContext time');
+
+  // Rate change keeps the clock continuous
+  sched.setRate(0.5);
+  near(sched.getTimelineSec(), 4.0, 'Clock must stay continuous across a rate change');
+  mockCtx.currentTime = 12.02;
+  near(sched.getTimelineSec(), 4.5, 'Clock must advance at the new rate after re-anchoring');
+  sched.setRate(1);
+
+  // Seek (loop restart) reschedules from the new position
+  sched.seek(7.0);
+  const last = started[started.length - 1];
+  near(last.offset, 6.0, 'Seek must reschedule the voice at the new buffer offset');
+  near(last.dur, 1.0, 'Seek must keep the clip out-point');
+
+  sched.stop();
+  assert.strictEqual(sched.playing, false, 'stop() must end playback');
+  assert.strictEqual(sched.voices.size, 0, 'stop() must release all voices');
+  assert.strictEqual(sched.getTimelineSec(), null, 'Clock must report null when stopped');
+
+  global.window.FishAudioEngine = savedEngine;
+  global.localStorage = savedLS;
+  global.window.currentProjectState = savedPS;
+  console.log('✓ FishAudioScheduler verified (handles rules, voice offsets, AudioContext clock, rate continuity, seek, stop).');
+}
+
 console.log('✓ VideoFrameExtractor verified (retain/release deduplication, reverse eviction inversion, seamless reverse split, proactive streaming prefetch, upcoming frame sort order, precomp RAM eviction protection, extraction circuit breaker, mobile VRAM cap, precomp sequence resolution, and invalidation).');
 
 console.log('\n========================================');

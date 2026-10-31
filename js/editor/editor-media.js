@@ -137,6 +137,34 @@
     }
     window.getLayerMediaDuration = getLayerMediaDuration;
 
+    // getOrLoadLayerMedia runs every playback tick (FishAudioEngine.syncPlayback / getMasterAudioTime).
+    // extractLayerRange starts with an IndexedDB getProjectMedia() query (full media records incl. buffers),
+    // so calling it per tick (60-120x/s) choked playback even when every frame was already cached.
+    // Explicit callers (trim, cut, unhide, hydration) still call extractLayerRange directly.
+    const _extractRequestState = new Map();
+    function requestLayerExtractionThrottled(layer) {
+      if (!layer || !window.VideoFrameExtractor || typeof window.VideoFrameExtractor.extractLayerRange !== 'function') return;
+      const k = layer.id || layer.mediaId;
+      if (!k) return;
+      const nowMs = Date.now();
+      const st = _extractRequestState.get(k);
+      if (st && (st.inFlight || (nowMs - st.t) < 1500)) return;
+      const entry = { inFlight: true, t: nowMs };
+      _extractRequestState.set(k, entry);
+      let p;
+      try {
+        p = window.VideoFrameExtractor.extractLayerRange(layer);
+      } catch (_) {
+        entry.inFlight = false;
+        return;
+      }
+      if (p && typeof p.then === 'function') {
+        p.then(() => {}, () => {}).then(() => { entry.inFlight = false; entry.t = Date.now(); });
+      } else {
+        entry.inFlight = false;
+      }
+    }
+
     function getOrLoadLayerMedia(layer) {
       if (!layer || layer.type === 'null' || layer.type === 'camera' || layer.type === 'adjustment' || layer.type === 'shape' || layer.type === 'text') return null;
       if (layer.type === 'precomp') {
@@ -144,7 +172,7 @@
           layer._precompBufferCanvas = document.createElement('canvas');
         }
         if (window.VideoFrameExtractor && !layer._extractComplete && !layer._dirty) {
-          window.VideoFrameExtractor.extractLayerRange(layer);
+          requestLayerExtractionThrottled(layer);
         }
         return {
           type: 'precomp',
@@ -180,7 +208,7 @@
             cachedEntry.el = null;
           }
           if (window.VideoFrameExtractor && !layer._extractComplete) {
-            window.VideoFrameExtractor.extractLayerRange(layer);
+            requestLayerExtractionThrottled(layer);
           }
         }
         if (cachedEntry && cachedEntry.el && layer.dataUrl) {

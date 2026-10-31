@@ -2160,6 +2160,8 @@
   // ── Expose Global ──────────────────────────────────────────────────────────────
   window.FishExportEngine = {
     export:  doExport,
+    getLayerBlob: getLayerBlob,
+    decodeLayerAudio: decodeLayerAudio,
     cancel:  function() {
       isCancelled = true;
       window.isExportCancelled = true;

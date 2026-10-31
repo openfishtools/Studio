@@ -5,6 +5,16 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Web Audio Clip Scheduler (opt-in) (`js/media/fish-audio-scheduler.js`, `js/media/fish-audio-engine.js`, `js/editor/editor-timeline-core.js`, `js/media/fish-export-engine.js`, `editor.html`, `desktop.html`)**: New `FishAudioScheduler` decodes each audio / video clip's audio once into an `AudioBuffer` (sequential decode queue, LRU memory budget 640 MB desktop / 192 MB mobile) and plays it with an `AudioBufferSourceNode` scheduled on the `AudioContext` clock (250 ms tick, 2 s lookahead). The same clock (output-latency compensated) drives the playhead during cached playback, so picture (`VideoFrameExtractor` frames rendered at timeline time) and sound share one sample-accurate clock and cannot drift; loop / seek simply reschedule sources instead of seeking media elements. Volume and volume keyframes map to `GainNode` automation, constant speed to `playbackRate`, and uncached slow-mo follows the timeline via rate ramp with proportional drift trim (pitch drops while lagging). Clips it does not support yet (nested precomp children, time remap, speed keyframes, reverse, audio effects, muted, or not yet decoded) keep using the legacy element engine. Enable with `localStorage.setItem('oft_audio_engine', 'scheduler')`.
+
+### Fixed
+- **Playback Lag From Per-Tick Media Lookups (`js/editor/editor-media.js`)**: `getOrLoadLayerMedia` runs on every playback tick and triggered `VideoFrameExtractor.extractLayerRange`, which begins with an IndexedDB `getProjectMedia()` query, 60–120 times per second even when every frame was cached. Requests are now throttled per layer (once per 1.5 s, never while one is in flight).
+- **Stutter After Loop / Seek (`js/editor/editor-timeline-core.js`)**: The playhead no longer hard-snaps to the media element audio clock (which stalls after every seek); wall-clock drives motion and audio pulls it gently, with a 450 ms settle window after play / loop.
+- **Export Dimension Fallback (`js/editor/editor-export.js`)**: MediaRecorder bitrate now uses the already-resolved composition dimensions instead of a hardcoded `1080p` / `16:9` fallback.
+
 ## [0.6.9] - 2026-10-31
 
 ### Improved

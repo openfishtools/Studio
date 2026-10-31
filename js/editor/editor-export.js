@@ -980,12 +980,9 @@
           }
           if (!selectedMime) selectedMime = 'video/webm';
 
-          const _recDims = window.getProjectDimensions(currentProjectState.resolution || '1080p', currentProjectState.aspectRatio || '16:9');
-          const _recFps = parseInt(currentProjectState.fps || 60, 10);
-          const _recDur = Math.max(0.5, (typeof window.getProjectTotalDuration === 'function' ? window.getProjectTotalDuration() : 5));
           let videoBps;
           if (typeof window.computeExportVideoBitrate === 'function') {
-            videoBps = window.computeExportVideoBitrate(preset, _recDims[0], _recDims[1], _recFps, _recDur, /webm|vp/i.test(selectedMime) ? 'vp9' : 'avc');
+            videoBps = window.computeExportVideoBitrate(preset, baseW, baseH, fps, totalDur, /webm|vp/i.test(selectedMime) ? 'vp9' : 'avc');
           } else {
             videoBps = preset === 'light' ? 8000000 : (preset === 'detail' ? 25000000 : 14000000);
           }

@@ -540,6 +540,7 @@
         const layer = item.layer;
         if (layer.type !== 'audio') continue;
         if (item.isMuted) continue;
+        if (window.FishAudioScheduler && window.FishAudioScheduler.playing && window.FishAudioScheduler.handles(layer, item.parentLayer)) continue;
         if (layer.speedMode === 'time_remap' || (item.parentLayer && item.parentLayer.speedMode === 'time_remap')) continue;
         if (layer.keyframes && layer.keyframes.speed && layer.keyframes.speed.length > 0) continue;
         if (item.effectiveSpeed !== 1.0) continue;
@@ -561,6 +562,7 @@
           const layer = item.layer;
           if (layer.type !== 'video') continue;
           if (item.isMuted || layer.muted || layer.volume === 0) continue;
+          if (window.FishAudioScheduler && window.FishAudioScheduler.playing && window.FishAudioScheduler.handles(layer, item.parentLayer)) continue;
           if (layer.speedMode === 'time_remap' || (item.parentLayer && item.parentLayer.speedMode === 'time_remap')) continue;
           if (layer.keyframes && layer.keyframes.speed && layer.keyframes.speed.length > 0) continue;
           if (item.effectiveSpeed !== 1.0) continue;
@@ -652,6 +654,7 @@
       const flatItems = this._flattenPlayableLayers(layers, 0, 1.0, false, 1.0, pixelsPerSecond);
       flatItems.forEach(item => {
         const { layer, rootStartSec, rootEndSec, sourceOffsetSec, parentOffsetSec, parentSpeed } = item;
+        if (window.FishAudioScheduler && window.FishAudioScheduler.playing && window.FishAudioScheduler.handles(layer, item.parentLayer)) return;
         const media = window.getOrLoadLayerMedia ? window.getOrLoadLayerMedia(layer) : null;
         if (!media || !media.el) return;
         const el = media.el;
@@ -708,6 +711,10 @@
               window.VideoFrameExtractor.ensurePlaybackFrames(source, curFIdx, 90);
             }
           }
+        }
+        const sched = window.FishAudioScheduler;
+        if (sched && sched.playing && sched.handles(layer, parentLayer)) {
+          return; // Played sample-accurately by the Web Audio scheduler
         }
         const media = window.getOrLoadLayerMedia ? window.getOrLoadLayerMedia(layer) : null;
         if (!media || !media.el) return;
@@ -992,6 +999,9 @@
     }
 
     pauseAll() {
+      if (window.FishAudioScheduler && typeof window.FishAudioScheduler.stop === 'function') {
+        try { window.FishAudioScheduler.stop(); } catch (_) {}
+      }
       const allElements = new Set([...this.knownMediaElements, ...this.sources.keys()]);
       allElements.forEach(el => {
         if (el) {

@@ -2531,9 +2531,20 @@
           window._nlePlayAnchorMs = timestamp;
         }
         const msSinceAnchor = timestamp - (window._nlePlayAnchorMs || 0);
+        const audioSched = window.FishAudioScheduler;
+        const schedRunning = !!(audioSched && audioSched.isClockRunning && audioSched.isClockRunning());
+        let schedSlaved = false;
         if (isCacheEnabled && !isNextFrameCached && Math.abs(playbackSpeed - 1.0) < 0.01) {
           // Contiguous frame stepping (1 frame at a time so zero frames are skipped while building cache)
           nextSec = nextFrameIdx / fps;
+        } else if (schedRunning && (isCurrentAndNextCached || !isCacheEnabled) && Math.abs(playbackSpeed - 1.0) < 0.01) {
+          // Web Audio scheduler clock (AudioContext time, output-latency compensated) drives the playhead:
+          // picture and sound share ONE sample-accurate clock, so they cannot drift and never stall after seek/loop.
+          const schedSec = audioSched.getTimelineSec();
+          if (schedSec !== null && isFinite(schedSec) && Math.abs(schedSec - nextSec) < 0.25) {
+            nextSec = Math.max(currentSec, schedSec);
+            schedSlaved = true;
+          }
         } else if (_playTickCount >= 3 && msSinceAnchor >= 450 && (isCurrentAndNextCached || !isCacheEnabled) && Math.abs(playbackSpeed - 1.0) < 0.01 && window.FishAudioEngine && typeof window.FishAudioEngine.getMasterAudioTime === 'function') {
           // Keep the playhead in sync with the hardware audio clock, but SOFTLY.
           // Hard-snapping to the audio time froze the playhead whenever the audio clock stalled or updated coarsely
@@ -2601,6 +2612,27 @@
           effectiveAudioSpeed = playbackSpeed * (window._nleSteppedAudioRatio || 1.0);
         }
 
+        if (audioSched && audioSched.playing) {
+          if (schedSlaved) {
+            audioSched.setRate(playbackSpeed);
+          } else {
+            // Timeline drives (uncached slow-mo, non-1x speed, or clock diverged): follow its speed and
+            // trim proportionally to drift; reseek only on large drift (with cooldown) to avoid clicks.
+            const schedSec = audioSched.getTimelineSec();
+            const drift = (schedSec !== null && isFinite(schedSec)) ? (schedSec - nextSec) : 0;
+            const nowMsSched = timestamp;
+            if (Math.abs(drift) > 0.3 && (!window._schedLastReseekMs || nowMsSched - window._schedLastReseekMs > 600)) {
+              window._schedLastReseekMs = nowMsSched;
+              audioSched.seek(nextSec);
+              audioSched.setRate(effectiveAudioSpeed);
+            } else if (!window._schedLastRateMs || nowMsSched - window._schedLastRateMs > 150) {
+              window._schedLastRateMs = nowMsSched;
+              const trim = Math.max(0.8, Math.min(1.2, 1.0 - (drift / Math.max(0.25, effectiveAudioSpeed)) * 0.9));
+              audioSched.setRate(effectiveAudioSpeed * (Math.abs(drift) > 0.03 ? trim : 1.0));
+            }
+          }
+        }
+
         let nextPan = -(nextSec * pixelsPerSecond);
         if (nextPan <= bounds.min) {
           if (window.isPlaybackLoopEnabled !== false) {
@@ -2611,6 +2643,9 @@
             window._nleSmoothedFrameSec = frameDuration;
             window._nleSteppedAudioRatio = 1.0;
             window._nleLastAudioStepMs = timestamp;
+            if (audioSched && audioSched.playing) {
+              audioSched.seek(nextSec);
+            }
             if (window.FishAudioEngine && typeof window.FishAudioEngine.handleLoopReset === 'function') {
               window.FishAudioEngine.handleLoopReset(layers, nextSec, pixelsPerSecond, playbackSpeed);
             } else if (window.FishAudioEngine) {
@@ -2766,6 +2801,9 @@
             const initialPlaybackSpeed = (typeof window.timelinePlaybackSpeed === 'number' && window.timelinePlaybackSpeed > 0)
               ? window.timelinePlaybackSpeed
               : 1.0;
+            if (window.FishAudioScheduler && typeof window.FishAudioScheduler.start === 'function') {
+              window.FishAudioScheduler.start(layers, startSec, pixelsPerSecond, initialPlaybackSpeed);
+            }
             if (window.FishAudioEngine) {
               window.FishAudioEngine.syncPlayback(layers, startSec, pixelsPerSecond, initialPlaybackSpeed);
             }
