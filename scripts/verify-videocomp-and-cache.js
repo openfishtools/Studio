@@ -692,6 +692,59 @@ assert.strictEqual(voidIntervalsUpdated[0][1], 15);
 assert.strictEqual(voidIntervalsUpdated[1][0], 20);
 assert.strictEqual(voidIntervalsUpdated[1][1], 60);
 
+// Test: Synchronous provisional staging in setFrameFromCanvas (zero async gap before createImageBitmap resolves)
+let resolveDeferredBitmap = null;
+const origCreateImageBitmap = global.createImageBitmap;
+try {
+  global.createImageBitmap = () => new Promise(res => { resolveDeferredBitmap = res; });
+  const mockSrcCanvas = {
+    id: 'offscreen-test-canvas',
+    width: 1920,
+    height: 1080,
+    getContext: () => ({ clearRect: () => {}, drawImage: () => {} })
+  };
+  pcm.setFrameFromCanvas(12, mockSrcCanvas, false, 'root');
+  assert.strictEqual(pcm.hasFrame(12, 1920, 1080, 'root'), true, 'setFrameFromCanvas must register frame synchronously before createImageBitmap resolves');
+  assert.strictEqual(pcm.getFrame(12, 1920, 1080, 'root'), mockSrcCanvas, 'getFrame must return provisional staging canvas while createImageBitmap is pending');
+  if (resolveDeferredBitmap) {
+    resolveDeferredBitmap({ width: 1920, height: 1080, close() {} });
+  }
+} finally {
+  global.createImageBitmap = origCreateImageBitmap;
+}
+
+// Test: vectorPoints keyframe dynamic bounds do not trigger false cache invalidation on Play
+const vecKfLayer = {
+  id: 'vec_kf_1',
+  type: 'shape',
+  startSec: 0,
+  durationSec: 5,
+  posX: 500,
+  posY: 400,
+  scaleW: 200,
+  scaleH: 150,
+  shapeProps: {
+    points: [{ x: 0, y: 0 }, { x: 100, y: 100 }],
+    sizeX: 200,
+    sizeY: 150,
+    fillColor: '#00ff00'
+  },
+  keyframes: {
+    vectorPoints: [{ time: 0, value: [{ x: 0, y: 0 }] }, { time: 2, value: [{ x: 50, y: 80 }] }]
+  }
+};
+const sigVecBefore = pcm.getLayerSignature(vecKfLayer, 0);
+// Simulate syncVectorLayerBounds mutating posX, posY, scaleW, scaleH, sizeX, sizeY during scrub
+vecKfLayer.posX = 620;
+vecKfLayer.posY = 480;
+vecKfLayer.scaleW = 310;
+vecKfLayer.scaleH = 240;
+vecKfLayer.shapeProps.sizeX = 310;
+vecKfLayer.shapeProps.sizeY = 240;
+vecKfLayer.shapeProps.points = [{ x: 25, y: 40 }, { x: 120, y: 160 }];
+const sigVecAfter = pcm.getLayerSignature(vecKfLayer, 0);
+assert.strictEqual(sigVecBefore, sigVecAfter, 'getLayerSignature must remain stable when vectorPoints keyframes mutate bounds during scrub');
+
 console.log('✓ Algoritma 5: Temporal Occupancy Partitioning, Virtual Void Cache & Dynamic Mutation verified cleanly.');
 
 console.log('✓ VideoFrameExtractor verified (retain/release deduplication, reverse eviction inversion, seamless reverse split, proactive streaming prefetch, upcoming frame sort order, precomp RAM eviction protection, extraction circuit breaker, mobile VRAM cap, precomp sequence resolution, and invalidation).');

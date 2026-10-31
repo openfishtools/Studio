@@ -254,9 +254,10 @@
           if (!m) return null;
           let el = m.el;
           if (child.type === 'video') {
+            const isChildIdleOrLookahead = triggerSource === 'idle-cache' || triggerSource === 'lookahead-cache';
             const res = window.VideoCompEngine.resolveLayerVideoElement(child, m, {
               isExport,
-              isIdleCache: triggerSource === 'idle-cache',
+              isIdleCache: isChildIdleOrLookahead,
               currentSec: innerSec,
               pixelsPerSecond: pps
             });
@@ -268,7 +269,7 @@
               const cutoutFrame = window.FishBgRemovalEngine.getVideoCutoutFrame(sourceKey, fIdx);
               if (cutoutFrame) {
                 el = cutoutFrame;
-              } else if (!isExport && triggerSource !== 'idle-cache') {
+              } else if (!isExport && !isChildIdleOrLookahead) {
                 window.FishBgRemovalEngine.processLayer(child);
               }
             }
@@ -276,7 +277,7 @@
             const photoCutout = window.FishBgRemovalEngine.getPhotoCutout(child);
             if (photoCutout) {
               el = photoCutout;
-            } else if (!isExport && triggerSource !== 'idle-cache') {
+            } else if (!isExport && triggerSource !== 'idle-cache' && triggerSource !== 'lookahead-cache') {
               window.FishBgRemovalEngine.processLayer(child);
             }
           }
@@ -875,9 +876,10 @@
             if (!m) return;
             childEl = m.el;
             if (child.type === 'video') {
+              const isChildIdleOrLookahead = triggerSource === 'idle-cache' || triggerSource === 'lookahead-cache';
               const res = window.VideoCompEngine.resolveLayerVideoElement(child, m, {
                 isExport,
-                isIdleCache: triggerSource === 'idle-cache',
+                isIdleCache: isChildIdleOrLookahead,
                 currentSec: innerSec,
                 pixelsPerSecond: pps
               });
@@ -889,7 +891,7 @@
                 const cutoutFrame = window.FishBgRemovalEngine.getVideoCutoutFrame(sourceKey, fIdx);
                 if (cutoutFrame) {
                   childEl = cutoutFrame;
-                } else if (!isExport && triggerSource !== 'idle-cache') {
+                } else if (!isExport && !isChildIdleOrLookahead) {
                   window.FishBgRemovalEngine.processLayer(child);
                 }
               }
@@ -897,7 +899,7 @@
               const photoCutout = window.FishBgRemovalEngine.getPhotoCutout(child);
               if (photoCutout) {
                 childEl = photoCutout;
-              } else if (!isExport && triggerSource !== 'idle-cache') {
+              } else if (!isExport && triggerSource !== 'idle-cache' && triggerSource !== 'lookahead-cache') {
                 window.FishBgRemovalEngine.processLayer(child);
               }
             }
@@ -1196,7 +1198,7 @@
       if (!canvas) return;
       const isTemplate = (typeof triggerSource === 'string') && triggerSource.startsWith('template');
       const isExport = !!window.isExporting || ((typeof triggerSource === 'string') && triggerSource.startsWith('export'));
-      const isIdleCache = triggerSource === 'idle-cache';
+      const isIdleCache = triggerSource === 'idle-cache' || triggerSource === 'lookahead-cache';
       const needsAlpha = isExport && triggerSource !== 'export-video' && (!bg || bg === 'transparent');
       const needsAlphaCanvas = needsAlpha;
       // Cache context on canvas element — avoid repeated getContext overhead per frame
@@ -1239,7 +1241,9 @@
       if (!isTransformDragging) {
         currentSec = frameIndex / fps;
       }
-      window._currentRenderSec = currentSec;
+      if (!isIdleCache) {
+        window._currentRenderSec = currentSec;
+      }
       if (overrideSec === null || overrideSec === undefined) {
         window.currentSec = currentSec;
         window.currentPlaybackSec = currentSec;
@@ -2243,6 +2247,8 @@
           const bufferScale = (Math.abs(bScaleX - bScaleY) < 0.001) ? bScaleX : Math.min(bScaleX, bScaleY);
           compositionBufferScale = bufferScale;
 
+          const hadUninitializedBounds = layer.posX === undefined || layer.posY === undefined || layer.scaleW === undefined || layer.scaleH === undefined;
+
           if (mw && mh && layer.type !== 'precomp' && layer.type !== 'shape' && layer.type !== 'text') {
             if (!isExport) {
               if (!layer._userResized) {
@@ -2334,6 +2340,9 @@
             if (layer.anchorX === undefined) layer.anchorX = 0;
             if (layer.anchorY === undefined) layer.anchorY = 0;
             if (layer.anchorZ === undefined) layer.anchorZ = 0;
+            if (hadUninitializedBounds && !window.isTimelinePlaying && !isExport && window.PreviewCacheManager && typeof window.PreviewCacheManager.refreshBaselineSnapshot === 'function') {
+              window.PreviewCacheManager.refreshBaselineSnapshot(currentProjectState);
+            }
 
             const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
               ? getLayerEffectivePropsAtTime(layer, currentSec)
@@ -2857,16 +2866,10 @@
 
       }
 
-      if (!isExport && !isIdleCache && triggerSource !== 'lookahead-cache') {
+      if (!isExport && !isIdleCache && !isTemplate) {
         window._lastFrameWasCached = !!cachedBitmap;
+        window._lastFrameRenderDuration = performance.now() - t0;
       }
-
-      // Grid overlay → drawn by CanvasOverlay (js/canvas-overlay.js) on separate canvas
-
-      // Motion path → drawn by CanvasOverlay (js/canvas-overlay.js) on separate canvas
-
-
-      window._lastFrameRenderDuration = performance.now() - t0;
 
       // Ensure wireframe bounds and overlay are strictly updated ONLY for the interactive viewer
       // Lookahead worker, idle cache, templates, and video export must NEVER touch viewer overlay or bounds!

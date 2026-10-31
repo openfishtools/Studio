@@ -1880,6 +1880,9 @@
         if (typeof updateReorderHandlesContrast === 'function') {
           updateReorderHandlesContrast();
         }
+        if (window.PreviewCacheManager && typeof window.PreviewCacheManager.refreshBaselineSnapshot === 'function') {
+          window.PreviewCacheManager.refreshBaselineSnapshot(window.currentProjectState);
+        }
         e.stopPropagation();
       }
 
@@ -2027,6 +2030,9 @@
       try { needle.releasePointerCapture(e.pointerId); } catch (_) {}
       if (typeof updateReorderHandlesContrast === 'function') {
         updateReorderHandlesContrast();
+      }
+      if (window.PreviewCacheManager && typeof window.PreviewCacheManager.refreshBaselineSnapshot === 'function') {
+        window.PreviewCacheManager.refreshBaselineSnapshot(window.currentProjectState);
       }
       e.stopPropagation();
     }

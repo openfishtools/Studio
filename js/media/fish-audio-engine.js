@@ -480,7 +480,7 @@
       const result = [];
       (layers || []).forEach(layer => {
         if (layer.hidden) return;
-        const isMuted = parentMuted || !!layer.isMuted || (layer.speed !== undefined && layer.speed < 0);
+        const isMuted = parentMuted || !!layer.isMuted || !!layer.muted || (layer.speed !== undefined && layer.speed < 0);
         const layerSpeed = (layer.speed !== undefined && layer.speed !== 0 ? Math.abs(layer.speed) : 1.0);
         const effectiveSpeed = parentSpeed * layerSpeed;
         const layerVol = (layer.volume !== undefined ? layer.volume : 1.0);
@@ -686,16 +686,27 @@
       // Group active layers by their media element
       const activeElementTargets = new Map();
       const flatItems = this._flattenPlayableLayers(layers, 0, 1.0, false, 1.0, pixelsPerSecond);
+      const compFps = (window.PreviewCacheManager && window.PreviewCacheManager.fps) || 60;
+      const curCompFrame = Math.round(currentSec * compFps);
+      const isCompCachedAhead = !!(
+        window.PreviewCacheManager &&
+        window.isPreviewCacheEnabled !== false &&
+        window.PreviewCacheManager.hasFrame(curCompFrame) &&
+        window.PreviewCacheManager.hasFrame(curCompFrame + 4)
+      );
 
       flatItems.forEach(item => {
         const { layer, parentLayer, rootStartSec, rootEndSec, sourceOffsetSec, parentOffsetSec, parentSpeed, effectiveSpeed, isMuted, effectiveGain } = item;
-        if (layer.type === 'video' && window.VideoFrameExtractor && currentSec >= rootStartSec && currentSec < rootEndSec) {
+        if (!isCompCachedAhead && layer.type === 'video' && window.VideoFrameExtractor && currentSec >= rootStartSec && currentSec < rootEndSec) {
           const sourceKey = window.VideoFrameExtractor._getSourceKey(layer);
           const source = window.VideoFrameExtractor.getSourceCache(sourceKey);
           if (source) {
             const clipTime = Math.max(0, (sourceOffsetSec || 0) + (currentSec - rootStartSec) * (effectiveSpeed || 1.0));
             const curFIdx = Math.round(clipTime * (source.fps || 60));
-            window.VideoFrameExtractor.ensurePlaybackFrames(source, curFIdx, 180);
+            if (source._lastSyncEnsureFIdx === undefined || Math.abs(curFIdx - source._lastSyncEnsureFIdx) >= 8) {
+              source._lastSyncEnsureFIdx = curFIdx;
+              window.VideoFrameExtractor.ensurePlaybackFrames(source, curFIdx, 90);
+            }
           }
         }
         const media = window.getOrLoadLayerMedia ? window.getOrLoadLayerMedia(layer) : null;
@@ -830,6 +841,11 @@
           const rates = window.VideoCompEngine.computePlaybackRates(el, currentSpeed, timelineSpeedMult, layer, isFreezeOrReverse);
           const { rawRate, tooFastForVideoEl, finalPlaybackRate, wantPreservePitch } = rates;
           const isVideoEl = el && el.tagName === 'VIDEO';
+
+          if (isVideoEl && currentVol <= 0.0005 && !activeElementTargets.has(el)) {
+            try { el.muted = true; } catch (_) {}
+            return;
+          }
 
           if (!activeElementTargets.has(el)) {
             activeElementTargets.set(el, {

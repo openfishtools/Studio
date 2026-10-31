@@ -2007,6 +2007,9 @@
           updateReorderHandlesContrast();
         }
         redrawComposition('scrubEnd');
+        if (window.PreviewCacheManager && typeof window.PreviewCacheManager.refreshBaselineSnapshot === 'function') {
+          window.PreviewCacheManager.refreshBaselineSnapshot(currentProjectState);
+        }
 
         // Stationary tap on empty timeline space (not a drag scrub): deselect active layer
         const moveDist = Math.hypot(e.clientX - startX, e.clientY - startY);
@@ -2236,33 +2239,22 @@
           : 1.0;
 
         // 1. After Effects Real-Time + Gapless RAM Preview Clock:
-        // - When building RAM cache on uncached frames (isCacheEnabled && !isNextFrameCached):
-        //   If render time is fast (< 9ms) and wall-clock advanced by ~2 frames (e.g. rAF jitter),
-        //   bake the intermediate frame first so ZERO frames are skipped AND playback stays 100% real-time!
-        const lastRenderMs = (typeof window._lastFrameRenderDuration === 'number') ? window._lastFrameRenderDuration : 4;
-        const canMultiStepCatchUp = isCacheEnabled && !isNextFrameCached && Math.abs(playbackSpeed - 1.0) < 0.01 &&
-          lastRenderMs < 9.0 && rawDeltaSec >= frameDuration * 1.65;
-
-        if (canMultiStepCatchUp && window.PreviewCacheManager && !window.PreviewCacheManager.hasFrame(nextFrameIdx)) {
-          const midSec = nextFrameIdx / fps;
-          if (typeof window.PreviewCacheManager.bakeSingleFrameOffscreen === 'function') {
-            window.PreviewCacheManager.bakeSingleFrameOffscreen(nextFrameIdx, midSec);
-          }
-        }
+        // Never double-render on a single rAF tick when uncached; step 1 contiguous frame at a time.
+        const canMultiStepCatchUp = false;
 
         let effectiveDeltaSec;
         if (isFirstTick) {
           effectiveDeltaSec = Math.max(frameDuration, Math.min(frameDuration * 2.0, rawDeltaSec || frameDuration)) * playbackSpeed;
         } else if (isCacheEnabled && !isNextFrameCached) {
-          effectiveDeltaSec = (canMultiStepCatchUp ? (frameDuration * 2) : frameDuration) * playbackSpeed;
+          effectiveDeltaSec = frameDuration * playbackSpeed;
         } else {
           effectiveDeltaSec = Math.min(Math.max(frameDuration * 2.5, 0.05), Math.max(0, rawDeltaSec)) * playbackSpeed;
         }
 
         let nextSec = currentSec + effectiveDeltaSec;
         if (isCacheEnabled && !isNextFrameCached && Math.abs(playbackSpeed - 1.0) < 0.01) {
-          // Contiguous frame stepping (1 frame, or 2 frames if intermediate frame was just baked above)
-          nextSec = (canMultiStepCatchUp ? (nextFrameIdx + 1) : nextFrameIdx) / fps;
+          // Contiguous frame stepping (1 frame at a time so zero frames are skipped while building cache)
+          nextSec = nextFrameIdx / fps;
         } else if (_playTickCount >= 3 && (isCurrentAndNextCached || !isCacheEnabled) && Math.abs(playbackSpeed - 1.0) < 0.01 && window.FishAudioEngine && typeof window.FishAudioEngine.getMasterAudioTime === 'function') {
           // When frames are cached (including audio-only timelines), slave playhead to hardware audio clock
           // so the timeline never outruns or fights the audio element!
@@ -2270,6 +2262,19 @@
           const masterAudioSec = window.FishAudioEngine.getMasterAudioTime(layers, nextSec, pixelsPerSecond);
           if (masterAudioSec !== null && isFinite(masterAudioSec) && masterAudioSec >= currentSec && Math.abs(masterAudioSec - nextSec) < 0.25) {
             nextSec = masterAudioSec;
+          }
+        }
+
+        if (isCacheEnabled && isCurrentAndNextCached) {
+          const targetFrameIdx = Math.round(nextSec * fps);
+          if (targetFrameIdx > nextFrameIdx) {
+            let maxContiguousFrame = nextFrameIdx;
+            while (maxContiguousFrame < targetFrameIdx && window.PreviewCacheManager.hasFrame(maxContiguousFrame + 1)) {
+              maxContiguousFrame++;
+            }
+            if (maxContiguousFrame < targetFrameIdx) {
+              nextSec = maxContiguousFrame / fps;
+            }
           }
         }
 
@@ -2349,8 +2354,8 @@
           renderCanvasFrame(canvas, currentProjectState.bgColor, canvas.width, canvas.height, 'playbackStep', nextSec);
         }
 
-        // 5. High-speed playback lookahead: batch bake upcoming frames into RAM preview cache using offscreen canvas pool
-        if (window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
+        // 5. High-speed playback lookahead: only bake ahead when current playback tick was a fast cache hit
+        if (window.PreviewCacheManager && window.isPreviewCacheEnabled !== false && isCurrentAndNextCached && window._lastFrameWasCached) {
           window.PreviewCacheManager.bakePlaybackLookahead(nextSec, fps);
         }
 

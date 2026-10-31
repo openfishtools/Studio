@@ -578,7 +578,7 @@
       if (!this._frameGen) this._frameGen = new Map();
       const inFlightKey = `${targetComp}:${frameIndex}`;
       if (this._inFlightFrames.has(inFlightKey)) return;
-      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 32 : 64;
+      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 8 : 16;
       if (this._inFlightFrames.size >= maxInFlight) {
         if (!this._missedPlaybackFrames) this._missedPlaybackFrames = new Set();
         this._missedPlaybackFrames.add(frameIndex);
@@ -591,31 +591,67 @@
       try {
         const srcW = sourceCanvas.width;
         const srcH = sourceCanvas.height;
-        // Direct GPU-to-GPU createImageBitmap without intermediate canvas copy (0ms main-thread overhead)
-        const bitmap = await createImageBitmap(sourceCanvas);
-        // Re-check after await: frame may have been cleared/invalidated or superseded by a newer render
-        if (!this._inFlightFrames.has(inFlightKey) || this._frameGen.get(inFlightKey) !== gen || this.isTimeBaking(targetSec)) {
-          if (bitmap && typeof bitmap.close === 'function') {
-            try { bitmap.close(); } catch (_) {}
+        let stagingCanvas = sourceCanvas;
+        if (sourceCanvas.id === 'editor-active-canvas' && typeof document !== 'undefined') {
+          if (!this._idleCanvasPool) {
+            this._idleCanvasPool = [];
+            const poolSize = this._isMobile ? 8 : 16;
+            for (let i = 0; i < poolSize; i++) {
+              this._idleCanvasPool.push(document.createElement('canvas'));
+            }
+            this._idlePoolIdx = 0;
           }
-          return;
+          stagingCanvas = this._idleCanvasPool[this._idlePoolIdx % this._idleCanvasPool.length];
+          this._idlePoolIdx++;
+          if (stagingCanvas.width !== srcW || stagingCanvas.height !== srcH) {
+            stagingCanvas.width = srcW;
+            stagingCanvas.height = srcH;
+          }
+          const sCtx = stagingCanvas._cachedCtx || (stagingCanvas._cachedCtx = stagingCanvas.getContext('2d'));
+          if (sCtx) {
+            sCtx.clearRect(0, 0, srcW, srcH);
+            sCtx.drawImage(sourceCanvas, 0, 0);
+          }
         }
+
         this.deleteFrame(frameIndex, false, targetComp);
-        // Restore generation after deleteFrame
         this._frameGen.set(inFlightKey, gen);
-        targetPool.set(frameIndex, {
-          bitmap,
+        this._pendingFrames.add(inFlightKey);
+        this._inFlightFrames.add(inFlightKey);
+
+        // Immediately register provisional canvas in pool so next rAF tick gets a 0ms cache hit
+        const provisionalEntry = {
+          bitmap: stagingCanvas,
           isDraft,
+          isPendingBitmap: true,
           width: srcW,
           height: srcH
-        });
+        };
+        targetPool.set(frameIndex, provisionalEntry);
         if (this._missedPlaybackFrames) {
           this._missedPlaybackFrames.delete(frameIndex);
         }
-        // Evict oldest frame if over limit (prevents browser OOM crash when full timeline is cached)
         this._evictIfNeeded(targetComp);
-        // Throttled ruler update — updates green cache bar smoothly during playback & idle fill
         this._scheduleRulerUpdate();
+
+        if (typeof createImageBitmap === 'function') {
+          const bitmap = await createImageBitmap(stagingCanvas);
+          if (!this._inFlightFrames.has(inFlightKey) || this._frameGen.get(inFlightKey) !== gen || this.isTimeBaking(targetSec)) {
+            if (bitmap && typeof bitmap.close === 'function') {
+              try { bitmap.close(); } catch (_) {}
+            }
+            return;
+          }
+          const currentEntry = targetPool.get(frameIndex);
+          if (currentEntry === provisionalEntry) {
+            provisionalEntry.bitmap = bitmap;
+            provisionalEntry.isPendingBitmap = false;
+          } else if (bitmap && typeof bitmap.close === 'function') {
+            try { bitmap.close(); } catch (_) {}
+          }
+        } else {
+          provisionalEntry.isPendingBitmap = false;
+        }
       } catch (_) {}
       finally {
         if (this._frameGen && this._frameGen.get(inFlightKey) === gen) {
@@ -827,9 +863,11 @@
       const hasSpeedKf = !!(kfs && Array.isArray(kfs.speed) && kfs.speed.length > 0);
 
       let shapePropsToSig = layer.shapeProps;
-      if (hasVecKf && layer.shapeProps && typeof layer.shapeProps === 'object' && layer.shapeProps.points) {
+      if (hasVecKf && layer.shapeProps && typeof layer.shapeProps === 'object') {
         const shallow = { ...layer.shapeProps };
         delete shallow.points;
+        delete shallow.sizeX;
+        delete shallow.sizeY;
         shapePropsToSig = shallow;
       }
       const shapeSig = (shapePropsToSig && typeof shapePropsToSig === 'object') ? this._fastObjectSig(shapePropsToSig) : '';
@@ -853,11 +891,11 @@
         endSec.toFixed(3),
         Number(layer.durationSec || (endSec - startSec) || 0).toFixed(3),
         Number(layer.sourceOffsetSec || 0).toFixed(3),
-        hasMoveKf ? 'kf_move' : Number(layer.posX ?? layer.x ?? 0).toFixed(2),
-        hasMoveKf ? 'kf_move' : Number(layer.posY ?? layer.y ?? 0).toFixed(2),
+        hasMoveKf ? 'kf_move' : (hasVecKf ? 'kf_vec' : Number(layer.posX ?? layer.x ?? 0).toFixed(2)),
+        hasMoveKf ? 'kf_move' : (hasVecKf ? 'kf_vec' : Number(layer.posY ?? layer.y ?? 0).toFixed(2)),
         hasMoveKf ? 'kf_move' : Number(layer.posZ ?? layer.z ?? 0).toFixed(2),
-        hasScaleKf ? 'kf_scale' : Number(layer.scaleW ?? layer.scaleX ?? layer.scale ?? 100).toFixed(2),
-        hasScaleKf ? 'kf_scale' : Number(layer.scaleH ?? layer.scaleY ?? layer.scale ?? 100).toFixed(2),
+        hasScaleKf ? 'kf_scale' : (hasVecKf ? 'kf_vec' : Number(layer.scaleW ?? layer.scaleX ?? layer.scale ?? 100).toFixed(2)),
+        hasScaleKf ? 'kf_scale' : (hasVecKf ? 'kf_vec' : Number(layer.scaleH ?? layer.scaleY ?? layer.scale ?? 100).toFixed(2)),
         hasScaleKf ? 'kf_scale' : Number(layer.scaleZ ?? 100).toFixed(2),
         hasRotKf ? 'kf_rot' : Number(layer.rotZ ?? layer.rotationZ ?? layer.rotation ?? 0).toFixed(2),
         hasRotKf ? 'kf_rot' : Number(layer.rotX ?? layer.rotationX ?? 0).toFixed(2),
@@ -1269,8 +1307,8 @@
             if (runStart === -1) runStart = f;
           } else {
             if (runStart !== -1) {
-              const x = Math.floor(runStart * pxPerFrame);
-              const xEnd = Math.ceil(f * pxPerFrame);
+              const x = Math.round(runStart * pxPerFrame);
+              const xEnd = Math.max(x + 1, Math.floor(f * pxPerFrame));
               const w = Math.max(1, xEnd - x);
               this.rulerCtx.fillRect(x, 0, w, 3);
               runStart = -1;
@@ -1278,7 +1316,7 @@
           }
         }
         if (runStart !== -1) {
-          const x = Math.floor(runStart * pxPerFrame);
+          const x = Math.round(runStart * pxPerFrame);
           const xEnd = Math.ceil(totalFrames * pxPerFrame);
           const w = Math.max(1, xEnd - x);
           this.rulerCtx.fillRect(x, 0, w, 3);
@@ -1870,6 +1908,10 @@
         }
       }
 
+      if (cachedInBatch > 0 && typeof window !== 'undefined' && window.currentProjectState) {
+        this.refreshBaselineSnapshot(window.currentProjectState, this.activeCompId);
+      }
+
       if (this.isIdleRunning) {
         this._scheduleNextIdleTick(60);
       }
@@ -1961,6 +2003,13 @@
       if (!this.idleCacheEnabled || window.isPreviewCacheEnabled === false) return;
       if (typeof document === 'undefined') return;
 
+      const tStart = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+      if (budgetMs === null) {
+        if (!window._lastFrameWasCached) return;
+        if (typeof window._lastFrameRenderDuration === 'number' && window._lastFrameRenderDuration > 4.0) return;
+        if (this._lookaheadHeavyCooldownUntil && tStart < this._lookaheadHeavyCooldownUntil) return;
+      }
+
       const activeCanvas = document.getElementById('editor-active-canvas');
       if (!activeCanvas || activeCanvas.width === 0 || activeCanvas.height === 0) return;
 
@@ -1978,7 +2027,9 @@
       const memCap = this.maxFrames || Math.round(60 * currentFps);
       if (pool.size >= Math.min(memCap, totalFrames + 1)) return;
 
-      const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 32 : 64;
+      const maxInFlight = budgetMs === null
+        ? (this._isMobile ? 4 : 8)
+        : ((this._isMobile || (this._devMem && this._devMem <= 4)) ? 8 : 16);
       if (this._inFlightFrames && this._inFlightFrames.size >= maxInFlight) return;
 
       if (!this._idleCanvasPool) {
@@ -1992,9 +2043,8 @@
 
       const targetW = activeCanvas.width;
       const targetH = activeCanvas.height;
-      const effectiveBudget = budgetMs !== null ? budgetMs : (this._isMobile ? 2.0 : 3.5);
-      const maxBatch = this._isMobile ? 2 : 3;
-      const tStart = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+      const effectiveBudget = budgetMs !== null ? budgetMs : (this._isMobile ? 1.8 : 2.5);
+      const maxBatch = budgetMs === null ? 1 : (this._isMobile ? 2 : 3);
 
       // Lookahead range: from nextFrame up to nextFrame + 60 (up to 1.5 seconds ahead of playhead)
       const lookaheadLimit = Math.min(totalFrames, currentFrame + Math.round(currentFps * 1.5));
@@ -2024,6 +2074,7 @@
         }
 
         let isFrameReady = true;
+        const tFrame0 = (typeof performance !== 'undefined') ? performance.now() : Date.now();
         if (typeof window.renderCanvasFrame === 'function') {
           const res = window.renderCanvasFrame(
             offscreen,
@@ -2035,11 +2086,24 @@
           );
           if (res === false) isFrameReady = false;
         }
+        const tFrame1 = (typeof performance !== 'undefined') ? performance.now() : Date.now();
 
         if (isFrameReady) {
           this.setFrameFromCanvas(f, offscreen, this.isDraftMode, targetComp);
           bakedCount++;
+        } else {
+          if (!this._unreadyFrames) this._unreadyFrames = new Set();
+          this._unreadyFrames.add(inFlightKey);
         }
+
+        if (budgetMs === null && (tFrame1 - tFrame0) > 10.0) {
+          this._lookaheadHeavyCooldownUntil = tFrame1 + 500;
+          break;
+        }
+      }
+
+      if (bakedCount > 0 && typeof window !== 'undefined' && window.currentProjectState) {
+        this.refreshBaselineSnapshot(window.currentProjectState, targetComp);
       }
     }
 

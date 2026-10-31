@@ -1272,7 +1272,10 @@
       if (source._isStreamingPrefetch) return;
 
       const tier = this._deviceTier || getDeviceRamTier();
-      const effectiveWin = tier.isMobile ? Math.min(90, windowSize) : windowSize;
+      const isPlayingNow = (typeof window !== 'undefined' && !!window.isTimelinePlaying);
+      const effectiveWin = isPlayingNow
+        ? (tier.isMobile ? Math.min(45, windowSize) : Math.min(75, windowSize))
+        : (tier.isMobile ? Math.min(90, windowSize) : windowSize);
       const isReverse = this._isSourceReversePlayback(source);
       const missing = [];
       let startFIdx, endFIdx;
@@ -1314,7 +1317,10 @@
         const db = await this._getDB();
         if (!db) return;
 
-        const batchSize = Math.min(tier.isMobile ? 24 : 60, missing.length);
+        const maxBatchCap = isPlayingNow
+          ? (tier.isMobile ? 8 : 16)
+          : (tier.isMobile ? 24 : 60);
+        const batchSize = Math.min(maxBatchCap, missing.length);
         const batch = missing.slice(0, batchSize);
         batch.forEach(idx => {
           if (!source._fetchingFrames) source._fetchingFrames = new Set();
@@ -3089,6 +3095,8 @@
                 backpressureWaits++;
                 await yieldToUI(tier.isMobile ? 6 : 3);
               }
+            } else if (this._isUserInteracting() && !source._forceExtraction && (sIdx - gopSeg.startIdx) % 4 === 3) {
+              await yieldToUI(tier.isMobile ? 8 : 4);
             } else if ((sIdx - gopSeg.startIdx) % (tier.isMobile ? 10 : 20) === (tier.isMobile ? 9 : 19)) {
               await yieldToUI(tier.isMobile ? 2 : 0);
             }
@@ -3588,12 +3596,14 @@
       if (typeof window === 'undefined') return;
 
       const source = this.sources.get(sourceKey);
+      const isPlayingNow = !!window.isTimelinePlaying;
       const curPlayheadFIdx = source ? this._getVideoFrameForPlayhead(source) : 0;
-      const isPlayheadFrame = justExtractedIdx !== null && (Math.abs(justExtractedIdx - curPlayheadFIdx) <= 2 || (source && source.frames.size <= 2));
+      const isPlayheadFrame = !isPlayingNow && justExtractedIdx !== null && (Math.abs(justExtractedIdx - curPlayheadFIdx) <= 2 || (source && source.frames.size <= 2));
       const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+      const throttleMs = isPlayingNow ? 180 : 65;
 
-      // Throttle heavy O(N * F) layer progress scans during fast batch extraction unless complete or playhead frame
-      if (!isComplete && !isPlayheadFrame && source && source._lastNotifyMs && (now - source._lastNotifyMs) < 65) {
+      // Throttle heavy O(N * F) layer progress scans during fast batch extraction or active playback unless complete
+      if (!isComplete && !isPlayheadFrame && source && source._lastNotifyMs && (now - source._lastNotifyMs) < throttleMs) {
         return;
       }
       if (source) {
