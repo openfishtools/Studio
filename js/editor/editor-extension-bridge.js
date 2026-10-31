@@ -577,9 +577,85 @@
               '}'
             ].join('\n');
           }
+        } else if (toolName === 'IDLE_MOVE_1' || toolName === 'IDLE_MOVE_2') {
+          const isPattern2 = (toolName === 'IDLE_MOVE_2');
+          nullLayer.name = isPattern2 ? 'IDLE MOVE 2' : 'IDLE MOVE 1';
+          addSlider(nullLayer, 'Amp', 100);
+          addSlider(nullLayer, 'Overshoot', 100);
+          addSlider(nullLayer, 'Skip Beats', 4);
+          const stepValsLiteral = isPattern2
+            ? '[0, 19.1667, 59.1667, -19.9167, 52.5, -43.3333, 59.1667]'
+            : '[0, 55.8333, 0, 55.8333, 0, 55.8333, 0]';
+          const glideEaseExpr = isPattern2
+            ? 'bezier(0.532, -0.436 * yMult, 0.379, 1 + 0.415 * yMult, progress)'
+            : 'bezier(0.343, -2.0 * yMult, 0.511, 1 + 1.0 * yMult, progress)';
+          nullLayer.expressions.scale = [
+            'function bezier(x1, y1, x2, y2, t) {',
+            '    if (t <= 0) return 0;',
+            '    if (t >= 1) return 1;',
+            '    var p = t;',
+            '    for (var i = 0; i < 8; i++) {',
+            '        var omP = 1 - p;',
+            '        var f = 3 * omP * omP * p * x1 + 3 * omP * p * p * x2 + p * p * p - t;',
+            '        var df = 3 * omP * omP * x1 + 6 * omP * p * (x2 - x1) + 3 * p * p * (1 - x2);',
+            '        if (Math.abs(df) < 1e-6) break;',
+            '        p -= f / df;',
+            '        p = Math.max(0, Math.min(1, p));',
+            '    }',
+            '    var omP = 1 - p;',
+            '    return 3 * omP * omP * p * y1 + 3 * omP * p * p * y2 + p * p * p;',
+            '}',
+            '',
+            'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+            'amp = effect("Amp")("ADBE Slider Control-0001") / 100;',
+            'overshoot = effect("Overshoot")("ADBE Slider Control-0001");',
+            'skipBeats = Math.max(0, Math.round(effect("Skip Beats")("ADBE Slider Control-0001")));',
+            'yMult = overshoot / 100;',
+            'cycleBeats = 6 + skipBeats;',
+            'stepVals = ' + stepValsLiteral + ';',
+            '',
+            'if (time < inPoint || time > outPoint) {',
+            '    value;',
+            '} else if (m && m.numKeys > 0) {',
+            '    n = m.nearestKey(time).index;',
+            '    if (m.key(n).time > time) n--;',
+            '    if (n <= 0) {',
+            '        value;',
+            '    } else {',
+            '        bIdx = n - 1;',
+            '        cycleIdx = Math.floor(bIdx / cycleBeats);',
+            '        rem = bIdx % cycleBeats;',
+            '        stepIdx = (rem < 5) ? rem : 5;',
+            '        startKey = 1 + cycleIdx * cycleBeats + stepIdx;',
+            '        endKey = (stepIdx < 5) ? (startKey + 1) : (1 + (cycleIdx + 1) * cycleBeats);',
+            '        if (startKey <= m.numKeys) {',
+            '            t1 = m.key(startKey).time;',
+            '            t2 = (endKey <= m.numKeys) ? m.key(endKey).time : ((startKey < m.numKeys) ? m.key(m.numKeys).time : outPoint);',
+            '            dur = Math.max(0.0001, t2 - t1);',
+            '            s0 = stepVals[stepIdx] * amp;',
+            '            s1 = stepVals[stepIdx + 1] * amp;',
+            '            if (t2 <= t1 + 0.0001 || time >= t2) {',
+            '                val = (endKey <= m.numKeys) ? s1 : s0;',
+            '            } else {',
+            '                progress = Math.max(0, Math.min(1, (time - t1) / dur));',
+            '                eased = (stepIdx < 5)',
+            '                    ? bezier(0.229, -0.924 * yMult, 0.77, -0.839 * yMult, progress)',
+            '                    : ' + glideEaseExpr + ';',
+            '                val = s0 + (s1 - s0) * eased;',
+            '            }',
+            '            value + [val, val];',
+            '        } else {',
+            '            value;',
+            '        }',
+            '    }',
+            '} else {',
+            '    value;',
+            '}'
+          ].join('\n');
         }
 
         selectTimelineLayer(nullLayer.id, false);
+        if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
         if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(nullLayer);
         if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(targetLayer);
         if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
@@ -1740,7 +1816,9 @@
           case 'PANNING_ROT':
           case 'PANNING_SCALE':
           case 'PANNING_MIX_PR':
-          case 'PANNING_MIX_ALL': {
+          case 'PANNING_MIX_ALL':
+          case 'IDLE_MOVE_1':
+          case 'IDLE_MOVE_2': {
             const targets = getSelectedLayersForFishTool();
             if (!targets.length) {
               const msg = `Pilih layer terlebih dahulu untuk ${toolName}`;

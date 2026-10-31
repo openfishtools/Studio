@@ -918,6 +918,7 @@ window.FishToolsBridge = (function () {
         toolName === 'OSCILLATE' || toolName === 'SHAKY' || toolName === 'SWING' ||
         toolName === 'Y_BEAT' || toolName === 'Y_FLIP' || toolName === 'X_BEAT' || toolName === 'X_FLIP' ||
         toolName === 'SCALE_BEAT' || toolName === 'SCALE_OVERLAP' ||
+        toolName === 'IDLE_MOVE_1' || toolName === 'IDLE_MOVE_2' ||
         (typeof toolName === 'string' && (toolName === 'PANNING' || toolName.indexOf('PANNING_') === 0))) {
       const exec = (typeof window.executeFishTool === 'function')
         ? window.executeFishTool
@@ -928,7 +929,7 @@ window.FishToolsBridge = (function () {
       const fnNull = (typeof window.applyBeatNullTool === 'function')
         ? window.applyBeatNullTool
         : (window.parent && typeof window.parent.applyBeatNullTool === 'function' ? window.parent.applyBeatNullTool : null);
-      if (typeof fnNull === 'function' && (toolName === 'OSCILLATE' || toolName === 'SWING' || toolName === 'Y_BEAT' || toolName === 'Y_FLIP' || toolName === 'X_BEAT' || toolName === 'X_FLIP' || toolName === 'SCALE_BEAT' || toolName === 'SCALE_OVERLAP' || toolName === 'PANNING' || (typeof toolName === 'string' && toolName.indexOf('PANNING_') === 0))) {
+      if (typeof fnNull === 'function' && (toolName === 'OSCILLATE' || toolName === 'SWING' || toolName === 'Y_BEAT' || toolName === 'Y_FLIP' || toolName === 'X_BEAT' || toolName === 'X_FLIP' || toolName === 'SCALE_BEAT' || toolName === 'SCALE_OVERLAP' || toolName === 'IDLE_MOVE_1' || toolName === 'IDLE_MOVE_2' || toolName === 'PANNING' || (typeof toolName === 'string' && toolName.indexOf('PANNING_') === 0))) {
         return fnNull(toolName === 'PANNING' ? 'PANNING_MIX_ALL' : toolName);
       }
       const fn = (typeof window.applyBeatFlashEffect === 'function')

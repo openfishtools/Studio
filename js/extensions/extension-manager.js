@@ -447,7 +447,7 @@
       id: 'beat_effects',
       name: 'Beat Effects',
       icon: 'graphic_eq',
-      description: 'Current, Continuous, Panning, and WARP1/2 beat-synchronized effects.',
+      description: 'Current, Continuous, Panning, Idle Movement, and WARP1/2 beat-synchronized effects.',
       category: 'Tools',
       defaultEnabled: true,
       build(ui, ctx) {
@@ -488,6 +488,12 @@
           ui.button({ label: 'SCALE', icon: 'aspect_ratio', title: 'Panning Scale', onClick() { ctx.runTool('PANNING_SCALE'); } }),
           ui.button({ label: 'MIX PR', icon: 'tune', title: 'Mix Pos & Rot', onClick() { ctx.runTool('PANNING_MIX_PR'); } }),
           ui.button({ label: 'MIX ALL', icon: 'widgets', title: 'Mix All', onClick() { ctx.runTool('PANNING_MIX_ALL'); } })
+        ]);
+
+        ui.section('Idle Movement');
+        ui.grid({ cols: 2 }, [
+          ui.button({ label: 'PATTERN 1', icon: 'animation', title: 'Idle Movement Pattern 1 (Looping Beat Scale)', onClick() { ctx.runTool('IDLE_MOVE_1'); } }),
+          ui.button({ label: 'PATTERN 2', icon: 'motion_photos_on', title: 'Idle Movement Pattern 2 (Looping Dynamic Scale)', onClick() { ctx.runTool('IDLE_MOVE_2'); } })
         ]);
 
         ui.section('Presets');

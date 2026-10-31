@@ -1162,6 +1162,8 @@
     else if (toolName === 'PANNING_SCALE') nullName = 'PANNING Scale';
     else if (toolName === 'PANNING_MIX_PR') nullName = 'PANNING Mix PR';
     else if (toolName === 'PANNING_MIX_ALL' || toolName === 'PANNING') nullName = 'PANNING Mix All';
+    else if (toolName === 'IDLE_MOVE_1') nullName = 'IDLE MOVE 1';
+    else if (toolName === 'IDLE_MOVE_2') nullName = 'IDLE MOVE 2';
 
     // Gather timeline beatmarks
     let rawMarkers = [];
@@ -1177,6 +1179,7 @@
     }
     const allMarkers = Array.from(new Set(rawMarkers.map(m => Number(m.toFixed(4))))).sort((a, b) => a - b);
     const isPanning = toolName.indexOf('PANNING') === 0;
+    const isIdleMove = (toolName === 'IDLE_MOVE_1' || toolName === 'IDLE_MOVE_2');
 
     // Auto-create initial beatmark at playhead or layer start if none exist so expressions activate immediately
     const curSec = getPlayheadSec();
@@ -1190,6 +1193,7 @@
       targetLayer.markers.push(markTime);
       if (typeof global.renderBeatmarks === 'function') global.renderBeatmarks();
       if (typeof global.syncBeatmarkDrawerUI === 'function') global.syncBeatmarkDrawerUI();
+      allMarkers.push(markTime);
     }
 
     const nullLayer = {
@@ -1547,10 +1551,67 @@
           '}'
         ].join('\n');
       }
+    } else if (isIdleMove) {
+      nullLayer.effects.push(createSlider('Amp', 100, 0, 300, 1, '%'));
+      nullLayer.effects.push(createSlider('Overshoot', 100, 0, 200, 1, '%'));
+      nullLayer.effects.push(createSlider('Skip Beats', 4, 0, 16, 1, ''));
+
+      const stepArrStr = (toolName === 'IDLE_MOVE_2')
+        ? '[0, 19.1667, 59.1667, -19.9167, 52.5, -43.3333, 59.1667]'
+        : '[0, 55.8333, 0, 55.8333, 0, 55.8333, 0]';
+      const step5BezierStr = (toolName === 'IDLE_MOVE_2')
+        ? 'bezier(0.532, -0.436 * yMult, 0.379, 1 + 0.415 * yMult, progress)'
+        : 'bezier(0.343, -2.0 * yMult, 0.511, 1 + 1.0 * yMult, progress)';
+
+      nullLayer.expressions.scale = [
+        'function bezier(x1, y1, x2, y2, t) {',
+        '    if (t <= 0) return 0; if (t >= 1) return 1; var p = t;',
+        '    for (var i = 0; i < 8; i++) {',
+        '        var omP = 1 - p; var f = 3 * omP * omP * p * x1 + 3 * omP * p * p * x2 + p * p * p - t;',
+        '        var df = 3 * omP * omP * x1 + 6 * omP * p * (x2 - x1) + 3 * p * p * (1 - x2);',
+        '        if (Math.abs(df) < 1e-6) break; p -= f / df; p = Math.max(0, Math.min(1, p));',
+        '    }',
+        '    var omP = 1 - p; return 3 * omP * omP * p * y1 + 3 * omP * p * p * y2 + p * p * p;',
+        '}',
+        'amp = effect("Amp")("ADBE Slider Control-0001"); overshoot = effect("Overshoot")("ADBE Slider Control-0001"); skipBeats = effect("Skip Beats")("ADBE Slider Control-0001");',
+        'm = (index + 1 <= thisComp.numLayers && thisComp.layer(index + 1).marker.numKeys > 0) ? thisComp.layer(index + 1).marker : thisComp.marker;',
+        'res = value;',
+        'if (time >= inPoint && time <= outPoint && m && m.numKeys > 0) {',
+        '    validKeys = []; for (i = 1; i <= m.numKeys; i++) { kt = m.key(i).time; if (kt >= inPoint - 0.005 && kt <= outPoint + 0.005) validKeys.push(kt); }',
+        '    if (validKeys.length >= 2) {',
+        '        skipCount = Math.max(0, Math.round(skipBeats)); cycleLen = 6 + skipCount; pts = []; c = 0;',
+        '        while (c * cycleLen < validKeys.length) {',
+        '            base = c * cycleLen;',
+        '            for (s = 0; s <= 5; s++) { if (base + s < validKeys.length) pts.push({ t: validKeys[base + s], step: s, cycle: c }); }',
+        '            nextStart = base + cycleLen;',
+        '            if (nextStart >= validKeys.length) { if (base + 5 < validKeys.length - 1) pts.push({ t: validKeys[validKeys.length - 1], step: 6, cycle: c }); break; }',
+        '            c++;',
+        '        }',
+        '        if (pts.length >= 2) {',
+        '            stepVals = ' + stepArrStr + '; ampMult = amp / 100; yMult = overshoot / 100; segIdx = -1;',
+        '            for (k = 0; k < pts.length - 1; k++) { if (time >= pts[k].t && time <= pts[k + 1].t) { segIdx = k; break; } }',
+        '            if (segIdx >= 0) {',
+        '                p0 = pts[segIdx]; p1 = pts[segIdx + 1];',
+        '                s0 = (p0.step === 0 && p0.cycle > 0) ? 6 : p0.step; s1 = (p1.step === 0 && p1.cycle > 0) ? 6 : p1.step;',
+        '                v0 = stepVals[s0] * ampMult; v1 = stepVals[s1] * ampMult;',
+        '                dur = Math.max(0.0001, p1.t - p0.t); progress = Math.max(0, Math.min(1, (time - p0.t) / dur));',
+        '                eased = (p0.step === 5) ? ' + step5BezierStr + ' : bezier(0.229, -0.924 * yMult, 0.77, -0.839 * yMult, progress);',
+        '                val = v0 + (v1 - v0) * eased; res = value + [val, val];',
+        '            } else if (time > pts[pts.length - 1].t) {',
+        '                pLast = pts[pts.length - 1]; sLast = (pLast.step === 0 && pLast.cycle > 0) ? 6 : pLast.step;',
+        '                vLast = stepVals[sLast] * ampMult; res = value + [vLast, vLast];',
+        '            }',
+        '        }',
+        '    }',
+        '}',
+        'res;'
+      ].join('\n');
+      global.activeKeyframeProperty = 'scale';
     }
 
     if (typeof global.selectTimelineLayer === 'function') global.selectTimelineLayer(nullLayer.id, false);
     global.selectedLayerId = nullLayer.id;
+    if (typeof global.invalidateEffectivePropsCache === 'function') global.invalidateEffectivePropsCache();
     notifyProjectChange('applyBeatNullTool', `${nullName} applied`, [nullLayer, targetLayer]);
     return JSON.stringify({ error: false, message: `${nullName} applied`, nullLayerId: nullLayer.id, targetLayerId: targetLayer.id });
   }
@@ -1789,6 +1850,8 @@
       case 'PANNING_SCALE':
       case 'PANNING_MIX_PR':
       case 'PANNING_MIX_ALL':
+      case 'IDLE_MOVE_1':
+      case 'IDLE_MOVE_2':
         return applyBeatNullTool(tool === 'PANNING' ? 'PANNING_MIX_ALL' : tool);
 
       // Velocity
@@ -2161,6 +2224,7 @@
     'GHST', 'WARP', 'FISHEYE', 'MIDWAVE', 'HUESPIN', 'EXPO', 'SHAKY', 'LENS', 'OSCILLATE',
     'Y_BEAT', 'Y_FLIP', 'X_BEAT', 'X_FLIP', 'SCALE_BEAT', 'SWING',
     'PANNING_POS', 'PANNING_ROT', 'PANNING_SCALE', 'PANNING_MIX_PR', 'PANNING_MIX_ALL',
+    'IDLE_MOVE_1', 'IDLE_MOVE_2',
     'TWIX', 'TMRE',
     'ALIGN_LEFT', 'ALIGN_HCENTER', 'ALIGN_RIGHT', 'ALIGN_TOP', 'ALIGN_VCENTER', 'ALIGN_BOTTOM',
     'CUT_FRONT', 'CUT_MID', 'CUT_BACK', 'CUT_LEFT', 'CUT_RIGHT',
