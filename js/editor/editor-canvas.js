@@ -2887,6 +2887,20 @@
       if (isInteractiveViewer) {
         syncActiveViewerOverlay(currentSec, w, h, bufferScale, camEff, activeLayers);
       }
+      if (isInteractiveViewer && hasUnreadyMedia && !window.isExporting) {
+        // A layer was skipped because its media was not decoded yet (typical right after refresh).
+        // If the onload/hydration event was missed or raced, nothing would ever redraw and the layer stays invisible
+        // until the project is reopened. Retry a bounded number of times so it always appears once ready.
+        if ((window._unreadyRedrawTries || 0) < 40 && !window._unreadyRedrawTimer) {
+          window._unreadyRedrawTries = (window._unreadyRedrawTries || 0) + 1;
+          window._unreadyRedrawTimer = setTimeout(() => {
+            window._unreadyRedrawTimer = null;
+            if (!window.isTimelinePlaying && typeof redrawComposition === 'function') redrawComposition('unreadyMediaRetry');
+          }, 250);
+        }
+      } else if (isInteractiveViewer && !hasUnreadyMedia) {
+        window._unreadyRedrawTries = 0;
+      }
       return !hasUnreadyMedia;
     }
     window.renderCanvasFrame = renderCanvasFrame;

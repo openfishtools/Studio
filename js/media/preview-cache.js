@@ -259,6 +259,25 @@
     _ensureOccupancySynced(projectState = null, compId = null) {
       const targetComp = compId || this.activeCompId || 'root';
       if (!this._compOccupancyKeys) this._compOccupancyKeys = new Map();
+      // Hot path (hasFrame/getFrame/isTimeInVoidSpan run dozens of times per tick): never recompute the
+      // layer-walking key every call. Explicit rebuilds (invalidateRange/syncStateWithProject/renderTimelineLayers)
+      // refresh immediately; this lazy check is only a safety net, throttled (and skipped while playing).
+      if (
+        this._compVisualIntervals && this._compVisualIntervals.has(targetComp) &&
+        this._compVoidIntervals && this._compVoidIntervals.has(targetComp)
+      ) {
+        const psQuick = this._resolveProjectState(projectState);
+        const quickLen = (psQuick && Array.isArray(psQuick.layers)) ? psQuick.layers.length : -1;
+        const countChanged = (this._occLayerCount === undefined) || (this._occLayerCount !== quickLen);
+        this._occLayerCount = quickLen;
+        if (!countChanged) {
+          if (typeof window !== 'undefined' && window.isTimelinePlaying) return;
+          const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+          if (this._lastOccCheckMs && (nowMs - this._lastOccCheckMs) < 200 && this._lastOccCheckComp === targetComp) return;
+          this._lastOccCheckMs = nowMs;
+          this._lastOccCheckComp = targetComp;
+        }
+      }
       const key = this._computeOccupancyKey(projectState, targetComp);
       if (
         this._compOccupancyKeys.get(targetComp) !== key ||
@@ -369,6 +388,7 @@
         voidIntervals.push([cursor, totalDur]);
       }
       this._compVoidIntervals.set(targetComp, voidIntervals);
+      this._voidFrameCountCache = null;
 
       // Purge any stale rendered frames sitting strictly inside newly exposed void intervals
       const framePad = 1.5 / currentFps;
@@ -390,6 +410,30 @@
           }
         }
       }
+    }
+
+    /**
+     * Number of frames served by O(1) void/audio-only spans (not stored in the pool).
+     * Needed so "everything is cached" short-circuits still fire when part of the timeline is audio-only.
+     */
+    _getVoidFrameCount(compId = null) {
+      const targetComp = compId || this.activeCompId || 'root';
+      const voids = this._compVoidIntervals ? this._compVoidIntervals.get(targetComp) : null;
+      if (!voids || voids.length === 0) return 0;
+      const fps = this.fps || 60;
+      const c = this._voidFrameCountCache;
+      if (c && c.voids === voids && c.fps === fps) return c.count;
+      const framePad = 1.5 / fps;
+      const totalDur = (typeof window !== 'undefined' && typeof window.getProjectTotalDuration === 'function')
+        ? window.getProjectTotalDuration() : 60;
+      let count = 0;
+      for (let i = 0; i < voids.length; i++) {
+        const s = voids[i][0] > 0 ? voids[i][0] + framePad : 0;
+        const e = voids[i][1] < totalDur - 0.001 ? voids[i][1] - framePad : voids[i][1];
+        if (e > s) count += Math.floor(e * fps + 1e-6) - Math.ceil(s * fps - 1e-6) + 1;
+      }
+      this._voidFrameCountCache = { voids, fps, count: Math.max(0, count) };
+      return this._voidFrameCountCache.count;
     }
 
     /**
@@ -1933,7 +1977,7 @@
       const targetComp = this.activeCompId || 'root';
       const memCap = this.maxFrames || Math.round(60 * currentFps);
       const effectiveMax = Math.min(memCap, totalFrames + 1);
-      if (this.frames.size >= effectiveMax) {
+      if (this.frames.size + this._getVoidFrameCount(targetComp) >= effectiveMax) {
         this.stopIdleWorker();
         return;
       }
@@ -1982,7 +2026,7 @@
           break;
         }
 
-        if (this.frames.size >= effectiveMax) {
+        if (this.frames.size + this._getVoidFrameCount(targetComp) >= effectiveMax) {
           this.stopIdleWorker();
           return;
         }
@@ -2214,7 +2258,7 @@
       const targetComp = this.activeCompId || 'root';
       const pool = this.getPool(targetComp);
       const memCap = this.maxFrames || Math.round(60 * currentFps);
-      if (pool.size >= Math.min(memCap, totalFrames + 1)) return;
+      if (pool.size + this._getVoidFrameCount(targetComp) >= Math.min(memCap, totalFrames + 1)) return;
 
       const maxInFlight = budgetMs === null
         ? (this._isMobile ? 4 : 8)

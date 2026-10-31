@@ -191,6 +191,26 @@
             if (typeof cachedEntry.el.load === 'function') cachedEntry.el.load();
           }
         }
+        if (layer.type === 'image' && cachedEntry && cachedEntry.el && cachedEntry.el.tagName === 'IMG' && !window.isExporting) {
+          // A failed/never-hydrated image (dead blob URL, or created before the project id/DB was ready) would stay
+          // cached as a permanently broken entry => layer invisible until the project is reopened. Self-heal it.
+          const im = cachedEntry.el;
+          window._mediaHealState = window._mediaHealState || new Map();
+          if (im.complete && im.naturalWidth === 0) {
+            const st = window._mediaHealState.get(key) || { n: 0, t: 0 };
+            const nowMs = Date.now();
+            if (st.n < 6 && (nowMs - st.t) > 1200) {
+              st.n++;
+              st.t = nowMs;
+              window._mediaHealState.set(key, st);
+              try { im.onload = null; im.onerror = null; } catch (_) {}
+              layerMediaCache.delete(key);
+              return getOrLoadLayerMedia(layer);
+            }
+          } else if (im.complete && im.naturalWidth > 0 && window._mediaHealState.has(key)) {
+            window._mediaHealState.delete(key);
+          }
+        }
         return cachedEntry;
       }
 
@@ -228,6 +248,15 @@
           }
           if (typeof invalidatePreviewCacheForLayer === 'function') {
             invalidatePreviewCacheForLayer(layer);
+            // Image entries are shared per mediaId (e.g. split pieces): their cached frames must be refreshed too
+            const siblings = (layer.mediaId && currentProjectState && Array.isArray(currentProjectState.layers))
+              ? currentProjectState.layers : [];
+            for (let i = 0; i < siblings.length; i++) {
+              const s = siblings[i];
+              if (s && s !== layer && s.type === 'image' && s.mediaId === layer.mediaId) {
+                invalidatePreviewCacheForLayer(s);
+              }
+            }
           }
           if (!window.isTimelinePlaying) {
             redrawComposition();
