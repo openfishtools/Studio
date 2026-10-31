@@ -2525,6 +2525,7 @@
         }
 
         let nextSec = currentSec + effectiveDeltaSec;
+        let masterSlaved = false;
         if (isCacheEnabled && !isNextFrameCached && Math.abs(playbackSpeed - 1.0) < 0.01) {
           // Contiguous frame stepping (1 frame at a time so zero frames are skipped while building cache)
           nextSec = nextFrameIdx / fps;
@@ -2533,9 +2534,15 @@
           // so the timeline never outruns or fights the audio element!
           // Only engage after _playTickCount >= 3 to allow the audio element to start streaming without clamping the first frames.
           const masterAudioSec = window.FishAudioEngine.getMasterAudioTime(layers, nextSec, pixelsPerSecond);
-          if (masterAudioSec !== null && isFinite(masterAudioSec) && masterAudioSec >= currentSec && Math.abs(masterAudioSec - nextSec) < 0.25) {
+          if (masterAudioSec !== null && isFinite(masterAudioSec) && masterAudioSec >= currentSec && Math.abs(masterAudioSec - nextSec) < 0.12) {
             nextSec = masterAudioSec;
+            masterSlaved = true;
           }
+        }
+        if (!masterSlaved && window.FishAudioEngine) {
+          // Master audio is exempt from drift correction. If we are NOT slaved to it (lagging, uncached, or drift too large),
+          // release it so correctPlaybackDrift keeps audio locked to the timeline (otherwise drift grows unchecked = "kadang sync kadang tidak").
+          window.FishAudioEngine._masterAudioElement = null;
         }
 
         if (isCacheEnabled && isCurrentAndNextCached) {
@@ -2551,40 +2558,38 @@
           }
         }
 
-        // 2. After Effects Stepped Audio Slow-Mo with Hold Interval (Jeda Sebelum Slow-Mo Berikutnya):
-        // Measure actual achieved timeline speed vs wall-clock rawDeltaSec.
-        if (isFirstTick || !window._nleSmoothedFrameSec) {
+        // 2. Measured Slow-Mo Audio Ratio:
+        // Audio rate must follow the timeline's REAL achieved speed (timeline advance / wall clock), not a lagging
+        // frame-time guess, otherwise audio runs ahead during lag (drift -> hard seek stutter) or falls behind after.
+        if (isFirstTick || window._nleSpeedEma === undefined) {
           window._nleSmoothedFrameSec = frameDuration;
+          window._nleSpeedEma = 1.0;
           window._nleSteppedAudioRatio = 1.0;
           window._nleLastAudioStepMs = timestamp;
-        } else {
-          const advancedFrames = canMultiStepCatchUp ? 2 : 1;
-          const perFrameWallSec = rawDeltaSec / advancedFrames;
-          const measuredFrameSec = Math.min(0.25, Math.max(frameDuration, perFrameWallSec));
-          window._nleSmoothedFrameSec = window._nleSmoothedFrameSec * 0.82 + measuredFrameSec * 0.18;
+        } else if (rawDeltaSec > 0 && rawDeltaSec <= 0.12) {
+          // Ignore >120ms hitches (GC / tab stall): those are not sustained effect lag
+          const advancedSec = Math.max(0, nextSec - currentSec);
+          const instRatio = Math.max(0, Math.min(1.25, advancedSec / (Math.max(0.004, rawDeltaSec) * playbackSpeed)));
+          window._nleSpeedEma = window._nleSpeedEma * 0.80 + instRatio * 0.20;
+          window._nleSmoothedFrameSec = frameDuration / Math.max(0.05, window._nleSpeedEma);
         }
 
         let effectiveAudioSpeed = playbackSpeed;
-        if (isCurrentAndNextCached || isNextFrameCached || window._nleSmoothedFrameSec <= frameDuration * 1.40) {
-          // Real-time / Cached Green Bar: immediately lock audio to 100% normal speed (1.0x)
-          window._nleSteppedAudioRatio = 1.0;
-          window._nleLastAudioStepMs = timestamp;
-          effectiveAudioSpeed = playbackSpeed;
-        } else {
-          // Lagging / Rendering uncached heavy frames: compute target slow-mo ratio (quantized to 0.05 steps, min 0.50x)
-          const rawLagRatio = Math.max(0.50, Math.min(1.0, frameDuration / window._nleSmoothedFrameSec));
-          const quantizedRatio = Math.max(0.50, Math.min(1.0, Math.round(rawLagRatio * 20) / 20));
-          const currentHeldRatio = window._nleSteppedAudioRatio || 1.0;
-          const elapsedSinceLastStep = timestamp - (window._nleLastAudioStepMs || 0);
-
-          // Hold each slow-mo speed plateau for 450ms ("jeda sebelum slowmo selanjutnya") so audio plays smoothly
-          // at that slow-mo rate before stepping again
-          if (
-            (currentHeldRatio === 1.0 && elapsedSinceLastStep >= 240 && quantizedRatio <= 0.80) ||
-            (elapsedSinceLastStep >= 450 && Math.abs(quantizedRatio - currentHeldRatio) >= 0.08)
-          ) {
-            window._nleSteppedAudioRatio = quantizedRatio;
+        {
+          const speedEma = window._nleSpeedEma;
+          const heldRatio = window._nleSteppedAudioRatio || 1.0;
+          if (speedEma >= 0.97) {
+            // Full speed (cached / light frames): release to normal immediately
+            window._nleSteppedAudioRatio = 1.0;
             window._nleLastAudioStepMs = timestamp;
+          } else {
+            const targetRatio = speedEma >= 0.93 ? 1.0 : Math.max(0.25, Math.round(speedEma * 20) / 20);
+            const sinceStepMs = timestamp - (window._nleLastAudioStepMs || 0);
+            // Short 120ms plateau hold keeps audio smooth while still tracking the real slow-mo within one step (0.05)
+            if (sinceStepMs >= 120 && Math.abs(targetRatio - heldRatio) >= 0.05) {
+              window._nleSteppedAudioRatio = targetRatio;
+              window._nleLastAudioStepMs = timestamp;
+            }
           }
           effectiveAudioSpeed = playbackSpeed * (window._nleSteppedAudioRatio || 1.0);
         }

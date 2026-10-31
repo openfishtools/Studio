@@ -448,7 +448,7 @@
       const driftThreshold = isVid
         ? Math.max(0.65, 0.50 * safeSpeed)
         : (isSlowMoStepped
-          ? Math.max(0.35, 0.25 * safeSpeed)
+          ? Math.max(0.22, 0.25 * safeSpeed)
           : (drift > 0 ? Math.max(0.30, 0.20 * safeSpeed) : Math.max(0.35, 0.25 * safeSpeed)));
       const seekCooldownMs = isVid ? 1200 : (isSlowMoStepped ? 600 : 500);
 
@@ -469,9 +469,21 @@
           return true;
         } catch (_) {}
       } else if (isSlowMoStepped) {
-        // During AE-style stepped slow-mo, lock directly to the held slow-mo tier (safeSpeed)
-        // so the slow-mo plateau stays steady without micro-jitter
-        if (Math.abs((el.playbackRate || safeSpeed) - safeSpeed) > 0.004) {
+        // During stepped slow-mo, the held tier (safeSpeed) is only an estimate of the real timeline speed.
+        // Close the loop: trim rate proportionally to drift (audio ahead -> slower, behind -> faster) so the
+        // residual mismatch is absorbed smoothly instead of accumulating into a hard-seek stutter.
+        if (absDrift > 0.04) {
+          if (!el._lastRateSteerTime || (nowMs - el._lastRateSteerTime > 150)) {
+            const trim = Math.max(0.80, Math.min(1.20, 1.0 - (drift / Math.max(0.25, safeSpeed)) * 0.9));
+            const steeredRate = Math.max(0.0625, Math.min(8.0, safeSpeed * trim));
+            if (Math.abs((el.playbackRate || safeSpeed) - steeredRate) > 0.004) {
+              try {
+                el._lastRateSteerTime = nowMs;
+                el.playbackRate = steeredRate;
+              } catch (_) {}
+            }
+          }
+        } else if (Math.abs((el.playbackRate || safeSpeed) - safeSpeed) > 0.004) {
           try {
             el._lastRateSteerTime = nowMs;
             el.playbackRate = safeSpeed;

@@ -226,10 +226,10 @@
               }
             }
           }
-          if (typeof invalidatePreviewCacheForLayer === 'function' && !window.isTimelinePlaying && !window.isTimelineScrubbing) {
+          if (typeof invalidatePreviewCacheForLayer === 'function') {
             invalidatePreviewCacheForLayer(layer);
           }
-          if (!window.isTimelinePlaying && !window.isTimelineScrubbing) {
+          if (!window.isTimelinePlaying) {
             redrawComposition();
           }
         };

@@ -3965,10 +3965,10 @@ function initTimelineOperations() {
                   eyeIsDragging = false;
                   return;
                 }
+                layer.hidden = !layer.hidden;
                 if (typeof invalidatePreviewCacheForLayer === 'function') {
                   invalidatePreviewCacheForLayer(layer);
                 }
-                layer.hidden = !layer.hidden;
                 if (!layer.hidden && (layer.type === 'video' || layer.type === 'precomp') && window.VideoFrameExtractor) {
                   window.VideoFrameExtractor.extractLayerRange(layer);
                 }
@@ -5019,7 +5019,8 @@ function initTimelineOperations() {
                   if (!isTimeRemap && totalMediaDur !== null) {
                     minAllowedSec = Math.max(0, initialStartSec - (initialOffsetSec / effSpeed));
                   }
-                  let targetStartSec = Math.max(minAllowedSec, Math.round((newStartPx / activePps) * safeFps) / safeFps);
+                  const rawStartSec = (snap && snap.sec !== undefined) ? snap.sec : (newStartPx / activePps);
+                  let targetStartSec = Math.max(minAllowedSec, Math.round(rawStartSec * safeFps) / safeFps);
                   if (targetStartSec > fixedRightSec - minDurSec) {
                     targetStartSec = fixedRightSec - minDurSec;
                   }
@@ -5246,7 +5247,8 @@ function initTimelineOperations() {
                   const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || 60);
                   const minDurSec = 1 / safeFps;
                   const curStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / activePps);
-                  let targetEndSec = Math.round((rawEndPx / activePps) * safeFps) / safeFps;
+                  const rawEndSec = (snap && snap.sec !== undefined) ? snap.sec : (rawEndPx / activePps);
+                  let targetEndSec = Math.round(rawEndSec * safeFps) / safeFps;
                   if (targetEndSec < curStartSec + minDurSec) {
                     targetEndSec = curStartSec + minDurSec;
                   }
@@ -6011,8 +6013,16 @@ function initTimelineOperations() {
           try { window.enhanceLaneHeads(); } catch (_) {}
         }
 
-        if (window.PreviewCacheManager && typeof window.PreviewCacheManager.ensureAudioOnlyFullCache === 'function') {
-          window.PreviewCacheManager.ensureAudioOnlyFullCache(currentProjectState);
+        if (window.PreviewCacheManager) {
+          if (typeof window.PreviewCacheManager.rebuildOccupancyIntervals === 'function') {
+            window.PreviewCacheManager.rebuildOccupancyIntervals(currentProjectState);
+          }
+          if (typeof window.PreviewCacheManager.ensureAudioOnlyFullCache === 'function') {
+            window.PreviewCacheManager.ensureAudioOnlyFullCache(currentProjectState);
+          }
+          if (typeof window.PreviewCacheManager.updateRulerUI === 'function') {
+            window.PreviewCacheManager.updateRulerUI();
+          }
         }
       }
 
@@ -6685,26 +6695,26 @@ function initTimelineOperations() {
           }
           if (idsToDelete.size > 0 && currentProjectState.layers) {
             e.preventDefault();
-            currentProjectState.layers.forEach(l => {
-              if (idsToDelete.has(l.id)) {
-                invalidatePreviewCacheForLayer(l);
-              }
-            });
+            const removedLayers = [];
             currentProjectState.layers = currentProjectState.layers.filter(l => {
               if (idsToDelete.has(l.id)) {
-                if (typeof window.releaseLayerMediaElement === 'function') {
-                  window.releaseLayerMediaElement(l);
-                } else {
-                  const media = layerMediaCache.get(l.mediaId || l.id);
-                  if (media && media.el && typeof media.el.pause === 'function') {
-                    try { media.el.pause(); } catch (_) {}
-                  }
-                  layerMediaCache.delete(l.id);
-                  layerMediaCache.delete(l.mediaId);
-                }
+                removedLayers.push(l);
                 return false;
               }
               return true;
+            });
+            removedLayers.forEach(l => {
+              invalidatePreviewCacheForLayer(l);
+              if (typeof window.releaseLayerMediaElement === 'function') {
+                window.releaseLayerMediaElement(l);
+              } else {
+                const media = layerMediaCache.get(l.mediaId || l.id);
+                if (media && media.el && typeof media.el.pause === 'function') {
+                  try { media.el.pause(); } catch (_) {}
+                }
+                layerMediaCache.delete(l.id);
+                layerMediaCache.delete(l.mediaId);
+              }
             });
             deselectTimelineLayer();
             renderTimelineLayers();
@@ -6941,7 +6951,7 @@ function initTimelineOperations() {
         const widthPx = Math.max(16, Math.round((startSec + durSec) * pps) - startPx);
         const endPx = startPx + widthPx;
 
-        return { layer, playheadPx, startPx, widthPx, endPx, pps, fps };
+        return { layer, playheadPx, playheadSec, startPx, widthPx, endPx, pps, fps };
       }
 
       function computeLayerSourceOffsetAtTime(layer, targetSec, startSec) {
@@ -6965,7 +6975,7 @@ function initTimelineOperations() {
         const pps = info.pps || window.currentPixelsPerSecond || pixelsPerSecond || 80;
         const fps = info.fps || ((typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || 60));
 
-        const currentSec = Math.round((playheadPx / pps) * fps) / fps;
+        const currentSec = info.playheadSec !== undefined ? info.playheadSec : (Math.round((playheadPx / pps) * fps) / fps);
         const startSec = Math.round((layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps)) * fps) / fps;
         const durSec = Math.max(1 / fps, Math.round((layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps)) * fps) / fps);
         const endSec = Math.round((startSec + durSec) * fps) / fps;
@@ -7004,7 +7014,7 @@ function initTimelineOperations() {
         const pps = info.pps || window.currentPixelsPerSecond || pixelsPerSecond || 80;
         const fps = info.fps || ((typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || 60));
 
-        const currentSec = Math.round((playheadPx / pps) * fps) / fps;
+        const currentSec = info.playheadSec !== undefined ? info.playheadSec : (Math.round((playheadPx / pps) * fps) / fps);
         const startSec = Math.round((layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps)) * fps) / fps;
         const durSec = Math.max(1 / fps, Math.round((layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps)) * fps) / fps);
         const endSec = Math.round((startSec + durSec) * fps) / fps;
@@ -7013,15 +7023,13 @@ function initTimelineOperations() {
         if (currentSec <= startSec + (minDuration * 0.5) || currentSec >= endSec - (minDuration * 0.5)) return;
 
         const leftDurSec = Math.max(minDuration, Math.round((currentSec - startSec) * fps) / fps);
-        const rightDurSec = Math.max(minDuration, Math.round((endSec - (startSec + leftDurSec)) * fps) / fps);
+        const rightStartSec = Math.round((startSec + leftDurSec) * fps) / fps;
+        const rightDurSec = Math.max(minDuration, Math.round((endSec - rightStartSec) * fps) / fps);
 
         const leftStartPx = Math.round(startSec * pps);
-        const leftWidthPx = Math.round((startSec + leftDurSec) * pps) - leftStartPx;
+        const leftWidthPx = Math.round(rightStartSec * pps) - leftStartPx;
         const rightStartPx = leftStartPx + leftWidthPx;
-        const rightWidthPx = Math.round((startSec + leftDurSec + rightDurSec) * pps) - rightStartPx;
-
-        // Invalidate original span BEFORE redrawing
-        invalidatePreviewCacheForLayer(layer, startSec, endSec);
+        const rightWidthPx = Math.round((rightStartSec + rightDurSec) * pps) - rightStartPx;
 
         const cutSrcId = layer.sourceLayerId || layer.id;
         layer.sourceLayerId = cutSrcId;
@@ -7110,7 +7118,10 @@ function initTimelineOperations() {
         const effRotZ = effProps.rotZ !== undefined ? effProps.rotZ : (layer.rotZ !== undefined ? layer.rotZ : (layer.rotation || 0));
         const effRotX = effProps.rotX !== undefined ? effProps.rotX : (layer.rotX || 0);
         const effRotY = effProps.rotY !== undefined ? effProps.rotY : (layer.rotY || 0);
-        const effOpacity = effProps.opacity !== undefined ? effProps.opacity : (layer.opacity !== undefined ? layer.opacity : 1.0);
+        const hasOpKf = !!(layer.keyframes && Array.isArray(layer.keyframes.opacity) && layer.keyframes.opacity.length > 0);
+        const effOpacity = (effProps.opacity !== undefined && (!hasOpKf || effProps.opacity > 0))
+          ? effProps.opacity
+          : ((layer.opacity !== undefined && (!hasOpKf || Number(layer.opacity) > 0)) ? layer.opacity : 1.0);
         const effSkewX = effProps.skewX !== undefined ? effProps.skewX : (layer.skewX || 0);
         const effSkewY = effProps.skewY !== undefined ? effProps.skewY : (layer.skewY || 0);
         const effAnchorX = effProps.anchorX !== undefined ? effProps.anchorX : (layer.anchorX || 0);
@@ -7118,7 +7129,6 @@ function initTimelineOperations() {
         const effAnchorZ = effProps.anchorZ !== undefined ? effProps.anchorZ : (layer.anchorZ || 0);
 
         // Compute right piece's sourceOffsetSec BEFORE modifying layer
-        const rightStartSec = startSec + leftDurSec;
         const rightSourceOffsetSec = computeLayerSourceOffsetAtTime(layer, rightStartSec, startSec);
         const resolvedMediaDuration = layer.mediaDuration || getLayerMediaDuration(layer) || null;
         if (resolvedMediaDuration && !layer.mediaDuration) {
@@ -7183,7 +7193,7 @@ function initTimelineOperations() {
           parentBind: clonedParentBind,
           mask: clonedMask,
           _cachedStartSec: rightStartSec,
-          _cachedEndSec: rightStartSec + rightDurSec
+          _cachedEndSec: Math.round((rightStartSec + rightDurSec) * fps) / fps
         };
 
         delete newLayer._precompBufferCanvas;
@@ -7197,10 +7207,11 @@ function initTimelineOperations() {
 
         // Share active loaded media element in layerMediaCache so new piece renders instantly without reload
         const origKey = (layer.type === 'video' || layer.type === 'audio') ? layer.id : (layer.mediaId || layer.id);
-        if (layerMediaCache && layerMediaCache.has(origKey)) {
-          const origEntry = layerMediaCache.get(origKey);
-          if (origEntry && (layer.type === 'image' || layer.type === 'video')) {
-            layerMediaCache.set(newLayerId, origEntry);
+        const origEntry = layerMediaCache ? (layerMediaCache.get(origKey) || layerMediaCache.get(layer.id)) : null;
+        if (origEntry && (layer.type === 'image' || layer.type === 'video')) {
+          layerMediaCache.set(newLayerId, origEntry);
+          if (newLayer.mediaId && !layerMediaCache.has(newLayer.mediaId)) {
+            layerMediaCache.set(newLayer.mediaId, origEntry);
           }
         }
 
@@ -7228,7 +7239,7 @@ function initTimelineOperations() {
 
         // Invalidate preview cache across both halves explicitly after newLayer is in currentProjectState.layers
         if (window.PreviewCacheManager) {
-          window.PreviewCacheManager.invalidateRange(startSec, endSec);
+          window.PreviewCacheManager.invalidateRange(startSec, endSec, fps);
           if (typeof window.PreviewCacheManager.syncStateWithProject === 'function') {
             window.PreviewCacheManager.syncStateWithProject(currentProjectState);
           }
@@ -7259,7 +7270,7 @@ function initTimelineOperations() {
         }
 
         const pps = info.pps || window.currentPixelsPerSecond || pixelsPerSecond || 80;
-        const currentSec = playheadPx / pps;
+        const currentSec = info.playheadSec !== undefined ? info.playheadSec : (playheadPx / pps);
         const startSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
         const durSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
         const endSec = startSec + durSec;
@@ -7334,7 +7345,7 @@ function initTimelineOperations() {
         const pps = info.pps || window.currentPixelsPerSecond || pixelsPerSecond || 80;
         const fps = info.fps || ((typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || 60));
 
-        const currentSec = Math.round((playheadPx / pps) * fps) / fps;
+        const currentSec = info.playheadSec !== undefined ? info.playheadSec : (Math.round((playheadPx / pps) * fps) / fps);
         const startSec = Math.round((layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps)) * fps) / fps;
         const durSec = Math.max(1 / fps, Math.round((layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps)) * fps) / fps);
         const endSec = Math.round((startSec + durSec) * fps) / fps;
@@ -7356,7 +7367,7 @@ function initTimelineOperations() {
         layer.userTrimmed = true;
         layer.sourceLayerId = layer.sourceLayerId || layer.id;
         layer._cachedStartSec = startSec;
-        layer._cachedEndSec = startSec + remainingDurSec;
+        layer._cachedEndSec = Math.round((startSec + remainingDurSec) * fps) / fps;
 
         invalidatePreviewCacheForLayer(layer, startSec, endSec);
 

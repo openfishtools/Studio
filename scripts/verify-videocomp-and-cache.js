@@ -670,13 +670,51 @@ assert(Array.isArray(voidIntervals) && voidIntervals.length === 1, 'There must b
 assert.strictEqual(voidIntervals[0][0], 6);
 assert.strictEqual(voidIntervals[0][1], 60);
 
-// Verify Virtual Cache Hit: 0 memory allocated in frames pool for void span
+// Verify Void Span Caching: genuine audio-only void span is cached directly in O(1) without allocating per-frame bitmaps in pool
 const pool = pcm.getPool('root');
 assert.strictEqual(pool.has(600), false, 'Void span frames must NOT be allocated in frames pool');
-assert.strictEqual(pcm.hasFrame(600), true, 'hasFrame must return true virtually for void span');
+assert.strictEqual(pcm.hasFrame(600), true, 'hasFrame must return true in O(1) for genuine audio-only void span');
 const voidCanvas = pcm.getFrame(600, 1920, 1080);
-assert(voidCanvas !== null, 'getFrame must return shared background canvas for void span');
-assert.strictEqual(pcm.isContiguousPlaybackFrame(600), true, 'Void span must always be treated as contiguous playback frame');
+assert(voidCanvas !== null, 'getFrame must return shared background canvas in O(1) for genuine audio-only void span');
+assert.strictEqual(pcm.isContiguousPlaybackFrame(600), true, 'Genuine audio-only void span must be treated as contiguous playback frame');
+
+// Regression test: Audio-only project with ensureAudioOnlyFullCache() followed by adding a photo (image) layer
+const audioThenPhotoProject = {
+  activeCompId: 'root',
+  duration: 20,
+  layers: [
+    { id: 'music_track', type: 'audio', startSec: 0, durationSec: 20 }
+  ],
+  compositions: {}
+};
+global.window.currentProjectState = audioThenPhotoProject;
+pcm.clearAll();
+pcm.ensureAudioOnlyFullCache(audioThenPhotoProject, 'root');
+assert.strictEqual(pcm.isAudioOnlyComposition(audioThenPhotoProject, 'root'), true, 'Pure audio project is detected as audio-only');
+assert.strictEqual(pcm.hasFrame(1100, 1920, 1080, 'root'), true, 'Pure audio project auto-caches tail frame 1100');
+
+// Add a photo layer in the middle [2s..7s] with default width (no explicit widthPx/durationSec) and opacity keyframes starting at 0
+audioThenPhotoProject.layers.push({
+  id: 'mid_photo',
+  type: 'image',
+  visible: true,
+  opacity: 0,
+  keyframes: {
+    opacity: [{ time: 0, value: 0 }, { time: 1, value: 100 }]
+  },
+  startPx: 160
+});
+pcm.rebuildOccupancyIntervals(audioThenPhotoProject, 'root');
+assert.strictEqual(pcm.isAudioOnlyComposition(audioThenPhotoProject, 'root'), false, 'Adding photo layer makes composition non-audio-only even when base opacity is 0 with keyframes');
+assert.strictEqual(pcm.hasFrame(120, 1920, 1080, 'root'), false, 'Photo start boundary (2.0s / frame 120) is NEVER treated as audio-only void');
+assert.strictEqual(pcm.hasFrame(180, 1920, 1080, 'root'), false, 'Photo interior frame (3.0s / frame 180) is purged of audio-only entry and not marked cached');
+assert.strictEqual(pcm.hasFrame(420, 1920, 1080, 'root'), false, 'Photo end boundary (7.0s / frame 420) is NEVER treated as audio-only void');
+assert.strictEqual(pcm.hasFrame(1100, 1920, 1080, 'root'), true, 'Genuine audio-only tail after photo ends (frame 1100 / 18.33s) remains directly cached in O(1)');
+assert.strictEqual(pcm.hasActiveVisualContentAt(3.0, 'root'), true, 'Photo layer with default width (400px = 5s @ 80pps) and opacity keyframes is recognized as active visual content at 3.0s');
+
+global.window.currentProjectState = mixedProject;
+pcm.clearAll();
+pcm.syncStateWithProject(mixedProject, 'root');
 
 // Verify dynamic mutation: adding a layer at 15s splits void intervals seamlessly
 mixedProject.layers.push({ id: 'mid_text', type: 'text', startSec: 15, durationSec: 5 });
@@ -759,6 +797,45 @@ assert.strictEqual(pcm.hasActiveVisualContentAt(4.0, 'root'), true, 'Right split
 assert.strictEqual(pcm.isTimeInVoidSpan(4.0, 'root'), false, 'Right split piece [3..6s] must NOT be classified as a void span');
 assert.strictEqual(pcm.hasFrame(240, 1920, 1080, 'root'), false, 'Invalidated split piece frame 240 must report cache miss (not virtual void cache hit)');
 assert.strictEqual(pcm.getFrame(240, 1920, 1080, 'root'), null, 'getFrame on invalidated split piece must return null so live layer renders instead of blank _audioOnlyCanvas');
+
+// Test: Photo [0..5s] + Audio [0..15s] -> Photo boundary frames ("di ujung-ujung") are NEVER void, while right-hand audio tail [5.05..15s] is cached directly in O(1)
+const photoAudioProject = {
+  fps: 60,
+  duration: 15,
+  bgColor: '#0a0d07',
+  layers: [
+    { id: 'photo_1', type: 'image', startSec: 0, durationSec: 2.5, opacity: 0 }, // opacity 0 at fade-in edge must still be visual!
+    { id: 'photo_2', type: 'image', startSec: 2.5, durationSec: 2.5, opacity: 0 }, // adjacent split photo up to 5.0s
+    { id: 'bgm_1', type: 'audio', startSec: 0, durationSec: 15 }
+  ]
+};
+window.currentProjectState = photoAudioProject;
+window.getProjectTotalDuration = () => 15;
+pcm.clearAll('all');
+pcm.rebuildOccupancyIntervals(photoAudioProject, 'root');
+
+// 1. Photo boundary frames ("di ujung-ujung": 0.0s, 2.5s seam, 5.0s end) must NEVER be classified as audio-only void
+assert.strictEqual(pcm.isTimeInVoidSpan(0.0, 'root'), false, 'Photo start boundary (0.0s) must never be audio-only void');
+assert.strictEqual(pcm.isTimeInVoidSpan(2.5, 'root'), false, 'Photo cut seam (2.5s) must never be audio-only void');
+assert.strictEqual(pcm.isTimeInVoidSpan(5.0, 'root'), false, 'Photo end boundary (5.0s) must never be audio-only void');
+assert.strictEqual(pcm.hasFrame(0, 1920, 1080, 'root'), false, 'Unrendered photo start frame 0 must not report false audio-only cache hit');
+assert.strictEqual(pcm.hasFrame(150, 1920, 1080, 'root'), false, 'Unrendered photo seam frame 150 must not report false audio-only cache hit');
+assert.strictEqual(pcm.hasFrame(300, 1920, 1080, 'root'), false, 'Unrendered photo end frame 300 must not report false audio-only cache hit');
+
+// 2. Right-hand audio-only area ([5.05s..15.0s], e.g. frame 360 at 6.0s and frame 900 at 15.0s) must be cached directly in O(1)
+assert.strictEqual(pcm.isTimeInVoidSpan(6.0, 'root'), true, 'Right-hand audio-only tail (6.0s) must be classified as void span');
+assert.strictEqual(pcm.isTimeInVoidSpan(15.0, 'root'), true, 'Right-hand audio-only tail end (15.0s) must be classified as void span');
+assert.strictEqual(pcm.hasFrame(360, 1920, 1080, 'root'), true, 'Right-hand audio-only tail frame 360 must be cached directly in O(1)');
+assert.strictEqual(pcm.hasFrame(900, 1920, 1080, 'root'), true, 'Right-hand audio-only tail frame 900 must be cached directly in O(1)');
+assert.strictEqual(pcm.isContiguousPlaybackFrame(360), true, 'Right-hand audio-only tail must be contiguous for playback');
+
+// 3. Deleting right-hand split photo [2.5..5.0s] purges any old visual cache in [2.55..5.0s] and expands direct O(1) audio cache to [2.55..15.0s]
+pcm.getPool('root').set(240, { bitmap: { width: 1920, height: 1080 }, width: 1920, height: 1080, isDraft: false });
+photoAudioProject.layers.splice(1, 1); // remove photo_2 [2.5..5.0s]
+pcm.rebuildOccupancyIntervals(photoAudioProject, 'root');
+assert.strictEqual(pcm.getPool('root').has(240), false, 'Stale visual frame in newly exposed audio-only region must be purged from pool');
+assert.strictEqual(pcm.isTimeInVoidSpan(4.0, 'root'), true, 'Newly exposed audio-only region at 4.0s must be cached directly as void span');
+assert.strictEqual(pcm.hasFrame(240, 1920, 1080, 'root'), true, 'Newly exposed audio-only region frame 240 must be cached directly in O(1)');
 
 console.log('✓ Algoritma 5: Temporal Occupancy Partitioning, Virtual Void Cache, Dynamic Mutation & Cut Mid Split Sync verified cleanly.');
 

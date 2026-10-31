@@ -183,17 +183,43 @@
       const t = (layer.type || layer.mediaType || '').toLowerCase();
       if (t === 'audio' || t === 'null' || layer.isNull) return false;
       if (t === 'camera') return false;
-      if (layer.opacity !== undefined && layer.opacity !== null && Number(layer.opacity) <= 0) return false;
       if (t === 'precomp') {
-        if (!Array.isArray(layer.layers) || layer.layers.length === 0) return false;
-        return layer.layers.some(child => this.isVisualLayer(child));
+        let childLayers = layer.layers;
+        if ((!Array.isArray(childLayers) || childLayers.length === 0) && layer.mediaId) {
+          const ps = this._resolveProjectState();
+          if (ps && Array.isArray(ps.layers)) {
+            const sibling = ps.layers.find(l => l && l.id !== layer.id && l.mediaId === layer.mediaId && Array.isArray(l.layers) && l.layers.length > 0);
+            if (sibling) childLayers = sibling.layers;
+          }
+        }
+        if (!Array.isArray(childLayers) || childLayers.length === 0) return false;
+        return childLayers.some(child => this.isVisualLayer(child));
       }
       return true;
+    }
+
+    _purgeAudioOnlyEntries(compId = null) {
+      const targetComp = compId || this.activeCompId || 'root';
+      const pool = this.getPool(targetComp);
+      let purged = false;
+      for (const [fIdx, entry] of pool.entries()) {
+        if (entry && entry.isAudioOnly) {
+          pool.delete(fIdx);
+          purged = true;
+        }
+      }
+      if (purged) {
+        this._lastAudioOnlyCacheKey = null;
+      }
+      return purged;
     }
 
     _resolveProjectState(projectState = null) {
       if (projectState) return projectState;
       const winPs = (typeof window !== 'undefined') ? window.currentProjectState : null;
+      if (winPs && Array.isArray(winPs.layers) && winPs.layers.length > 0) {
+        return winPs;
+      }
       if (winPs && winPs !== this._lastWindowProjectState) {
         return winPs;
       }
@@ -220,9 +246,12 @@
         const l = layers[i];
         if (!l) continue;
         const vis = this.isVisualLayer(l) ? 1 : 0;
-        const s = l.startSec !== undefined ? l.startSec : (l.startPx || 0);
-        const d = l.durationSec !== undefined ? l.durationSec : (l.widthPx || 0);
-        key += `;${l.id || i}:${vis}:${s}:${d}`;
+        const hid = l.hidden ? 1 : 0;
+        const s = l.startSec !== undefined ? l.startSec : '';
+        const d = l.durationSec !== undefined ? l.durationSec : '';
+        const spx = l.startPx !== undefined ? l.startPx : '';
+        const wpx = l.widthPx !== undefined ? l.widthPx : '';
+        key += `;${l.id || i}:${vis}:${hid}:${s}:${d}:${spx}:${wpx}`;
       }
       return key;
     }
@@ -259,7 +288,7 @@
 
       if (!ps || !Array.isArray(ps.layers) || ps.layers.length === 0) {
         this._compVisualIntervals.set(targetComp, []);
-        this._compVoidIntervals.set(targetComp, [[0, Math.max(0.1, totalDur)]]);
+        this._compVoidIntervals.set(targetComp, []);
         return;
       }
 
@@ -269,32 +298,53 @@
           ? window.currentActivePrecomp.layers
           : (ps.layers || []));
 
+      const currentFps = this.fps || 60;
+      const seamMergeTolerance = 3.0 / currentFps;
+      const minVoidSpanSec = 3.0 / currentFps;
       const pps = (typeof window !== 'undefined' && window.currentPixelsPerSecond) ? window.currentPixelsPerSecond : 80;
       const rawIntervals = [];
+      let hasActiveAudio = false;
 
       for (let i = 0; i < layers.length; i++) {
         const l = layers[i];
+        if (!l || l.hidden) continue;
+        const t = (l.type || l.mediaType || '').toLowerCase();
+        if (t === 'audio') {
+          hasActiveAudio = true;
+          continue;
+        }
         if (!this.isVisualLayer(l)) continue;
         const b = this.getLayerBounds(l, pps);
         if (b.endSec > b.startSec) {
-          rawIntervals.push([Math.max(0, b.startSec), Math.max(0, b.endSec)]);
+          let vStart = Math.max(0, b.startSec);
+          let vEnd = Math.max(0, b.endSec);
+          if (l.startPx !== undefined && l.widthPx !== undefined && pps > 0) {
+            const pxS = Number(l.startPx) / pps;
+            const pxE = (Number(l.startPx) + Number(l.widthPx)) / pps;
+            if (Math.abs(pxS - b.startSec) < 0.1) vStart = Math.max(0, Math.min(vStart, pxS));
+            if (Math.abs(pxE - b.endSec) < 0.1) vEnd = Math.max(vEnd, pxE);
+          }
+          rawIntervals.push([vStart, vEnd]);
         }
       }
 
       if (rawIntervals.length === 0) {
         this._compVisualIntervals.set(targetComp, []);
-        this._compVoidIntervals.set(targetComp, [[0, Math.max(0.1, totalDur)]]);
+        this._compVoidIntervals.set(targetComp, hasActiveAudio ? [[0, Math.max(0.1, totalDur)]] : []);
         return;
       }
 
-      // Merge overlapping visual intervals
+      // As soon as any visual layer exists in this composition, purge any full-timeline audio-only entries
+      this._purgeAudioOnlyEntries(targetComp);
+
+      // Merge overlapping or adjacent visual intervals (including <= 3-frame cut/snap seams)
       rawIntervals.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
       const mergedVisual = [];
       let cur = [rawIntervals[0][0], rawIntervals[0][1]];
 
       for (let i = 1; i < rawIntervals.length; i++) {
         const next = rawIntervals[i];
-        if (next[0] <= cur[1] + 0.001) {
+        if (next[0] <= cur[1] + seamMergeTolerance) {
           cur[1] = Math.max(cur[1], next[1]);
         } else {
           mergedVisual.push(cur);
@@ -304,21 +354,42 @@
       mergedVisual.push(cur);
       this._compVisualIntervals.set(targetComp, mergedVisual);
 
-      // Compute complement void intervals across [0, totalDur]
+      // Compute complement void intervals across [0, totalDur] where no visual layer exists
       const voidIntervals = [];
       let cursor = 0;
 
       for (let i = 0; i < mergedVisual.length; i++) {
         const span = mergedVisual[i];
-        if (span[0] > cursor + 0.001) {
+        if (span[0] - cursor >= minVoidSpanSec) {
           voidIntervals.push([cursor, span[0]]);
         }
         cursor = Math.max(cursor, span[1]);
       }
-      if (cursor < totalDur - 0.001) {
+      if (totalDur - cursor >= minVoidSpanSec) {
         voidIntervals.push([cursor, totalDur]);
       }
       this._compVoidIntervals.set(targetComp, voidIntervals);
+
+      // Purge any stale rendered frames sitting strictly inside newly exposed void intervals
+      const framePad = 1.5 / currentFps;
+      const pool = this.getPool(targetComp);
+      if (pool && pool.size > 0 && voidIntervals.length > 0) {
+        for (const fIdx of Array.from(pool.keys())) {
+          const fSec = fIdx / currentFps;
+          for (let i = 0; i < voidIntervals.length; i++) {
+            const vStart = voidIntervals[i][0] > 0 ? voidIntervals[i][0] + framePad : 0;
+            const vEnd = voidIntervals[i][1] < totalDur - 0.001 ? voidIntervals[i][1] - framePad : voidIntervals[i][1];
+            if (vEnd > vStart && fSec >= vStart && fSec <= vEnd) {
+              const entry = pool.get(fIdx);
+              if (entry && !entry.shared && entry.bitmap && typeof entry.bitmap.close === 'function') {
+                try { entry.bitmap.close(); } catch (_) {}
+              }
+              pool.delete(fIdx);
+              break;
+            }
+          }
+        }
+      }
     }
 
     /**
@@ -340,22 +411,48 @@
     }
 
     /**
-     * Fast check if a timestamp falls within a void interval (empty canvas / audio-only).
+     * Fast check if a timestamp falls within a genuine void interval (empty canvas / audio-only span),
+     * keeping a 1.5-frame safety margin away from any visual clip's start/end boundary ("di ujung-ujung").
      */
     isTimeInVoidSpan(sec, compId = null) {
-      return !this.hasActiveVisualContentAt(sec, compId);
+      const targetComp = compId || this.activeCompId || 'root';
+      this._ensureOccupancySynced(null, targetComp);
+      const voids = this._compVoidIntervals ? this._compVoidIntervals.get(targetComp) : null;
+      if (!voids || voids.length === 0) return false;
+      const currentFps = this.fps || 60;
+      const framePad = 1.5 / currentFps;
+      const ps = this._resolveProjectState();
+      const totalDur = (typeof window !== 'undefined' && typeof window.getProjectTotalDuration === 'function')
+        ? window.getProjectTotalDuration()
+        : ((ps && typeof ps.duration === 'number' && ps.duration > 0) ? ps.duration : 60);
+      for (let i = 0; i < voids.length; i++) {
+        const span = voids[i];
+        const effStart = span[0] > 0 ? span[0] + framePad : 0;
+        const effEnd = span[1] < totalDur - 0.001 ? span[1] - framePad : span[1];
+        if (effEnd > effStart && sec >= effStart && sec <= effEnd) {
+          return true;
+        }
+        if (span[0] > sec) break;
+      }
+      return false;
     }
 
     hasFrame(frameIndex, expectedWidth = null, expectedHeight = null, compId = null) {
-      const currentFps = this.fps || 60;
-      const targetSec = frameIndex / currentFps;
-      if (!this.hasActiveVisualContentAt(targetSec, compId)) {
+      const targetComp = compId || this.activeCompId;
+      if (this.isAudioOnlyComposition(null, targetComp)) {
         return true;
       }
-      const pool = this.getPool(compId || this.activeCompId);
+      const currentFps = this.fps || 60;
+      if (this.isTimeInVoidSpan(frameIndex / currentFps, targetComp)) {
+        return true;
+      }
+      const pool = this.getPool(targetComp);
       const entry = pool.get(frameIndex);
       if (!entry) return false;
-      if (entry.isAudioOnly) return true;
+      if (entry.isAudioOnly) {
+        pool.delete(frameIndex);
+        return false;
+      }
       let expW = expectedWidth;
       let expH = expectedHeight;
       if ((!expW || !expH) && typeof document !== 'undefined') {
@@ -367,7 +464,7 @@
       }
       if (expW && expH && entry.width && entry.height) {
         if (Math.abs(entry.width - expW) > 2 || Math.abs(entry.height - expH) > 2) {
-          this.deleteFrame(frameIndex, false, compId || this.activeCompId);
+          this.deleteFrame(frameIndex, false, targetComp);
           return false;
         }
       }
@@ -375,16 +472,20 @@
     }
 
     getFrame(frameIndex, expectedWidth = null, expectedHeight = null, compId = null) {
-      const currentFps = this.fps || 60;
-      const targetSec = frameIndex / currentFps;
-      if (!this.hasActiveVisualContentAt(targetSec, compId)) {
+      const targetComp = compId || this.activeCompId;
+      if (this.isAudioOnlyComposition(null, targetComp)) {
         return this._getAudioOnlyCanvas(expectedWidth, expectedHeight);
       }
-      const pool = this.getPool(compId || this.activeCompId);
+      const currentFps = this.fps || 60;
+      if (this.isTimeInVoidSpan(frameIndex / currentFps, targetComp)) {
+        return this._getAudioOnlyCanvas(expectedWidth, expectedHeight);
+      }
+      const pool = this.getPool(targetComp);
       const entry = pool.get(frameIndex);
       if (!entry) return null;
       if (entry.isAudioOnly) {
-        return entry.bitmap || this._getAudioOnlyCanvas(expectedWidth, expectedHeight);
+        pool.delete(frameIndex);
+        return null;
       }
       let expW = expectedWidth;
       let expH = expectedHeight;
@@ -397,7 +498,7 @@
       }
       if (expW && expH && entry.width && entry.height) {
         if (Math.abs(entry.width - expW) > 2 || Math.abs(entry.height - expH) > 2) {
-          this.deleteFrame(frameIndex, false, compId || this.activeCompId);
+          this.deleteFrame(frameIndex, false, targetComp);
           return null;
         }
       }
@@ -409,7 +510,7 @@
      * When true, the entire timeline duration can be cached instantaneously using a single shared background frame.
      */
     isAudioOnlyComposition(projectState = null, compId = null) {
-      const ps = projectState || (typeof window !== 'undefined' ? window.currentProjectState : null);
+      const ps = this._resolveProjectState(projectState);
       if (!ps || !Array.isArray(ps.layers) || ps.layers.length === 0) return false;
       const targetComp = compId || this.activeCompId || 'root';
       const layers = (targetComp === 'root' || !targetComp)
@@ -470,7 +571,12 @@
     ensureAudioOnlyFullCache(projectState = null, compId = null) {
       if (typeof window !== 'undefined' && (window.isExporting || window.isPreviewCacheEnabled === false)) return false;
       const targetComp = compId || this.activeCompId || 'root';
-      if (!this.isAudioOnlyComposition(projectState, targetComp)) return false;
+      if (!this.isAudioOnlyComposition(projectState, targetComp)) {
+        if (this._purgeAudioOnlyEntries(targetComp)) {
+          this.updateRulerUI();
+        }
+        return false;
+      }
 
       const totalDur = (typeof window !== 'undefined' && typeof window.getProjectTotalDuration === 'function')
         ? window.getProjectTotalDuration()
@@ -480,7 +586,7 @@
       const currentFps = this.fps || 60;
       const totalFrames = Math.ceil(totalDur * currentFps);
       const pool = this.getPool(targetComp);
-      const ps = projectState || (typeof window !== 'undefined' ? window.currentProjectState : null);
+      const ps = this._resolveProjectState(projectState);
       const bg = (ps && ps.bgColor) || '#0a0d07';
 
       // Fast check if already fully populated for this exact audio-only duration and background
@@ -576,24 +682,25 @@
      * minRun=2: AE-like behavior — just 2 contiguous frames are enough to allow cache playback.
      */
     isContiguousPlaybackFrame(frameIndex, minRun = 2) {
+      const targetComp = this.activeCompId || 'root';
+      if (this.isAudioOnlyComposition(null, targetComp)) return true;
       const currentFps = this.fps || 60;
-      const targetSec = frameIndex / currentFps;
-      if (!this.hasActiveVisualContentAt(targetSec)) return true;
+      if (this.isTimeInVoidSpan(frameIndex / currentFps, targetComp)) return true;
       if (!this.frames.has(frameIndex)) return false;
       const totalDur = (typeof window !== 'undefined' && typeof window.getProjectTotalDuration === 'function')
         ? window.getProjectTotalDuration()
         : 0;
-      const effectiveMinRun = totalDur > 0 ? Math.min(minRun, Math.max(1, Math.ceil(totalDur * this.fps))) : minRun;
+      const effectiveMinRun = totalDur > 0 ? Math.min(minRun, Math.max(1, Math.ceil(totalDur * currentFps))) : minRun;
 
       let count = 0;
       let f = frameIndex;
-      while (this.frames.has(f)) {
+      while (this.frames.has(f) || this.isTimeInVoidSpan(f / currentFps, targetComp)) {
         count++;
         if (count >= effectiveMinRun) return true;
         f--;
       }
       f = frameIndex + 1;
-      while (this.frames.has(f)) {
+      while (this.frames.has(f) || this.isTimeInVoidSpan(f / currentFps, targetComp)) {
         count++;
         if (count >= effectiveMinRun) return true;
         f++;
@@ -620,10 +727,11 @@
       const currentFps = this.fps || 60;
       const targetSec = frameIndex / currentFps;
       if (this.isTimeBaking(targetSec)) return;
-      if (!this.hasActiveVisualContentAt(targetSec, targetComp)) return;
       if (this.ensureAudioOnlyFullCache(null, targetComp)) return;
+      if (this.isTimeInVoidSpan(targetSec, targetComp)) return;
       const targetPool = this.getPool(targetComp);
       if (this.hasFrame(frameIndex, sourceCanvas.width, sourceCanvas.height, targetComp)) return;
+
       if (!this._pendingFrames) this._pendingFrames = new Set();
       if (!this._inFlightFrames) this._inFlightFrames = new Set();
       if (!this._frameGen) this._frameGen = new Map();
@@ -815,7 +923,7 @@
         : (parseFloat(layer.startPx ?? layer.left) || 0) / effectivePps;
       const durSec = layer.durationSec !== undefined
         ? Number(layer.durationSec) || 0
-        : ((parseFloat(layer.widthPx ?? layer.width) || 240) / effectivePps);
+        : ((parseFloat(layer.widthPx ?? layer.width) || 400) / effectivePps);
       return {
         startSec: Math.max(0, startSec),
         endSec: Math.max(0, startSec + Math.max(0.01, durSec))
@@ -1319,9 +1427,14 @@
 
       const targetComp = this.activeCompId || 'root';
       this._ensureOccupancySynced(null, targetComp);
-      const voidIntervals = this._compVoidIntervals.get(targetComp) || [];
+      const isAudioOnlyComp = this.isAudioOnlyComposition(null, targetComp);
+      if (!isAudioOnlyComp) {
+        this._purgeAudioOnlyEntries(targetComp);
+      }
+      const voidIntervals = this._compVoidIntervals ? this._compVoidIntervals.get(targetComp) : null;
+      const hasVoidSpans = Array.isArray(voidIntervals) && voidIntervals.length > 0;
 
-      if (this.frames.size === 0 && voidIntervals.length === 0) return;
+      if (this.frames.size === 0 && !isAudioOnlyComp && !hasVoidSpans) return;
 
       const totalFrames = Math.ceil(totalDur * this.fps);
 
@@ -1338,16 +1451,31 @@
       }
       this.rulerCtx.fillStyle = this._cachedPrimaryColor;
 
-      // 1. Paint void intervals (empty / audio-only spans) in 1 fillRect call per interval
-      for (let i = 0; i < voidIntervals.length; i++) {
-        const span = voidIntervals[i];
-        const x = Math.floor(span[0] * pps);
-        const xEnd = Math.min(this.rulerCanvas.width, Math.ceil(span[1] * pps));
-        const w = Math.max(1, xEnd - x);
-        this.rulerCtx.fillRect(x, 0, w, 3);
+      // 1. Auto-paint full green bar when the ENTIRE composition is audio-only
+      if (isAudioOnlyComp) {
+        this.rulerCtx.fillRect(0, 0, this.rulerCanvas.width, 3);
+        return;
       }
 
-      // 2. Paint contiguous runs of raster cached frames
+      // 2. Auto-paint genuine void intervals (e.g. right-hand audio-only tail after all visual layers end)
+      if (hasVoidSpans) {
+        const currentFps = this.fps || 60;
+        const framePad = 1.5 / currentFps;
+        for (let i = 0; i < voidIntervals.length; i++) {
+          const span = voidIntervals[i];
+          const effStart = span[0] > 0 ? span[0] + framePad : 0;
+          const effEnd = span[1] < totalDur - 0.001 ? span[1] - framePad : span[1];
+          if (effEnd > effStart) {
+            const x = Math.ceil(effStart * pps);
+            const xEnd = Math.floor(effEnd * pps);
+            if (xEnd > x) {
+              this.rulerCtx.fillRect(x, 0, xEnd - x, 3);
+            }
+          }
+        }
+      }
+
+      // 3. Paint contiguous runs of raster cached frames
       if (this.frames.size > 0) {
         const pxPerFrame = pps / this.fps;
 
@@ -1591,7 +1719,7 @@
         const l = layers[i];
         if (!l || l.hidden) continue;
         const start = l.startSec !== undefined ? Number(l.startSec) : ((l.startPx || 0) / pps);
-        const dur = l.durationSec !== undefined ? Number(l.durationSec) : ((l.widthPx || 240) / pps);
+        const dur = l.durationSec !== undefined ? Number(l.durationSec) : ((l.widthPx || 400) / pps);
         if (l.type === 'precomp' && Array.isArray(l.layers)) {
           if (this.isLayerBaking(l)) {
             ranges.push([Math.max(0, start), Math.max(0, start + dur)]);
@@ -1703,9 +1831,18 @@
         const l = layers[i];
         if (!l || l.hidden) continue;
         const start = l.startSec !== undefined ? Number(l.startSec) : ((l.startPx || 0) / pps);
-        const dur = l.durationSec !== undefined ? Number(l.durationSec) : ((l.widthPx || 240) / pps);
+        const dur = l.durationSec !== undefined ? Number(l.durationSec) : ((l.widthPx || 400) / pps);
         if (sec >= start && sec < start + dur) {
           if (this.isLayerBaking(l)) return false;
+          if (l.type === 'image' || l.mediaType === 'image') {
+            const mKey = l.mediaId || l.id;
+            const mEntry = (typeof window !== 'undefined' && window.layerMediaCache)
+              ? (window.layerMediaCache.get(mKey) || window.layerMediaCache.get(l.id))
+              : null;
+            if (mEntry && mEntry.el && mEntry.el.tagName === 'IMG' && (mEntry.el.complete === false || mEntry.el.naturalWidth === 0)) {
+              return false;
+            }
+          }
           if (l.type === 'video' || l.mediaType === 'video') {
             if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isVideoFrameReady === 'function') {
               if (!window.VideoFrameExtractor.isVideoFrameReady(l, sec)) return false;
@@ -1857,8 +1994,7 @@
           for (const mf of this._missedPlaybackFrames) {
             this._missedPlaybackFrames.delete(mf);
             const mSec = mf / currentFps;
-            if (!this.hasActiveVisualContentAt(mSec, targetComp)) continue;
-            if (!this.frames.has(mf)) {
+            if (!this.frames.has(mf) && !this.isTimeInVoidSpan(mSec, targetComp)) {
               const inFlightKey = `${targetComp}:${mf}`;
               const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
               if (!isInFlight && !this.isTimeBaking(mSec) && this.isTimeReadyToCache(mSec)) {
@@ -1873,7 +2009,7 @@
         if (targetFrame === -1) {
           for (let f = currentFrame; f <= winEnd; f++) {
             const targetSec = f / currentFps;
-            if (!this.hasActiveVisualContentAt(targetSec, targetComp)) continue;
+            if (this.isTimeInVoidSpan(targetSec, targetComp)) continue;
             if (!this.frames.has(f)) {
               const inFlightKey = `${targetComp}:${f}`;
               const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
@@ -1886,6 +2022,7 @@
                   sawUnready = true;
                   if (!this._unreadyFrames) this._unreadyFrames = new Set();
                   this._unreadyFrames.add(inFlightKey);
+                  break;
                 }
               }
             }
@@ -1896,7 +2033,7 @@
         if (targetFrame === -1) {
           for (let f = winStart; f < currentFrame; f++) {
             const targetSec = f / currentFps;
-            if (!this.hasActiveVisualContentAt(targetSec, targetComp)) continue;
+            if (this.isTimeInVoidSpan(targetSec, targetComp)) continue;
             if (!this.frames.has(f)) {
               const inFlightKey = `${targetComp}:${f}`;
               const isInFlight = !!(this._inFlightFrames && this._inFlightFrames.has(inFlightKey));
@@ -1909,6 +2046,7 @@
                   sawUnready = true;
                   if (!this._unreadyFrames) this._unreadyFrames = new Set();
                   this._unreadyFrames.add(inFlightKey);
+                  break;
                 }
               }
             }
@@ -1928,7 +2066,6 @@
 
         const inFlightKey = `${targetComp}:${targetFrame}`;
         const targetSec = targetFrame / currentFps;
-        if (!this.hasActiveVisualContentAt(targetSec, targetComp)) continue;
         const offscreen = this._idleCanvasPool[this._idlePoolIdx % this._idleCanvasPool.length];
         this._idlePoolIdx++;
 
@@ -1985,7 +2122,7 @@
     bakeSingleFrameOffscreen(frameIndex, targetSec, compId = null) {
       if (typeof window !== 'undefined' && window.isExporting) return false;
       const targetComp = compId || this.activeCompId || 'root';
-      if (!this.hasActiveVisualContentAt(targetSec, targetComp)) return true;
+      if (this.isTimeInVoidSpan(targetSec, targetComp)) return true;
       if (this.isTimeBaking(targetSec) || !this.isTimeReadyToCache(targetSec)) return false;
       const pool = this.getPool(targetComp);
       if (pool.has(frameIndex)) return true;
@@ -2114,7 +2251,7 @@
         if (this._unreadyFrames && this._unreadyFrames.has(inFlightKey)) continue;
 
         const targetSec = f / currentFps;
-        if (!this.hasActiveVisualContentAt(targetSec, targetComp)) continue;
+        if (this.isTimeInVoidSpan(targetSec, targetComp)) continue;
         if (this.isTimeBaking(targetSec) || !this.isTimeReadyToCache(targetSec)) continue;
 
         const offscreen = this._idleCanvasPool[this._idlePoolIdx % this._idleCanvasPool.length];

@@ -1316,11 +1316,12 @@
       const layers = currentProjectState.layers || [];
       _scratchActiveLayers.length = 0;
       _scratchActiveVideos.length = 0;
+      const eps = 1e-5;
       for (let i = 0; i < layers.length; i++) {
         const layer = layers[i];
         const start = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pixelsPerSecond);
         const dur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pixelsPerSecond);
-        if (currentSec >= start && currentSec < (start + dur)) {
+        if (currentSec >= start - eps && currentSec < (start + dur) - eps) {
           _scratchActiveLayers.push(layer);
           if (layer.type === 'video') _scratchActiveVideos.push(layer);
         }
@@ -2167,7 +2168,10 @@
           layer._userResized = true;
         } else {
           media = getOrLoadLayerMedia(layer);
-          if (!media) return;
+          if (!media) {
+            if (layer.type === 'image' || layer.type === 'video') hasUnreadyMedia = true;
+            return;
+          }
 
           el = media.el;
           timeInClip = 0;
@@ -2184,6 +2188,9 @@
               hasUnreadyMedia = true;
               return;
             }
+          } else if (layer.type === 'image' && (!el || (el.tagName === 'IMG' && (el.complete === false || el.naturalWidth === 0)))) {
+            hasUnreadyMedia = true;
+            return;
           }
         }
 
@@ -2853,7 +2860,7 @@
         const shouldBakeLiveFrame = !isScrubbing;
         const isBakingNow = window.PreviewCacheManager && typeof window.PreviewCacheManager.isTimeBaking === 'function' && window.PreviewCacheManager.isTimeBaking(currentSec);
 
-        if (!isBakingNow && shouldBakeLiveFrame && !hasUnreadyVideoInComposition && !isExport && !window.isExporting && !isIdleCache && !isTransformDragging &&
+        if (!isBakingNow && shouldBakeLiveFrame && !hasUnreadyMedia && !hasUnreadyVideoInComposition && !isExport && !window.isExporting && !isIdleCache && !isTransformDragging &&
             triggerSource !== 'lookahead-cache' &&
             window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
           if (typeof window.PreviewCacheManager.ensureAudioOnlyFullCache === 'function' &&
