@@ -2101,6 +2101,7 @@
       const timeVaryingFxTypes = new Set([
         'wave-warp', 'wave_warp', 'shatter', 'glow-aura', 'glow_aura', 'vignette',
         'turbulent-displace', 'turbulent_displace', 'solid-aura', 'solid_aura',
+        'texture-flux', 'texture_flux',
         'flicker', 'fsmb', 'oscillate', 'particle-engine', 'particle_engine',
         'wipe-jaws', 'wipe_jaws', 'linear-wipe', 'linear_wipe', 'star-burst',
         'star_burst', 'shake', 'swing', 'radio-waves', 'radio_waves',
@@ -2109,6 +2110,7 @@
 
       const heavyPixelFxTypes = new Set([
         'deep-glow', 'deep_glow', 'glow-aura', 'glow_aura', 'solid-aura', 'solid_aura',
+        'texture-flux', 'texture_flux',
         'shatter', 'particle-engine', 'particle_engine', 'turbulent-displace', 'turbulent_displace',
         'wave-warp', 'wave_warp', 'fluid-fish', 'fluid_fish', 'fsmb', 'directional-blur', 'directional_blur',
         'radial-blur', 'radial_blur', 'lens-blur', 'lens_blur', 'gaussian-blur', 'gaussian_blur',

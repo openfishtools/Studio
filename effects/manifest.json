@@ -385,6 +385,13 @@
     "icon": "assets/FXPH.svg"
   },
   {
+    "file": "texture_flux.js",
+    "id": "texture-flux",
+    "name": "Texture Flux",
+    "category": "background",
+    "icon": "assets/FXPH.svg"
+  },
+  {
     "file": "tile.js",
     "id": "tile",
     "name": "Tile",

@@ -20,11 +20,17 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const zlib = require('zlib');
+const { execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
 const EFFECTS_DIR = path.join(ROOT, 'effects');
 const LOADER_PATH = path.join(EFFECTS_DIR, 'loader.js');
 const MANIFEST_PATH = path.join(EFFECTS_DIR, 'manifest.json');
+const WASM_PATH = path.join(EFFECTS_DIR, 'effects.wasm');
+const WASM_CRATE_DIR = path.resolve(ROOT, '..', 'wasm', 'effects');
+const WASM_BUNDLE_BIN = path.join(WASM_CRATE_DIR, 'src', 'effects_bundle.bin');
+const WASM_TARGET_OUT = path.join(WASM_CRATE_DIR, 'target', 'wasm32-unknown-unknown', 'release', 'effects.wasm');
 
 const BACKUP_DIR = path.join(EFFECTS_DIR, 'backup');
 const RESERVED_FILES = new Set(['loader.js', 'index.js']);
@@ -410,9 +416,97 @@ function buildLoaderSource(files, customFiles) {
 `;
 }
 
+function encryptEffectsBundle(compressedBuf) {
+  const out = Buffer.allocUnsafe(compressedBuf.length);
+  const MASK64 = 0xFFFFFFFFFFFFFFFFn;
+  let state = 0x9E3779B97F4A7C15n;
+  for (let i = 0; i < compressedBuf.length; i++) {
+    state = (state + 0xBF58476D1CE4E5B9n) & MASK64;
+    let z = state;
+    z = ((z ^ (z >> 30n)) * 0xBF58476D1CE4E5B9n) & MASK64;
+    z = ((z ^ (z >> 27n)) * 0x94D049BB133111EBn) & MASK64;
+    z = (z ^ (z >> 31n)) & MASK64;
+    const keyByte = Number(z & 0xFFn);
+    const shift = Number((z >> 8n) & 7n);
+    const xored = (compressedBuf[i] ^ keyByte) & 0xFF;
+    const rot = shift === 0 ? xored : (((xored << shift) | (xored >>> (8 - shift))) & 0xFF);
+    out[i] = (rot ^ (Math.imul(i, 0x5D) & 0xFF)) & 0xFF;
+  }
+  return out;
+}
+
+function readCurrentWasmBundleJson() {
+  if (!fs.existsSync(WASM_PATH)) return null;
+  try {
+    const bytes = fs.readFileSync(WASM_PATH);
+    const mod = new WebAssembly.Module(bytes);
+    const inst = new WebAssembly.Instance(mod, {});
+    inst.exports.unpack_effects_bundle();
+    const ptr = inst.exports.get_effects_bundle_ptr();
+    const len = inst.exports.get_effects_bundle_len();
+    return Buffer.from(inst.exports.memory.buffer, ptr, len).toString('utf8');
+  } catch (_) {
+    return null;
+  }
+}
+
+function syncWasmBundleIfNeeded() {
+  const hasWasmCrate = fs.existsSync(path.join(WASM_CRATE_DIR, 'Cargo.toml'));
+  if (!hasWasmCrate || !fs.existsSync(BACKUP_DIR)) return false;
+
+  // Move/sync any new standalone effect file in effects/ into effects/backup/ so it is compiled into effects.wasm
+  const directFiles = getCustomEffectFiles();
+  for (let i = 0; i < directFiles.length; i++) {
+    const f = directFiles[i];
+    const srcPath = path.join(EFFECTS_DIR, f);
+    const dstPath = path.join(BACKUP_DIR, f);
+    const code = fs.readFileSync(srcPath, 'utf8');
+    writeIfChanged(dstPath, code);
+  }
+
+  const backupFiles = fs.readdirSync(BACKUP_DIR)
+    .filter(f => f.endsWith('.js') && !RESERVED_FILES.has(f) && !f.startsWith('.') && !f.startsWith('_'))
+    .sort();
+  const bundleObj = {};
+  for (let i = 0; i < backupFiles.length; i++) {
+    const f = backupFiles[i];
+    bundleObj[f] = fs.readFileSync(path.join(BACKUP_DIR, f), 'utf8');
+  }
+  const expectedJson = JSON.stringify(bundleObj);
+  const currentWasmJson = readCurrentWasmBundleJson();
+
+  let wasmRebuilt = false;
+  if (currentWasmJson !== expectedJson) {
+    const compressed = zlib.deflateSync(Buffer.from(expectedJson, 'utf8'), { level: 9 });
+    const encrypted = encryptEffectsBundle(compressed);
+    fs.writeFileSync(WASM_BUNDLE_BIN, encrypted);
+    execFileSync('cargo', ['build', '--target', 'wasm32-unknown-unknown', '--release'], {
+      cwd: WASM_CRATE_DIR,
+      stdio: 'pipe'
+    });
+    if (fs.existsSync(WASM_TARGET_OUT)) {
+      fs.copyFileSync(WASM_TARGET_OUT, WASM_PATH);
+      wasmRebuilt = true;
+    }
+  }
+
+  // Once bundled inside effects.wasm, remove duplicate plaintext files from effects/
+  if (readCurrentWasmBundleJson() === expectedJson) {
+    for (let i = 0; i < directFiles.length; i++) {
+      const srcPath = path.join(EFFECTS_DIR, directFiles[i]);
+      if (fs.existsSync(srcPath)) {
+        try { fs.unlinkSync(srcPath); } catch (_) {}
+      }
+    }
+  }
+
+  return wasmRebuilt;
+}
+
 function syncEffects() {
   if (!fs.existsSync(EFFECTS_DIR)) return [];
 
+  const wasmUpdated = syncWasmBundleIfNeeded();
   const manifest = scanEffects();
   const files = Array.from(new Set(manifest.map(m => m.file))).sort();
   const customFiles = getCustomEffectFiles();
@@ -422,6 +516,7 @@ function syncEffects() {
 
   console.log(
     `[SyncEffects] ${manifest.length} effects in ${files.length} files discovered (${customFiles.length} custom)` +
+    (wasmUpdated ? ' (effects.wasm compiled)' : '') +
     (manifestChanged || loaderChanged ? ' (manifest/loader updated)' : ' (already up to date)')
   );
   return manifest;
