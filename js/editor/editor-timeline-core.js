@@ -2526,16 +2526,23 @@
 
         let nextSec = currentSec + effectiveDeltaSec;
         let masterSlaved = false;
+        if (isFirstTick) {
+          // Anchor for audio-clock settle window (play start and every loop restart reset _playTickCount)
+          window._nlePlayAnchorMs = timestamp;
+        }
+        const msSinceAnchor = timestamp - (window._nlePlayAnchorMs || 0);
         if (isCacheEnabled && !isNextFrameCached && Math.abs(playbackSpeed - 1.0) < 0.01) {
           // Contiguous frame stepping (1 frame at a time so zero frames are skipped while building cache)
           nextSec = nextFrameIdx / fps;
-        } else if (_playTickCount >= 3 && (isCurrentAndNextCached || !isCacheEnabled) && Math.abs(playbackSpeed - 1.0) < 0.01 && window.FishAudioEngine && typeof window.FishAudioEngine.getMasterAudioTime === 'function') {
-          // When frames are cached (including audio-only timelines), slave playhead to hardware audio clock
-          // so the timeline never outruns or fights the audio element!
-          // Only engage after _playTickCount >= 3 to allow the audio element to start streaming without clamping the first frames.
+        } else if (_playTickCount >= 3 && msSinceAnchor >= 450 && (isCurrentAndNextCached || !isCacheEnabled) && Math.abs(playbackSpeed - 1.0) < 0.01 && window.FishAudioEngine && typeof window.FishAudioEngine.getMasterAudioTime === 'function') {
+          // Keep the playhead in sync with the hardware audio clock, but SOFTLY.
+          // Hard-snapping to the audio time froze the playhead whenever the audio clock stalled or updated coarsely
+          // (always right after a seek, e.g. loop restart) => cached playback looked like it was "re-rendering".
+          // Wall-clock drives motion; audio only pulls it gently, so long-term sync is kept without stutter.
           const masterAudioSec = window.FishAudioEngine.getMasterAudioTime(layers, nextSec, pixelsPerSecond);
-          if (masterAudioSec !== null && isFinite(masterAudioSec) && masterAudioSec >= currentSec && Math.abs(masterAudioSec - nextSec) < 0.12) {
-            nextSec = masterAudioSec;
+          if (masterAudioSec !== null && isFinite(masterAudioSec) && Math.abs(masterAudioSec - nextSec) < 0.12) {
+            const pulled = nextSec + (masterAudioSec - nextSec) * 0.15;
+            nextSec = Math.max(currentSec + effectiveDeltaSec * 0.5, pulled);
             masterSlaved = true;
           }
         }
