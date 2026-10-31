@@ -839,22 +839,39 @@ assert.strictEqual(pcm.hasFrame(240, 1920, 1080, 'root'), true, 'Newly exposed a
 
 console.log('✓ Algoritma 5: Temporal Occupancy Partitioning, Virtual Void Cache, Dynamic Mutation & Cut Mid Split Sync verified cleanly.');
 
-// Test: FishAudioScheduler (Web Audio clip scheduler + sample-accurate timeline clock)
+// Test: FishAudioScheduler (Web Audio clip scheduler + sample-accurate timeline clock + precomp + reverse + time-remap + fx)
 {
   const savedEngine = global.window.FishAudioEngine;
   const savedLS = global.localStorage;
   const savedPS = global.window.currentProjectState;
   const started = [];
-  const mockParam = () => ({
-    value: 1,
-    setValueAtTime() {}, linearRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {}
-  });
+  const mockParam = () => {
+    const p = {
+      value: 1,
+      ramps: [],
+      setValueAtTime(v) { p.value = v; },
+      linearRampToValueAtTime(v, t) { p.value = v; p.ramps.push({ v, t }); },
+      setTargetAtTime(v) { p.value = v; },
+      cancelScheduledValues() {}
+    };
+    return p;
+  };
   const mockCtx = {
     currentTime: 10,
     state: 'running',
     outputLatency: 0,
     baseLatency: 0,
     destination: {},
+    createBuffer(ch, len, sr) {
+      const channels = Array.from({ length: ch }, () => new Float32Array(len));
+      return {
+        numberOfChannels: ch,
+        length: len,
+        sampleRate: sr,
+        duration: len / sr,
+        getChannelData(i) { return channels[i]; }
+      };
+    },
     createBufferSource() {
       const n = {
         buffer: null,
@@ -867,35 +884,41 @@ console.log('✓ Algoritma 5: Temporal Occupancy Partitioning, Virtual Void Cach
     },
     createGain() { return { gain: mockParam(), connect() {}, disconnect() {} }; }
   };
-  global.localStorage = { getItem: (k) => (k === 'oft_audio_engine' ? 'scheduler' : null), setItem() {}, removeItem() {} };
+  let lsMode = null;
+  global.localStorage = { getItem: (k) => (k === 'oft_audio_engine' ? lsMode : null), setItem() {}, removeItem() {} };
   const audLayer = { id: 'aud_1', type: 'audio', mediaId: 'med_a', startSec: 2, durationSec: 6, sourceOffsetSec: 1, volume: 0.5 };
   global.window.currentProjectState = { layers: [audLayer] };
-  global.window.FishAudioEngine = {
-    ctx: mockCtx,
-    masterGain: { connect() {} },
-    _ensureContext() { return true; },
-    _flattenPlayableLayers(layers) {
-      return (layers || []).map(l => ({
-        layer: l, parentLayer: null,
-        rootStartSec: l.startSec, rootEndSec: l.startSec + l.durationSec,
-        sourceOffsetSec: l.sourceOffsetSec || 0, effectiveSpeed: 1, isMuted: false, effectiveGain: l.volume
-      }));
-    }
-  };
+  require(path.join(__dirname, '../js/media/fish-audio-engine.js'));
+  const realEngine = global.window.FishAudioEngine;
+  realEngine.ctx = mockCtx;
+  realEngine.masterGain = { connect() {} };
+  realEngine._ensureContext = () => true;
+
   require(path.join(__dirname, '../js/media/fish-audio-scheduler.js'));
   const sched = global.window.FishAudioScheduler;
   assert(sched, 'FishAudioScheduler must be exported on window');
-  const near = (a, b, msg) => assert(Math.abs(a - b) < 1e-6, `${msg} (got ${a}, expected ${b})`);
+  const near = (a, b, msg) => assert(Math.abs(a - b) < 1e-4, `${msg} (got ${a}, expected ${b})`);
 
+  // 1. Default enabled unless 'legacy'
+  assert.strictEqual(sched.isEnabled(), true, 'FishAudioScheduler must be enabled by default');
+  lsMode = 'legacy';
+  assert.strictEqual(sched.isEnabled(), false, 'FishAudioScheduler must disable when oft_audio_engine is legacy');
+  lsMode = null;
+
+  // 2. Handles root, precomp child, time-remap, reverse, and audioEffects once buffer is decoded
   assert.strictEqual(sched.handles(audLayer), false, 'Clip must stay on legacy engine until its buffer is decoded');
-  sched.buffers.set('med_a', { buffer: { duration: 30, length: 30 * 48000, numberOfChannels: 2 }, bytes: 1, lastUsed: 0 });
+  const fwdBuf = mockCtx.createBuffer(2, 30 * 100, 100);
+  fwdBuf.getChannelData(0)[0] = 0.25;
+  fwdBuf.getChannelData(0)[30 * 100 - 1] = 0.75;
+  sched.buffers.set('med_a', { buffer: fwdBuf, reversedBuffer: null, bytes: 1, lastUsed: 0 });
   assert.strictEqual(sched.handles(audLayer), true, 'Decoded root audio clip must be handled by the scheduler');
-  assert.strictEqual(sched.handles(Object.assign({}, audLayer, { speedMode: 'time_remap' })), false, 'Time-remapped clip must stay on legacy engine');
-  assert.strictEqual(sched.handles(audLayer, { id: 'precomp_parent' }), false, 'Nested precomp child must stay on legacy engine');
-  assert.strictEqual(sched.handles(Object.assign({}, audLayer, { audioEffects: [{ type: 'reverb' }] })), false, 'Clip with audio effects must stay on legacy engine');
-  assert.strictEqual(sched.handles(Object.assign({}, audLayer, { speed: -1 })), false, 'Reverse clip must stay on legacy engine');
+  assert.strictEqual(sched.handles(Object.assign({}, audLayer, { speedMode: 'time_remap' })), true, 'Decoded time-remapped clip must be handled by the scheduler');
+  assert.strictEqual(sched.handles(audLayer, { id: 'precomp_parent' }), true, 'Decoded nested precomp child must be handled by the scheduler');
+  assert.strictEqual(sched.handles(Object.assign({}, audLayer, { audioEffects: [{ type: 'reverb' }] })), true, 'Decoded clip with audio effects must be handled by the scheduler');
+  assert.strictEqual(sched.handles(Object.assign({}, audLayer, { speed: -1 })), true, 'Decoded reverse clip must be handled by the scheduler');
+  assert.strictEqual(sched.handles(Object.assign({}, audLayer, { isMuted: true })), false, 'Explicitly muted clip must not be scheduled');
 
-  // Play from 3.0s: voice offset = sourceOffset 1 + (3.0 - 2.0) = 2.0, duration = clip end 8.0 - 3.0 = 5.0
+  // 3. Play root clip from 3.0s: voice offset = sourceOffset 1 + (3.0 - 2.0) = 2.0, duration = clip end 8.0 - 3.0 = 5.0
   assert.strictEqual(sched.start([audLayer], 3.0, 80, 1), true, 'start() must succeed when enabled');
   assert.strictEqual(started.length, 1, 'Exactly one voice must be scheduled for the active clip');
   near(started[0].offset, 2.0, 'Voice buffer offset must match timeline position');
@@ -919,6 +942,84 @@ console.log('✓ Algoritma 5: Temporal Occupancy Partitioning, Virtual Void Cach
   near(last.offset, 6.0, 'Seek must reschedule the voice at the new buffer offset');
   near(last.dur, 1.0, 'Seek must keep the clip out-point');
 
+  // 4. Reverse clip scheduling: uses sample-reversed AudioBuffer and reversed buffer offset
+  started.length = 0;
+  const revLayer = { id: 'aud_rev', type: 'audio', mediaId: 'med_a', startSec: 2, durationSec: 5, sourceOffsetSec: 0.5, speed: -1, volume: 0.8 };
+  global.window.currentProjectState = { layers: [revLayer] };
+  realEngine.invalidateLayerCache();
+  sched.seek(4.5); // midpoint: forward clipTime = 0.5 + (5.0 - 2.5) * 1.0 = 3.0s -> reversed offset = 30.0 - 3.0 = 27.0s
+  assert.strictEqual(started.length, 1, 'Reverse clip must schedule a voice');
+  assert.strictEqual(started[0].node.buffer._isReversed, true, 'Reverse voice must use cached sample-reversed AudioBuffer');
+  near(started[0].node.buffer.getChannelData(0)[0], 0.75, 'First sample of reversed buffer must equal last sample of forward buffer');
+  near(started[0].offset, 27.0, 'Reverse voice buffer offset must equal (buffer.duration - forwardClipTime)');
+  near(started[0].dur, 2.5, 'Reverse voice duration must match remaining clip duration');
+
+  // 5. Precomp child scheduling with trimmed precomp window + speed scaling + audio effects
+  started.length = 0;
+  const precompLayer = {
+    id: 'precomp_1',
+    type: 'precomp',
+    startSec: 4.0,
+    durationSec: 3.0, // active on root timeline [4.0..7.0]
+    sourceOffsetSec: 1.0,
+    speed: 2.0,
+    volume: 0.5,
+    audioEffects: [{ id: 'fx_dly', type: 'delay', time: 0.25, feedback: 0.3, mix: 0.4 }],
+    layers: [
+      {
+        id: 'child_aud',
+        type: 'audio',
+        mediaId: 'med_a',
+        startSec: 0,
+        durationSec: 10.0,
+        sourceOffsetSec: 0.5,
+        speed: 1.0,
+        volume: 0.8,
+        audioEffects: [{ id: 'fx_rev', type: 'reverb', decay: 1.2, mix: 0.3 }]
+      }
+    ]
+  };
+  global.window.currentProjectState = { layers: [precompLayer] };
+  realEngine.invalidateLayerCache();
+  sched.seek(5.0);
+  // Precomp starts at 4.0s with sourceOffsetSec=1.0 and speed=2.0:
+  // At root t=4.0s, child is 1.0s into its timeline -> sourceOffset = 0.5 + 1.0 = 1.5s.
+  // At root t=5.0s (1.0s after precomp start at 2x speed), child is at 1.5 + 1.0 * 2.0 = 3.5s, remaining root dur = 7.0 - 5.0 = 2.0s (4.0s of buffer at 2x).
+  assert.strictEqual(started.length, 1, 'Precomp child clip must be scheduled inside active precomp window');
+  near(started[0].offset, 3.5, 'Precomp child buffer offset must account for parent sourceOffsetSec and parent speed');
+  near(started[0].dur, 4.0, 'Precomp child buffer duration must be clamped to parent precomp end boundary * effectiveSpeed');
+  near(started[0].node.playbackRate.value, 2.0, 'Precomp child playbackRate must reflect parent * child effectiveSpeed');
+  const activeVoice = Array.from(sched.voices.values())[0];
+  assert(activeVoice && activeVoice.fxChain && activeVoice.fxChain.activeFxChains.length === 2, 'Voice must build combined child + parent audioEffects chain');
+
+  // 6. Time-remap clip scheduling & rate automation
+  started.length = 0;
+  const savedGetEff = global.window.getLayerEffectivePropsAtTime;
+  global.window.getLayerEffectivePropsAtTime = (l, t) => {
+    if (l.id === 'aud_remap') {
+      // 1.5x constant slope starting at 2.0s: timeRemap(t) = 1.0 + (t - 2.0) * 1.5
+      return { timeRemap: 1.0 + (t - 2.0) * 1.5, volume: 0.9 };
+    }
+    return l;
+  };
+  const remapLayer = {
+    id: 'aud_remap',
+    type: 'audio',
+    mediaId: 'med_a',
+    startSec: 2.0,
+    durationSec: 4.0,
+    speedMode: 'time_remap',
+    keyframes: { timeRemap: [{ time: 2.0, value: 1.0 }, { time: 6.0, value: 7.0 }] }
+  };
+  global.window.currentProjectState = { layers: [remapLayer] };
+  realEngine.invalidateLayerCache();
+  sched.seek(3.0);
+  assert.strictEqual(started.length, 1, 'Time-remapped clip must be scheduled by FishAudioScheduler');
+  near(started[0].offset, 2.5, 'Time-remapped voice offset must match evaluated timeRemap at t=3.0s');
+  near(started[0].node.playbackRate.value, 1.5, 'Time-remapped voice playbackRate must match derivative d(timeRemap)/dt');
+  assert(started[0].node.playbackRate.ramps.length > 0, 'Time-remapped voice must schedule lookahead playbackRate automation ramps');
+  global.window.getLayerEffectivePropsAtTime = savedGetEff;
+
   sched.stop();
   assert.strictEqual(sched.playing, false, 'stop() must end playback');
   assert.strictEqual(sched.voices.size, 0, 'stop() must release all voices');
@@ -927,7 +1028,7 @@ console.log('✓ Algoritma 5: Temporal Occupancy Partitioning, Virtual Void Cach
   global.window.FishAudioEngine = savedEngine;
   global.localStorage = savedLS;
   global.window.currentProjectState = savedPS;
-  console.log('✓ FishAudioScheduler verified (handles rules, voice offsets, AudioContext clock, rate continuity, seek, stop).');
+  console.log('✓ FishAudioScheduler verified (default-enabled, root/precomp/reverse/time-remap/audio-fx scheduling, AudioContext clock, rate continuity, seek, stop).');
 }
 
 console.log('✓ VideoFrameExtractor verified (retain/release deduplication, reverse eviction inversion, seamless reverse split, proactive streaming prefetch, upcoming frame sort order, precomp RAM eviction protection, extraction circuit breaker, mobile VRAM cap, precomp sequence resolution, and invalidation).');

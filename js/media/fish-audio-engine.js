@@ -472,7 +472,7 @@
       }
     }
 
-    _flattenPlayableLayers(layers, parentOffsetSec = 0, parentSpeed = 1.0, parentMuted = false, parentGain = 1.0, pixelsPerSecond = 80, parentLayer = null) {
+    _flattenPlayableLayers(layers, parentOffsetSec = 0, parentSpeed = 1.0, parentMuted = false, parentGain = 1.0, pixelsPerSecond = 80, parentLayer = null, parentWinStart = -Infinity, parentWinEnd = Infinity) {
       const isRoot = parentOffsetSec === 0 && parentSpeed === 1.0 && !parentMuted && parentGain === 1.0 && !parentLayer;
       if (isRoot && this._cachedFlatPlayableLayers && this._cachedLayersRef === layers && this._cachedPps === pixelsPerSecond) {
         return this._cachedFlatPlayableLayers;
@@ -480,8 +480,11 @@
       const result = [];
       (layers || []).forEach(layer => {
         if (layer.hidden) return;
-        const isMuted = parentMuted || !!layer.isMuted || !!layer.muted || (layer.speed !== undefined && layer.speed < 0);
-        const layerSpeed = (layer.speed !== undefined && layer.speed !== 0 ? Math.abs(layer.speed) : 1.0);
+        const isExplicitlyMuted = parentMuted || !!layer.isMuted || !!layer.muted;
+        const rawSpeed = (layer.speed !== undefined && layer.speed !== 0) ? Number(layer.speed) : 1.0;
+        const isReverse = (rawSpeed < 0) || !!(parentLayer && parentLayer.speed !== undefined && Number(parentLayer.speed) < 0);
+        const isMuted = isExplicitlyMuted || isReverse;
+        const layerSpeed = Math.abs(rawSpeed) || 1.0;
         const effectiveSpeed = parentSpeed * layerSpeed;
         const layerVol = (layer.volume !== undefined ? layer.volume : 1.0);
         const effectiveGain = parentGain * layerVol;
@@ -490,24 +493,44 @@
         const lDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pixelsPerSecond);
 
         if (layer.type === 'video' || layer.type === 'audio') {
-          const rootStartSec = parentOffsetSec + (lStart / parentSpeed);
-          const rootDurSec = lDur / parentSpeed;
+          const isParentRemap = !!(parentLayer && parentLayer.speedMode === 'time_remap');
+          const rawRootStartSec = isParentRemap ? parentWinStart : (parentOffsetSec + (lStart / parentSpeed));
+          const rawRootDurSec = isParentRemap ? (parentWinEnd - parentWinStart) : (lDur / parentSpeed);
+          const rawRootEndSec = rawRootStartSec + rawRootDurSec;
+          const rootStartSec = Math.max(parentWinStart, rawRootStartSec);
+          const rootEndSec = Math.min(parentWinEnd, rawRootEndSec);
+          if (rootEndSec <= rootStartSec) return;
+          const rawSourceOffsetSec = layer.sourceOffsetSec || 0;
+          const trimLeadSec = Math.max(0, rootStartSec - rawRootStartSec);
+          const sourceOffsetSec = (isReverse || isParentRemap)
+            ? rawSourceOffsetSec
+            : (rawSourceOffsetSec + trimLeadSec * effectiveSpeed);
           result.push({
             layer,
             parentLayer,
             rootStartSec,
-            rootDurSec,
-            rootEndSec: rootStartSec + rootDurSec,
-            sourceOffsetSec: layer.sourceOffsetSec || 0,
+            rootDurSec: rootEndSec - rootStartSec,
+            rootEndSec,
+            rawRootStartSec,
+            rawRootDurSec,
+            rawRootEndSec,
+            rawSourceOffsetSec,
+            sourceOffsetSec,
             parentOffsetSec,
             parentSpeed,
             effectiveSpeed,
+            signedSpeed: isReverse ? -effectiveSpeed : effectiveSpeed,
+            isReverse,
+            isExplicitlyMuted,
             isMuted,
             effectiveGain
           });
         } else if (layer.type === 'precomp' && Array.isArray(layer.layers)) {
-          const precompRootStart = parentOffsetSec + ((lStart - (layer.sourceOffsetSec || 0)) / parentSpeed);
-          const nested = this._flattenPlayableLayers(layer.layers, precompRootStart, effectiveSpeed, isMuted, effectiveGain, pixelsPerSecond, layer);
+          const precompVisStart = Math.max(parentWinStart, parentOffsetSec + (lStart / parentSpeed));
+          const precompVisEnd = Math.min(parentWinEnd, parentOffsetSec + ((lStart + lDur) / parentSpeed));
+          if (precompVisEnd <= precompVisStart) return;
+          const precompRootStart = parentOffsetSec + (lStart / parentSpeed) - ((layer.sourceOffsetSec || 0) / effectiveSpeed);
+          const nested = this._flattenPlayableLayers(layer.layers, precompRootStart, effectiveSpeed, isExplicitlyMuted, effectiveGain, pixelsPerSecond, layer, precompVisStart, precompVisEnd);
           nested.forEach(item => result.push(item));
         }
       });
