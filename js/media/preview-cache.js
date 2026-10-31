@@ -191,14 +191,67 @@
       return true;
     }
 
+    _resolveProjectState(projectState = null) {
+      if (projectState) return projectState;
+      const winPs = (typeof window !== 'undefined') ? window.currentProjectState : null;
+      if (winPs && winPs !== this._lastWindowProjectState) {
+        return winPs;
+      }
+      return this._lastProjectState || winPs || null;
+    }
+
+    _computeOccupancyKey(projectState = null, compId = null) {
+      const ps = this._resolveProjectState(projectState);
+      const targetComp = compId || this.activeCompId || 'root';
+      const totalDur = (typeof window !== 'undefined' && typeof window.getProjectTotalDuration === 'function')
+        ? window.getProjectTotalDuration()
+        : ((ps && typeof ps.duration === 'number' && ps.duration > 0) ? ps.duration : 60);
+      if (!ps || !Array.isArray(ps.layers) || ps.layers.length === 0) {
+        return `empty|${totalDur}`;
+      }
+      const layers = (targetComp === 'root' || !targetComp)
+        ? (ps.layers || [])
+        : ((typeof window !== 'undefined' && window.currentActivePrecomp && Array.isArray(window.currentActivePrecomp.layers))
+          ? window.currentActivePrecomp.layers
+          : (ps.layers || []));
+      const pps = (typeof window !== 'undefined' && window.currentPixelsPerSecond) ? window.currentPixelsPerSecond : 80;
+      let key = `${layers.length}|${totalDur}|${pps}`;
+      for (let i = 0; i < layers.length; i++) {
+        const l = layers[i];
+        if (!l) continue;
+        const vis = this.isVisualLayer(l) ? 1 : 0;
+        const s = l.startSec !== undefined ? l.startSec : (l.startPx || 0);
+        const d = l.durationSec !== undefined ? l.durationSec : (l.widthPx || 0);
+        key += `;${l.id || i}:${vis}:${s}:${d}`;
+      }
+      return key;
+    }
+
+    _ensureOccupancySynced(projectState = null, compId = null) {
+      const targetComp = compId || this.activeCompId || 'root';
+      if (!this._compOccupancyKeys) this._compOccupancyKeys = new Map();
+      const key = this._computeOccupancyKey(projectState, targetComp);
+      if (
+        this._compOccupancyKeys.get(targetComp) !== key ||
+        !this._compVisualIntervals ||
+        !this._compVisualIntervals.has(targetComp) ||
+        !this._compVoidIntervals ||
+        !this._compVoidIntervals.has(targetComp)
+      ) {
+        this.rebuildOccupancyIntervals(projectState, targetComp);
+      }
+    }
+
     /**
      * Compute disjoint visual intervals and complementary void intervals for the composition.
      */
     rebuildOccupancyIntervals(projectState = null, compId = null) {
-      const ps = projectState || this._lastProjectState || (typeof window !== 'undefined' ? window.currentProjectState : null);
+      const ps = this._resolveProjectState(projectState);
       const targetComp = compId || this.activeCompId || 'root';
       if (!this._compVisualIntervals) this._compVisualIntervals = new Map();
       if (!this._compVoidIntervals) this._compVoidIntervals = new Map();
+      if (!this._compOccupancyKeys) this._compOccupancyKeys = new Map();
+      this._compOccupancyKeys.set(targetComp, this._computeOccupancyKey(ps, targetComp));
 
       const totalDur = (typeof window !== 'undefined' && typeof window.getProjectTotalDuration === 'function')
         ? window.getProjectTotalDuration()
@@ -273,9 +326,7 @@
      */
     hasActiveVisualContentAt(sec, compId = null) {
       const targetComp = compId || this.activeCompId || 'root';
-      if (!this._compVisualIntervals || !this._compVisualIntervals.has(targetComp)) {
-        this.rebuildOccupancyIntervals(null, targetComp);
-      }
+      this._ensureOccupancySynced(null, targetComp);
       const intervals = this._compVisualIntervals.get(targetComp);
       if (!intervals || intervals.length === 0) return false;
       for (let i = 0; i < intervals.length; i++) {
@@ -1079,6 +1130,7 @@
       if (scope === 'all') {
         if (this._compVisualIntervals) this._compVisualIntervals.clear();
         if (this._compVoidIntervals) this._compVoidIntervals.clear();
+        if (this._compOccupancyKeys) this._compOccupancyKeys.clear();
         for (const pool of this.pools.values()) {
           for (const entry of pool.values()) {
             if (entry && entry.bitmap && !closedBitmaps.has(entry.bitmap) && typeof entry.bitmap.close === 'function') {
@@ -1117,9 +1169,11 @@
      * Detects project-level changes (dimensions, fps, bgColor) and layer-level modifications.
      */
     syncStateWithProject(projectState = null, compId = null) {
-      const ps = projectState || (typeof window !== 'undefined' ? window.currentProjectState : null);
+      const winPs = (typeof window !== 'undefined') ? window.currentProjectState : null;
+      const ps = projectState || winPs;
       if (!ps || !Array.isArray(ps.layers)) return false;
       this._lastProjectState = ps;
+      this._lastWindowProjectState = winPs;
       const targetComp = compId || this.activeCompId || 'root';
       this.rebuildOccupancyIntervals(ps, targetComp);
 
@@ -1264,9 +1318,7 @@
       if (totalDur <= 0 || (typeof window !== 'undefined' && window.isPreviewCacheEnabled === false)) return;
 
       const targetComp = this.activeCompId || 'root';
-      if (!this._compVoidIntervals || !this._compVoidIntervals.has(targetComp)) {
-        this.rebuildOccupancyIntervals(null, targetComp);
-      }
+      this._ensureOccupancySynced(null, targetComp);
       const voidIntervals = this._compVoidIntervals.get(targetComp) || [];
 
       if (this.frames.size === 0 && voidIntervals.length === 0) return;

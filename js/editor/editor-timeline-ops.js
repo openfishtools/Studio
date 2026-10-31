@@ -3645,6 +3645,10 @@ function initTimelineOperations() {
 
       let _cachedLanePitch = null;
       let _cachedOverlayTop = null;
+      window._invalidateTimelineLanePitchCache = function () {
+        _cachedLanePitch = null;
+        _cachedOverlayTop = null;
+      };
 
       function getLayerIndexAtY(clientY) {
         const visibleLayers = getVisibleTimelineLayers();
@@ -3654,8 +3658,15 @@ function initTimelineOperations() {
           if (_cachedLanePitch === null || _cachedOverlayTop === null) {
             const rect = overlayContainer.getBoundingClientRect();
             _cachedOverlayTop = rect.top;
-            const firstSlot = overlayContainer.querySelector('.timeline-lane-pill-slot');
-            _cachedLanePitch = firstSlot ? (firstSlot.offsetHeight || 40) : 40;
+            const slots = overlayContainer.querySelectorAll('.timeline-lane-pill-slot');
+            if (slots.length >= 2 && (slots[1].offsetTop - slots[0].offsetTop) > 16) {
+              _cachedLanePitch = slots[1].offsetTop - slots[0].offsetTop;
+            } else if (typeof window.getTimelineRowPitch === 'function') {
+              _cachedLanePitch = window.getTimelineRowPitch();
+            } else {
+              const firstSlot = slots[0];
+              _cachedLanePitch = firstSlot ? ((firstSlot.offsetHeight || 34) + 6) : 40;
+            }
           }
           const vp = document.getElementById('timeline-layers-viewport');
           const scrollOffset = vp ? vp.scrollTop : 0;
@@ -3830,16 +3841,44 @@ function initTimelineOperations() {
               const startIdx = currentLayers.findIndex(l => l.id === layer.id);
 
               function onEyePointerDown(e) {
+                if (window._activeTimelineItemDrag && window._activeTimelineItemDrag.pointerId !== e.pointerId) return;
                 if (e.button !== undefined && e.button !== 0) return;
+                const eyePointerId = e.pointerId;
                 eyeStartX = e.clientX;
                 eyeStartY = e.clientY;
+                let lastEyeClientY = e.clientY;
                 eyeHoldFired = false;
                 eyeIsDragging = false;
                 eyeInitialSelectedIds = new Set(selectedLayerIds);
 
+                function applyEyeDragSelect() {
+                  if (!eyeHoldFired || typeof getLayerIndexAtY !== 'function') return;
+                  const curIdx = getLayerIndexAtY(lastEyeClientY);
+                  if (curIdx !== -1 && startIdx !== -1) {
+                    const minIdx = Math.min(startIdx, curIdx);
+                    const maxIdx = Math.max(startIdx, curIdx);
+                    const nextSelected = new Set(eyeInitialSelectedIds || []);
+                    for (let i = minIdx; i <= maxIdx; i++) {
+                      if (currentLayers[i]) nextSelected.add(currentLayers[i].id);
+                    }
+                    selectedLayerIds = nextSelected;
+                    selectedLayerId = currentLayers[curIdx]?.id || layer.id;
+                    window.selectedLayerIds = selectedLayerIds;
+                    window.selectedLayerId = selectedLayerId;
+
+                    if (typeof syncSelectionClassesInPlace === 'function') {
+                      syncSelectionClassesInPlace();
+                    }
+                    if (typeof updateEditorHeaderMode === 'function') {
+                      updateEditorHeaderMode();
+                    }
+                  }
+                }
+
                 eyeHoldTimer = setTimeout(() => {
                   eyeHoldFired = true;
-                  try { eyeBtn.setPointerCapture(e.pointerId); } catch (_) {}
+                  window._activeTimelineItemDrag = { type: 'eye-select', pointerId: eyePointerId, onViewportChanged: applyEyeDragSelect };
+                  try { eyeBtn.setPointerCapture(eyePointerId); } catch (_) {}
 
                   if (!isSelectorMode) {
                     isSelectorMode = true;
@@ -3866,6 +3905,8 @@ function initTimelineOperations() {
                 }, 200);
 
                 function onEyePointerMove(me) {
+                  if (eyePointerId !== undefined && me.pointerId !== undefined && me.pointerId !== eyePointerId) return;
+                  lastEyeClientY = me.clientY;
                   const distX = Math.abs(me.clientX - eyeStartX);
                   const distY = Math.abs(me.clientY - eyeStartY);
                   const dist = Math.hypot(distX, distY);
@@ -3875,44 +3916,25 @@ function initTimelineOperations() {
                     eyeHoldTimer = null;
                   }
 
-                  // If hold already fired, enable vertical drag-to-select!
                   if (eyeHoldFired) {
                     eyeIsDragging = true;
                     me.preventDefault();
-
-                    if (typeof getLayerIndexAtY === 'function') {
-                      const curIdx = getLayerIndexAtY(me.clientY);
-                      if (curIdx !== -1 && startIdx !== -1) {
-                        const minIdx = Math.min(startIdx, curIdx);
-                        const maxIdx = Math.max(startIdx, curIdx);
-                        const nextSelected = new Set(eyeInitialSelectedIds || []);
-                        for (let i = minIdx; i <= maxIdx; i++) {
-                          if (currentLayers[i]) nextSelected.add(currentLayers[i].id);
-                        }
-                        selectedLayerIds = nextSelected;
-                        selectedLayerId = currentLayers[curIdx]?.id || layer.id;
-                        window.selectedLayerIds = selectedLayerIds;
-                        window.selectedLayerId = selectedLayerId;
-
-                        if (typeof syncSelectionClassesInPlace === 'function') {
-                          syncSelectionClassesInPlace();
-                        }
-                        if (typeof updateEditorHeaderMode === 'function') {
-                          updateEditorHeaderMode();
-                        }
-                      }
-                    }
+                    applyEyeDragSelect();
                   }
                 }
 
                 function onEyePointerUp(ue) {
+                  if (eyePointerId !== undefined && ue && ue.pointerId !== undefined && ue.pointerId !== eyePointerId) return;
                   _cachedLanePitch = null;
                   _cachedOverlayTop = null;
+                  if (window._activeTimelineItemDrag && window._activeTimelineItemDrag.pointerId === eyePointerId) {
+                    window._activeTimelineItemDrag = null;
+                  }
                   if (eyeHoldTimer) {
                     clearTimeout(eyeHoldTimer);
                     eyeHoldTimer = null;
                   }
-                  try { eyeBtn.releasePointerCapture(ue.pointerId); } catch (_) {}
+                  try { eyeBtn.releasePointerCapture(eyePointerId); } catch (_) {}
                   window.removeEventListener('pointermove', onEyePointerMove);
                   window.removeEventListener('pointerup', onEyePointerUp);
                   window.removeEventListener('pointercancel', onEyePointerUp);
@@ -3960,6 +3982,7 @@ function initTimelineOperations() {
             const pillEl = pillSlot.querySelector('.timeline-layer-ctrl-pill');
             if (pillEl) {
               function onPillPointerDown(e) {
+                if (window._activeTimelineItemDrag && window._activeTimelineItemDrag.pointerId !== e.pointerId) return;
                 if (
                   e.target.closest('.timeline-layer-eye-btn') ||
                   e.target.closest('.timeline-layer-precomp-expand-btn') ||
@@ -3982,6 +4005,7 @@ function initTimelineOperations() {
 
                 const startX = e.clientX;
                 const startY = e.clientY;
+                let lastPillClientY = e.clientY;
                 const pointerId = e.pointerId;
 
                 let isDragMode = false;
@@ -3992,10 +4016,35 @@ function initTimelineOperations() {
                   pillEl.setPointerCapture(pointerId);
                 } catch (_) {}
 
+                function applyPillDragSelect() {
+                  if (!isDragMode) return;
+                  const currentIdx = getLayerIndexAtY(lastPillClientY);
+                  if (currentIdx !== -1) {
+                    const minIdx = Math.min(startIdx, currentIdx);
+                    const maxIdx = Math.max(startIdx, currentIdx);
+
+                    const nextSelected = new Set(initialSelectedIds);
+                    for (let i = minIdx; i <= maxIdx; i++) {
+                      if (currentLayers[i]) {
+                        nextSelected.add(currentLayers[i].id);
+                      }
+                    }
+
+                    selectedLayerIds = nextSelected;
+                    selectedLayerId = currentLayers[currentIdx]?.id || layer.id;
+                    window.selectedLayerIds = selectedLayerIds;
+                    window.selectedLayerId = selectedLayerId;
+
+                    syncSelectionClassesInPlace();
+                    updateEditorHeaderMode();
+                  }
+                }
+
                 // Long-press hold timer (550ms) to trigger selector mode
                 const holdTimer = setTimeout(() => {
                   hasHoldFired = true;
                   isSelectorMode = true;
+                  window._activeTimelineItemDrag = { type: 'pill-select', pointerId, onViewportChanged: applyPillDragSelect };
                   selectedLayerIds.add(layer.id);
                   selectedLayerId = layer.id;
                   window.selectedLayerId = selectedLayerId;
@@ -4007,6 +4056,8 @@ function initTimelineOperations() {
                 }, 550);
 
                 function onPillPointerMove(moveEvent) {
+                  if (pointerId !== undefined && moveEvent.pointerId !== undefined && moveEvent.pointerId !== pointerId) return;
+                  lastPillClientY = moveEvent.clientY;
                   const distX = Math.abs(moveEvent.clientX - startX);
                   const distY = Math.abs(moveEvent.clientY - startY);
                   const dist = Math.hypot(distX, distY);
@@ -4015,6 +4066,7 @@ function initTimelineOperations() {
                   if (!isDragMode && (distY > 8 || (isSelectorMode && dist > 4))) {
                     isDragMode = true;
                     clearTimeout(holdTimer);
+                    window._activeTimelineItemDrag = { type: 'pill-select', pointerId, onViewportChanged: applyPillDragSelect };
 
                     if (!isSelectorMode) {
                       isSelectorMode = true;
@@ -4029,33 +4081,17 @@ function initTimelineOperations() {
 
                   if (isDragMode) {
                     moveEvent.preventDefault();
-
-                    const currentIdx = getLayerIndexAtY(moveEvent.clientY);
-                    if (currentIdx !== -1) {
-                      const minIdx = Math.min(startIdx, currentIdx);
-                      const maxIdx = Math.max(startIdx, currentIdx);
-
-                      const nextSelected = new Set(initialSelectedIds);
-                      for (let i = minIdx; i <= maxIdx; i++) {
-                        if (currentLayers[i]) {
-                          nextSelected.add(currentLayers[i].id);
-                        }
-                      }
-
-                      selectedLayerIds = nextSelected;
-                      selectedLayerId = currentLayers[currentIdx]?.id || layer.id;
-                      window.selectedLayerIds = selectedLayerIds;
-                      window.selectedLayerId = selectedLayerId;
-
-                      syncSelectionClassesInPlace();
-                      updateEditorHeaderMode();
-                    }
+                    applyPillDragSelect();
                   }
                 }
 
                 function onPillPointerUp(upEvent) {
+                  if (pointerId !== undefined && upEvent && upEvent.pointerId !== undefined && upEvent.pointerId !== pointerId) return;
                   _cachedLanePitch = null;
                   _cachedOverlayTop = null;
+                  if (window._activeTimelineItemDrag && window._activeTimelineItemDrag.pointerId === pointerId) {
+                    window._activeTimelineItemDrag = null;
+                  }
                   clearTimeout(holdTimer);
                   try {
                     pillEl.releasePointerCapture(pointerId);
@@ -4284,11 +4320,20 @@ function initTimelineOperations() {
             function onClipPointerDown(e) {
               justTappedInPointerUp = false;
               if (window.isTimelinePinching || (window.timelinePinchEndTime && Date.now() - window.timelinePinchEndTime < 250)) return;
+              // If Finger 1 is already dragging a layer/clip/handle/pill, let Finger 2 bubble to timeline pan!
+              if (window._activeTimelineItemDrag && window._activeTimelineItemDrag.pointerId !== e.pointerId) return;
               if (e.target.closest('.timeline-clip-handle') || e.target.closest('.timeline-keyframe-marker.is-active-prop') || e.target.closest('.timeline-keyframe-marker.is-out-of-bounds') || e.target.closest('.text-anim-marker')) return;
               if (e.button !== undefined && e.button !== 0) return;
 
+              const clipPointerId = e.pointerId;
               startPointerX = e.clientX;
               startPointerY = e.clientY;
+              let lastClipClientX = e.clientX;
+              let lastClipClientY = e.clientY;
+              let initialDragPanX = window.timelinePanX !== undefined ? window.timelinePanX : (typeof panX !== 'undefined' ? panX : 0);
+              let initialHoldScrollTop = document.getElementById('timeline-layers-viewport')?.scrollTop || 0;
+              let vReorderSession = null;
+
               initialStartPx = layer.startPx || 0;
               const initialSlideStartSec = layer.startSec !== undefined ? layer.startSec : (initialStartPx / pixelsPerSecond);
               const initialSlideDurSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pixelsPerSecond);
@@ -4327,72 +4372,16 @@ function initTimelineOperations() {
                 });
               }
 
-              // Hold timer (360ms): triggers hold state without opening popover
-              lpHoldTimer = setTimeout(() => {
-                if (hasSlid || isPanPassthrough) return;
-                isHoldActive = true;
-                if (navigator.vibrate) try { navigator.vibrate(25); } catch (_) {}
-                clipEl.classList.add('is-held');
-                if (isMultiDragging && multiDragLayers.length > 0) {
-                  multiDragLayers.forEach(m => { if (m.clipEl) m.clipEl.classList.add('is-held'); });
-                }
-              }, HOLD_DELAY);
+              function applyHeldClipDragPosition() {
+                if (!isHoldActive || hasMenuOpened) return;
+                const curPanX = window.timelinePanX !== undefined ? window.timelinePanX : (typeof panX !== 'undefined' ? panX : 0);
+                const panShiftPx = curPanX - initialDragPanX;
+                const vpEl = document.getElementById('timeline-layers-viewport');
+                const scrollShiftY = vpEl ? (vpEl.scrollTop - initialHoldScrollTop) : 0;
+                const effDx = (lastClipClientX - startPointerX) - panShiftPx;
+                const effDy = (lastClipClientY - startPointerY) + scrollShiftY;
+                const dist = Math.hypot(effDx, effDy);
 
-              function onClipPointerMove(moveEvent) {
-                if (window.isTimelinePinching) {
-                  if (lpHoldTimer) {
-                    clearTimeout(lpHoldTimer);
-                    lpHoldTimer = null;
-                  }
-                  return;
-                }
-                const dist = Math.hypot(moveEvent.clientX - startPointerX, moveEvent.clientY - startPointerY);
-
-                if (hasMenuOpened) return;
-
-                // 1. If user moves pointer BEFORE hold duration is reached: cancel hold, pan timeline
-                if (!isHoldActive) {
-                  if (dist > 6) {
-                    if (lpHoldTimer) {
-                      clearTimeout(lpHoldTimer);
-                      lpHoldTimer = null;
-                    }
-
-                    // Forward to timeline scrubbing & vertical viewport scrolling
-                    if (!isPanPassthrough) {
-                      isPanPassthrough = true;
-                      panStartX = moveEvent.clientX;
-                      panStartY = moveEvent.clientY;
-                      panStartPanX = window.timelinePanX !== undefined ? window.timelinePanX : 0;
-                      panStartScrollTop = document.getElementById('timeline-layers-viewport')?.scrollTop || 0;
-                      window.isTimelinePanning = true;
-                      window.isTimelineScrubbing = true;
-                      if (window.FishAudioEngine) window.FishAudioEngine.startScrub();
-                      const vp = document.getElementById('timeline-layers-viewport');
-                      if (vp) vp.classList.add('is-dragging');
-                    }
-
-                    const deltaX = moveEvent.clientX - panStartX;
-                    const deltaY = moveEvent.clientY - panStartY;
-                    const bounds = (typeof getTimelineBounds === 'function') ? getTimelineBounds() : { min: -10000, max: 0 };
-                    let targetPanX = Math.max(bounds.min, Math.min(0, panStartPanX + deltaX));
-                    const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || 60);
-                    const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
-                    const rawSec = Math.max(0, -targetPanX / activePps);
-                    const snappedSec = Math.round(rawSec * safeFps) / safeFps;
-                    targetPanX = -snappedSec * activePps;
-                    if (typeof updateTimelinePosition === 'function') {
-                      updateTimelinePosition(targetPanX);
-                    }
-                    const vp = document.getElementById('timeline-layers-viewport');
-                    if (vp) {
-                      vp.scrollTop = panStartScrollTop - deltaY;
-                    }
-                  }
-                  return;
-                }
-
-                // 2. User HAS held (isHoldActive === true): drag enters layer slide mode!
                 if (dist <= 4 && !isDraggingLayer) return;
 
                 if (!isDraggingLayer) {
@@ -4410,14 +4399,18 @@ function initTimelineOperations() {
                     clipEl.classList.add('is-sliding');
                   }
                   try {
-                    clipEl.setPointerCapture(e.pointerId);
+                    clipEl.setPointerCapture(clipPointerId);
                   } catch (_) {}
                 }
 
-                moveEvent.preventDefault();
                 hasSlid = true;
                 window.isTransformInteracting = true;
-                const deltaX = moveEvent.clientX - startPointerX;
+                const deltaX = effDx;
+
+                // Vertical layer reorder when dragging held clip across lanes (or scrolling viewport with 2nd finger)
+                if (vReorderSession) {
+                  vReorderSession.update(lastClipClientY, 14);
+                }
 
                 if (isMultiDragging && multiDragLayers.length > 0) {
                   const minMultiStartPx = Math.min(...multiDragLayers.map(m => m.initialStartPx));
@@ -4591,7 +4584,97 @@ function initTimelineOperations() {
                 }
               }
 
+              // Hold timer (360ms): triggers hold state without opening popover
+              lpHoldTimer = setTimeout(() => {
+                if (hasSlid || isPanPassthrough) return;
+                isHoldActive = true;
+                initialDragPanX = window.timelinePanX !== undefined ? window.timelinePanX : (typeof panX !== 'undefined' ? panX : 0);
+                initialHoldScrollTop = document.getElementById('timeline-layers-viewport')?.scrollTop || 0;
+                if (window._TimelineVerticalReorderHelper && typeof window._TimelineVerticalReorderHelper.createSession === 'function') {
+                  vReorderSession = window._TimelineVerticalReorderHelper.createSession(layer.id, lastClipClientY);
+                }
+                window._activeTimelineItemDrag = {
+                  type: 'clip',
+                  pointerId: clipPointerId,
+                  onViewportChanged: applyHeldClipDragPosition
+                };
+                if (navigator.vibrate) try { navigator.vibrate(25); } catch (_) {}
+                clipEl.classList.add('is-held');
+                if (isMultiDragging && multiDragLayers.length > 0) {
+                  multiDragLayers.forEach(m => { if (m.clipEl) m.clipEl.classList.add('is-held'); });
+                }
+              }, HOLD_DELAY);
+
+              function onClipPointerMove(moveEvent) {
+                if (clipPointerId !== undefined && moveEvent.pointerId !== undefined && moveEvent.pointerId !== clipPointerId) return;
+                if (window.isTimelinePinching) {
+                  if (lpHoldTimer) {
+                    clearTimeout(lpHoldTimer);
+                    lpHoldTimer = null;
+                  }
+                  return;
+                }
+                lastClipClientX = moveEvent.clientX;
+                lastClipClientY = moveEvent.clientY;
+                const dist = Math.hypot(moveEvent.clientX - startPointerX, moveEvent.clientY - startPointerY);
+
+                if (hasMenuOpened) return;
+
+                // 1. If user moves pointer BEFORE hold duration is reached: cancel hold, pan timeline
+                if (!isHoldActive) {
+                  if (dist > 6) {
+                    if (lpHoldTimer) {
+                      clearTimeout(lpHoldTimer);
+                      lpHoldTimer = null;
+                    }
+
+                    // Forward to timeline scrubbing & vertical viewport scrolling
+                    if (!isPanPassthrough) {
+                      isPanPassthrough = true;
+                      panStartX = moveEvent.clientX;
+                      panStartY = moveEvent.clientY;
+                      panStartPanX = window.timelinePanX !== undefined ? window.timelinePanX : 0;
+                      panStartScrollTop = document.getElementById('timeline-layers-viewport')?.scrollTop || 0;
+                      window.isTimelinePanning = true;
+                      window.isTimelineScrubbing = true;
+                      if (window.FishAudioEngine) window.FishAudioEngine.startScrub();
+                      const vp = document.getElementById('timeline-layers-viewport');
+                      if (vp) vp.classList.add('is-dragging');
+                    }
+
+                    const deltaX = moveEvent.clientX - panStartX;
+                    const deltaY = moveEvent.clientY - panStartY;
+                    const bounds = (typeof getTimelineBounds === 'function') ? getTimelineBounds() : { min: -10000, max: 0 };
+                    let targetPanX = Math.max(bounds.min, Math.min(0, panStartPanX + deltaX));
+                    const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || 60);
+                    const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
+                    const rawSec = Math.max(0, -targetPanX / activePps);
+                    const snappedSec = Math.round(rawSec * safeFps) / safeFps;
+                    targetPanX = -snappedSec * activePps;
+                    if (typeof updateTimelinePosition === 'function') {
+                      updateTimelinePosition(targetPanX);
+                    }
+                    const vp = document.getElementById('timeline-layers-viewport');
+                    if (vp) {
+                      vp.scrollTop = panStartScrollTop - deltaY;
+                    }
+                    if (window._activeTimelineItemDrag && typeof window._activeTimelineItemDrag.onViewportChanged === 'function') {
+                      window._activeTimelineItemDrag.onViewportChanged();
+                    }
+                  }
+                  return;
+                }
+
+                // 2. User HAS held (isHoldActive === true): drag enters layer slide + vertical reorder mode!
+                moveEvent.preventDefault();
+                applyHeldClipDragPosition();
+              }
+
               function onClipPointerUp(upEvent) {
+                if (clipPointerId !== undefined && upEvent && upEvent.pointerId !== undefined && upEvent.pointerId !== clipPointerId) return;
+                if (window._activeTimelineItemDrag && window._activeTimelineItemDrag.pointerId === clipPointerId) {
+                  window._activeTimelineItemDrag = null;
+                }
                 if (typeof hideTimelineSnapGuide === 'function') hideTimelineSnapGuide();
                 window._lastSlideSnapPx = null;
 
@@ -4615,6 +4698,7 @@ function initTimelineOperations() {
 
                 // Passthrough timeline pan cleanup
                 if (isPanPassthrough) {
+                  if (vReorderSession) vReorderSession.finish(false);
                   isPanPassthrough = false;
                   window.isTimelinePanning = false;
                   window.isTimelineScrubbing = false;
@@ -4635,6 +4719,7 @@ function initTimelineOperations() {
 
 
                 if (hasMenuOpened) {
+                  if (vReorderSession) vReorderSession.finish(false);
                   window.isTransformInteracting = false;
                   return;
                 }
@@ -4644,6 +4729,10 @@ function initTimelineOperations() {
                   isDraggingLayer = false;
                   isHoldActive = false;
                   window.isTransformInteracting = false;
+                  if (vReorderSession) {
+                    vReorderSession.finish(true);
+                    vReorderSession = null;
+                  }
                   if (isMultiDragging && multiDragLayers.length > 0) {
                     multiDragLayers.forEach(m => {
                       if (m.clipEl) m.clipEl.classList.remove('is-sliding');
@@ -4664,7 +4753,7 @@ function initTimelineOperations() {
                     }
                   }
                   try {
-                    clipEl.releasePointerCapture(upEvent.pointerId);
+                    clipEl.releasePointerCapture(clipPointerId);
                   } catch (_) {}
 
                   justFinishedSlide = true;
@@ -4725,6 +4814,7 @@ function initTimelineOperations() {
 
                 // Case 2: Held and released WITHOUT dragging -> Cleanly clear hold state without opening popover
                 if (isHoldActive && !hasSlid) {
+                  if (vReorderSession) vReorderSession.finish(false);
                   isHoldActive = false;
                   window.isTransformInteracting = false;
                   if (isMultiDragging && multiDragLayers.length > 0) {
@@ -4739,12 +4829,13 @@ function initTimelineOperations() {
                     clipEl.classList.remove('is-sliding');
                   }
                   try {
-                    clipEl.releasePointerCapture(upEvent.pointerId);
+                    clipEl.releasePointerCapture(clipPointerId);
                   } catch (_) {}
                   return;
                 }
 
                 // Case 3: Tap without hold (Instant selection on pointerup with zero mobile click delay)
+                if (vReorderSession) vReorderSession.finish(false);
                 const dist = Math.hypot(upEvent.clientX - startPointerX, upEvent.clientY - startPointerY);
                 if (!hasSlid && dist <= 6) {
                   if (isSelectedLayer && !isSelectorMode) {
@@ -4809,6 +4900,7 @@ function initTimelineOperations() {
 
             if (leftHandle) {
               leftHandle.addEventListener('pointerdown', (e) => {
+                if (window._activeTimelineItemDrag && window._activeTimelineItemDrag.pointerId !== e.pointerId) return;
                 const isCurrentlySelected = clipEl.classList.contains('is-selected') ||
                   (window.selectedLayerIds && window.selectedLayerIds.has(layer.id)) ||
                   (window.selectedLayerId === layer.id);
@@ -4816,10 +4908,13 @@ function initTimelineOperations() {
                 if (e.button !== undefined && e.button !== 0) return;
                 e.stopPropagation();
                 e.preventDefault();
-                try { leftHandle.setPointerCapture(e.pointerId); } catch (_) {}
+                const trimPointerId = e.pointerId;
+                try { leftHandle.setPointerCapture(trimPointerId); } catch (_) {}
 
                 const curPps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
                 const startPointerX = e.clientX;
+                let lastTrimClientX = e.clientX;
+                const initialTrimPanX = window.timelinePanX !== undefined ? window.timelinePanX : (typeof panX !== 'undefined' ? panX : 0);
                 const initialStartPx = layer.startPx || 0;
                 const initialWidthPx = layer.widthPx || 320;
                 const fixedRightPx = initialStartPx + initialWidthPx;
@@ -4874,9 +4969,10 @@ function initTimelineOperations() {
                   }];
                 }
 
-                function onPointerMove(moveEvent) {
+                function applyLeftTrimPosition() {
                   const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
-                  const deltaX = moveEvent.clientX - startPointerX;
+                  const curPanX = window.timelinePanX !== undefined ? window.timelinePanX : (typeof panX !== 'undefined' ? panX : 0);
+                  const deltaX = (lastTrimClientX - startPointerX) - (curPanX - initialTrimPanX);
                   let newStartPx = initialStartPx + deltaX;
 
                   // Snap trimming start to beatmarks, other layers depan/belakang, and playhead
@@ -4989,10 +5085,26 @@ function initTimelineOperations() {
                   updateTimelinePosition(panX, true);
                 }
 
+                window._activeTimelineItemDrag = {
+                  type: 'trim-left',
+                  pointerId: trimPointerId,
+                  onViewportChanged: applyLeftTrimPosition
+                };
+
+                function onPointerMove(moveEvent) {
+                  if (trimPointerId !== undefined && moveEvent.pointerId !== undefined && moveEvent.pointerId !== trimPointerId) return;
+                  lastTrimClientX = moveEvent.clientX;
+                  applyLeftTrimPosition();
+                }
+
                 function onPointerUp(upEvent) {
+                  if (trimPointerId !== undefined && upEvent && upEvent.pointerId !== undefined && upEvent.pointerId !== trimPointerId) return;
+                  if (window._activeTimelineItemDrag && window._activeTimelineItemDrag.pointerId === trimPointerId) {
+                    window._activeTimelineItemDrag = null;
+                  }
                   if (typeof hideTimelineSnapGuide === 'function') hideTimelineSnapGuide();
                   window._lastTrimSnapPx = null;
-                  try { leftHandle.releasePointerCapture(upEvent.pointerId); } catch (_) {}
+                  try { leftHandle.releasePointerCapture(trimPointerId); } catch (_) {}
                   window.removeEventListener('pointermove', onPointerMove);
                   window.removeEventListener('pointerup', onPointerUp);
                   window.removeEventListener('pointercancel', onPointerUp);
@@ -5041,6 +5153,7 @@ function initTimelineOperations() {
 
             if (rightHandle) {
               rightHandle.addEventListener('pointerdown', (e) => {
+                if (window._activeTimelineItemDrag && window._activeTimelineItemDrag.pointerId !== e.pointerId) return;
                 const isCurrentlySelected = clipEl.classList.contains('is-selected') ||
                   (window.selectedLayerIds && window.selectedLayerIds.has(layer.id)) ||
                   (window.selectedLayerId === layer.id);
@@ -5048,10 +5161,13 @@ function initTimelineOperations() {
                 if (e.button !== undefined && e.button !== 0) return;
                 e.stopPropagation();
                 e.preventDefault();
-                try { rightHandle.setPointerCapture(e.pointerId); } catch (_) {}
+                const trimPointerId = e.pointerId;
+                try { rightHandle.setPointerCapture(trimPointerId); } catch (_) {}
 
                 const curPps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
                 const startPointerX = e.clientX;
+                let lastTrimClientX = e.clientX;
+                const initialTrimPanX = window.timelinePanX !== undefined ? window.timelinePanX : (typeof panX !== 'undefined' ? panX : 0);
                 const initialWidthPx = layer.widthPx || 320;
                 const currentOffsetSec = layer.sourceOffsetSec || 0;
                 const totalMediaDur = (layer.type === 'video' || layer.type === 'audio') ? getLayerMediaDuration(layer) : null;
@@ -5104,9 +5220,10 @@ function initTimelineOperations() {
                   }];
                 }
 
-                function onPointerMove(moveEvent) {
+                function applyRightTrimPosition() {
                   const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
-                  const deltaX = moveEvent.clientX - startPointerX;
+                  const curPanX = window.timelinePanX !== undefined ? window.timelinePanX : (typeof panX !== 'undefined' ? panX : 0);
+                  const deltaX = (lastTrimClientX - startPointerX) - (curPanX - initialTrimPanX);
                   let rawEndPx = (layer.startPx || 0) + initialWidthPx + deltaX;
 
                   // Snap trimming end to beatmarks, other layers depan/belakang, and playhead
@@ -5200,10 +5317,26 @@ function initTimelineOperations() {
                   updateTimelinePosition(panX, true);
                 }
 
+                window._activeTimelineItemDrag = {
+                  type: 'trim-right',
+                  pointerId: trimPointerId,
+                  onViewportChanged: applyRightTrimPosition
+                };
+
+                function onPointerMove(moveEvent) {
+                  if (trimPointerId !== undefined && moveEvent.pointerId !== undefined && moveEvent.pointerId !== trimPointerId) return;
+                  lastTrimClientX = moveEvent.clientX;
+                  applyRightTrimPosition();
+                }
+
                 function onPointerUp(upEvent) {
+                  if (trimPointerId !== undefined && upEvent && upEvent.pointerId !== undefined && upEvent.pointerId !== trimPointerId) return;
+                  if (window._activeTimelineItemDrag && window._activeTimelineItemDrag.pointerId === trimPointerId) {
+                    window._activeTimelineItemDrag = null;
+                  }
                   if (typeof hideTimelineSnapGuide === 'function') hideTimelineSnapGuide();
                   window._lastTrimSnapPx = null;
-                  try { rightHandle.releasePointerCapture(upEvent.pointerId); } catch (_) {}
+                  try { rightHandle.releasePointerCapture(trimPointerId); } catch (_) {}
                   window.removeEventListener('pointermove', onPointerMove);
                   window.removeEventListener('pointerup', onPointerUp);
                   window.removeEventListener('pointercancel', onPointerUp);
@@ -5604,9 +5737,11 @@ function initTimelineOperations() {
               // Pointer drag up and down to freely swap layers with full visual lane follow
               let isDragging = false;
               pill.addEventListener('pointerdown', (e) => {
+                if (window._activeTimelineItemDrag && window._activeTimelineItemDrag.pointerId !== e.pointerId) return;
                 e.stopPropagation();
                 e.preventDefault();
-                try { pill.setPointerCapture(e.pointerId); } catch (_) {}
+                const reorderPointerId = e.pointerId;
+                try { pill.setPointerCapture(reorderPointerId); } catch (_) {}
                 isDragging = true;
 
                 const curLayers = (currentProjectState.layers || []);
@@ -5674,13 +5809,14 @@ function initTimelineOperations() {
                 }
 
                 function updatePositions() {
+                  if (!isDragging) return;
                   const scrollDelta = layersViewport ? (layersViewport.scrollTop - startScrollTop) : 0;
                   let rawDeltaY = (lastPointerClientY - startY) + scrollDelta;
 
                   const isCompactVp = !window.isDesktop && !document.querySelector('.desktop-viewport');
                   const rowPitch = (allLanes.length >= 2)
-                    ? Math.max(24, Math.round(allLanes[1].offsetTop - allLanes[0].offsetTop))
-                    : (isCompactVp ? 40 : 54);
+                    ? Math.max(20, Math.round(allLanes[1].offsetTop - allLanes[0].offsetTop))
+                    : (typeof window.getTimelineRowPitch === 'function' ? window.getTimelineRowPitch() : (isCompactVp ? 40 : 54));
 
                   // Constrain deltaY strictly within existing layer boundaries:
                   const minMovingIdx = movingIndices.length > 0 ? movingIndices[0] : originalIndex;
@@ -5727,9 +5863,16 @@ function initTimelineOperations() {
                   });
                 }
 
+                window._activeTimelineItemDrag = {
+                  type: 'reorder',
+                  pointerId: reorderPointerId,
+                  onViewportChanged: updatePositions
+                };
+
                 let reorderRaf = null;
                 function onPointerMove(moveEvent) {
                   if (!isDragging) return;
+                  if (reorderPointerId !== undefined && moveEvent.pointerId !== undefined && moveEvent.pointerId !== reorderPointerId) return;
                   lastPointerClientY = moveEvent.clientY;
                   if (!reorderRaf) {
                     reorderRaf = requestAnimationFrame(() => {
@@ -5744,7 +5887,11 @@ function initTimelineOperations() {
 
                 function onPointerUp(upEvent) {
                   if (!isDragging) return;
+                  if (reorderPointerId !== undefined && upEvent && upEvent.pointerId !== undefined && upEvent.pointerId !== reorderPointerId) return;
                   isDragging = false;
+                  if (window._activeTimelineItemDrag && window._activeTimelineItemDrag.pointerId === reorderPointerId) {
+                    window._activeTimelineItemDrag = null;
+                  }
                   if (reorderRaf) {
                     cancelAnimationFrame(reorderRaf);
                     reorderRaf = null;
@@ -5753,7 +5900,7 @@ function initTimelineOperations() {
                     cancelAnimationFrame(autoScrollRaf);
                     autoScrollRaf = null;
                   }
-                  try { pill.releasePointerCapture(upEvent.pointerId); } catch (_) {}
+                  try { pill.releasePointerCapture(reorderPointerId); } catch (_) {}
 
                   movingPills.forEach(p => {
                     p.classList.remove('is-dragging');
@@ -5945,7 +6092,9 @@ function initTimelineOperations() {
             return lanes[r].offsetTop + lanes[r].offsetHeight / 2;
           }
           const isCompactVp = !window.isDesktop && !document.querySelector('.desktop-viewport');
-          return r * (isCompactVp ? 40 : 54) + (isCompactVp ? 17 : 22);
+          const pitch = typeof window.getTimelineRowPitch === 'function' ? window.getTimelineRowPitch() : (isCompactVp ? 40 : 54);
+          const vScale = window.currentTimelineVerticalScale || 1.0;
+          return r * pitch + (isCompactVp ? Math.round(17 * vScale) : 22);
         }
 
         // 1. Group child layers by parentId
@@ -6114,8 +6263,8 @@ function initTimelineOperations() {
         const idx = (currentProjectState.layers || []).findIndex(l => l.id === layerId);
         if (idx >= 0) {
           const removed = currentProjectState.layers[idx];
-          invalidatePreviewCacheForLayer(removed);
           currentProjectState.layers.splice(idx, 1);
+          invalidatePreviewCacheForLayer(removed);
           if (selectedLayerId === layerId) {
             selectedLayerId = null;
             window.selectedLayerId = null;
@@ -7038,6 +7187,11 @@ function initTimelineOperations() {
         };
 
         delete newLayer._precompBufferCanvas;
+        delete newLayer._shapeBufferCanvas;
+        delete newLayer._fillBufferCanvas;
+        delete newLayer._textBufferCanvas;
+        delete newLayer._textMbCanvas;
+        delete newLayer._fittedCanvas;
         delete newLayer._runtimeEl;
         delete newLayer._tempCanvas;
 
@@ -7064,14 +7218,7 @@ function initTimelineOperations() {
         layer._cachedStartSec = startSec;
         layer._cachedEndSec = rightStartSec;
 
-        // Invalidate preview cache across both halves explicitly
-        if (window.PreviewCacheManager) {
-          window.PreviewCacheManager.invalidateRange(startSec, endSec);
-        }
-        invalidatePreviewCacheForLayer(layer);
-        invalidatePreviewCacheForLayer(newLayer);
-
-        // Sisipkan potongan depan (kanan) di ATAS layer asli dalam timeline layering
+        // Sisipkan potongan depan (kanan) di ATAS layer asli SEBELUM rebuild occupancy & invalidasi cache
         const layerIdx = currentProjectState.layers.findIndex(l => l.id === layer.id);
         if (layerIdx !== -1) {
           currentProjectState.layers.splice(layerIdx, 0, newLayer);
@@ -7079,8 +7226,18 @@ function initTimelineOperations() {
           currentProjectState.layers.unshift(newLayer);
         }
 
+        // Invalidate preview cache across both halves explicitly after newLayer is in currentProjectState.layers
+        if (window.PreviewCacheManager) {
+          window.PreviewCacheManager.invalidateRange(startSec, endSec);
+          if (typeof window.PreviewCacheManager.syncStateWithProject === 'function') {
+            window.PreviewCacheManager.syncStateWithProject(currentProjectState);
+          }
+        }
+        invalidatePreviewCacheForLayer(layer, startSec, endSec);
+        invalidatePreviewCacheForLayer(newLayer, rightStartSec, endSec);
+
         renderTimelineLayers();
-        redrawComposition();
+        redrawComposition('projectMutated');
         saveCurrentProjectLayers();
 
         // User requirement: "(yang di select itu layer yang setelah current)"

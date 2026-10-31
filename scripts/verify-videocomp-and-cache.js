@@ -745,7 +745,22 @@ vecKfLayer.shapeProps.points = [{ x: 25, y: 40 }, { x: 120, y: 160 }];
 const sigVecAfter = pcm.getLayerSignature(vecKfLayer, 0);
 assert.strictEqual(sigVecBefore, sigVecAfter, 'getLayerSignature must remain stable when vectorPoints keyframes mutate bounds during scrub');
 
-console.log('✓ Algoritma 5: Temporal Occupancy Partitioning, Virtual Void Cache & Dynamic Mutation verified cleanly.');
+// Test: Cut Mid (Potong Tengah) on cached layer must NOT turn right split half into a false void span
+const cutLayerLeft = mixedProject.layers[0]; // anim_layer [0..6s]
+// Populate mock cached frame at 4.0s (frame 240)
+pcm.getPool('root').set(240, { bitmap: { width: 1920, height: 1080 }, width: 1920, height: 1080, isDraft: false });
+assert.strictEqual(pcm.hasFrame(240, 1920, 1080, 'root'), true, 'Pre-cut frame 240 should be cached');
+// Simulate split at 3.0s: shorten left half to [0..3s], invalidate range, and splice right half [3..6s]
+cutLayerLeft.durationSec = 3;
+pcm.invalidateRange(0, 6, 60, 'root');
+const cutLayerRight = { id: 'anim_layer_right', type: 'text', startSec: 3, durationSec: 3 };
+mixedProject.layers.splice(0, 0, cutLayerRight);
+assert.strictEqual(pcm.hasActiveVisualContentAt(4.0, 'root'), true, 'Right split piece [3..6s] must be recognized as active visual content even if spliced after invalidateRange');
+assert.strictEqual(pcm.isTimeInVoidSpan(4.0, 'root'), false, 'Right split piece [3..6s] must NOT be classified as a void span');
+assert.strictEqual(pcm.hasFrame(240, 1920, 1080, 'root'), false, 'Invalidated split piece frame 240 must report cache miss (not virtual void cache hit)');
+assert.strictEqual(pcm.getFrame(240, 1920, 1080, 'root'), null, 'getFrame on invalidated split piece must return null so live layer renders instead of blank _audioOnlyCanvas');
+
+console.log('✓ Algoritma 5: Temporal Occupancy Partitioning, Virtual Void Cache, Dynamic Mutation & Cut Mid Split Sync verified cleanly.');
 
 console.log('✓ VideoFrameExtractor verified (retain/release deduplication, reverse eviction inversion, seamless reverse split, proactive streaming prefetch, upcoming frame sort order, precomp RAM eviction protection, extraction circuit breaker, mobile VRAM cap, precomp sequence resolution, and invalidation).');
 

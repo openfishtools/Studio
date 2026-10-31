@@ -1754,6 +1754,7 @@
 
       // Pointer drag scrubbing & vertical layer panning & multi-directional ruler gesture
       let isPanning = false;
+      let panPointerId = null;
       let startX = 0;
       let startY = 0;
       let startPanX = 0;
@@ -1766,19 +1767,218 @@
       let hasTimelineEmptyLpFired = false;
       let timelineTweenRaf = null;
 
-      // Touch 2-finger timeline pinch-to-zoom state
+      // Touch 2-finger timeline 2D pinch-to-zoom state (Horizontal + Vertical)
       let isTimelinePinching = false;
       let timelinePinchStartDist = 0;
+      let timelinePinchStartSpanX = 0;
+      let timelinePinchStartSpanY = 0;
       let timelinePinchStartPps = 80;
+      let timelinePinchStartVScale = 1.0;
       let timelinePinchAnchorSec = 0;
       let timelinePinchEndTime = 0;
       window.isTimelinePinching = false;
       window.timelinePinchEndTime = 0;
+      if (typeof window.currentTimelineVerticalScale !== 'number') {
+        window.currentTimelineVerticalScale = 1.0;
+      }
+
+      function getTimelineRowPitch() {
+        const track = document.getElementById('timeline-layers-track');
+        if (track) {
+          const lanes = track.querySelectorAll('.timeline-track-lane');
+          if (lanes.length >= 2) {
+            const diff = lanes[1].offsetTop - lanes[0].offsetTop;
+            if (diff > 16) return diff;
+          }
+          if (lanes.length === 1 && lanes[0].offsetHeight > 12) {
+            const vScale = window.currentTimelineVerticalScale || 1.0;
+            const isCompact = !window.isDesktop && !document.querySelector('.desktop-viewport');
+            const gap = isCompact ? Math.max(3, Math.round(6 * vScale)) : 10;
+            return lanes[0].offsetHeight + gap;
+          }
+        }
+        const isCompactVp = !window.isDesktop && !document.querySelector('.desktop-viewport');
+        if (!isCompactVp) return 54;
+        const vScale = window.currentTimelineVerticalScale || 1.0;
+        return Math.round(34 * vScale) + Math.max(3, Math.round(6 * vScale));
+      }
+      window.getTimelineRowPitch = getTimelineRowPitch;
+
+      function setTimelineVerticalZoom(newVScale, anchorClientY) {
+        if (document.querySelector('.desktop-workstation, .desktop-viewport')) return;
+        const clampedScale = Math.max(0.68, Math.min(2.25, Number(newVScale) || 1.0));
+        const prevScale = window.currentTimelineVerticalScale || 1.0;
+        if (Math.abs(clampedScale - prevScale) < 0.008) return;
+
+        const prevPitch = getTimelineRowPitch();
+        window.currentTimelineVerticalScale = clampedScale;
+
+        const timelineContainer = document.getElementById('main-editor-timeline');
+        if (timelineContainer) {
+          const laneH = Math.round(34 * clampedScale);
+          const clipH = Math.round(30 * clampedScale);
+          const gapH = Math.max(3, Math.round(6 * clampedScale));
+          const childLaneH = Math.round(26 * clampedScale);
+          const childClipH = Math.round(22 * clampedScale);
+          timelineContainer.style.setProperty('--tl-mobile-lane-height', `${laneH}px`);
+          timelineContainer.style.setProperty('--tl-mobile-clip-height', `${clipH}px`);
+          timelineContainer.style.setProperty('--tl-mobile-lane-gap', `${gapH}px`);
+          timelineContainer.style.setProperty('--tl-mobile-child-lane-height', `${childLaneH}px`);
+          timelineContainer.style.setProperty('--tl-mobile-child-clip-height', `${childClipH}px`);
+        }
+
+        if (typeof window._invalidateTimelineLanePitchCache === 'function') {
+          window._invalidateTimelineLanePitchCache();
+        }
+
+        if (layersViewport && prevPitch > 0) {
+          const newPitch = Math.round(34 * clampedScale) + Math.max(3, Math.round(6 * clampedScale));
+          const vpRect = layersViewport.getBoundingClientRect();
+          const localAnchorY = (typeof anchorClientY === 'number' && vpRect.height > 0)
+            ? Math.max(0, Math.min(vpRect.height, anchorClientY - vpRect.top))
+            : (vpRect.height * 0.5);
+          const contentYBefore = layersViewport.scrollTop + localAnchorY;
+          const contentYAfter = contentYBefore * (newPitch / prevPitch);
+          const maxScroll = Math.max(0, layersViewport.scrollHeight - layersViewport.clientHeight);
+          layersViewport.scrollTop = Math.max(0, Math.min(maxScroll, Math.round(contentYAfter - localAnchorY)));
+        }
+
+        if (typeof renderTimelineLinkConnectors === 'function') {
+          renderTimelineLinkConnectors();
+        }
+        if (window._activeTimelineItemDrag && typeof window._activeTimelineItemDrag.onViewportChanged === 'function') {
+          window._activeTimelineItemDrag.onViewportChanged();
+        }
+      }
+      window.setTimelineVerticalZoom = setTimelineVerticalZoom;
+
+      // Shared helper for smooth vertical layer lane reordering (used by both reorder pill & clip hold-drag)
+      window._TimelineVerticalReorderHelper = {
+        createSession(primaryLayerId, startClientY) {
+          const curLayers = (currentProjectState && currentProjectState.layers) ? currentProjectState.layers : [];
+          const originalIndex = curLayers.findIndex(l => l.id === primaryLayerId);
+          if (originalIndex < 0) return null;
+
+          const isMulti = selectedLayerIds && selectedLayerIds.has(primaryLayerId) && selectedLayerIds.size > 1;
+          const movingIdSet = isMulti ? new Set(selectedLayerIds) : new Set([primaryLayerId]);
+          const movingLayers = curLayers.filter(l => movingIdSet.has(l.id));
+          const movingIndices = movingLayers.map(l => curLayers.findIndex(x => x.id === l.id)).sort((a, b) => a - b);
+          const movingCount = movingLayers.length;
+
+          const reorderOverlay = document.getElementById('timeline-lane-reorder-overlay');
+          const overlayContainer = document.getElementById('timeline-lane-heads-overlay');
+          const trackEl = document.getElementById('timeline-layers-track');
+          if (!trackEl) return null;
+
+          const movingPills = [];
+          const movingLanes = [];
+          const movingLeftSlots = [];
+          movingIdSet.forEach(id => {
+            const p = reorderOverlay ? reorderOverlay.querySelector(`.timeline-layer-reorder-pill[data-layer-id="${id}"]`) : null;
+            const l = trackEl.querySelector(`.timeline-track-lane[data-layer-id="${id}"]`);
+            const s = overlayContainer ? overlayContainer.querySelector(`.timeline-lane-pill-slot[data-layer-id="${id}"]`) : null;
+            if (p) movingPills.push(p);
+            if (l) movingLanes.push(l);
+            if (s) movingLeftSlots.push(s);
+          });
+
+          const allLanes = Array.from(trackEl.querySelectorAll('.timeline-track-lane'));
+          const allLeftSlots = overlayContainer ? Array.from(overlayContainer.querySelectorAll('.timeline-lane-pill-slot')) : [];
+          const allRightSlots = reorderOverlay ? Array.from(reorderOverlay.querySelectorAll('.timeline-lane-reorder-slot')) : [];
+
+          let lastClientY = startClientY;
+          const startScrollTopVal = layersViewport ? layersViewport.scrollTop : 0;
+          let currentDropIdx = originalIndex;
+          let isActiveVertical = false;
+
+          return {
+            get isActive() { return isActiveVertical; },
+            get currentDropIdx() { return currentDropIdx; },
+            movingIdSet,
+            movingLayers,
+            update(clientY, activateThresholdPx = 0) {
+              if (typeof clientY === 'number') lastClientY = clientY;
+              const scrollDelta = layersViewport ? (layersViewport.scrollTop - startScrollTopVal) : 0;
+              const rawDeltaY = (lastClientY - startClientY) + scrollDelta;
+
+              if (!isActiveVertical) {
+                if (Math.abs(rawDeltaY) < activateThresholdPx) return false;
+                isActiveVertical = true;
+                movingPills.forEach(p => p.classList.add('is-dragging'));
+                movingLanes.forEach(l => l.classList.add('is-dragging'));
+                movingLeftSlots.forEach(s => s.classList.add('is-dragging'));
+              }
+
+              const rowPitch = getTimelineRowPitch();
+              const minMovingIdx = movingIndices.length > 0 ? movingIndices[0] : originalIndex;
+              const maxMovingIdx = movingIndices.length > 0 ? movingIndices[movingIndices.length - 1] : originalIndex;
+              const minDeltaY = -minMovingIdx * rowPitch;
+              const maxDeltaY = (curLayers.length - 1 - maxMovingIdx) * rowPitch;
+              const clampedDeltaY = Math.max(minDeltaY - 10, Math.min(maxDeltaY + 10, rawDeltaY));
+
+              movingPills.forEach(p => { p.style.transform = `translateY(${clampedDeltaY}px)`; });
+              movingLanes.forEach(l => { l.style.transform = `translateY(${clampedDeltaY}px)`; });
+              movingLeftSlots.forEach(s => { s.style.transform = `translateY(${clampedDeltaY}px)`; });
+
+              const vpRect = layersViewport ? layersViewport.getBoundingClientRect() : { top: 0 };
+              const vpY = lastClientY - vpRect.top + (layersViewport ? layersViewport.scrollTop : 0);
+              currentDropIdx = Math.max(0, Math.min(curLayers.length, Math.round(vpY / rowPitch)));
+
+              const remainingLayers = curLayers.filter(l => !movingIdSet.has(l.id));
+              let insertIdx = remainingLayers.length;
+              for (let j = currentDropIdx; j < curLayers.length; j++) {
+                if (!movingIdSet.has(curLayers[j].id)) {
+                  const rIdx = remainingLayers.indexOf(curLayers[j]);
+                  if (rIdx !== -1) {
+                    insertIdx = rIdx;
+                    break;
+                  }
+                }
+              }
+
+              allLanes.forEach((otherLane, idx) => {
+                const lObj = curLayers[idx];
+                if (!lObj || movingIdSet.has(lObj.id)) return;
+                const movingAbove = movingIndices.filter(mIdx => mIdx < idx).length;
+                const remIdx = idx - movingAbove;
+                const shiftRows = (remIdx < insertIdx) ? -movingAbove : (movingCount - movingAbove);
+                const shift = shiftRows * rowPitch;
+                otherLane.style.transform = shift ? `translateY(${shift}px)` : '';
+                if (allLeftSlots[idx]) allLeftSlots[idx].style.transform = shift ? `translateY(${shift}px)` : '';
+                if (allRightSlots[idx]) allRightSlots[idx].style.transform = shift ? `translateY(${shift}px)` : '';
+              });
+              return true;
+            },
+            finish(commit) {
+              movingPills.forEach(p => { p.classList.remove('is-dragging'); p.style.transform = ''; });
+              movingLanes.forEach(l => { l.classList.remove('is-dragging'); l.style.transform = ''; });
+              movingLeftSlots.forEach(s => { s.classList.remove('is-dragging'); s.style.transform = ''; });
+              allLanes.forEach(l => { l.style.transform = ''; });
+              allLeftSlots.forEach(s => { s.style.transform = ''; });
+              allRightSlots.forEach(s => { s.style.transform = ''; });
+
+              if (!commit || !isActiveVertical || !currentProjectState.layers || currentDropIdx < 0) return false;
+              const reorderFn = window.reorderLayersBatch || (typeof reorderLayersBatch === 'function' ? reorderLayersBatch : null);
+              if (!reorderFn) return false;
+              const reordered = reorderFn(currentProjectState.layers, movingIdSet, currentDropIdx);
+              const changed = reordered.some((l, idx) => l.id !== currentProjectState.layers[idx].id);
+              if (changed) {
+                currentProjectState.layers = reordered;
+                movingLayers.forEach(movedItem => {
+                  if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(movedItem);
+                });
+              }
+              return changed;
+            }
+          };
+        }
+      };
 
       function onPanStart(e) {
         // On desktop workstation, timeline scrubbing is handled by ruler seek / playhead drag and marquee
         if (document.querySelector('.desktop-workstation, .desktop-viewport')) return;
         if (isTimelinePinching || window.isTimelinePinching || (timelinePinchEndTime && Date.now() - timelinePinchEndTime < 250)) return;
+        if (isPanning) return; // Already panning with another pointer
         if (isPlaying) {
           pausePlayback();
         }
@@ -1787,9 +1987,21 @@
           timelineTweenRaf = null;
         }
         if (e.button !== undefined && e.button !== 0) return;
-        if (e.target.closest('.timeline-clip-block') || e.target.closest('.timeline-layer-ctrl-pill') || e.target.closest('.timeline-layer-reorder-pill') || e.target.closest('.timeline-beatmark-item')) return; // Allow clip and pill interactions
-        
+
+        // Multi-touch support: if Finger 1 is already dragging a layer/clip/handle/pill,
+        // allow Finger 2 (different pointerId) to pan/scroll the timeline anywhere!
+        const hasOtherActiveItemDrag = Boolean(
+          window._activeTimelineItemDrag &&
+          window._activeTimelineItemDrag.pointerId !== undefined &&
+          window._activeTimelineItemDrag.pointerId !== e.pointerId
+        );
+
+        if (!hasOtherActiveItemDrag) {
+          if (e.target.closest('.timeline-clip-block') || e.target.closest('.timeline-layer-ctrl-pill') || e.target.closest('.timeline-layer-reorder-pill') || e.target.closest('.timeline-beatmark-item')) return; // Allow clip and pill interactions
+        }
+
         isPanning = true;
+        panPointerId = e.pointerId !== undefined ? e.pointerId : null;
         window.isTimelinePanning = true;
         window.isTimelineScrubbing = true;
         startX = e.clientX;
@@ -1805,7 +2017,7 @@
         }
 
         // Long-press timer on empty timeline space (450ms hold -> open context menu popover like right click)
-        if (isLayersDrag) {
+        if (isLayersDrag && !hasOtherActiveItemDrag) {
           hasTimelineEmptyLpFired = false;
           const lpX = e.clientX;
           const lpY = e.clientY;
@@ -1813,6 +2025,7 @@
             hasTimelineEmptyLpFired = true;
             if (isPanning) {
               isPanning = false;
+              panPointerId = null;
               if (window.FishAudioEngine) window.FishAudioEngine.stopScrub();
               if (rulerViewport) rulerViewport.classList.remove('is-dragging');
               if (layersViewport) layersViewport.classList.remove('is-dragging');
@@ -1843,6 +2056,7 @@
 
       function onPanMove(e) {
         if (!isPanning || isTimelinePinching || window.isTimelinePinching) return;
+        if (panPointerId !== null && e.pointerId !== undefined && e.pointerId !== panPointerId) return;
 
         // Safari coalesces pointermove events between frames, adding ~16ms latency.
         // getCoalescedEvents() recovers intermediate positions for silky-smooth scrubbing.
@@ -1891,6 +2105,9 @@
           window._lastScrubSnapPx = null;
 
           updateTimelinePosition(finalPanX);
+          if (window._activeTimelineItemDrag && typeof window._activeTimelineItemDrag.onViewportChanged === 'function') {
+            window._activeTimelineItemDrag.onViewportChanged();
+          }
           return;
         }
 
@@ -1923,9 +2140,17 @@
         if (isLayersDrag && layersViewport) {
           layersViewport.scrollTop = startScrollTop - deltaY;
         }
+
+        // Notify any active Finger 1 drag (reorder / clip slide / trim / pill select) so it updates live
+        if (window._activeTimelineItemDrag && typeof window._activeTimelineItemDrag.onViewportChanged === 'function') {
+          window._activeTimelineItemDrag.onViewportChanged();
+        }
       }
 
       function onPanEnd(e) {
+        if (panPointerId !== null && e && e.pointerId !== undefined && e.pointerId !== panPointerId) {
+          return;
+        }
         if (timelineEmptyLpTimer) {
           clearTimeout(timelineEmptyLpTimer);
           timelineEmptyLpTimer = null;
@@ -1937,6 +2162,7 @@
 
         if (isTimelinePinching || window.isTimelinePinching || (timelinePinchEndTime && Date.now() - timelinePinchEndTime < 250)) {
           isPanning = false;
+          panPointerId = null;
           window.isTimelinePanning = false;
           window.isTimelineScrubbing = false;
           if (rulerViewport) rulerViewport.classList.remove('is-dragging');
@@ -1948,6 +2174,7 @@
           hasTimelineEmptyLpFired = false;
           if (isPanning) {
             isPanning = false;
+            panPointerId = null;
             if (window.FishAudioEngine) window.FishAudioEngine.stopScrub();
             if (rulerViewport) rulerViewport.classList.remove('is-dragging');
             if (layersViewport) layersViewport.classList.remove('is-dragging');
@@ -1957,6 +2184,7 @@
 
         if (!isPanning) return;
         isPanning = false;
+        panPointerId = null;
         window.isTimelinePanning = false;
         window.isTimelineScrubbing = false;
 
@@ -2011,8 +2239,8 @@
           window.PreviewCacheManager.refreshBaselineSnapshot(currentProjectState);
         }
 
-        // Stationary tap on empty timeline space (not a drag scrub): deselect active layer
-        const moveDist = Math.hypot(e.clientX - startX, e.clientY - startY);
+        // Stationary tap on empty timeline space (not a drag scrub and no active item drag): deselect active layer
+        const moveDist = Math.hypot((e ? e.clientX : startX) - startX, (e ? e.clientY : startY) - startY);
         const targetEl = (e && e.target && e.target.nodeType === 1)
           ? e.target
           : (e && e.target && e.target.parentElement ? e.target.parentElement : null);
@@ -2022,7 +2250,7 @@
           targetEl.closest('.timeline-layer-reorder-pill')
         );
 
-        if (e && moveDist < 4 && isLayersDrag && !isInsideTimelineInteractive) {
+        if (e && moveDist < 4 && isLayersDrag && !isInsideTimelineInteractive && !window._activeTimelineItemDrag) {
           if (typeof deselectTimelineLayer === 'function' && (window.selectedLayerId || (window.selectedLayerIds && window.selectedLayerIds.size > 0) || isSelectorMode)) {
             deselectTimelineLayer();
           }
@@ -2050,20 +2278,27 @@
           setTimelineZoom(pixelsPerSecond * zoomFactor);
         }, { passive: false });
 
-        // Double-click on Ruler Viewport: Reset timeline zoom to default (80 pps)
+        // Double-click on Ruler Viewport: Reset timeline zoom to default (80 pps & 1.0x vertical scale)
         rulerViewport.addEventListener('dblclick', () => {
           if (document.querySelector('.desktop-workstation, .desktop-viewport')) return;
           setTimelineZoom(80);
+          setTimelineVerticalZoom(1.0);
         });
       }
 
-      // Touch 2-Finger Pinch-to-Zoom Gesture on Timeline
+      // Touch 2-Finger 2D Pinch-to-Zoom Gesture on Timeline (Horizontal + Vertical)
       function onTimelineTouchStart(e) {
         if (e.touches && e.touches.length === 2) {
+          // If Finger 1 is actively dragging a layer/clip/handle/pill, DO NOT enter pinch-to-zoom!
+          // This lets Finger 2 freely pan/scroll the timeline simultaneously (multi-touch workflow).
+          if (window._activeTimelineItemDrag) {
+            return;
+          }
           isTimelinePinching = true;
           window.isTimelinePinching = true;
           if (isPanning) {
             isPanning = false;
+            panPointerId = null;
             window.isTimelinePanning = false;
             window.isTimelineScrubbing = false;
             if (timelineEmptyLpTimer) {
@@ -2076,8 +2311,13 @@
           }
           const t1 = e.touches[0];
           const t2 = e.touches[1];
-          timelinePinchStartDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+          const dx = Math.abs(t1.clientX - t2.clientX);
+          const dy = Math.abs(t1.clientY - t2.clientY);
+          timelinePinchStartDist = Math.hypot(dx, dy);
+          timelinePinchStartSpanX = dx;
+          timelinePinchStartSpanY = dy;
           timelinePinchStartPps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
+          timelinePinchStartVScale = window.currentTimelineVerticalScale || 1.0;
           timelinePinchAnchorSec = (typeof getCurrentPlayheadTime === 'function')
             ? getCurrentPlayheadTime()
             : (window.currentPlaybackSec || 0);
@@ -2087,16 +2327,46 @@
 
       function onTimelineTouchMove(e) {
         if (isTimelinePinching && e.touches && e.touches.length === 2) {
+          if (window._activeTimelineItemDrag) {
+            isTimelinePinching = false;
+            window.isTimelinePinching = false;
+            return;
+          }
           if (e.cancelable) e.preventDefault();
           const t1 = e.touches[0];
           const t2 = e.touches[1];
-          const currDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
-          if (timelinePinchStartDist > 5) {
+          const dx = Math.abs(t1.clientX - t2.clientX);
+          const dy = Math.abs(t1.clientY - t2.clientY);
+          const currDist = Math.hypot(dx, dy);
+          const midY = (t1.clientY + t2.clientY) * 0.5;
+
+          const deltaSpanX = Math.abs(dx - timelinePinchStartSpanX);
+          const deltaSpanY = Math.abs(dy - timelinePinchStartSpanY);
+
+          // 1. Horizontal Zoom (kanan-kiri): when horizontal finger spread changes
+          if (timelinePinchStartSpanX >= 22 && deltaSpanX > 4) {
+            const zoomRatioX = dx / timelinePinchStartSpanX;
+            const targetPps = Math.max(20, Math.min(1800, Math.round(timelinePinchStartPps * zoomRatioX)));
+            if (targetPps !== pixelsPerSecond) {
+              setTimelineZoom(targetPps, timelinePinchAnchorSec);
+            }
+          } else if (timelinePinchStartDist > 10 && deltaSpanX >= deltaSpanY * 1.15) {
             const zoomRatio = currDist / timelinePinchStartDist;
             const targetPps = Math.max(20, Math.min(1800, Math.round(timelinePinchStartPps * zoomRatio)));
             if (targetPps !== pixelsPerSecond) {
               setTimelineZoom(targetPps, timelinePinchAnchorSec);
             }
+          }
+
+          // 2. Vertical Zoom (atas-bawah): when vertical finger spread changes
+          if (timelinePinchStartSpanY >= 22 && deltaSpanY > 4) {
+            const zoomRatioY = dy / timelinePinchStartSpanY;
+            const targetVScale = timelinePinchStartVScale * zoomRatioY;
+            setTimelineVerticalZoom(targetVScale, midY);
+          } else if (timelinePinchStartDist > 10 && deltaSpanY > deltaSpanX * 1.35) {
+            const zoomRatio = currDist / timelinePinchStartDist;
+            const targetVScale = timelinePinchStartVScale * zoomRatio;
+            setTimelineVerticalZoom(targetVScale, midY);
           }
         }
       }
@@ -2125,6 +2395,9 @@
         layersViewport.addEventListener('scroll', () => {
           if (layersViewport.scrollLeft !== 0) {
             layersViewport.scrollLeft = 0;
+          }
+          if (window._activeTimelineItemDrag && typeof window._activeTimelineItemDrag.onViewportChanged === 'function') {
+            window._activeTimelineItemDrag.onViewportChanged();
           }
         }, { passive: true });
 
@@ -2688,8 +2961,9 @@
           if (idx < 0) return;
           const isCompactVp = !window.isDesktop && !document.querySelector('.desktop-viewport');
           const topPad = isCompactVp ? 8 : 12;
-          const rowPitch = isCompactVp ? 40 : 54;
-          const halfLane = isCompactVp ? 17 : 22;
+          const rowPitch = isCompactVp ? getTimelineRowPitch() : 54;
+          const vScale = window.currentTimelineVerticalScale || 1.0;
+          const halfLane = isCompactVp ? Math.round(17 * vScale) : 22;
           const layerCenterInContent = topPad + (idx * rowPitch) + halfLane;
           const targetCenterInVp = targetCenterY - visibleTop;
           targetScrollTop = Math.max(0, Math.min(maxScrollY, Math.round(layerCenterInContent - targetCenterInVp)));

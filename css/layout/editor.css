@@ -3514,27 +3514,27 @@ body.has-active-drawer .timeline-layers-viewport {
 }
 
 .timeline-layers-track {
-  gap: 6px;
+  gap: var(--tl-mobile-lane-gap, 6px);
 }
 
 .timeline-lane-heads-overlay,
 .timeline-lane-reorder-overlay {
   top: 8px;
-  gap: 6px;
+  gap: var(--tl-mobile-lane-gap, 6px);
 }
 
 .timeline-track-lane,
 .timeline-lane-pill-slot,
 .timeline-lane-reorder-slot {
-  height: 34px;
+  height: var(--tl-mobile-lane-height, 34px);
 }
 
 .timeline-track-lane::after {
-  bottom: -3px;
+  bottom: calc(var(--tl-mobile-lane-gap, 6px) * -0.5);
 }
 
 .timeline-clip-block {
-  height: 30px;
+  height: var(--tl-mobile-clip-height, 30px);
   border-radius: 6px;
   padding: 0 8px;
   font-size: 10.5px;
@@ -3565,7 +3565,7 @@ body.has-active-drawer .timeline-layers-viewport {
 
 .timeline-layer-ctrl-pill {
   width: 28px;
-  height: 30px;
+  height: var(--tl-mobile-clip-height, 30px);
   border-radius: 0 9px 9px 0;
 }
 
@@ -3590,7 +3590,7 @@ body.has-active-drawer .timeline-layers-viewport {
 }
 
 .timeline-layer-reorder-pill {
-  height: 30px;
+  height: var(--tl-mobile-clip-height, 30px);
   width: 24px;
   right: 4px;
 }
@@ -3613,17 +3613,17 @@ body.has-active-drawer .timeline-layers-viewport {
 .timeline-track-lane.is-precomp-child,
 .timeline-lane-pill-slot.is-precomp-child,
 .timeline-lane-reorder-slot.is-precomp-child {
-  height: 26px;
+  height: var(--tl-mobile-child-lane-height, 26px);
 }
 
 .timeline-lane-pill-slot.is-precomp-child.is-mobile-spacer {
-  height: 26px !important;
-  min-height: 26px !important;
+  height: var(--tl-mobile-child-lane-height, 26px) !important;
+  min-height: var(--tl-mobile-child-lane-height, 26px) !important;
 }
 
 .timeline-layer-ctrl-pill.is-precomp-child,
 .timeline-clip-block.is-precomp-child {
-  height: 22px;
+  height: var(--tl-mobile-child-clip-height, 22px);
   font-size: 10px;
 }
 
