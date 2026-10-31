@@ -1055,6 +1055,23 @@
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // Adaptive export bitrate: scales with resolution and fps instead of a fixed number.
+  // Base targets are for 1080p30 H.264: light 6 / normal 10 / detail 20 Mbps (visually transparent for
+  // typical edits; previous fixed 16/25/50 Mbps produced oversized files with no visible gain).
+  // ─────────────────────────────────────────────────────────────────────────────
+  function computeExportVideoBitrate(preset, w, h, fps, totalDur, family) {
+    var base = preset === 'light' ? 6000000 : (preset === 'detail' ? 20000000 : 10000000);
+    var pxRatio = Math.max(0.05, (w * h) / (1920 * 1080));
+    var fpsFactor = Math.pow(Math.max(12, Math.min(120, fps || 30)) / 30, 0.6);
+    var bps = base * pxRatio * fpsFactor;
+    if (family === 'vp9') bps *= 0.7; // VP9 reaches the same quality at lower bitrate
+    // Very long exports: keep in-memory Mp4Muxer buffer bounded
+    if (totalDur > 60) bps *= Math.max(0.5, Math.min(1.0, 90 / totalDur));
+    return Math.round(Math.max(2000000, Math.min(100000000, bps)));
+  }
+  window.computeExportVideoBitrate = computeExportVideoBitrate;
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // PATH 1: WebCodecs + Mp4Muxer (primary — deterministic frame-by-frame)
   // ─────────────────────────────────────────────────────────────────────────────
   async function exportViaWebCodecs(options) {
@@ -1081,32 +1098,27 @@
     var totalFrames = Math.max(1, Math.round(totalDur * fps));
     var pps   = window.currentPixelsPerSecond || 80;
 
-    var videoBps    = 25000000;
+    var videoBps    = computeExportVideoBitrate(preset, baseW, baseH, fps, totalDur, 'avc');
     var bitrateMode = 'variable';
-    if (preset === 'light')  { videoBps = 16000000; bitrateMode = 'variable'; }
-    if (preset === 'detail') { videoBps = 50000000; bitrateMode = 'constant'; }
-    // Scale bitrate for long exports (>60s) so in-memory Mp4Muxer ArrayBuffer stays safely bounded
-    if (totalDur > 60) {
-      var durScale = Math.max(0.32, Math.min(1.0, 90 / totalDur));
-      videoBps = Math.max(6000000, Math.round(videoBps * durScale));
-    }
 
-    var totalPixels = baseW * baseH;
-    var is4K = totalPixels > (1920 * 1080);
-    var h264Level = is4K ? '33' : '2a'; // Level 5.1 for 4K (>2M px), Level 4.2 for <=1080p (including 1080x1920 vertical)
+    var pixelRate = baseW * baseH * fps;
+    // H.264 level by pixel rate: 4.2 (<=1080p60), 5.1 (<=4K30), 5.2 (4K60)
+    var h264Level = pixelRate <= 1.33e8 ? '2a' : (pixelRate <= 2.5e8 ? '33' : '34');
 
+    // Best compression first (High: CABAC + B-frames + 8x8 transform => much smaller files at equal quality).
+    // Each candidate is actively probed, so unsupported ones fall through safely to Main/Baseline/VP9.
     var candidates = [
-      { codec: 'avc1.4200' + h264Level, muxerCodec: 'avc', name: 'H.264 Baseline' },
+      { codec: 'avc1.6400' + h264Level, muxerCodec: 'avc', name: 'H.264 High' },
       { codec: 'avc1.4d40' + h264Level, muxerCodec: 'avc', name: 'H.264 Main' },
       { codec: 'avc1.42e0' + h264Level, muxerCodec: 'avc', name: 'H.264 Constrained' },
-      { codec: 'avc1.6400' + h264Level, muxerCodec: 'avc', name: 'H.264 High' },
+      { codec: 'avc1.4200' + h264Level, muxerCodec: 'avc', name: 'H.264 Baseline' },
       { codec: 'vp09.00.10.08', muxerCodec: 'vp9', name: 'VP9 Profile 0' },
       { codec: 'vp09.02.10.10', muxerCodec: 'vp9', name: 'VP9 Profile 2' }
     ];
 
     var chosenCodec = null, chosenConfig = null;
     var hwModes  = ['prefer-hardware', 'no-preference'];
-    var brModes  = bitrateMode === 'variable' ? ['variable'] : [bitrateMode, 'variable'];
+    var brModes  = ['variable'];
     var latModes = ['quality', 'realtime']; // Offline render defaults to quality; realtime is fallback
 
     logExportInfo('WebCodecs', 'Testing ' + candidates.length + ' H.264/VP9 candidate profiles at ' + baseW + 'x' + baseH + ' @ ' + fps + 'fps (' + (videoBps/1000000).toFixed(1) + ' Mbps)...');
@@ -1770,9 +1782,9 @@
     }
     logExportInfo('MediaRecorder:Audio', 'Audio track attached: ' + (audioResult && audioResult.buffer ? 'yes' : 'no'));
 
-    var videoBps = 25000000;
-    if (preset === 'light')  videoBps = 16000000;
-    if (preset === 'detail') videoBps = 50000000;
+    var recDims = getProjectDims();
+    var recPs = window.currentProjectState || {};
+    var videoBps = computeExportVideoBitrate(preset, recDims.w, recDims.h, parseInt(recPs.fps || 60, 10), totalDur, /webm|vp/i.test(selectedMime) ? 'vp9' : 'avc');
 
     var recorder = new MediaRecorder(stream, {
       mimeType: selectedMime,

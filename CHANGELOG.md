@@ -5,6 +5,20 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.9] - 2026-10-31
+
+### Improved
+- **Adaptive Export Bitrate & H.264 High Profile (`js/media/fish-export-engine.js`, `js/editor/editor-export.js`)**: Replaced fixed 16 / 25 / 50 Mbps export bitrates with `computeExportVideoBitrate`, which scales with resolution and frame rate (1080p30 targets: Light 6, Normal 10, Detail 20 Mbps; clamped 2–100 Mbps). All presets now use VBR (Detail CBR removed), H.264 High profile is probed first (then Main / Baseline / VP9), and the H.264 level is chosen by pixel rate (4.2 / 5.1 / 5.2). Export files are typically 40–60% smaller with no visible quality loss.
+- **Playback Lookahead in Browser Idle Time (`js/media/preview-cache.js`, `js/editor/editor-canvas.js`)**: Playback lookahead no longer renders uncached frames synchronously inside the `requestAnimationFrame` tick. It runs via `requestIdleCallback` only when the measured render cost fits the remaining idle budget, eliminating periodic stutter while the cache bar extends ahead.
+- **Playback Hot-Path Cost (`js/media/preview-cache.js`)**: Occupancy checks are throttled (skipped during playback), `isAudioOnlyComposition` and `getBakingTimeRanges` are memoized during playback, audio-only frames count as cached so idle / lookahead workers stop when the bar is full, and ruler repaint during playback is throttled to 250 ms.
+- **Measured Slow-Mo Audio Sync (`js/editor/editor-timeline-core.js`, `js/media/videocomp-enggine.js`)**: Audio rate now follows the timeline's real achieved speed (0.05 steps, 120 ms hold, down to 0.25x) with closed-loop drift trimming during slow-mo, and the master audio clock is released when not slaved so drift correction always applies.
+- **Direct O(1) Audio-Only Span Caching (`js/media/preview-cache.js`)**: Genuine audio-only regions (e.g. the right-hand tail after all visual layers end) are cached instantly and painted green on the ruler, with a 1.5-frame safety margin so photo boundaries, cut seams and fades are never treated as audio-only.
+
+### Fixed
+- **Missing Layers After Refresh (`js/editor/editor-canvas.js`, `js/editor/editor-media.js`)**: Layers skipped because their media was not decoded yet are now redrawn automatically (bounded retry), broken / never-hydrated image entries self-heal instead of staying cached, and image load invalidates the cache of every layer sharing the same media.
+- **Cut / Trim Frame Seams (`js/editor/editor-timeline-ops.js`, `js/editor/editor-canvas.js`)**: Cuts use the exact frame-quantized playhead time, trim snapping uses the snap target's exact seconds, and layer activity checks tolerate float noise, preventing 1-frame gaps or drops at split points and beatmarks.
+- **Idle Cache Crash (`js/media/preview-cache.js`)**: Fixed a call to a non-existent `scheduleRulerUpdate` method that threw a `TypeError` and aborted idle / prune steps.
+
 ## [0.6.8] - 2026-10-27
 
 ### Fixed

@@ -300,6 +300,8 @@
       if (!this._compVoidIntervals) this._compVoidIntervals = new Map();
       if (!this._compOccupancyKeys) this._compOccupancyKeys = new Map();
       this._compOccupancyKeys.set(targetComp, this._computeOccupancyKey(ps, targetComp));
+      this._audioOnlyMemo = null;
+      this._bakingRangesMemo = null;
 
       const totalDur = (typeof window !== 'undefined' && typeof window.getProjectTotalDuration === 'function')
         ? window.getProjectTotalDuration()
@@ -554,6 +556,20 @@
      * When true, the entire timeline duration can be cached instantaneously using a single shared background frame.
      */
     isAudioOnlyComposition(projectState = null, compId = null) {
+      // Layers cannot change mid-playback; avoid re-walking all layers on every hasFrame/getFrame call.
+      if (!projectState && typeof window !== 'undefined' && window.isTimelinePlaying) {
+        const memoComp = compId || this.activeCompId || 'root';
+        const m = this._audioOnlyMemo;
+        if (m && m.comp === memoComp) return m.value;
+        const v = this._computeIsAudioOnlyComposition(null, memoComp);
+        this._audioOnlyMemo = { comp: memoComp, value: v };
+        return v;
+      }
+      this._audioOnlyMemo = null;
+      return this._computeIsAudioOnlyComposition(projectState, compId);
+    }
+
+    _computeIsAudioOnlyComposition(projectState = null, compId = null) {
       const ps = this._resolveProjectState(projectState);
       if (!ps || !Array.isArray(ps.layers) || ps.layers.length === 0) return false;
       const targetComp = compId || this.activeCompId || 'root';
@@ -757,7 +773,7 @@
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (this._rulerUpdatePending) return;
       this._rulerUpdatePending = true;
-      const delay = (typeof window !== 'undefined' && window.isTimelinePlaying) ? 40 : 25;
+      const delay = (typeof window !== 'undefined' && window.isTimelinePlaying) ? 250 : 25;
       setTimeout(() => {
         this._rulerUpdatePending = false;
         this.updateRulerUI();
@@ -1748,6 +1764,20 @@
     }
 
     getBakingTimeRanges(projectState = null) {
+      // Called from isTimeBaking several times per playback tick (render, setFrameFromCanvas, lookahead).
+      // Each call walks every layer and queries extractor/matting tasks, so memoize briefly.
+      if (!projectState && typeof window !== 'undefined' && window.isTimelinePlaying) {
+        const nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        const memo = this._bakingRangesMemo;
+        if (memo && (nowMs - memo.t) < 120 && memo.comp === (this.activeCompId || 'root')) return memo.ranges;
+        const ranges = this._computeBakingTimeRanges(null);
+        this._bakingRangesMemo = { t: nowMs, comp: this.activeCompId || 'root', ranges };
+        return ranges;
+      }
+      return this._computeBakingTimeRanges(projectState);
+    }
+
+    _computeBakingTimeRanges(projectState = null) {
       const ps = projectState || ((typeof window !== 'undefined' && window.currentProjectState) ? window.currentProjectState : null);
       if (!ps || !Array.isArray(ps.layers)) return [];
       const targetComp = this.activeCompId || 'root';
@@ -1855,7 +1885,7 @@
       }
 
       if (anyPruned) {
-        this.scheduleRulerUpdate();
+        this._scheduleRulerUpdate();
       }
       return anyPruned;
     }
@@ -2231,16 +2261,44 @@
      * @param {number} fps - project fps
      * @param {number} budgetMs - max time to spend baking ahead in this tick (default 7ms desktop, 4ms mobile)
      */
-    bakePlaybackLookahead(fromSec, fps = this.fps, budgetMs = null) {
+    bakePlaybackLookahead(fromSec, fps = this.fps, budgetMs = null, deadline = null) {
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (!this.idleCacheEnabled || window.isPreviewCacheEnabled === false) return;
       if (typeof document === 'undefined') return;
 
+      // PLAYBACK path: never render synchronously inside the rAF tick. A single uncached frame with heavy
+      // effects (20-60ms) rendered here blocks the displayed frame => periodic stutter while the green bar
+      // visibly "extends ahead". Defer to real browser idle time after the frame has been presented.
+      if (budgetMs === null && !deadline && typeof requestIdleCallback === 'function') {
+        this._lookaheadFromSec = fromSec;
+        this._lookaheadFps = fps;
+        if (this._lookaheadIdlePending) return;
+        this._lookaheadIdlePending = true;
+        requestIdleCallback((dl) => {
+          this._lookaheadIdlePending = false;
+          if (!window.isTimelinePlaying) return;
+          this.bakePlaybackLookahead(this._lookaheadFromSec, this._lookaheadFps, null, dl);
+        });
+        return;
+      }
+
       const tStart = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+      // Expected cost of rendering one uncached frame (EMA of real measurements; conservative default)
+      const estCostMs = Math.max(
+        this._lookaheadCostEma || 0,
+        (typeof window._uncachedRenderEmaMs === 'number') ? window._uncachedRenderEmaMs : 8
+      );
       if (budgetMs === null) {
         if (!window._lastFrameWasCached) return;
         if (typeof window._lastFrameRenderDuration === 'number' && window._lastFrameRenderDuration > 4.0) return;
         if (this._lookaheadHeavyCooldownUntil && tStart < this._lookaheadHeavyCooldownUntil) return;
+        if (deadline) {
+          // Only bake if the frame fits in the idle slot before the next vsync
+          if (deadline.timeRemaining() < estCostMs + 1) return;
+        } else if (estCostMs > (this._isMobile ? 3 : 5)) {
+          // No idle API (Safari): skip heavy frames entirely during playback; idle worker bakes them when paused
+          return;
+        }
       }
 
       const activeCanvas = document.getElementById('editor-active-canvas');
@@ -2276,8 +2334,8 @@
 
       const targetW = activeCanvas.width;
       const targetH = activeCanvas.height;
-      const effectiveBudget = budgetMs !== null ? budgetMs : (this._isMobile ? 1.8 : 2.5);
-      const maxBatch = budgetMs === null ? 1 : (this._isMobile ? 2 : 3);
+      const effectiveBudget = budgetMs !== null ? budgetMs : (deadline ? Infinity : (this._isMobile ? 1.8 : 2.5));
+      const maxBatch = budgetMs === null ? (deadline ? 4 : 1) : (this._isMobile ? 2 : 3);
 
       // Lookahead range: from nextFrame up to nextFrame + 60 (up to 1.5 seconds ahead of playhead)
       const lookaheadLimit = Math.min(totalFrames, currentFrame + Math.round(currentFps * 1.5));
@@ -2286,6 +2344,7 @@
       for (let f = currentFrame + 1; f <= lookaheadLimit; f++) {
         if (bakedCount >= maxBatch) break;
         if (((typeof performance !== 'undefined') ? performance.now() : Date.now()) - tStart >= effectiveBudget) break;
+        if (deadline && deadline.timeRemaining() < Math.max(this._lookaheadCostEma || 0, estCostMs) + 1) break;
         if (this._inFlightFrames && this._inFlightFrames.size >= maxInFlight) break;
 
         if (pool.has(f)) continue; // already cached!
@@ -2320,6 +2379,8 @@
           if (res === false) isFrameReady = false;
         }
         const tFrame1 = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+        const frameCost = tFrame1 - tFrame0;
+        this._lookaheadCostEma = this._lookaheadCostEma ? (this._lookaheadCostEma * 0.7 + frameCost * 0.3) : frameCost;
 
         if (isFrameReady) {
           this.setFrameFromCanvas(f, offscreen, this.isDraftMode, targetComp);

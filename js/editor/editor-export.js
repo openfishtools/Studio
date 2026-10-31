@@ -530,31 +530,26 @@
         const totalFrames = Math.max(1, Math.round(totalDur * fps));
         const pps = window.currentPixelsPerSecond || 80;
 
-        // Exact User Bitrate Specification (Uniform across 1080p, 4K, 720p)
-        let videoBps = 25000000;
-        let chosenBitrateMode = 'variable';
-
-        if (preset === 'light') {
-          // LIGHT: Dynamic 13 - 20 Mbps (Target 16 Mbps VBR)
-          videoBps = 16000000;
-          chosenBitrateMode = 'variable';
-        } else if (preset === 'detail') {
-          // DETAIL: Solid 50 Mbps max quality
-          videoBps = 50000000;
-          chosenBitrateMode = 'constant';
+        // Adaptive bitrate (scales with resolution/fps; shared helper in fish-export-engine.js)
+        const _pixelRate = baseW * baseH * fps;
+        const _lvl = _pixelRate <= 1.33e8 ? '2a' : (_pixelRate <= 2.5e8 ? '33' : '34');
+        let videoBps;
+        if (typeof window.computeExportVideoBitrate === 'function') {
+          videoBps = window.computeExportVideoBitrate(preset, baseW, baseH, fps, totalDur, 'avc');
         } else {
-          // NORMAL: Dynamic 15 - 30 Mbps (Target 25 Mbps VBR)
-          videoBps = 25000000;
-          chosenBitrateMode = 'variable';
+          const _base = preset === 'light' ? 6000000 : (preset === 'detail' ? 20000000 : 10000000);
+          videoBps = Math.round(Math.max(2000000, Math.min(100000000,
+            _base * Math.max(0.05, (baseW * baseH) / (1920 * 1080)) * Math.pow(Math.max(12, Math.min(120, fps)) / 30, 0.6))));
         }
+        const chosenBitrateMode = 'variable';
 
+        // Best compression first (High profile), probed so unsupported ones fall through safely
         const candidateCodecs = [
-          { codec: 'avc1.42002a', muxerCodec: 'avc' }, // Baseline Profile Level 4.2 (up to 50 Mbps, No B-frames)
-          { codec: 'avc1.420033', muxerCodec: 'avc' }, // Baseline Profile Level 5.1 (up to 300 Mbps, No B-frames)
-          { codec: 'avc1.42e02a', muxerCodec: 'avc' }, // Constrained Baseline Level 4.2
-          { codec: 'avc1.4d402a', muxerCodec: 'avc' }, // Main Profile Level 4.2
-          { codec: 'avc1.64002a', muxerCodec: 'avc' }, // High Profile Level 4.2
-          { codec: 'vp09.00.10.08', muxerCodec: 'vp9' }, // VP9 Profile 0 8-bit (Native WebCodecs in Firefox 130+ & Chrome)
+          { codec: 'avc1.6400' + _lvl, muxerCodec: 'avc' }, // High
+          { codec: 'avc1.4d40' + _lvl, muxerCodec: 'avc' }, // Main
+          { codec: 'avc1.42e0' + _lvl, muxerCodec: 'avc' }, // Constrained Baseline
+          { codec: 'avc1.4200' + _lvl, muxerCodec: 'avc' }, // Baseline
+          { codec: 'vp09.00.10.08', muxerCodec: 'vp9' }, // VP9 Profile 0 8-bit
           { codec: 'vp09.02.10.10', muxerCodec: 'vp9' }  // VP9 Profile 2 10-bit
         ];
 
@@ -985,9 +980,15 @@
           }
           if (!selectedMime) selectedMime = 'video/webm';
 
-          let videoBps = 25000000;
-          if (preset === 'light') videoBps = 16000000;
-          else if (preset === 'detail') videoBps = 50000000;
+          const _recDims = window.getProjectDimensions(currentProjectState.resolution || '1080p', currentProjectState.aspectRatio || '16:9');
+          const _recFps = parseInt(currentProjectState.fps || 60, 10);
+          const _recDur = Math.max(0.5, (typeof window.getProjectTotalDuration === 'function' ? window.getProjectTotalDuration() : 5));
+          let videoBps;
+          if (typeof window.computeExportVideoBitrate === 'function') {
+            videoBps = window.computeExportVideoBitrate(preset, _recDims[0], _recDims[1], _recFps, _recDur, /webm|vp/i.test(selectedMime) ? 'vp9' : 'avc');
+          } else {
+            videoBps = preset === 'light' ? 8000000 : (preset === 'detail' ? 25000000 : 14000000);
+          }
 
           const recorderOptions = {
             mimeType: selectedMime,

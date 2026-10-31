@@ -3922,7 +3922,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.6.8</span>
+          <span class="welcome-badge">v0.6.9</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3952,11 +3952,40 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.9 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.9</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Oct 31, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Smaller Exports at Same Quality</span>
+                  <span class="changelog-item-desc">Export bitrate now adapts to resolution and frame rate instead of fixed 16 / 25 / 50 Mbps, all presets use VBR, and H.264 High profile is preferred. Files are typically 40–60% smaller with no visible quality loss.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Smoother Playback &amp; Audio Sync</span>
+                  <span class="changelog-item-desc">Lookahead caching runs in browser idle time (no more periodic stutter), playback hot paths are lighter, audio-only regions cache instantly, and slow-mo audio follows the real timeline speed.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Missing Layers After Refresh &amp; Cut Seams</span>
+                  <span class="changelog-item-desc">Layers whose media was still loading after refresh now appear automatically, broken image entries self-heal, and cuts / trims no longer leave 1-frame gaps at split points or beatmarks.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.8 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.8</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Oct 27, 2026</span>
               </div>
               <div class="welcome-changelog-item">

@@ -2876,6 +2876,12 @@
       if (!isExport && !isIdleCache && !isTemplate) {
         window._lastFrameWasCached = !!cachedBitmap;
         window._lastFrameRenderDuration = performance.now() - t0;
+        if (!cachedBitmap) {
+          const _ms = window._lastFrameRenderDuration;
+          window._uncachedRenderEmaMs = (typeof window._uncachedRenderEmaMs === 'number')
+            ? (window._uncachedRenderEmaMs * 0.75 + _ms * 0.25)
+            : _ms;
+        }
       }
 
       // Ensure wireframe bounds and overlay are strictly updated ONLY for the interactive viewer
