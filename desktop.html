@@ -3922,7 +3922,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.6.10</span>
+          <span class="welcome-badge">v0.6.11</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3952,11 +3952,89 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.11 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.11</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Nov 1, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Extension Builder (`extension-builder.html`, `extension-builder/`, `vendor/codemirror/`)</span>
+                  <span class="changelog-item-desc">New drag-and-drop page for building extensions without writing JS from scratch. Palette of `ui.*` components (section, text, button, input, textarea, switch, slider, segmented, grid, form row), a WYSIWYG canvas that renders through the real `CardBuilder` inside a 1:1 replica of the editor's Extensions panel (panel header + card header with plugin icon and name), Pointer-Events drag &amp; drop, pinch-zoom / two-finger pan / wheel zoom, undo / redo and autosave, an inspector generated from component schemas, and a theme-aware CodeMirror 6 script editor (Handler / Shared / Output tabs) with `ctx.*` autocomplete and a searchable SDK helper (`sdk-manifest.js`). Exports a plain `Card({...})` `.js` file for `Studio/Extension/` (with an embedded model comment so it can be re-imported). Mobile: floating Canvas / Preview bar, FAB that morphs into the Add element card, and one bottom drawer for Properties + Script; desktop: floating cards. Linked from the Extension modal next to Import .js.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Live Preview Embeds the Real Editor (`extension-builder/js/live-preview.js`)</span>
+                  <span class="changelog-item-desc">The Preview view loads `desktop.html` (or `editor.html` below 900 px) in an iframe and injects the draft with `CardBuilder.loadExtensionJS(code, false)`, so buttons run against the editor's real `ctx`. Only the draft card is shown in the editor's Extensions panel. The draft is temporary: it is never saved to `oft_custom_extensions`, the draft's `ctx.storage` and the panel-open preference are restored, and the scratch project is deleted when the builder closes.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">`Userscript` Category (`js/extensions/extension-manager.js`, `css/layout/layout.css`)</span>
+                  <span class="changelog-item-desc">Imported `.js` extensions are listed with a `Userscript` badge instead of `Built-in` and get a one-click delete button (red border); built-in cards never show it.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">`CardBuilder.mount(def, host, ctx?)` (`js/ui/elements/card-builder.js`)</span>
+                  <span class="changelog-item-desc">Renders a card definition into any host with an optional sandbox `ctx`.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Richer Extension SDK (`js/ui/elements/card-builder.js`)</span>
+                  <span class="changelog-item-desc">`ctx.timeline.getBeatmarks(layer)`, `getFps()`, `getPps()`, `getPlayhead()`, `ctx.toast()`, `ctx.project.commit(reason, layersToInvalidate)`, and a `getDimensions()` result usable with both object and array destructuring.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Test Suite Covers the Builder (`scripts/test-suite.js`, `scripts/static-scope-audit.js`)</span>
+                  <span class="changelog-item-desc">`extension-builder/` JS and `extension-builder.html` are now syntax-checked, scope-audited (0 undeclared references) and structure-checked.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">`ctx.timeline.getBeatmarks is not a function` (Beat Effects)</span>
+                  <span class="changelog-item-desc">The SDK names used by extensions now exist on `ctx`.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Unstyled `ui.text` Variants (`css/panels/extensions.css`)</span>
+                  <span class="changelog-item-desc">`label` and `hint` variants now have styles.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Sticky Note Clipboard Rejection (`Extension/sticky_note.js`)</span>
+                  <span class="changelog-item-desc">A blocked clipboard write no longer raises an unhandled promise rejection and shows a toast instead.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Accessibility (`extension-builder/`, `js/ui/elements/card-builder.js`)</span>
+                  <span class="changelog-item-desc">Pinch-zoom no longer disabled, decorative icons are `aria-hidden`, icon buttons have labels, tabs expose `role="tab"` / `aria-selected`, canvas components are keyboard operable (Enter / Space select, Alt+arrows move, Ctrl/Cmd+D duplicate), text contrast raised to ≥ 4.5:1 and control borders to ≥ 3:1 across all six themes, 44 px touch targets on touch screens, and a visible `:focus-visible` ring.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.10 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.10</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Oct 31, 2026</span>
               </div>
               <div class="welcome-changelog-item">
