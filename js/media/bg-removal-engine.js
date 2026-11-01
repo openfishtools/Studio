@@ -25,9 +25,28 @@
       id: 'rvm_mobilenetv3',
       label: 'RobustVideoMatting (~15MB)',
       file: 'rvm_mobilenetv3_fp32.onnx',
+      url: 'https://huggingface.co/cutefishae/resource-cutefish/resolve/main/models/rvm_mobilenetv3_fp32.onnx',
       type: 'rvm',
       w: 512,
       h: 512
+    },
+    mediapipe_multiclass: {
+      id: 'mediapipe_multiclass',
+      label: 'MediaPipe Selfie Multiclass (~16MB)',
+      file: 'selfie_multiclass_256x256.tflite',
+      url: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite',
+      type: 'mediapipe_multiclass',
+      w: 256,
+      h: 256
+    },
+    rmbg14_q8: {
+      id: 'rmbg14_q8',
+      label: 'BRIA RMBG-1.4 Quantized (~42MB)',
+      file: 'rmbg14_model_quantized.onnx',
+      url: 'https://huggingface.co/briaai/RMBG-1.4/resolve/main/onnx/model_quantized.onnx',
+      type: 'rmbg',
+      w: 1024,
+      h: 1024
     }
   };
 
@@ -130,8 +149,8 @@
       return this._ortPromise;
     }
 
-    async _fetchModelBuffer(filename, onProgress) {
-      const url = `${HF_BASE_URL}/${filename}`;
+    async _fetchModelBuffer(fileOrUrl, onProgress) {
+      const url = fileOrUrl.startsWith('http') ? fileOrUrl : `${HF_BASE_URL}/${fileOrUrl}`;
       // Check CacheStorage first
       if (typeof window !== 'undefined' && 'caches' in window) {
         try {
@@ -143,7 +162,7 @@
         } catch (_) {}
       }
 
-      // Download model
+      // Download model online
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Model not found at: ${url}`);
 
@@ -189,23 +208,43 @@
     }
 
     async getSession(modelId = 'rvm_mobilenetv3', preferredDevice = 'gpu', onModelDownloadProgress) {
-      await this.ensureOnnxRuntime();
       const meta = MODEL_META[modelId] || MODEL_META.rvm_mobilenetv3;
       const cacheKey = `${modelId}:${preferredDevice}`;
       if (this._sessions.has(cacheKey)) {
         return this._sessions.get(cacheKey);
       }
 
-      const buffer = await this._fetchModelBuffer(meta.file, onModelDownloadProgress);
+      if (meta.type === 'mediapipe_multiclass') {
+        const visionModule = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs');
+        const { FilesetResolver, ImageSegmenter } = visionModule;
+        const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+        if (onModelDownloadProgress) onModelDownloadProgress(50);
+        const segmenter = await ImageSegmenter.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: meta.url,
+            delegate: 'GPU'
+          },
+          runningMode: 'IMAGE',
+          outputCategoryMask: false,
+          outputConfidenceMasks: true
+        });
+        if (onModelDownloadProgress) onModelDownloadProgress(100);
+
+        const sessionObj = { segmenter, activeEP: 'webgl2', meta, recurrentStates: null };
+        this._sessions.set(cacheKey, sessionObj);
+        return sessionObj;
+      }
+
+      await this.ensureOnnxRuntime();
+      const targetUrl = meta.url || meta.file;
+      const buffer = await this._fetchModelBuffer(targetUrl, onModelDownloadProgress);
       const modelBytes = new Uint8Array(buffer.slice(0));
 
       let epList = [];
-      if (preferredDevice === 'cpu') {
+      if (preferredDevice === 'cpu' || meta.type === 'rmbg' || meta.type === 'rvm') {
         epList = ['wasm'];
       } else {
-        epList = meta.type === 'rvm'
-          ? ['wasm'] // RVM runs with high precision in wasm SIMD
-          : ['webgpu', 'webgl', 'wasm'];
+        epList = ['webgpu', 'webgl', 'wasm'];
       }
 
       let session = null;
@@ -247,6 +286,98 @@
       const srcW = srcLike.videoWidth || srcLike.naturalWidth || srcLike.width;
       const srcH = srcLike.videoHeight || srcLike.naturalHeight || srcLike.height;
       if (!srcW || !srcH) throw new Error('Invalid source dimensions.');
+
+      // 1. MediaPipe Selfie Multiclass (WebGL GPU Delegate)
+      if (meta.type === 'mediapipe_multiclass') {
+        const result = sessionObj.segmenter.segment(srcLike);
+        const masks = result.confidenceMasks;
+        const maskW = masks[0].width;
+        const maskH = masks[0].height;
+        const area = maskW * maskH;
+        const cMasks = masks.map(m => m.getAsFloat32Array());
+        const alphaData = new Float32Array(area);
+
+        // Argmax / Winner-take-all: 0=bg, 1=hair, 2=body, 3=face, 4=clothes, 5=others
+        for (let i = 0; i < area; i++) {
+          let bestClass = 0;
+          let bestConf = cMasks[0][i];
+          for (let c = 1; c < 6; c++) {
+            if (cMasks[c][i] > bestConf) {
+              bestConf = cMasks[c][i];
+              bestClass = c;
+            }
+          }
+          alphaData[i] = bestClass > 0 ? 1.0 : 0.0;
+        }
+        result.close();
+
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = maskW;
+        maskCanvas.height = maskH;
+        const mctx = maskCanvas.getContext('2d');
+        const maskImgData = mctx.createImageData(maskW, maskH);
+        for (let i = 0; i < area; i++) {
+          const v = Math.round(alphaData[i] * 255);
+          maskImgData.data[i * 4] = 255;
+          maskImgData.data[i * 4 + 1] = 255;
+          maskImgData.data[i * 4 + 2] = 255;
+          maskImgData.data[i * 4 + 3] = v;
+        }
+        mctx.putImageData(maskImgData, 0, 0);
+        return maskCanvas;
+      }
+
+      // 2. BRIA RMBG-1.4 Quantized (HD 1024x1024)
+      if (meta.type === 'rmbg') {
+        const inferW = 1024;
+        const inferH = 1024;
+        const inputCanvas = document.createElement('canvas');
+        inputCanvas.width = inferW;
+        inputCanvas.height = inferH;
+        const ictx = inputCanvas.getContext('2d', { willReadFrequently: true });
+        ictx.imageSmoothingEnabled = true;
+        ictx.imageSmoothingQuality = 'high';
+        ictx.drawImage(srcLike, 0, 0, inferW, inferH);
+
+        const imgData = ictx.getImageData(0, 0, inferW, inferH).data;
+        const totalPixels = inferW * inferH;
+        const floatData = new Float32Array(3 * totalPixels);
+        const inv255 = 1.0 / 255.0;
+        for (let i = 0, p = 0; i < totalPixels; i++, p += 4) {
+          floatData[i] = (imgData[p] * inv255) - 0.5;
+          floatData[totalPixels + i] = (imgData[p + 1] * inv255) - 0.5;
+          floatData[2 * totalPixels + i] = (imgData[p + 2] * inv255) - 0.5;
+        }
+
+        const inputTensor = new window.ort.Tensor('float32', floatData, [1, 3, inferH, inferW]);
+        const results = await session.run({ [session.inputNames[0]]: inputTensor });
+        const outTensor = results[session.outputNames[0]];
+        const rawData = outTensor.data;
+
+        let minV = Infinity, maxV = -Infinity;
+        for (let i = 0; i < totalPixels; i++) {
+          const v = rawData[i];
+          if (v < minV) minV = v;
+          if (v > maxV) maxV = v;
+        }
+        const range = (maxV - minV) || 1.0;
+
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = inferW;
+        maskCanvas.height = inferH;
+        const mctx = maskCanvas.getContext('2d');
+        const maskImgData = mctx.createImageData(inferW, inferH);
+        for (let i = 0; i < totalPixels; i++) {
+          const a = Math.max(0, Math.min(1, (rawData[i] - minV) / range));
+          const v = Math.round(a * 255);
+          maskImgData.data[i * 4] = 255;
+          maskImgData.data[i * 4 + 1] = 255;
+          maskImgData.data[i * 4 + 2] = 255;
+          maskImgData.data[i * 4 + 3] = v;
+        }
+        mctx.putImageData(maskImgData, 0, 0);
+        return maskCanvas;
+      }
 
       let inferW = meta.w;
       let inferH = meta.h;
