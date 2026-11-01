@@ -1,5 +1,5 @@
 /**
- * OpenFishTools Extension - Sticky Note Card
+ * OpenFishTools Extension - Sticky Note Card (.js)
  * Provides: Fast project scratchpad with local auto-save.
  */
 Card({
@@ -36,7 +36,6 @@ Card({
           ctx.showToast('Notes cleared');
         }
       }),
-
       ui.button({
         label: 'COPY',
         icon: 'content_copy',
@@ -46,10 +45,12 @@ Card({
           if (navigator.clipboard) {
             navigator.clipboard.writeText(textarea.value).then(() => {
               ctx.showToast('Notes copied to clipboard!');
+            }).catch(() => {
+              ctx.showToast('Clipboard blocked by the browser — select the text and copy manually.', true);
             });
           } else {
-            textarea.select();
-            document.execCommand('copy');
+            if (typeof textarea.select === 'function') textarea.select();
+            if (typeof document.execCommand === 'function') document.execCommand('copy');
             ctx.showToast('Notes copied!');
           }
         }

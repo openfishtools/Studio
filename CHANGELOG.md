@@ -5,6 +5,28 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.11] - 2026-11-01
+
+### Added
+- **Extension Builder (`extension-builder.html`, `extension-builder/`, `vendor/codemirror/`)**: New drag-and-drop page for building extensions without writing JS from scratch. Palette of `ui.*` components (section, text, button, input, textarea, switch, slider, segmented, grid, form row), a WYSIWYG canvas that renders through the real `CardBuilder` inside a 1:1 replica of the editor's Extensions panel (panel header + card header with plugin icon and name), Pointer-Events drag & drop, pinch-zoom / two-finger pan / wheel zoom, undo / redo and autosave, an inspector generated from component schemas, and a theme-aware CodeMirror 6 script editor (Handler / Shared / Output tabs) with `ctx.*` autocomplete and a searchable SDK helper (`sdk-manifest.js`). Exports a plain `Card({...})` `.js` file for `Studio/Extension/` (with an embedded model comment so it can be re-imported). Mobile: floating Canvas / Preview bar, FAB that morphs into the Add element card, and one bottom drawer for Properties + Script; desktop: floating cards. Linked from the Extension modal next to Import .js.
+- **Live Preview Embeds the Real Editor (`extension-builder/js/live-preview.js`)**: The Preview view loads `desktop.html` (or `editor.html` below 900 px) in an iframe and injects the draft with `CardBuilder.loadExtensionJS(code, false)`, so buttons run against the editor's real `ctx`. Only the draft card is shown in the editor's Extensions panel. The draft is temporary: it is never saved to `oft_custom_extensions`, the draft's `ctx.storage` and the panel-open preference are restored, and the scratch project is deleted when the builder closes.
+- **`Userscript` Category (`js/extensions/extension-manager.js`, `css/layout/layout.css`)**: Imported `.js` extensions are listed with a `Userscript` badge instead of `Built-in` and get a one-click delete button (red border); built-in cards never show it.
+- **`CardBuilder.mount(def, host, ctx?)` (`js/ui/elements/card-builder.js`)**: Renders a card definition into any host with an optional sandbox `ctx`.
+
+### Changed
+- **Extensions Are Plain `.js` (`Extension/*.js`, `js/editor/editor-extension-bridge.js`)**: All 14 built-in extensions are now self-contained `Card({...})` files holding their own UI, algorithms and expressions. `editor-extension-bridge.js` is a thin router to `CardBuilder.runTool`. `Extension/README.md` documents the format, the UI components and the full `ctx` SDK.
+- **Richer Extension SDK (`js/ui/elements/card-builder.js`)**: `ctx.timeline.getBeatmarks(layer)`, `getFps()`, `getPps()`, `getPlayhead()`, `ctx.toast()`, `ctx.project.commit(reason, layersToInvalidate)`, and a `getDimensions()` result usable with both object and array destructuring.
+- **Test Suite Covers the Builder (`scripts/test-suite.js`, `scripts/static-scope-audit.js`)**: `extension-builder/` JS and `extension-builder.html` are now syntax-checked, scope-audited (0 undeclared references) and structure-checked.
+
+### Removed
+- Legacy JSX pipeline and monoliths: `Extension/*.jsx`, `js/extensions/JSX-Translator.js`, `js/extensions/fishtools-adapter.js`, `js/extensions/openfishtools-controller.js`, `js/extensions/openfishtools-generators3d.js`.
+
+### Fixed
+- **`ctx.timeline.getBeatmarks is not a function` (Beat Effects)**: The SDK names used by extensions now exist on `ctx`.
+- **Unstyled `ui.text` Variants (`css/panels/extensions.css`)**: `label` and `hint` variants now have styles.
+- **Sticky Note Clipboard Rejection (`Extension/sticky_note.js`)**: A blocked clipboard write no longer raises an unhandled promise rejection and shows a toast instead.
+- **Accessibility (`extension-builder/`, `js/ui/elements/card-builder.js`)**: Pinch-zoom no longer disabled, decorative icons are `aria-hidden`, icon buttons have labels, tabs expose `role="tab"` / `aria-selected`, canvas components are keyboard operable (Enter / Space select, Alt+arrows move, Ctrl/Cmd+D duplicate), text contrast raised to ≥ 4.5:1 and control borders to ≥ 3:1 across all six themes, 44 px touch targets on touch screens, and a visible `:focus-visible` ring.
+
 ## [0.6.10] - 2026-10-31
 
 ### Added

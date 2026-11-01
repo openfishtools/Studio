@@ -3754,13 +3754,19 @@
           </div>
         </div>
         <div class="extension-modal-header-actions">
-          <button type="button" class="extension-import-btn" id="btn-import-extension" title="Import .jsx Extension">
+          <a class="extension-import-btn" id="btn-open-extension-builder" href="extension-builder.html" title="Open Extension Builder (drag &amp; drop, no manual JS)">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+              <path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5s-1.12-2.5-2.5-2.5z"/>
+            </svg>
+            <span>Builder</span>
+          </a>
+          <button type="button" class="extension-import-btn" id="btn-import-extension" title="Import .js Extension">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
               <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
             </svg>
-            <span>Import .jsx</span>
+            <span>Import .js</span>
           </button>
-          <input type="file" id="input-import-jsx" accept=".jsx,.js" style="display:none;" />
+          <input type="file" id="input-import-jsx" accept=".js" style="display:none;" />
           <button type="button" class="folder-modal-close-btn" aria-label="Close" onclick="Modal.close('modal-extensions')">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
@@ -3990,8 +3996,21 @@
   <script src="vendor/qrcode.min.js"></script>
   <script src="js/ui/elements/slider.js"></script>
   <script src="js/ui/elements/card-builder.js"></script>
+  <script src="Extension/stopwatch.js"></script>
+  <script src="Extension/sticky_note.js"></script>
+  <script src="Extension/todo_list.js"></script>
+  <script src="Extension/anchor_point.js"></script>
+  <script src="Extension/cut_trim.js"></script>
+  <script src="Extension/align.js"></script>
+  <script src="Extension/actions.js"></script>
+  <script src="Extension/format.js"></script>
+  <script src="Extension/toolbox.js"></script>
+  <script src="Extension/velocity.js"></script>
+  <script src="Extension/beat_effects.js"></script>
+  <script src="Extension/cube_generator.js"></script>
+  <script src="Extension/generator_3d.js"></script>
+  <script src="Extension/auto_mark.js"></script>
   <script src="js/extensions/extension-manager.js"></script>
-  <script src="js/extensions/JSX-Translator.js"></script>
   <script src="js/app/main.js"></script>
 </body>
 </html>

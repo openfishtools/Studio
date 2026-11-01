@@ -1,496 +1,19 @@
 /**
- * FishTools Studio - Procedural 3D Generators Engine
- * Full procedural generation for 3D Cube, 18 3D Objects, 2-Split, 3-Split, 3D Tunnel, and 3D Minecraft Character.
- * Built for 3D Collapse Transformations and hierarchical null parenting.
+ * OpenFishTools Extension - 3D Generator Card (.js)
+ * 100% Self-Contained Extension: UI + 18 Procedural 3D Objects, 2/3-Split, Tunnel, and Minecraft Character Rig.
  */
+Card({
+  id: 'generator_3d',
+  name: '3D Generator',
+  icon: 'view_in_ar',
+  description: 'Basic 3D, Devices & Tech (Phone, Laptop, Monitor), Room & Furniture, Props & Character.',
+  category: '3D',
+  defaultEnabled: true,
 
-'use strict';
-
-(function (root) {
-  const FishTools3D = {};
-
-  // --- Color & Math Utilities ---
-  function rgbaToHex(rgba, mult = 1.0) {
-    if (!rgba) return '#888888';
-    if (typeof rgba === 'string') return rgba;
-    const r = Math.min(255, Math.max(0, Math.round(rgba[0] * 255 * mult)));
-    const g = Math.min(255, Math.max(0, Math.round(rgba[1] * 255 * mult)));
-    const b = Math.min(255, Math.max(0, Math.round(rgba[2] * 255 * mult)));
-    const toHex = n => n.toString(16).padStart(2, '0');
-    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-  }
-
-  function generateId(prefix = 'layer') {
-    return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-  }
-
-  function getBaseDims() {
-    const state = root.currentProjectState || {};
-    const aspect = state.aspectRatio || '16:9';
-    const res = state.resolution || '1080p';
-    const resMap = root.resMap || {};
-    return window.getProjectDimensions(res, aspect);
-  }
-
-  function getTiming(selLayer) {
-    const pps = (typeof root.pixelsPerSecond === 'number' && root.pixelsPerSecond > 0)
-      ? root.pixelsPerSecond
-      : (root.currentPixelsPerSecond || 80);
-    const state = root.currentProjectState || {};
-    const defaultDur = state.defaultDuration || 5;
-
-    let startSec = 0;
-    let durationSec = defaultDur;
-
-    if (selLayer) {
-      startSec = selLayer.startSec !== undefined ? selLayer.startSec : ((selLayer.startPx || 0) / pps);
-      durationSec = selLayer.durationSec !== undefined ? selLayer.durationSec : ((selLayer.widthPx || 320) / pps);
-    } else {
-      startSec = Math.abs(root.timelinePanX || 0) / pps;
-    }
-
-    return {
-      startSec: Number(startSec.toFixed(4)),
-      durationSec: Number(Math.max(0.1, durationSec).toFixed(4)),
-      pps
-    };
-  }
-
-  // --- 3D Layer Creators ---
-  function create3DNull({ name, pos = [0, 0, 0], ori = [0, 0, 0], parent = null, startSec = 0, durationSec = 5, pps = 80 }) {
-    const id = generateId('layer_null');
-    const parentPosX = parent ? parent.posX : 0;
-    const parentPosY = parent ? parent.posY : 0;
-    const parentPosZ = parent ? (parent.posZ || 0) : 0;
-
-    const posX = parentPosX + pos[0];
-    const posY = parentPosY + pos[1];
-    const posZ = parentPosZ + pos[2];
-
-    const nullLayer = {
-      id,
-      name,
-      type: 'null',
-      is3D: true,
-      startPx: Math.round(startSec * pps),
-      startSec,
-      durationSec,
-      widthPx: Math.round(durationSec * pps),
-      posX,
-      posY,
-      posZ,
-      rotX: ori[0] || 0,
-      rotY: ori[1] || 0,
-      rotZ: ori[2] || 0,
-      rotation: ori[2] || 0,
-      scaleW: 100,
-      scaleH: 100,
-      opacity: 1.0,
-      parentId: parent ? parent.id : null,
-      parentBind: parent ? {
-        parentPosX: parent.posX,
-        parentPosY: parent.posY,
-        parentPosZ: parent.posZ || 0,
-        parentRotX: parent.rotX || 0,
-        parentRotY: parent.rotY || 0,
-        parentRotZ: parent.rotZ || 0,
-        parentScaleW: parent.scaleW || 100,
-        parentScaleH: parent.scaleH || 100
-      } : null
-    };
-
-    return nullLayer;
-  }
-
-  function create3DFace({
-    name,
-    w,
-    h,
-    pos = [0, 0, 0],
-    ori = [0, 0, 0],
-    parent = null,
-    color = '#888888',
-    opacity = 1.0,
-    roundness = 0,
-    textureLayer = null,
-    startSec = 0,
-    durationSec = 5,
-    pps = 80
-  }) {
-    const id = generateId('layer_face');
-    const parentPosX = parent ? parent.posX : 0;
-    const parentPosY = parent ? parent.posY : 0;
-    const parentPosZ = parent ? (parent.posZ || 0) : 0;
-
-    const posX = parentPosX + pos[0];
-    const posY = parentPosY + pos[1];
-    const posZ = parentPosZ + pos[2];
-
-    const isTextured = !!(textureLayer && (textureLayer.dataUrl || textureLayer.mediaId || textureLayer.type === 'image' || textureLayer.type === 'video'));
-
-    const faceLayer = {
-      id,
-      name,
-      type: isTextured ? (textureLayer.type === 'video' ? 'video' : 'image') : 'shape',
-      is3D: true,
-      startPx: Math.round(startSec * pps),
-      startSec,
-      durationSec,
-      widthPx: Math.round(durationSec * pps),
-      posX,
-      posY,
-      posZ,
-      rotX: ori[0] || 0,
-      rotY: ori[1] || 0,
-      rotZ: ori[2] || 0,
-      rotation: ori[2] || 0,
-      scaleW: Math.max(1, Math.round(w)),
-      scaleH: Math.max(1, Math.round(h)),
-      _userResized: true,
-      _userResizedManual: true,
-      opacity,
-      blendMode: 'normal',
-      parentId: parent ? parent.id : null,
-      parentBind: parent ? {
-        parentPosX: parent.posX,
-        parentPosY: parent.posY,
-        parentPosZ: parent.posZ || 0,
-        parentRotX: parent.rotX || 0,
-        parentRotY: parent.rotY || 0,
-        parentRotZ: parent.rotZ || 0,
-        parentScaleW: parent.scaleW || 100,
-        parentScaleH: parent.scaleH || 100
-      } : null
-    };
-
-    if (isTextured) {
-      faceLayer.dataUrl = textureLayer.dataUrl || null;
-      faceLayer.mediaId = textureLayer.mediaId || null;
-      faceLayer.mediaWidth = textureLayer.mediaWidth || Math.max(1, Math.round(w));
-      faceLayer.mediaHeight = textureLayer.mediaHeight || Math.max(1, Math.round(h));
-      if (textureLayer.naturalWidth) faceLayer.naturalWidth = textureLayer.naturalWidth;
-      if (textureLayer.naturalHeight) faceLayer.naturalHeight = textureLayer.naturalHeight;
-      if (textureLayer.speed !== undefined) faceLayer.speed = textureLayer.speed;
-      if (textureLayer.sourceOffsetSec !== undefined) faceLayer.sourceOffsetSec = textureLayer.sourceOffsetSec;
-    } else {
-      faceLayer.shapeType = 'rectangle';
-      faceLayer.shapeProps = {
-        sizeX: Math.max(1, Math.round(w)),
-        sizeY: Math.max(1, Math.round(h)),
-        roundness: roundness || 0
-      };
-      faceLayer.fillType = 'color';
-      faceLayer.fillColor = color;
-      faceLayer.strokeColor = color;
-      faceLayer.strokeWidth = 0;
-    }
-
-    return faceLayer;
-  }
-
-  // --- Precomp Packaging Helper ---
-  function wrapIn3DPrecomp({
-    name,
-    compW,
-    compH,
-    startSec,
-    durationSec,
-    childLayers,
-    replaceLayer = null,
-    pps = 80
-  }) {
-    const [baseW, baseH] = getBaseDims();
-    const state = root.currentProjectState || {};
-    state.layers = state.layers || [];
-
-    const precompId = generateId('layer_precomp');
-    const mediaId = generateId('media_comp');
-
-    const pX = replaceLayer && replaceLayer.posX !== undefined ? replaceLayer.posX : Math.round(baseW / 2);
-    const pY = replaceLayer && replaceLayer.posY !== undefined ? replaceLayer.posY : Math.round(baseH / 2);
-    const pZ = replaceLayer && replaceLayer.posZ !== undefined ? replaceLayer.posZ : 0;
-
-    // Inside any precomposition, child layers belong to the precomp's local timeline starting at 0.
-    // If child layers were created with parent composition startSec, normalize them to 0-based timing.
-    if (Array.isArray(childLayers)) {
-      childLayers.forEach(l => {
-        if (l) {
-          const lStart = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps);
-          const relStart = Math.max(0, lStart - (startSec || 0));
-          l.startSec = Number(relStart.toFixed(4));
-          l.startPx = Math.round(l.startSec * pps);
-          l.durationSec = Number((l.durationSec !== undefined ? l.durationSec : durationSec).toFixed(4));
-          l.widthPx = Math.round(l.durationSec * pps);
-        }
-      });
-    }
-
-    const precompLayer = {
-      id: precompId,
-      mediaId,
-      name,
-      type: 'precomp',
-      startSec,
-      durationSec,
-      startPx: Math.round(startSec * pps),
-      widthPx: Math.round(durationSec * pps),
-      posX: pX,
-      posY: pY,
-      posZ: pZ,
-      rotX: 0,
-      rotY: 0,
-      rotZ: 0,
-      rotation: 0,
-      scaleW: compW,
-      scaleH: compH,
-      mediaWidth: compW,
-      mediaHeight: compH,
-      _userResized: true,
-      normX: Number(((pX - compW / 2) / baseW).toFixed(4)),
-      normY: Number(((pY - compH / 2) / baseH).toFixed(4)),
-      normW: Number((compW / baseW).toFixed(4)),
-      normH: Number((compH / baseH).toFixed(4)),
-      opacity: 1,
-      blendMode: 'normal',
-      is3D: true,
-      collapseTransformations: true,
-      layers: childLayers
-    };
-
-    const precompMediaItem = {
-      id: mediaId,
-      projectId: state.id,
-      name,
-      type: 'precomp',
-      precompId,
-      duration: durationSec,
-      width: compW,
-      height: compH,
-      is3D: true,
-      collapseTransformations: true,
-      layers: JSON.parse(JSON.stringify(childLayers))
-    };
-
-    if (root.FishDatabase && typeof root.FishDatabase.saveMedia === 'function' && state.id) {
-      root.FishDatabase.saveMedia(precompMediaItem).catch(err => {
-        console.warn('[FishTools3D] saveMedia error:', err);
-      });
-    }
-
-    // Replace or prepend
-    if (replaceLayer) {
-      const idx = state.layers.findIndex(l => l.id === replaceLayer.id);
-      if (idx !== -1) {
-        state.layers.splice(idx, 1, precompLayer);
-      } else {
-        state.layers.unshift(precompLayer);
-      }
-    } else {
-      state.layers.unshift(precompLayer);
-    }
-
-    // Selectively invalidate only the affected layer time range (Smart Caching)
-    if (root.PreviewCacheManager && typeof root.PreviewCacheManager.deletePool === 'function') {
-      root.PreviewCacheManager.deletePool(precompId);
-    }
-    if (typeof root.invalidatePreviewCacheForLayer === 'function') {
-      if (replaceLayer) root.invalidatePreviewCacheForLayer(replaceLayer);
-      root.invalidatePreviewCacheForLayer(precompLayer);
-    } else if (root.PreviewCacheManager && typeof root.PreviewCacheManager.invalidateLayer === 'function') {
-      if (replaceLayer) root.PreviewCacheManager.invalidateLayer(replaceLayer);
-      root.PreviewCacheManager.invalidateLayer(precompLayer);
-    }
-
-    // Select precomp layer
-    if (root.selectedLayerIds) root.selectedLayerIds.clear();
-    root.selectedLayerId = precompId;
-    if (root.selectedLayerIds) root.selectedLayerIds.add(precompId);
-
-    if (typeof root.renderTimelineLayers === 'function') root.renderTimelineLayers();
-    if (typeof root.updateEditorHeaderMode === 'function') root.updateEditorHeaderMode();
-    if (typeof root.redrawComposition === 'function') root.redrawComposition('3d-gen');
-    if (typeof root.saveCurrentProjectLayers === 'function') root.saveCurrentProjectLayers(true);
-
-    if (typeof root.showEffectsRackToast === 'function') {
-      root.showEffectsRackToast(`${name} created`);
-    }
-
-    return JSON.stringify({
-      error: false,
-      message: `${name} generated successfully!`,
-      layerId: precompId,
-      is3D: true,
-      collapseTransformations: true
-    });
-  }
-
-  // =========================================================================
-  // 1. CUBE GENERATOR
-  // =========================================================================
-  FishTools3D.createProceduralCube = function (w, h, d, useLayer = false) {
-    if (w && typeof w === 'object' && !Array.isArray(w)) {
-      const opts = w;
-      w = opts.width ?? opts.w;
-      h = opts.height ?? opts.h;
-      d = opts.depth ?? opts.d;
-      useLayer = Boolean(opts.useLayer);
-    }
-    const state = root.currentProjectState || {};
-    const layers = state.layers || [];
-    const selId = root.selectedLayerId;
-    const selLayer = layers.find(l => l.id === selId);
-
-    const timing = getTiming(selLayer);
-    const { startSec, durationSec, pps } = timing;
-    const [baseW, baseH] = getBaseDims();
-
-    let boxW = parseFloat(w);
-    if (isNaN(boxW) || boxW <= 0) boxW = 400;
-    let boxH = parseFloat(h);
-    if (isNaN(boxH) || boxH <= 0) boxH = 400;
-    let boxD = parseFloat(d);
-    if (isNaN(boxD) || boxD <= 0) boxD = 400;
-
-    let textureLayer = null;
-    let shouldReplace = false;
-
-    if (selLayer && (selLayer.dataUrl || selLayer.mediaId || selLayer.type === 'image' || selLayer.type === 'video' || useLayer)) {
-      textureLayer = selLayer;
-      if (useLayer) {
-        boxW = selLayer.scaleW || selLayer.mediaWidth || 400;
-        boxH = selLayer.scaleH || selLayer.mediaHeight || 400;
-        boxD = Math.min(boxW, boxH);
-        shouldReplace = true;
-      }
-    }
-
-    const halfW = boxW / 2;
-    const halfH = boxH / 2;
-    const halfD = boxD / 2;
-
-    const cubeCompW = Math.round(boxW);
-    const cubeCompH = Math.round(boxH);
-
-    // Root Controller (starts at 0 in precomp local timeline)
-    const controller = create3DNull({
-      name: 'Cube_Controller',
-      pos: [cubeCompW / 2, cubeCompH / 2, 0],
-      ori: [0, 0, 0],
-      startSec: 0,
-      durationSec,
-      pps
-    });
-
-    // 6 Shaded Faces (Textured with selected layer if available)
-    const cFront = '#9e9e9e';
-    const cBack = '#616161';
-    const cLeft = '#757575';
-    const cRight = '#8d8d8d';
-    const cTop = '#bdbdbd';
-    const cBottom = '#424242';
-
-    const faces = [
-      create3DFace({
-        name: 'Cube_Front',
-        w: boxW,
-        h: boxH,
-        pos: [0, 0, -halfD],
-        ori: [0, 0, 0],
-        parent: controller,
-        color: cFront,
-        textureLayer,
-        startSec: 0,
-        durationSec,
-        pps
-      }),
-      create3DFace({
-        name: 'Cube_Back',
-        w: boxW,
-        h: boxH,
-        pos: [0, 0, halfD],
-        ori: [0, 180, 0],
-        parent: controller,
-        color: cBack,
-        textureLayer,
-        startSec: 0,
-        durationSec,
-        pps
-      }),
-      create3DFace({
-        name: 'Cube_Left',
-        w: boxD,
-        h: boxH,
-        pos: [-halfW, 0, 0],
-        ori: [0, -90, 0],
-        parent: controller,
-        color: cLeft,
-        textureLayer,
-        startSec: 0,
-        durationSec,
-        pps
-      }),
-      create3DFace({
-        name: 'Cube_Right',
-        w: boxD,
-        h: boxH,
-        pos: [halfW, 0, 0],
-        ori: [0, 90, 0],
-        parent: controller,
-        color: cRight,
-        textureLayer,
-        startSec: 0,
-        durationSec,
-        pps
-      }),
-      create3DFace({
-        name: 'Cube_Top',
-        w: boxW,
-        h: boxD,
-        pos: [0, -halfH, 0],
-        ori: [90, 0, 0],
-        parent: controller,
-        color: cTop,
-        textureLayer,
-        startSec: 0,
-        durationSec,
-        pps
-      }),
-      create3DFace({
-        name: 'Cube_Bottom',
-        w: boxW,
-        h: boxD,
-        pos: [0, halfH, 0],
-        ori: [-90, 0, 0],
-        parent: controller,
-        color: cBottom,
-        textureLayer,
-        startSec: 0,
-        durationSec,
-        pps
-      })
-    ];
-
-    const childLayers = [controller, ...faces];
-
-    const cubeCount = layers.filter(l => l.name && l.name.startsWith('Cube_Comp')).length + 1;
-    const precompName = cubeCount > 1 ? `Cube_Comp ${cubeCount}` : 'Cube_Comp';
-
-    return wrapIn3DPrecomp({
-      name: precompName,
-      compW: cubeCompW,
-      compH: cubeCompH,
-      startSec,
-      durationSec,
-      childLayers,
-      replaceLayer: shouldReplace ? selLayer : null,
-      pps
-    });
-  };
-
-  // =========================================================================
-  // 2. PROCEDURAL 3D OBJECTS (BOX, CABINET, TABLE, PHONE, LAPTOP, etc.)
-  // =========================================================================
-  FishTools3D.createProcedural3D = function (type) {
+  // ============================================================================
+  // 1. LOGIKA ALGORITMA 18 OBJEK 3D PROSEDURAL (BOX, CABINET, TABLE, PHONE, DLL)
+  // ============================================================================
+  createProcedural3D(ctx, type) {
     const typeUpper = (type || 'BOX').toUpperCase().replace('GEN_3D_', '');
 
     const typeNames = {
@@ -515,19 +38,15 @@
     };
 
     const baseName = typeNames[typeUpper] || '3D_Object';
-    const state = root.currentProjectState || {};
-    const layers = state.layers || [];
-    const selId = root.selectedLayerId;
-    const selLayer = layers.find(l => l.id === selId);
-
-    const timing = getTiming(selLayer);
-    const { startSec, durationSec, pps } = timing;
-    const [baseW, baseH] = getBaseDims();
+    const layers = ctx.layers.getAll();
+    const selLayer = ctx.layers.getActive();
+    const { startSec, durationSec, pps } = ctx.scene3d.getTiming(selLayer);
+    const [baseW, baseH] = ctx.scene3d.getBaseDims();
 
     const compW = (selLayer && selLayer.scaleW && selLayer.scaleW > 0) ? Math.round(selLayer.scaleW) : baseW;
     const compH = (selLayer && selLayer.scaleH && selLayer.scaleH > 0) ? Math.round(selLayer.scaleH) : baseH;
 
-    const controller = create3DNull({
+    const controller = ctx.scene3d.create3DNull({
       name: `${baseName}_Controller`,
       pos: [compW / 2, compH / 2, 0],
       ori: [0, 0, 0],
@@ -539,8 +58,8 @@
     const childLayers = [controller];
 
     function addFace(name, w, h, pos, ori, parent, colorRgba, mult = 1.0, roundness = 0, texture = null, opacity = 1.0) {
-      const color = rgbaToHex(colorRgba, mult);
-      const face = create3DFace({
+      const color = ctx.scene3d.rgbaToHex(colorRgba, mult);
+      const face = ctx.scene3d.create3DFace({
         name,
         w,
         h,
@@ -560,7 +79,7 @@
     }
 
     function addHinge(name, pos, ori, parent) {
-      const hinge = create3DNull({
+      const hinge = ctx.scene3d.create3DNull({
         name,
         pos,
         ori,
@@ -582,20 +101,16 @@
       const bD = Math.min(bW, bH);
       const hW = bW / 2, hH = bH / 2, hD = bD / 2;
 
-      // Bottom floor
       addFace('Bottom', bW, bD, [0, hH, 0], [90, 0, 0], controller, cInner, 0.65);
-      // Outer 4 walls
       addFace('Front', bW, bH, [0, 0, -hD], [0, 0, 0], controller, cOuter, 1.0, 0, selLayer);
       addFace('Back', bW, bH, [0, 0, hD], [0, 180, 0], controller, cOuter, 0.7);
       addFace('Left', bD, bH, [-hW, 0, 0], [0, -90, 0], controller, cOuter, 0.75);
       addFace('Right', bD, bH, [hW, 0, 0], [0, 90, 0], controller, cOuter, 0.85);
-      // Inner 4 walls
       addFace('Inside_Front', bW - 2, bH - 2, [0, 0, -hD + 1], [0, 180, 0], controller, cInner, 0.55);
       addFace('Inside_Back', bW - 2, bH - 2, [0, 0, hD - 1], [0, 0, 0], controller, cInner, 0.5);
       addFace('Inside_Left', bD - 2, bH - 2, [-hW + 1, 0, 0], [0, 90, 0], controller, cInner, 0.45);
       addFace('Inside_Right', bD - 2, bH - 2, [hW - 1, 0, 0], [0, -90, 0], controller, cInner, 0.5);
 
-      // Flap Hinges
       const flapH = bD * 0.48;
       const flapW = bW * 0.48;
       const hFront = addHinge('Flap_Front_Hinge', [0, -hH, -hD], [0, 0, 0]);
@@ -625,7 +140,6 @@
       addFace('Bottom_Floor', cW, cD, [0, hcH, 0], [90, 0, 0], controller, cWood, 0.6);
       addFace('Middle_Shelf', cW - 12, cD - 12, [0, 0, 0], [-90, 0, 0], controller, cShelf, 0.95);
 
-      // Doors
       const dW = cW / 2 - 6;
       const dH = cH - 16;
       const hLeftDoor = addHinge('Left_Door_Hinge', [-hcW + 3, 0, -hcD - 3], [0, 0, 0]);
@@ -636,7 +150,6 @@
       addFace('Right_Door', dW, dH, [-dW / 2, 0, 0], [0, 0, 0], hRightDoor, cDoor, 1.0);
       addFace('Right_Handle', 8, 80, [-dW + 18, 0, -6], [0, 0, 0], hRightDoor, cMetal, 1.0);
 
-      // 4 Feet
       const legSize = 36, legH = 50;
       const legPos = [
         [-hcW + 30, hcH + legH / 2, -hcD + 30],
@@ -694,13 +207,11 @@
       const pD = Math.max(14, Math.round(pW * 0.056));
       const hpW = pW / 2, hpH = pH / 2, hpD = pD / 2;
 
-      // Front screen display with mockup texture (facing forward towards camera at +hpD)
       addFace('Front_Bezel', pW, pH, [0, 0, hpD], [0, 0, 0], controller, cBezel, 1.0, 36);
       addFace('Screen_Display', pW - 20, pH - 20, [0, 0, hpD + 1], [0, 0, 0], controller, cBezel, 0.05, 32, selLayer);
       addFace('Dynamic_Island', Math.round(pW * 0.24), Math.round(pH * 0.028), [0, -hpH + Math.round(pH * 0.045), hpD + 2], [0, 0, 0], controller, cBezel, 1.0, 13);
       addFace('Back_Cover', pW, pH, [0, 0, -hpD], [0, 180, 0], controller, cBody, 1.0, 36);
 
-      // Camera Island at the BACK (-hpD)
       const camPlateW = Math.round(pW * 0.32), camPlateH = Math.round(pH * 0.16);
       const camX = -hpW + Math.round(camPlateW * 0.6), camY = -hpH + Math.round(camPlateH * 0.6), camZ = -hpD - 4;
       addFace('Camera_Island', camPlateW, camPlateH, [camX, camY, camZ], [0, 180, 0], controller, cBump, 1.0, 24);
@@ -708,7 +219,6 @@
       addFace('Lens_Bottom_Rim', Math.round(pW * 0.1), Math.round(pW * 0.1), [camX - Math.round(camPlateW * 0.17), camY + Math.round(camPlateH * 0.18), camZ - 4], [0, 180, 0], controller, cRing, 1.0, 23);
       addFace('Lens_Right_Rim', Math.round(pW * 0.09), Math.round(pW * 0.09), [camX + Math.round(camPlateW * 0.22), camY, camZ - 4], [0, 180, 0], controller, cRing, 1.0, 21);
 
-      // Frame edges & buttons
       addFace('Frame_Left', pD, pH, [-hpW, 0, 0], [0, -90, 0], controller, cFrame, 0.85);
       addFace('Vol_Up_Btn', 5, Math.round(pH * 0.06), [-hpW - 3, Math.round(-pH * 0.12), 0], [0, 0, 0], controller, cFrame, 1.2);
       addFace('Vol_Down_Btn', 5, Math.round(pH * 0.06), [-hpW - 3, Math.round(-pH * 0.04), 0], [0, 0, 0], controller, cFrame, 1.2);
@@ -728,7 +238,6 @@
       const baseY = 80;
       const topY = baseY - hbH;
 
-      // Base top & keyboard
       addFace('Base_Top', lW, lD, [0, topY, 0], [-90, 0, 0], controller, cAlum, 1.05);
       addFace('Keyboard_Well', 680, 230, [0, topY - 0.5, 95], [-90, 0, 0], controller, cKb, 0.45);
       addFace('Keys_Function_Row', 650, 16, [0, topY - 1.5, 188], [-90, 0, 0], controller, cKb, 1.05);
@@ -739,14 +248,12 @@
       addFace('Key_Spacebar', 280, 22, [-20, topY - 1.5, 40], [-90, 0, 0], controller, cKb, 1.25);
       addFace('Trackpad', 290, 180, [0, topY - 0.8, -140], [-90, 0, 0], controller, cPad, 1.0, 8);
 
-      // Base bottom & edges
       addFace('Base_Bottom', lW, lD, [0, baseY + hbH, 0], [90, 0, 0], controller, cAlum, 0.65);
       addFace('Base_Front', lW, bH, [0, baseY, -hlD], [0, 0, 0], controller, cAlum, 1.0);
       addFace('Base_Back', lW, bH, [0, baseY, hlD], [0, 180, 0], controller, cAlum, 0.7);
       addFace('Base_Left', lD, bH, [-hlW, baseY, 0], [0, -90, 0], controller, cAlum, 0.85);
       addFace('Base_Right', lD, bH, [hlW, baseY, 0], [0, 90, 0], controller, cAlum, 0.95);
 
-      // Screen Hinge
       const lidHinge = addHinge('Screen_Hinge', [0, baseY - hbH, hlD - 2], [0, 0, 0]);
       addFace('Screen_Bezel', lW, sH, [0, -hsH, hsD], [0, 0, 0], lidHinge, cBezelLap, 1.0, 16);
       addFace('Screen_Display', lW - 32, sH - 32, [0, -hsH, hsD + 1], [0, 0, 0], lidHinge, cBezelLap, 0.05, 12, selLayer);
@@ -780,7 +287,6 @@
       const sW = 540, sH = 360;
       const sY = -htH + 24 + sH / 2;
 
-      // Front face & screen at +htD
       addFace('Front_Face', tW, tH, [0, 0, htD], [0, 0, 0], controller, cBody, 1.0);
       addFace('Screen_Bezel', sW, sH, [0, sY, htD + 1], [0, 0, 0], controller, cBezel, 1.0, 48);
       addFace('Screen_Glass', sW - 36, sH - 36, [0, sY, htD + 3], [0, 0, 0], controller, cBezel, 0.05, 40, selLayer);
@@ -796,7 +302,6 @@
       addFace('Tuning_Knob_1', 48, 48, [130, pY, htD + 6], [0, 0, 0], controller, cKnob, 1.05, 24);
       addFace('Tuning_Knob_2', 48, 48, [205, pY, htD + 6], [0, 0, 0], controller, cKnob, 1.05, 24);
 
-      // Back cover at -htD
       addFace('Back_Cover', tW, tH, [0, 0, -htD], [0, 180, 0], controller, cBody, 0.7);
       addFace('Top_Cover', tW, tD, [0, -htH, 0], [-90, 0, 0], controller, cBody, 1.1);
       addFace('Bottom_Floor', tW, tD, [0, htH, 0], [90, 0, 0], controller, cBody, 0.65);
@@ -805,18 +310,15 @@
     }
     else if (typeUpper === 'ZFLIP') {
       const cBody = [0.18, 0.20, 0.24, 1.0];
-      const cFrame = [0.55, 0.58, 0.62, 1.0];
       const cBezel = [0.02, 0.02, 0.02, 1.0];
       const cCover = [0.10, 0.11, 0.13, 1.0];
       const fW = 436, hH = 500, fD = 22;
-      const hfW = fW / 2, hhH = hH / 2, hfD = fD / 2;
+      const hhH = hH / 2, hfD = fD / 2;
 
-      // Lower Base Unit (facing camera at +hfD)
       addFace('Base_Back_Cover', fW, hH, [0, hhH, -hfD], [0, 180, 0], controller, cBody, 1.0);
       addFace('Base_Bezel', fW, hH, [0, hhH, hfD], [0, 0, 0], controller, cBezel, 1.0);
       addFace('Base_Inner_Display', 400, 489, [0, hhH, hfD + 1], [0, 0, 0], controller, cBezel, 0.05, 0, selLayer);
 
-      // Upper Flip Unit
       const flipHinge = addHinge('Flip_Hinge', [0, 0, -hfD], [0, 0, 0]);
       addFace('Upper_Inner_Display', 400, 489, [0, -hhH, 1], [0, 0, 0], flipHinge, cBezel, 0.05);
       addFace('Upper_Bezel', fW, hH, [0, -hhH, 0], [0, 0, 0], flipHinge, cBezel, 1.0);
@@ -825,19 +327,16 @@
     }
     else if (typeUpper === 'ZFOLD') {
       const cBody = [0.16, 0.17, 0.20, 1.0];
-      const cFrame = [0.65, 0.68, 0.72, 1.0];
       const cBezel = [0.02, 0.02, 0.02, 1.0];
       const cCover = [0.06, 0.07, 0.08, 1.0];
       const fH = 920, fD = 22, hW = 385;
       const hhW = hW / 2, hfD = fD / 2;
 
-      // Right Half Unit (facing camera at +hfD)
       addFace('Right_Back_Cover', hW, fH, [hhW, 0, -hfD], [0, 180, 0], controller, cBody, 1.0);
       addFace('Right_Bezel', hW, fH, [hhW, 0, hfD], [0, 0, 0], controller, cBezel, 1.0);
       addFace('Right_Inner_Display', 373, 896, [hhW, 0, hfD + 1], [0, 0, 0], controller, cBezel, 0.05, 0, selLayer);
       addFace('Cover_Display', 345, 884, [hhW, 0, -hfD - 2], [0, 180, 0], controller, cCover, 1.1);
 
-      // Left Half Unit
       const foldHinge = addHinge('Fold_Hinge', [0, 0, -hfD], [0, 0, 0]);
       addFace('Left_Inner_Display', 373, 896, [-hhW, 0, 1], [0, 0, 0], foldHinge, cBezel, 0.05);
       addFace('Left_Bezel', hW, fH, [-hhW, 0, 0], [0, 0, 0], foldHinge, cBezel, 1.0);
@@ -896,7 +395,6 @@
       const tD = Math.max(12, Math.round(tW * 0.024));
       const htW = tW / 2, htH = tH / 2, htD = tD / 2;
 
-      // Front bezel and screen display facing forward at +htD
       addFace('Front_Bezel', tW, tH, [0, 0, htD], [0, 0, 0], controller, cBezel, 1.0, 28);
       addFace('Screen_Display', tW - 28, tH - 28, [0, 0, htD + 1], [0, 0, 0], controller, cBezel, 0.05, 24, selLayer);
       addFace('Back_Cover', tW, tH, [0, 0, -htD], [0, 180, 0], controller, cBody, 1.0, 28);
@@ -907,7 +405,6 @@
     }
     else if (typeUpper === 'GLASSES') {
       const cFrame = [0.10, 0.10, 0.12, 1.0];
-      const cAccent = [0.38, 0.22, 0.12, 1.0];
       const cLens = [0.12, 0.14, 0.18, 0.55];
       const cMetal = [0.85, 0.74, 0.42, 1.0];
       const gL = 540;
@@ -1000,7 +497,6 @@
       const mD = Math.max(16, Math.round(mW * 0.02));
       const hmW = mW / 2, hmH = mH / 2, hmD = mD / 2;
 
-      // Front screen facing camera at +hmD
       addFace('Front_Bezel', mW, mH, [0, 0, hmD], [0, 0, 0], controller, cScreen, 1.0, 16);
       addFace('Screen_Display', mW - 24, mH - 24, [0, 0, hmD + 1], [0, 0, 0], controller, cScreen, 0.05, 12, selLayer);
       addFace('Back_Cover', mW, mH, [0, 0, -hmD], [0, 180, 0], controller, cChassis, 1.0, 16);
@@ -1024,7 +520,6 @@
       addFace('Back_IO_Panel', pW, pH, [0, 0, hpD], [0, 180, 0], controller, cChassis, 0.75);
     }
     else {
-      // Default generic box
       addFace('Front', 400, 400, [0, 0, -200], [0, 0, 0], controller, [0.7, 0.7, 0.7, 1.0], 1.0, 0, selLayer);
       addFace('Back', 400, 400, [0, 0, 200], [0, 180, 0], controller, [0.5, 0.5, 0.5, 1.0], 1.0);
       addFace('Top', 400, 400, [0, -200, 0], [90, 0, 0], controller, [0.8, 0.8, 0.8, 1.0], 1.0);
@@ -1034,7 +529,7 @@
     const objCount = layers.filter(l => l.name && l.name.startsWith(`${baseName}_Comp`)).length + 1;
     const precompName = objCount > 1 ? `${baseName}_Comp ${objCount}` : `${baseName}_Comp`;
 
-    return wrapIn3DPrecomp({
+    return ctx.scene3d.wrapIn3DPrecomp({
       name: precompName,
       compW,
       compH,
@@ -1044,22 +539,18 @@
       replaceLayer: selLayer,
       pps
     });
-  };
+  },
 
-  // =========================================================================
-  // 3. MINECRAFT 3D CHARACTER (GEN_3D_MC)
-  // =========================================================================
-  FishTools3D.createProceduralMC = function () {
-    const state = root.currentProjectState || {};
-    const layers = state.layers || [];
-    const selId = root.selectedLayerId;
-    const selLayer = layers.find(l => l.id === selId);
+  // ============================================================================
+  // 2. LOGIKA ALGORITMA MINECRAFT 3D CHARACTER RIG (GEN_3D_MC)
+  // ============================================================================
+  createProceduralMC(ctx) {
+    const layers = ctx.layers.getAll();
+    const selLayer = ctx.layers.getActive();
+    const { startSec, durationSec, pps } = ctx.scene3d.getTiming(selLayer);
+    const [baseW, baseH] = ctx.scene3d.getBaseDims();
 
-    const timing = getTiming(selLayer);
-    const { startSec, durationSec, pps } = timing;
-    const [baseW, baseH] = getBaseDims();
-
-    const masterCtrl = create3DNull({
+    const masterCtrl = ctx.scene3d.create3DNull({
       name: 'MC_Character_Controller',
       pos: [baseW / 2, baseH / 2, 0],
       ori: [0, 0, 0],
@@ -1069,17 +560,14 @@
     });
 
     const childLayers = [masterCtrl];
-
-    // Scale factor: 1 unit = 25px
     const S = 25;
 
-    // Hierarchy Nulls
-    const torsoCtrl = create3DNull({ name: 'Torso_Controller', pos: [0, 0, 0], ori: [0, 0, 0], parent: masterCtrl, startSec, durationSec, pps });
-    const headHinge = create3DNull({ name: 'Head_Hinge', pos: [0, -6 * S, 0], ori: [0, 0, 0], parent: torsoCtrl, startSec, durationSec, pps });
-    const rArmHinge = create3DNull({ name: 'Right_Arm_Hinge', pos: [-6 * S, -5 * S, 0], ori: [0, 0, 0], parent: torsoCtrl, startSec, durationSec, pps });
-    const lArmHinge = create3DNull({ name: 'Left_Arm_Hinge', pos: [6 * S, -5 * S, 0], ori: [0, 0, 0], parent: torsoCtrl, startSec, durationSec, pps });
-    const rLegHinge = create3DNull({ name: 'Right_Leg_Hinge', pos: [-2 * S, 6 * S, 0], ori: [0, 0, 0], parent: torsoCtrl, startSec, durationSec, pps });
-    const lLegHinge = create3DNull({ name: 'Left_Leg_Hinge', pos: [2 * S, 6 * S, 0], ori: [0, 0, 0], parent: torsoCtrl, startSec, durationSec, pps });
+    const torsoCtrl = ctx.scene3d.create3DNull({ name: 'Torso_Controller', pos: [0, 0, 0], ori: [0, 0, 0], parent: masterCtrl, startSec, durationSec, pps });
+    const headHinge = ctx.scene3d.create3DNull({ name: 'Head_Hinge', pos: [0, -6 * S, 0], ori: [0, 0, 0], parent: torsoCtrl, startSec, durationSec, pps });
+    const rArmHinge = ctx.scene3d.create3DNull({ name: 'Right_Arm_Hinge', pos: [-6 * S, -5 * S, 0], ori: [0, 0, 0], parent: torsoCtrl, startSec, durationSec, pps });
+    const lArmHinge = ctx.scene3d.create3DNull({ name: 'Left_Arm_Hinge', pos: [6 * S, -5 * S, 0], ori: [0, 0, 0], parent: torsoCtrl, startSec, durationSec, pps });
+    const rLegHinge = ctx.scene3d.create3DNull({ name: 'Right_Leg_Hinge', pos: [-2 * S, 6 * S, 0], ori: [0, 0, 0], parent: torsoCtrl, startSec, durationSec, pps });
+    const lLegHinge = ctx.scene3d.create3DNull({ name: 'Left_Leg_Hinge', pos: [2 * S, 6 * S, 0], ori: [0, 0, 0], parent: torsoCtrl, startSec, durationSec, pps });
 
     childLayers.push(torsoCtrl, headHinge, rArmHinge, lArmHinge, rLegHinge, lLegHinge);
 
@@ -1091,18 +579,17 @@
       const ox = offsetPos[0], oy = offsetPos[1], oz = offsetPos[2];
 
       const faces = [
-        create3DFace({ name: `${boxName}_Front`, w, h, pos: [ox, oy, oz - hd], ori: [0, 0, 0], parent, color: colorHex, startSec, durationSec, pps }),
-        create3DFace({ name: `${boxName}_Back`, w, h, pos: [ox, oy, oz + hd], ori: [0, 180, 0], parent, color: colorHex, startSec, durationSec, pps }),
-        create3DFace({ name: `${boxName}_Top`, w, d, pos: [ox, oy - hh, oz], ori: [90, 0, 0], parent, color: colorHex, startSec, durationSec, pps }),
-        create3DFace({ name: `${boxName}_Bottom`, w, d, pos: [ox, oy + hh, oz], ori: [-90, 0, 0], parent, color: colorHex, startSec, durationSec, pps }),
-        create3DFace({ name: `${boxName}_Left`, d, h, pos: [ox + hw, oy, oz], ori: [0, 90, 0], parent, color: colorHex, startSec, durationSec, pps }),
-        create3DFace({ name: `${boxName}_Right`, d, h, pos: [ox - hw, oy, oz], ori: [0, -90, 0], parent, color: colorHex, startSec, durationSec, pps })
+        ctx.scene3d.create3DFace({ name: `${boxName}_Front`, w, h, pos: [ox, oy, oz - hd], ori: [0, 0, 0], parent, color: colorHex, startSec, durationSec, pps }),
+        ctx.scene3d.create3DFace({ name: `${boxName}_Back`, w, h, pos: [ox, oy, oz + hd], ori: [0, 180, 0], parent, color: colorHex, startSec, durationSec, pps }),
+        ctx.scene3d.create3DFace({ name: `${boxName}_Top`, w, d, pos: [ox, oy - hh, oz], ori: [90, 0, 0], parent, color: colorHex, startSec, durationSec, pps }),
+        ctx.scene3d.create3DFace({ name: `${boxName}_Bottom`, w, d, pos: [ox, oy + hh, oz], ori: [-90, 0, 0], parent, color: colorHex, startSec, durationSec, pps }),
+        ctx.scene3d.create3DFace({ name: `${boxName}_Left`, d, h, pos: [ox + hw, oy, oz], ori: [0, 90, 0], parent, color: colorHex, startSec, durationSec, pps }),
+        ctx.scene3d.create3DFace({ name: `${boxName}_Right`, d, h, pos: [ox - hw, oy, oz], ori: [0, -90, 0], parent, color: colorHex, startSec, durationSec, pps })
       ];
 
       childLayers.push(...faces);
     }
 
-    // Classic Steve colors: Skin, Cyan Shirt, Blue Pants
     const cSkin = '#c68661';
     const cShirt = '#00a8a8';
     const cPants = '#2b3984';
@@ -1117,7 +604,7 @@
     const mcCount = layers.filter(l => l.name && l.name.startsWith('MC_Character_Comp')).length + 1;
     const precompName = mcCount > 1 ? `MC_Character_Comp ${mcCount}` : 'MC_Character_Comp';
 
-    return wrapIn3DPrecomp({
+    return ctx.scene3d.wrapIn3DPrecomp({
       name: precompName,
       compW: baseW,
       compH: baseH,
@@ -1127,33 +614,26 @@
       replaceLayer: selLayer,
       pps
     });
-  };
+  },
 
-  // =========================================================================
-  // 4. 2-SPLIT & 3-SPLIT & TUNNEL
-  // =========================================================================
-  FishTools3D.createProcedural2Split = function () {
-    const state = root.currentProjectState || {};
-    const layers = state.layers || [];
-    const selId = root.selectedLayerId;
-    const selLayer = layers.find(l => l.id === selId);
-
+  // ============================================================================
+  // 3. LOGIKA ALGORITMA 2-SPLIT, 3-SPLIT, DAN TUNNEL 3D
+  // ============================================================================
+  createProcedural2Split(ctx) {
+    const selLayer = ctx.layers.getActive();
     if (!selLayer) {
-      if (typeof root.showEffectsRackToast === 'function') {
-        root.showEffectsRackToast('Please select a layer to 2-Split');
-      }
+      ctx.toast('Please select a layer to 2-Split');
       return JSON.stringify({ error: true, message: 'Please select a layer to split!' });
     }
 
-    const timing = getTiming(selLayer);
-    const { startSec, durationSec, pps } = timing;
-    const [baseW, baseH] = getBaseDims();
+    const { startSec, durationSec, pps } = ctx.scene3d.getTiming(selLayer);
+    const [baseW, baseH] = ctx.scene3d.getBaseDims();
 
     const layerW = selLayer.scaleW || selLayer.mediaWidth || 400;
     const layerH = selLayer.scaleH || selLayer.mediaHeight || 400;
     const colW = layerW / 2;
 
-    const masterCtrl = create3DNull({
+    const masterCtrl = ctx.scene3d.create3DNull({
       name: `${selLayer.name} [2-Split Controller]`,
       pos: [baseW / 2, baseH / 2, 0],
       ori: [0, 0, 0],
@@ -1162,7 +642,7 @@
       pps
     });
 
-    const leftCol = create3DFace({
+    const leftCol = ctx.scene3d.create3DFace({
       name: `${selLayer.name} - Left`,
       w: colW,
       h: layerH,
@@ -1176,7 +656,7 @@
       pps
     });
 
-    const rightCol = create3DFace({
+    const rightCol = ctx.scene3d.create3DFace({
       name: `${selLayer.name} - Right`,
       w: colW,
       h: layerH,
@@ -1190,42 +670,33 @@
       pps
     });
 
-    const childLayers = [masterCtrl, leftCol, rightCol];
-
-    return wrapIn3DPrecomp({
+    return ctx.scene3d.wrapIn3DPrecomp({
       name: `${selLayer.name} [2-Split Comp]`,
       compW: baseW,
       compH: baseH,
       startSec,
       durationSec,
-      childLayers,
+      childLayers: [masterCtrl, leftCol, rightCol],
       replaceLayer: selLayer,
       pps
     });
-  };
+  },
 
-  FishTools3D.createProcedural3Split = function () {
-    const state = root.currentProjectState || {};
-    const layers = state.layers || [];
-    const selId = root.selectedLayerId;
-    const selLayer = layers.find(l => l.id === selId);
-
+  createProcedural3Split(ctx) {
+    const selLayer = ctx.layers.getActive();
     if (!selLayer) {
-      if (typeof root.showEffectsRackToast === 'function') {
-        root.showEffectsRackToast('Please select a layer to 3-Split');
-      }
+      ctx.toast('Please select a layer to 3-Split');
       return JSON.stringify({ error: true, message: 'Please select a layer to split!' });
     }
 
-    const timing = getTiming(selLayer);
-    const { startSec, durationSec, pps } = timing;
-    const [baseW, baseH] = getBaseDims();
+    const { startSec, durationSec, pps } = ctx.scene3d.getTiming(selLayer);
+    const [baseW, baseH] = ctx.scene3d.getBaseDims();
 
     const layerW = selLayer.scaleW || selLayer.mediaWidth || 600;
     const layerH = selLayer.scaleH || selLayer.mediaHeight || 400;
     const colW = layerW / 3;
 
-    const masterCtrl = create3DNull({
+    const masterCtrl = ctx.scene3d.create3DNull({
       name: `${selLayer.name} [3-Split Controller]`,
       pos: [baseW / 2, baseH / 2, 0],
       ori: [0, 0, 0],
@@ -1234,7 +705,7 @@
       pps
     });
 
-    const leftCol = create3DFace({
+    const leftCol = ctx.scene3d.create3DFace({
       name: `${selLayer.name} - Left`,
       w: colW,
       h: layerH,
@@ -1248,7 +719,7 @@
       pps
     });
 
-    const centerCol = create3DFace({
+    const centerCol = ctx.scene3d.create3DFace({
       name: `${selLayer.name} - Center`,
       w: colW,
       h: layerH,
@@ -1262,7 +733,7 @@
       pps
     });
 
-    const rightCol = create3DFace({
+    const rightCol = ctx.scene3d.create3DFace({
       name: `${selLayer.name} - Right`,
       w: colW,
       h: layerH,
@@ -1276,41 +747,32 @@
       pps
     });
 
-    const childLayers = [masterCtrl, leftCol, centerCol, rightCol];
-
-    return wrapIn3DPrecomp({
+    return ctx.scene3d.wrapIn3DPrecomp({
       name: `${selLayer.name} [3-Split Comp]`,
       compW: baseW,
       compH: baseH,
       startSec,
       durationSec,
-      childLayers,
+      childLayers: [masterCtrl, leftCol, centerCol, rightCol],
       replaceLayer: selLayer,
       pps
     });
-  };
+  },
 
-  FishTools3D.createProceduralTunnel = function () {
-    const state = root.currentProjectState || {};
-    const layers = state.layers || [];
-    const selId = root.selectedLayerId;
-    const selLayer = layers.find(l => l.id === selId);
-
+  createProceduralTunnel(ctx) {
+    const selLayer = ctx.layers.getActive();
     if (!selLayer) {
-      if (typeof root.showEffectsRackToast === 'function') {
-        root.showEffectsRackToast('Please select a layer to generate Tunnel');
-      }
+      ctx.toast('Please select a layer to generate Tunnel');
       return JSON.stringify({ error: true, message: 'Please select a layer for 3D Tunnel!' });
     }
 
-    const timing = getTiming(selLayer);
-    const { startSec, durationSec, pps } = timing;
-    const [baseW, baseH] = getBaseDims();
+    const { startSec, durationSec, pps } = ctx.scene3d.getTiming(selLayer);
+    const [baseW, baseH] = ctx.scene3d.getBaseDims();
 
     const layerW = selLayer.scaleW || selLayer.mediaWidth || 500;
     const layerH = selLayer.scaleH || selLayer.mediaHeight || 500;
 
-    const masterCtrl = create3DNull({
+    const masterCtrl = ctx.scene3d.create3DNull({
       name: 'Tunnel_Controller',
       pos: [baseW / 2, baseH / 2, 0],
       ori: [0, 0, 0],
@@ -1325,7 +787,7 @@
     const twistAngle = 15;
 
     for (let k = 0; k < ringCount; k++) {
-      const ring = create3DFace({
+      rings.push(ctx.scene3d.create3DFace({
         name: `Tunnel_Ring_${k + 1}`,
         w: layerW,
         h: layerH,
@@ -1337,31 +799,88 @@
         startSec,
         durationSec,
         pps
-      });
-      rings.push(ring);
+      }));
     }
 
-    const childLayers = [masterCtrl, ...rings];
-
-    return wrapIn3DPrecomp({
+    return ctx.scene3d.wrapIn3DPrecomp({
       name: 'Tunnel_Comp',
       compW: baseW,
       compH: baseH,
       startSec,
       durationSec,
-      childLayers,
+      childLayers: [masterCtrl, ...rings],
       replaceLayer: selLayer,
       pps
     });
-  };
+  },
 
-  // Export to window / root
-  root.FishTools3D = FishTools3D;
-  root.createProceduralCube = FishTools3D.createProceduralCube;
-  root.createProcedural3D = FishTools3D.createProcedural3D;
-  root.createProcedural2Split = FishTools3D.createProcedural2Split;
-  root.createProcedural3Split = FishTools3D.createProcedural3Split;
-  root.createProceduralTunnel = FishTools3D.createProceduralTunnel;
-  root.createProceduralMC = FishTools3D.createProceduralMC;
+  tools: {
+    GEN_3D_2SPLIT(ctx) { return this.createProcedural2Split(ctx); },
+    GEN_3D_3SPLIT(ctx) { return this.createProcedural3Split(ctx); },
+    GEN_3D_TUNNEL(ctx) { return this.createProceduralTunnel(ctx); },
+    GEN_3D_MC(ctx) { return this.createProceduralMC(ctx); },
+    GEN_3D_BOX(ctx) { return this.createProcedural3D(ctx, 'BOX'); },
+    GEN_3D_CABINET(ctx) { return this.createProcedural3D(ctx, 'CABINET'); },
+    GEN_3D_TABLE(ctx) { return this.createProcedural3D(ctx, 'TABLE'); },
+    GEN_3D_PHONE(ctx) { return this.createProcedural3D(ctx, 'PHONE'); },
+    GEN_3D_LAPTOP(ctx) { return this.createProcedural3D(ctx, 'LAPTOP'); },
+    GEN_3D_ROOM(ctx) { return this.createProcedural3D(ctx, 'ROOM'); },
+    GEN_3D_CRT(ctx) { return this.createProcedural3D(ctx, 'CRT'); },
+    GEN_3D_ZFLIP(ctx) { return this.createProcedural3D(ctx, 'ZFLIP'); },
+    GEN_3D_ZFOLD(ctx) { return this.createProcedural3D(ctx, 'ZFOLD'); },
+    GEN_3D_BOOK(ctx) { return this.createProcedural3D(ctx, 'BOOK'); },
+    GEN_3D_BINDER(ctx) { return this.createProcedural3D(ctx, 'BINDER'); },
+    GEN_3D_TABLET(ctx) { return this.createProcedural3D(ctx, 'TABLET'); },
+    GEN_3D_GLASSES(ctx) { return this.createProcedural3D(ctx, 'GLASSES'); },
+    GEN_3D_WINDOW(ctx) { return this.createProcedural3D(ctx, 'WINDOW'); },
+    GEN_3D_DOOR(ctx) { return this.createProcedural3D(ctx, 'DOOR'); },
+    GEN_3D_DESK(ctx) { return this.createProcedural3D(ctx, 'DESK'); },
+    GEN_3D_MONITOR(ctx) { return this.createProcedural3D(ctx, 'MONITOR'); },
+    GEN_3D_PC(ctx) { return this.createProcedural3D(ctx, 'PC'); }
+  },
 
-})(typeof window !== 'undefined' ? window : globalThis);
+  // ============================================================================
+  // 4. TAMPILAN UI EXTENSION CARD
+  // ============================================================================
+  build(ui, ctx) {
+    const self = this;
+
+    ui.section('Basic 3D');
+    ui.grid({ cols: 3 }, [
+      ui.button({ label: '3 SPLIT', icon: 'view_column', title: '3D 3-Split Columns', onClick() { self.createProcedural3Split(ctx); } }),
+      ui.button({ label: '2 SPLIT', icon: 'view_stream', title: '3D 2-Split Screens', onClick() { self.createProcedural2Split(ctx); } }),
+      ui.button({ label: 'TUNNEL', icon: 'filter_tilt_shift', title: '3D Depth Tunnel', onClick() { self.createProceduralTunnel(ctx); } })
+    ]);
+
+    ui.section('Devices & Tech');
+    ui.grid({ cols: 4 }, [
+      ui.button({ label: 'PHONE', icon: 'smartphone', title: '3D Smartphone Mockup', onClick() { self.createProcedural3D(ctx, 'PHONE'); } }),
+      ui.button({ label: 'Z FLIP', icon: 'mobile_friendly', title: '3D Flip Phone Fold', onClick() { self.createProcedural3D(ctx, 'ZFLIP'); } }),
+      ui.button({ label: 'Z FOLD', icon: 'menu_book', title: '3D Foldable Tablet/Phone', onClick() { self.createProcedural3D(ctx, 'ZFOLD'); } }),
+      ui.button({ label: 'TABLET', icon: 'tablet_mac', title: '3D Tablet Frame', onClick() { self.createProcedural3D(ctx, 'TABLET'); } }),
+      ui.button({ label: 'LAPTOP', icon: 'laptop_mac', title: '3D Laptop with Screen', onClick() { self.createProcedural3D(ctx, 'LAPTOP'); } }),
+      ui.button({ label: 'MONITOR', icon: 'desktop_windows', title: '3D Desktop Monitor', onClick() { self.createProcedural3D(ctx, 'MONITOR'); } }),
+      ui.button({ label: 'PC TOWER', icon: 'computer', title: '3D PC Computer Case', onClick() { self.createProcedural3D(ctx, 'PC'); } }),
+      ui.button({ label: 'CRT TV', icon: 'tv', title: '3D Retro CRT Television', onClick() { self.createProcedural3D(ctx, 'CRT'); } })
+    ]);
+
+    ui.section('Room & Furniture');
+    ui.grid({ cols: 3 }, [
+      ui.button({ label: 'ROOM', icon: 'roofing', title: '3D Isometric Room Box', onClick() { self.createProcedural3D(ctx, 'ROOM'); } }),
+      ui.button({ label: 'DOOR', icon: 'door_front', title: '3D Hinged Door', onClick() { self.createProcedural3D(ctx, 'DOOR'); } }),
+      ui.button({ label: 'WINDOW', icon: 'window', title: '3D Window Pane', onClick() { self.createProcedural3D(ctx, 'WINDOW'); } }),
+      ui.button({ label: 'TABLE', icon: 'table_restaurant', title: '3D Table Surface', onClick() { self.createProcedural3D(ctx, 'TABLE'); } }),
+      ui.button({ label: 'DESK', icon: 'desk', title: '3D Office Desk', onClick() { self.createProcedural3D(ctx, 'DESK'); } }),
+      ui.button({ label: 'CABINET', icon: 'inventory_2', title: '3D Storage Cabinet', onClick() { self.createProcedural3D(ctx, 'CABINET'); } })
+    ]);
+
+    ui.section('Props & Character');
+    ui.grid({ cols: 5 }, [
+      ui.button({ label: 'BOX', icon: 'view_in_ar', title: '3D Parcel Box', onClick() { self.createProcedural3D(ctx, 'BOX'); } }),
+      ui.button({ label: 'BOOK', icon: 'auto_stories', title: '3D Book Cover & Pages', onClick() { self.createProcedural3D(ctx, 'BOOK'); } }),
+      ui.button({ label: 'BINDER', icon: 'folder_special', title: '3D Office Binder', onClick() { self.createProcedural3D(ctx, 'BINDER'); } }),
+      ui.button({ label: 'GLASSES', icon: 'visibility', title: '3D Glasses Frame', onClick() { self.createProcedural3D(ctx, 'GLASSES'); } }),
+      ui.button({ label: 'MC 3D', icon: 'accessibility_new', title: '3D Minecraft Character Rig', onClick() { self.createProcedural3D ? self.createProceduralMC(ctx) : null; } })
+    ]);
+  }
+});

@@ -44,7 +44,7 @@ const BUILTIN_GLOBALS = new Set([
   'module', 'exports', 'require', '__dirname', '__filename', 'process',
   'electronAPI', 'electronBridge', 'tauri', '__TAURI__', '__TAURI_INTERNALS__',
   'global', 'define', 'Buffer', 'setImmediate', 'clearImmediate',
-  'JSZip', 'Mp4Muxer', 'lamejs', 'createFFmpeg',
+  'JSZip', 'Mp4Muxer', 'lamejs', 'createFFmpeg', 'Card',
   'describe', 'it', 'before', 'after', 'beforeEach', 'afterEach', 'assert'
 ]);
 
@@ -52,7 +52,7 @@ const BUILTIN_GLOBALS = new Set([
 const KNOWN_GLOBALS = BUILTIN_GLOBALS;
 
 function getAllProjectJsFiles() {
-  const dirs = ['js', 'effects', 'scripts', 'element', 'shapes', 'text', 'functions'];
+  const dirs = ['js', 'Extension', 'effects', 'scripts', 'element', 'shapes', 'text', 'functions'];
   const excludes = ['vendor', 'node_modules', '.git', '.min.js', 'jszip.min.js'];
   const files = [];
 
@@ -737,7 +737,7 @@ if (require.main === module) {
     }
   }
 
-  for (const htmlPage of ['index.html', 'editor.html', 'desktop.html']) {
+  for (const htmlPage of ['index.html', 'editor.html', 'desktop.html', 'extension-builder.html']) {
     const pageAudit = auditHtmlPageInlineHandlers(htmlPage);
     if (pageAudit.missingHandlers.length > 0) {
       console.error(`Analyzing HTML inline handlers in ${pageAudit.page}...`);

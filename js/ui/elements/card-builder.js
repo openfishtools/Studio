@@ -1,12 +1,12 @@
 /**
- * OpenFishTools Studio - Universal Card Builder & Extension DSL Engine
+ * OpenFishTools Studio - Universal Card Builder & Modular JS Extension SDK
  * 
  * Provides:
- * 1. Declarative Card({ ... }) DSL for .jsx extension cards.
- * 2. Universal UI builder (ui.button, ui.text, ui.section, ui.divider, ui.grid, ui.input, ui.textarea, ui.switch, ui.slider).
- * 3. Validation parser for imported .jsx files (ensures UI buttons and executable functions exist).
- * 4. Extension state persistence (On/Off switches synced to localStorage).
- * 5. Custom .jsx extensions manager.
+ * 1. Declarative Card({ ... }) DSL for modular .js extension cards.
+ * 2. Universal UI builder (ui.button, ui.text, ui.section, ui.divider, ui.grid, ui.input, ui.textarea, ui.switch, ui.slider, ui.segmented, ui.anchorGrid, ui.checklist).
+ * 3. High-level Modular Extension SDK on `ctx` (ctx.layers, ctx.timeline, ctx.effects, ctx.audio, ctx.storage, ctx.runTool).
+ * 4. Validation & sandbox loader for user-imported .js extension files.
+ * 5. Extension state persistence (On/Off switches synced to localStorage).
  */
 (function(global) {
   'use strict';
@@ -14,9 +14,10 @@
   const STORAGE_STATES_KEY = 'oft_extension_states';
   const STORAGE_CUSTOM_KEY = 'oft_custom_extensions';
 
-  // In-memory registry of all loaded cards
+  // In-memory registry of all loaded cards and their self-contained tools
   const _cardRegistry = new Map();
-  const _cardSourceMap = new Map(); // id -> raw JSX string
+  const _cardSourceMap = new Map(); // id -> raw JS string
+  const _toolRegistry = new Map(); // toolName -> { cardId, fn }
 
   /**
    * Helper to safely read localStorage JSON
@@ -142,6 +143,7 @@
           } else {
             const iconEl = document.createElement('span');
             iconEl.className = 'material-icons tool-btn-icon';
+            iconEl.setAttribute('aria-hidden', 'true');
             iconEl.textContent = opts.icon;
             btn.appendChild(iconEl);
           }
@@ -294,16 +296,225 @@
       },
 
       /**
+       * Segmented Mode / Option Selector (Declarative button group with active state)
+       */
+      segmented(opts = {}) {
+        const targetContainer = (opts && opts.container) || (this && this.container) || container;
+        const wrap = document.createElement('div');
+        if (opts.style) Object.assign(wrap.style, opts.style);
+
+        if (opts.label) {
+          const lbl = document.createElement('span');
+          lbl.className = 'status-label';
+          lbl.textContent = opts.label;
+          wrap.appendChild(lbl);
+        }
+
+        const options = Array.isArray(opts.options) ? opts.options : [];
+        const cols = opts.cols || Math.max(1, options.length);
+        const grid = document.createElement('div');
+        grid.className = `toolbox-grid col-${cols} ${opts.className || ''}`.trim();
+        if (opts.label) grid.style.marginTop = '4px';
+
+        let currentVal = opts.value !== undefined ? opts.value : (options[0] && options[0].id);
+        const buttons = [];
+
+        const syncActive = () => {
+          buttons.forEach(({ id, btn }) => {
+            btn.classList.toggle('tool-btn--active', id === currentVal);
+          });
+        };
+
+        options.forEach(opt => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = `tool-btn extension-tool-btn ${currentVal === opt.id ? 'tool-btn--active' : ''}`.trim();
+          if (opt.title) btn.title = opt.title;
+
+          let inner = '';
+          if (opt.icon) {
+            inner += `<span class="material-icons tool-btn-icon" aria-hidden="true">${opt.icon}</span>`;
+          }
+          if (opt.label) {
+            inner += `<span class="tool-label">${opt.label}</span>`;
+          }
+          btn.innerHTML = inner;
+
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            currentVal = opt.id;
+            syncActive();
+            if (typeof opts.onChange === 'function') {
+              opts.onChange(currentVal, opt, e, ctx);
+            }
+          });
+
+          buttons.push({ id: opt.id, btn });
+          grid.appendChild(btn);
+        });
+
+        wrap.appendChild(grid);
+        targetContainer.appendChild(wrap);
+        return {
+          container: wrap,
+          grid,
+          getValue: () => currentVal,
+          setValue(val) {
+            currentVal = val;
+            syncActive();
+          }
+        };
+      },
+
+      /**
+       * 9-Point Anchor Grid Component
+       */
+      anchorGrid(opts = {}) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'anchor-grid-wrapper';
+
+        const grid = document.createElement('div');
+        grid.className = 'anchor-grid';
+
+        const positions = [
+          { id: 1, title: 'Top Left' },
+          { id: 2, title: 'Top Center' },
+          { id: 3, title: 'Top Right' },
+          { id: 4, title: 'Middle Left' },
+          { id: 5, title: 'Center' },
+          { id: 6, title: 'Middle Right' },
+          { id: 7, title: 'Bottom Left' },
+          { id: 8, title: 'Bottom Center' },
+          { id: 9, title: 'Bottom Right' }
+        ];
+
+        positions.forEach(p => {
+          const cell = document.createElement('button');
+          cell.type = 'button';
+          cell.className = 'anchor-cell';
+          cell.title = p.title;
+          cell.setAttribute('aria-label', p.title);
+          cell.addEventListener('click', () => {
+            cell.classList.add('anchor-active');
+            setTimeout(() => cell.classList.remove('anchor-active'), 180);
+            if (typeof opts.onSelect === 'function') {
+              opts.onSelect(p.id, p, ctx);
+            } else {
+              ctx.runTool('setAnchorPoint', p.id);
+            }
+          });
+          grid.appendChild(cell);
+        });
+
+        wrapper.appendChild(grid);
+        container.appendChild(wrapper);
+        return wrapper;
+      },
+
+      /**
+       * Interactive Checklist / To-Do List Component
+       */
+      checklist(opts = {}) {
+        let tasks = Array.isArray(opts.items) ? opts.items.slice() : [];
+        const listWrap = document.createElement('div');
+        listWrap.className = 'todo-list-container';
+
+        const notifyChange = () => {
+          if (typeof opts.onChange === 'function') {
+            opts.onChange(tasks, ctx);
+          }
+        };
+
+        function renderTasks() {
+          listWrap.innerHTML = '';
+          tasks.forEach((t, idx) => {
+            const item = document.createElement('div');
+            item.className = `todo-item ${t.done ? 'is-done' : ''}`;
+
+            const chk = document.createElement('input');
+            chk.type = 'checkbox';
+            chk.checked = !!t.done;
+            chk.addEventListener('change', () => {
+              tasks[idx].done = chk.checked;
+              notifyChange();
+              renderTasks();
+            });
+
+            const span = document.createElement('span');
+            span.className = 'todo-text';
+            span.textContent = t.text;
+
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'todo-del-btn';
+            del.textContent = '×';
+            del.title = 'Delete Task';
+            del.addEventListener('click', () => {
+              tasks.splice(idx, 1);
+              notifyChange();
+              renderTasks();
+            });
+
+            item.appendChild(chk);
+            item.appendChild(span);
+            item.appendChild(del);
+            listWrap.appendChild(item);
+          });
+        }
+
+        const inputRow = document.createElement('div');
+        inputRow.className = 'todo-input-row';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'extension-input todo-input-field';
+        input.placeholder = opts.placeholder || 'Add new task...';
+
+        const addBtn = document.createElement('button');
+        addBtn.type = 'button';
+        addBtn.className = 'tool-btn todo-add-btn';
+        addBtn.innerHTML = '<span class="material-icons" style="font-size:16px;">add</span>';
+        addBtn.title = 'Add Task';
+
+        function addTask() {
+          const val = input.value.trim();
+          if (!val) return;
+          tasks.push({ text: val, done: false });
+          notifyChange();
+          input.value = '';
+          renderTasks();
+        }
+
+        addBtn.addEventListener('click', addTask);
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') addTask();
+        });
+
+        inputRow.appendChild(input);
+        inputRow.appendChild(addBtn);
+
+        container.appendChild(inputRow);
+        container.appendChild(listWrap);
+        renderTasks();
+
+        return { inputRow, listWrap, refresh: renderTasks };
+      },
+
+      /**
        * Text element (Title, Label, Display, Hint, Description)
        */
       text(opts = {}) {
+        const targetContainer = (opts && opts.container) || (this && this.container) || container;
         const textStr = typeof opts === 'string' ? opts : (opts.text || '');
         const variant = typeof opts === 'object' ? (opts.variant || 'label') : 'label';
         const el = document.createElement(variant === 'display' ? 'div' : 'span');
         el.className = `extension-text extension-text--${variant} ${opts.className || ''}`.trim();
         if (opts.id) el.id = opts.id;
+        if (opts.style && typeof opts.style === 'object') {
+          Object.assign(el.style, opts.style);
+        }
         el.textContent = textStr;
-        container.appendChild(el);
+        targetContainer.appendChild(el);
         return el;
       },
 
@@ -311,6 +522,7 @@
        * Text Input Field
        */
       input(opts = {}) {
+        const targetContainer = (opts && opts.container) || (this && this.container) || container;
         const input = document.createElement('input');
         input.type = opts.type || 'text';
         input.className = `extension-input ${opts.className || ''}`.trim();
@@ -325,7 +537,7 @@
           input.addEventListener('input', (e) => opts.onChange(e.target.value, e, ctx));
         }
 
-        container.appendChild(input);
+        targetContainer.appendChild(input);
         return input;
       },
 
@@ -374,6 +586,7 @@
        * Form Group (Label + Input field)
        */
       formGroup(opts = {}) {
+        const targetContainer = (opts && opts.container) || (this && this.container) || container;
         const grp = document.createElement('div');
         grp.className = `form-group ${opts.className || ''}`.trim();
 
@@ -399,7 +612,7 @@
         }
 
         grp.appendChild(input);
-        container.appendChild(grp);
+        targetContainer.appendChild(grp);
         return { group: grp, input };
       },
 
@@ -575,28 +788,24 @@
   }
 
   /**
-   * Runtime Context provided to card actions and build
+   * Runtime Context & Modular Extension SDK provided to card.build(ui, ctx)
    */
   function createCardContext(def) {
     const cardStorageKey = `oft_card_store_${def.id}`;
     const getHostWindow = () => {
       if (typeof window !== 'undefined') {
-        if (window.PreviewCacheManager) return window;
-        if (window.parent && window.parent.PreviewCacheManager) return window.parent;
+        if (window.currentProjectState || window.PreviewCacheManager) return window;
+        if (window.parent && (window.parent.currentProjectState || window.parent.PreviewCacheManager)) return window.parent;
       }
-      return typeof window !== 'undefined' ? window : null;
+      return typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : null);
     };
 
-    return {
+    const ctx = {
       id: def.id,
       name: def.name || def.id,
 
-      get app() {
-        return (typeof window !== 'undefined' && window.app) || (typeof window !== 'undefined' && window.parent && window.parent.app) || (typeof globalThis !== 'undefined' && globalThis.app) || null;
-      },
-
-      get translator() {
-        return (typeof window !== 'undefined' && window.JSXTranslator) || (typeof window !== 'undefined' && window.parent && window.parent.JSXTranslator) || null;
+      getHost() {
+        return getHostWindow();
       },
 
       invalidateCache(targetOrStartSec, endSec) {
@@ -619,33 +828,36 @@
         }
       },
 
-      executeJSX(codeOrFn) {
-        const host = getHostWindow();
-        const pcm = host && host.PreviewCacheManager;
-        const beforeSnap = (pcm && typeof pcm.captureStateSnapshot === 'function') ? pcm.captureStateSnapshot() : null;
-        let res = null;
-        if (typeof window !== 'undefined' && typeof window.executeJSX === 'function') {
-          res = window.executeJSX(codeOrFn);
-        } else if (typeof window !== 'undefined' && window.parent && typeof window.parent.executeJSX === 'function') {
-          res = window.parent.executeJSX(codeOrFn);
-        } else if (typeof window !== 'undefined' && window.JSXTranslator) {
-          res = window.JSXTranslator.executeJSX(codeOrFn);
-        }
-        if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
-          if (pcm.invalidateSmartDiff(beforeSnap) && host && typeof host.redrawComposition === 'function') {
-            host.redrawComposition('executeJSX');
-          }
-        }
-        return res;
+      registerTool(toolName, handlerFn) {
+        if (!toolName || typeof handlerFn !== 'function') return;
+        _toolRegistry.set(String(toolName), { cardId: def.id, fn: handlerFn });
       },
 
       runTool(toolName, ...args) {
         const host = getHostWindow();
         const pcm = host && host.PreviewCacheManager;
         const beforeSnap = (pcm && typeof pcm.captureStateSnapshot === 'function') ? pcm.captureStateSnapshot() : null;
-        // 1. Direct parent/editor tool bridge
         try {
-          if (typeof window.executeFishTool === 'function') {
+          // 1. Check self-contained extension tool registry first
+          const registered = _toolRegistry.get(String(toolName));
+          if (registered && typeof registered.fn === 'function') {
+            const targetDef = _cardRegistry.get(registered.cardId) || def;
+            const targetCtx = targetDef.id === def.id ? ctx : createCardContext(targetDef);
+            const res = registered.fn.call(targetDef, targetCtx, ...args);
+            if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
+              if (pcm.invalidateSmartDiff(beforeSnap) && host && typeof host.redrawComposition === 'function') {
+                host.redrawComposition(`runTool:${toolName}`);
+              }
+            }
+            if (res && typeof res === 'object' && res.error) {
+              if (res.message) this.showToast(res.message, true);
+              return false;
+            }
+            return res !== undefined ? res : true;
+          }
+
+          // 2. Fallback to host executeFishTool if available
+          if (typeof window !== 'undefined' && typeof window.executeFishTool === 'function' && !window._executingFishToolGuard) {
             const res = window.executeFishTool(toolName, ...args);
             if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
               if (pcm.invalidateSmartDiff(beforeSnap) && host && typeof host.redrawComposition === 'function') {
@@ -658,10 +870,10 @@
             }
             return res !== undefined ? res : true;
           }
-          if (window.parent && typeof window.parent.executeFishTool === 'function') {
-            const res = window.parent.executeFishTool(toolName, ...args);
+          if (host && typeof host.executeFishTool === 'function' && !host._executingFishToolGuard) {
+            const res = host.executeFishTool(toolName, ...args);
             if (pcm && beforeSnap && typeof pcm.invalidateSmartDiff === 'function') {
-              if (pcm.invalidateSmartDiff(beforeSnap) && host && typeof host.redrawComposition === 'function') {
+              if (pcm.invalidateSmartDiff(beforeSnap) && typeof host.redrawComposition === 'function') {
                 host.redrawComposition(`runTool:${toolName}`);
               }
             }
@@ -672,7 +884,7 @@
             return res !== undefined ? res : true;
           }
         } catch (err) {
-          console.error(`[Card:${def.id}] executeFishTool error:`, err);
+          console.error(`[Card:${def.id}] runTool error:`, err);
           this.showToast(`Error: ${err.message}`, true);
           return false;
         }
@@ -681,13 +893,13 @@
         const layerRequiredTools = new Set([
           'setAnchorPoint', 'ALIGN_LEFT', 'ALIGN_HCENTER', 'ALIGN_RIGHT', 'ALIGN_TOP', 'ALIGN_VCENTER', 'ALIGN_BOTTOM',
           'CUT_FRONT', 'CUT_MID', 'CUT_BACK', 'CUT_LEFT', 'CUT_RIGHT',
-          'PRECOMP', 'CENTER', 'CENTERINCOMP', 'OVERLAP', 'DUP_COMP', 'DUP',
+          'PRECOMP', 'PRECOMP_AUTOCROP', 'CENTER', 'CENTERINCOMP', 'OVERLAP', 'DUP_COMP', 'DUP',
           'FRZ', 'FIT', 'DSH', 'MIR', 'FILL', 'TINT', 'BLUR', 'LUM', 'CURV', 'HUE',
           'GHST', 'WARP', 'FISHEYE', 'MIDWAVE', 'HUESPIN', 'EXPO', 'SHAKY', 'LENS', 'OSCILLATE',
           'Y_BEAT', 'Y_FLIP', 'X_BEAT', 'X_FLIP', 'SCALE_BEAT', 'SWING',
           'PANNING_POS', 'PANNING_ROT', 'PANNING_SCALE', 'PANNING_MIX_PR', 'PANNING_MIX_ALL',
           'IDLE_MOVE_1', 'IDLE_MOVE_2', 'IDLE_MOVE_3', 'IDLE_MOVE_4', 'IDLE_MOVE_5', 'IDLE_MOVE_6',
-          'PRESET_WARP1', 'PRESET_WARP2', 'PRESET_WARP3', 'TWIX', 'TMRE'
+          'PRESET_WARP1', 'PRESET_WARP2', 'PRESET_WARP3', 'TWIX', 'TMRE', 'AUTO_MARK'
         ]);
 
         if (layerRequiredTools.has(toolName)) {
@@ -695,61 +907,710 @@
           return false;
         }
 
-        // 2. Dispatch custom tool event for editor timeline & effects
-        window.dispatchEvent(new CustomEvent('fishtools:tool', {
-          detail: { tool: toolName, args }
-        }));
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('fishtools:tool', {
+            detail: { tool: toolName, args }
+          }));
+        }
 
         this.showToast(`Tool: ${toolName}`);
         return true;
       },
 
       showToast(message, isError = false) {
-        const type = isError ? 'error' : 'info';
-        if (typeof window.showEditorToast === 'function') {
+        const isErr = isError === true || isError === 'error' || isError === 'warn';
+        const type = isErr ? 'error' : 'info';
+        const host = getHostWindow();
+        if (typeof window !== 'undefined' && typeof window.showEditorToast === 'function') {
           window.showEditorToast(message, 2400, type);
-        } else if (typeof window.showDashboardToast === 'function') {
+        } else if (typeof window !== 'undefined' && typeof window.showDashboardToast === 'function') {
           window.showDashboardToast(message, 2400, type);
-        } else if (window.parent && typeof window.parent.showEditorToast === 'function') {
-          window.parent.showEditorToast(message, 2400, type);
-        } else if (window.parent && typeof window.parent.showDashboardToast === 'function') {
-          window.parent.showDashboardToast(message, 2400, type);
-        } else if (typeof window.showEffectsRackToast === 'function') {
-          window.showEffectsRackToast(message, isError ? 'warn' : 'info');
+        } else if (host && typeof host.showEditorToast === 'function') {
+          host.showEditorToast(message, 2400, type);
+        } else if (host && typeof host.showDashboardToast === 'function') {
+          host.showDashboardToast(message, 2400, type);
+        } else if (typeof window !== 'undefined' && typeof window.showEffectsRackToast === 'function') {
+          window.showEffectsRackToast(message, isErr ? 'warn' : 'info');
         }
       },
 
+      toast(message, isError = false) {
+        return this.showToast(message, isError);
+      },
+
+      notify(message, isError = false) {
+        return this.showToast(message, isError);
+      },
+
       getProjectState() {
-        return window.currentProjectState || (window.parent && window.parent.currentProjectState) || null;
+        const host = getHostWindow();
+        return (host && host.currentProjectState) || (typeof window !== 'undefined' && window.currentProjectState) || null;
       },
 
       getSelectedLayer() {
-        const state = this.getProjectState();
-        if (!state || !Array.isArray(state.layers)) return null;
-        const selId = window.selectedLayerId || (window.parent && window.parent.selectedLayerId);
-        return state.layers.find(l => l.id === selId) || null;
+        return this.layers.getActive();
       },
 
       seek(sec) {
-        if (typeof window.seekTimelineToTime === 'function') {
-          window.seekTimelineToTime(sec);
-        } else if (window.parent && typeof window.parent.seekTimelineToTime === 'function') {
-          window.parent.seekTimelineToTime(sec);
+        const host = getHostWindow();
+        if (host && typeof host.seekTimelineToTime === 'function') {
+          host.seekTimelineToTime(sec);
         }
       },
 
       recordSnapshot() {
-        const mgr = window.UndoRedoManager || (window.parent && window.parent.UndoRedoManager);
-        if (mgr && typeof mgr.recordSnapshot === 'function') {
+        const host = getHostWindow();
+        const mgr = host && host.UndoRedoManager;
+        if (mgr && typeof mgr.recordSnapshot === 'function' && !mgr.isApplying) {
           mgr.recordSnapshot();
         }
       },
 
-      redraw() {
-        if (typeof window.redrawComposition === 'function') {
-          window.redrawComposition();
-        } else if (window.parent && typeof window.parent.redrawComposition === 'function') {
-          window.parent.redrawComposition();
+      redraw(reason) {
+        const host = getHostWindow();
+        if (host && typeof host.redrawComposition === 'function') {
+          host.redrawComposition(reason || `ext:${def.id}`);
+        }
+      },
+
+      // =====================================================================
+      // MODULAR JS EXTENSION SDK NAMESPACES
+      // (project, history, layers, timeline, effects, audio, scene3d, storage)
+      // =====================================================================
+      project: {
+        getState() {
+          return ctx.getProjectState();
+        },
+
+        getDimensions() {
+          const host = getHostWindow();
+          const state = ctx.getProjectState() || {};
+          let width = state._baseW || state.baseW || state.width || 0;
+          let height = state._baseH || state.baseH || state.height || 0;
+
+          if (host && host.currentActivePrecomp) {
+            width = Math.round(Math.abs(host.currentActivePrecomp.mediaWidth || host.currentActivePrecomp.scaleW || width || 0));
+            height = Math.round(Math.abs(host.currentActivePrecomp.mediaHeight || host.currentActivePrecomp.scaleH || height || 0));
+          }
+
+          if (!width || !height) {
+            const res = state.resolution || '1080p';
+            const aspect = state.aspectRatio || '16:9';
+            const dims = (host && typeof host.getProjectDimensions === 'function')
+              ? host.getProjectDimensions(res, aspect)
+              : [1920, 1080];
+            width = (dims && (dims.width || dims[0])) || 1920;
+            height = (dims && (dims.height || dims[1])) || 1080;
+          }
+
+          const fps = (host && typeof host.getProjectFps === 'function')
+            ? host.getProjectFps()
+            : (parseInt(state.fps, 10) || 60);
+          const pps = (host && ((typeof host.pixelsPerSecond === 'number' && host.pixelsPerSecond > 0) ? host.pixelsPerSecond : host.currentPixelsPerSecond)) || 80;
+          const currentTime = ctx.timeline.getCurrentTime();
+
+          const result = {
+            0: width,
+            1: height,
+            length: 2,
+            width,
+            height,
+            fps,
+            pps,
+            currentTime,
+            [Symbol.iterator]: function* () {
+              yield width;
+              yield height;
+            }
+          };
+          return result;
+        },
+
+        commit(reason = 'extension', invalidateTargets = null) {
+          const host = getHostWindow();
+          if (!host) return;
+          if (invalidateTargets) {
+            const list = Array.isArray(invalidateTargets) ? invalidateTargets : [invalidateTargets];
+            list.forEach(item => {
+              if (item && typeof host.invalidatePreviewCacheForLayer === 'function') {
+                host.invalidatePreviewCacheForLayer(item);
+              }
+            });
+          }
+          if (typeof host.invalidateEffectivePropsCache === 'function') host.invalidateEffectivePropsCache();
+          if (typeof host.syncTransformControllerValues === 'function') host.syncTransformControllerValues();
+          if (typeof host.syncInspectorState === 'function') host.syncInspectorState();
+          if (typeof host.syncEffectsRackUI === 'function') host.syncEffectsRackUI();
+          if (typeof host.saveCurrentProjectLayers === 'function') host.saveCurrentProjectLayers(true);
+          if (typeof host.renderTimelineLayers === 'function') host.renderTimelineLayers();
+          if (typeof host.redrawComposition === 'function') host.redrawComposition(reason);
+          if (host.CanvasOverlay && typeof host.CanvasOverlay.redraw === 'function') host.CanvasOverlay.redraw();
+        }
+      },
+
+      history: {
+        snapshot() {
+          ctx.recordSnapshot();
+        },
+        push() {
+          ctx.recordSnapshot();
+        }
+      },
+
+      layers: {
+        getAll() {
+          const state = ctx.getProjectState();
+          return (state && Array.isArray(state.layers)) ? state.layers : [];
+        },
+
+        getSelected() {
+          const host = getHostWindow();
+          if (host && typeof host.getSelectedLayersForOperation === 'function') {
+            const res = host.getSelectedLayersForOperation();
+            if (Array.isArray(res) && res.length > 0) return res;
+          }
+          const all = this.getAll();
+          if (!all.length || !host) return [];
+          const ids = new Set();
+          if (host.selectedLayerIds && host.selectedLayerIds.size > 0) {
+            host.selectedLayerIds.forEach(id => ids.add(String(id)));
+          }
+          if (host.selectedLayerId) {
+            ids.add(String(host.selectedLayerId));
+          }
+          return all.filter(l => l && ids.has(String(l.id)));
+        },
+
+        getActive() {
+          const selected = this.getSelected();
+          if (selected.length > 0) return selected[0];
+          const host = getHostWindow();
+          const all = this.getAll();
+          if (!all.length || !host) return null;
+          const selId = host.selectedLayerId;
+          if (selId) {
+            return all.find(l => l && String(l.id) === String(selId)) || null;
+          }
+          return null;
+        },
+
+        select(layerOrId, addToSelection = false) {
+          const host = getHostWindow();
+          if (!host || !layerOrId) return;
+          const id = typeof layerOrId === 'object' ? layerOrId.id : layerOrId;
+          if (typeof host.selectTimelineLayer === 'function') {
+            host.selectTimelineLayer(id, addToSelection);
+          } else {
+            host.selectedLayerId = id;
+            if (host.selectedLayerIds) {
+              if (!addToSelection) host.selectedLayerIds.clear();
+              host.selectedLayerIds.add(id);
+            }
+          }
+        },
+
+        getTiming(layer = null) {
+          const target = layer || this.getActive();
+          const { pps, fps, currentTime } = ctx.project.getDimensions();
+          const state = ctx.getProjectState() || {};
+          const defaultDur = state.defaultDuration || 5;
+          let startSec = currentTime;
+          let durationSec = defaultDur;
+          if (target) {
+            startSec = target.startSec !== undefined ? target.startSec : ((target.startPx || 0) / pps);
+            durationSec = target.durationSec !== undefined ? target.durationSec : ((target.widthPx || 320) / pps);
+          }
+          startSec = Number(startSec.toFixed(4));
+          durationSec = Number(Math.max(0.1, durationSec).toFixed(4));
+          const endSec = Number((startSec + durationSec).toFixed(4));
+          return { startSec, durationSec, endSec, pps, fps };
+        },
+
+        createSlider(name, val, min = -10000, max = 10000, step = 1, unit = '') {
+          return {
+            id: 'fx_' + String(name).toLowerCase().replace(/[^a-z0-9]/g, '_') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            type: 'slider-control',
+            name,
+            slider: val,
+            value: val,
+            min,
+            max,
+            step,
+            unit,
+            isExpanded: true
+          };
+        },
+
+        isAudio(layer) {
+          if (!layer) return false;
+          return layer.type === 'audio' || layer.mediaType === 'audio' || layer.isAudioTrack === true;
+        },
+
+        update(layerOrId, patch = {}) {
+          const host = getHostWindow();
+          const target = (typeof layerOrId === 'object' && layerOrId)
+            ? layerOrId
+            : this.getAll().find(l => l && String(l.id) === String(layerOrId));
+          if (!target) return false;
+          Object.assign(target, patch);
+          delete target._effectivePropsCache;
+          if (host && typeof host.invalidateEffectivePropsCache === 'function') {
+            host.invalidateEffectivePropsCache();
+          }
+          ctx.invalidateCache(target);
+          if (host && typeof host.saveCurrentProjectLayers === 'function') {
+            host.saveCurrentProjectLayers(true);
+          }
+          return true;
+        },
+
+        create(type, opts = {}) {
+          const map = {
+            shape: 'SHA',
+            solid: 'SOL',
+            null: 'NUL',
+            camera: 'CAM',
+            adjustment: 'ADJ'
+          };
+          const tool = map[String(type || '').toLowerCase()] || type;
+          return ctx.runTool(tool, opts);
+        }
+      },
+
+      timeline: {
+        getCurrentTime() {
+          const host = getHostWindow();
+          if (!host) return 0;
+          if (typeof host.getCurrentPlayheadTime === 'function') return host.getCurrentPlayheadTime();
+          if (typeof host.getTimelineCurrentSec === 'function') return host.getTimelineCurrentSec();
+          const pps = host.currentPixelsPerSecond || 80;
+          return Math.max(0, -(host.timelinePanX || 0) / pps);
+        },
+
+        getPlayhead() {
+          return this.getCurrentTime();
+        },
+
+        seek(sec) {
+          ctx.seek(sec);
+        },
+
+        getFPS() {
+          const host = getHostWindow();
+          if (host && typeof host.getProjectFps === 'function') return host.getProjectFps();
+          const state = ctx.getProjectState();
+          return (state && Number(state.fps)) || 60;
+        },
+
+        getFps() {
+          return this.getFPS();
+        },
+
+        getPps() {
+          const host = getHostWindow();
+          if (!host) return 80;
+          return (typeof host.pixelsPerSecond === 'number' && host.pixelsPerSecond > 0)
+            ? host.pixelsPerSecond
+            : (host.currentPixelsPerSecond || 80);
+        },
+
+        getPPS() {
+          return this.getPps();
+        },
+
+        setFPS(fps) {
+          return ctx.runTool('setCompositionFPS', fps);
+        },
+
+        setFormat(width, height) {
+          return ctx.runTool('setCompositionFormat', width, height);
+        },
+
+        getMarkers() {
+          const state = ctx.getProjectState();
+          return (state && Array.isArray(state.beatmarks)) ? state.beatmarks.slice() : [];
+        },
+
+        getBeatmarks(layer = null) {
+          const host = getHostWindow();
+          const state = ctx.getProjectState();
+          let rawMarkers = [];
+          if (layer && Array.isArray(layer.markers) && layer.markers.length > 0) {
+            rawMarkers = rawMarkers.concat(layer.markers.map(m => (typeof m === 'number' ? m : (m.time || 0))));
+          }
+          if (state && Array.isArray(state.beatmarks) && state.beatmarks.length > 0) {
+            rawMarkers = rawMarkers.concat(state.beatmarks);
+          }
+          if (host && Array.isArray(host.beatmarks) && host.beatmarks.length > 0) {
+            rawMarkers = rawMarkers.concat(host.beatmarks);
+          }
+          return Array.from(new Set(rawMarkers.map(m => Number(Number(m).toFixed(4))))).sort((a, b) => a - b);
+        },
+
+        setMarkers(markers = []) {
+          const host = getHostWindow();
+          const state = ctx.getProjectState();
+          if (!state) return false;
+          const clean = Array.isArray(markers)
+            ? markers.map(Number).filter(n => !isNaN(n) && n >= 0).sort((a, b) => a - b)
+            : [];
+          state.beatmarks = clean;
+          if (host && host.currentProjectState) {
+            host.currentProjectState.beatmarks = clean;
+          }
+          if (host) {
+            if (typeof host.renderTimelineBeatmarks === 'function') host.renderTimelineBeatmarks();
+            if (typeof host.saveCurrentProjectBeatmarks === 'function') host.saveCurrentProjectBeatmarks(true);
+            if (typeof host.updateTimeBadgeBeatmarkState === 'function') host.updateTimeBadgeBeatmarkState();
+            if (typeof host.syncDesktopMarkerLabels === 'function') host.syncDesktopMarkerLabels();
+            if (typeof host.syncBeatmarkDrawerUI === 'function') host.syncBeatmarkDrawerUI();
+          }
+          ctx.recordSnapshot();
+          return true;
+        },
+
+        clearMarkers() {
+          const current = this.getMarkers();
+          if (current.length === 0) return false;
+          this.setMarkers([]);
+          return true;
+        }
+      },
+
+      effects: {
+        add(effectId) {
+          const host = getHostWindow();
+          if (host && typeof host.addEffectToLayer === 'function') {
+            host.addEffectToLayer(effectId);
+            return true;
+          }
+          return ctx.runTool(effectId);
+        },
+        createInstance(type, fallbackName) {
+          const host = getHostWindow();
+          const reg = (host && host.FishEffects && host.FishEffects.registry) || (host && host.FishEffectsRegistry);
+          if (reg && typeof reg.createInstance === 'function') {
+            return reg.createInstance(type, fallbackName);
+          }
+          return {
+            id: `fx_${String(type).replace(/[^a-z0-9]/gi, '_')}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            type,
+            name: fallbackName || type,
+            isExpanded: true,
+            disabled: false
+          };
+        }
+      },
+
+      audio: {
+        isAudioLayer(layer) {
+          return ctx.layers.isAudio(layer);
+        },
+
+        async detectBPM(layer, sensitivity = 65) {
+          const host = getHostWindow();
+          const target = layer || ctx.layers.getActive();
+          if (!target || !host) return 120;
+          let detected = 120;
+          let audioBuffer = null;
+          if (typeof host.getAudioBufferForLayer === 'function') {
+            audioBuffer = await host.getAudioBufferForLayer(target);
+          }
+          if (audioBuffer && typeof host.detectBassFromAudioBuffer === 'function' && typeof host.estimateBPMFromAudio === 'function') {
+            const beats = host.detectBassFromAudioBuffer(audioBuffer, sensitivity, target.durationSec || 30);
+            detected = host.estimateBPMFromAudio(beats);
+          } else if (typeof host.getAudioPeaksForLayer === 'function' && typeof host.detectBassFromWaveformPeaks === 'function' && typeof host.estimateBPMFromAudio === 'function') {
+            const peaks = await host.getAudioPeaksForLayer(target, 800);
+            const beats = host.detectBassFromWaveformPeaks(peaks, target.durationSec || 30, sensitivity);
+            detected = host.estimateBPMFromAudio(beats);
+          }
+          return Math.round(detected);
+        },
+
+        generateBeatmarks(opts = {}) {
+          return ctx.runTool('AUTO_MARK', opts);
+        }
+      },
+
+      scene3d: {
+        rgbaToHex(rgba, mult = 1.0) {
+          if (!rgba) return '#888888';
+          if (typeof rgba === 'string') return rgba;
+          const r = Math.min(255, Math.max(0, Math.round(rgba[0] * 255 * mult)));
+          const g = Math.min(255, Math.max(0, Math.round(rgba[1] * 255 * mult)));
+          const b = Math.min(255, Math.max(0, Math.round(rgba[2] * 255 * mult)));
+          const toHex = n => n.toString(16).padStart(2, '0');
+          return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+        },
+
+        generateId(prefix = 'layer') {
+          return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        },
+
+        getBaseDims() {
+          const { width, height } = ctx.project.getDimensions();
+          return [width, height];
+        },
+
+        getTiming(selLayer) {
+          return ctx.layers.getTiming(selLayer);
+        },
+
+        create3DNull({ name, pos = [0, 0, 0], ori = [0, 0, 0], parent = null, startSec = 0, durationSec = 5, pps = 80 }) {
+          const id = this.generateId('layer_null');
+          const parentPosX = parent ? parent.posX : 0;
+          const parentPosY = parent ? parent.posY : 0;
+          const parentPosZ = parent ? (parent.posZ || 0) : 0;
+
+          const posX = parentPosX + pos[0];
+          const posY = parentPosY + pos[1];
+          const posZ = parentPosZ + pos[2];
+
+          return {
+            id,
+            name,
+            type: 'null',
+            is3D: true,
+            startPx: Math.round(startSec * pps),
+            startSec,
+            durationSec,
+            widthPx: Math.round(durationSec * pps),
+            posX,
+            posY,
+            posZ,
+            rotX: ori[0] || 0,
+            rotY: ori[1] || 0,
+            rotZ: ori[2] || 0,
+            rotation: ori[2] || 0,
+            scaleW: 100,
+            scaleH: 100,
+            opacity: 1.0,
+            parentId: parent ? parent.id : null,
+            parentBind: parent ? {
+              parentPosX: parent.posX,
+              parentPosY: parent.posY,
+              parentPosZ: parent.posZ || 0,
+              parentRotX: parent.rotX || 0,
+              parentRotY: parent.rotY || 0,
+              parentRotZ: parent.rotZ || 0,
+              parentScaleW: parent.scaleW || 100,
+              parentScaleH: parent.scaleH || 100
+            } : null
+          };
+        },
+
+        create3DFace({
+          name,
+          w,
+          h,
+          pos = [0, 0, 0],
+          ori = [0, 0, 0],
+          parent = null,
+          color = '#888888',
+          opacity = 1.0,
+          roundness = 0,
+          textureLayer = null,
+          startSec = 0,
+          durationSec = 5,
+          pps = 80
+        }) {
+          const id = this.generateId('layer_face');
+          const parentPosX = parent ? parent.posX : 0;
+          const parentPosY = parent ? parent.posY : 0;
+          const parentPosZ = parent ? (parent.posZ || 0) : 0;
+
+          const posX = parentPosX + pos[0];
+          const posY = parentPosY + pos[1];
+          const posZ = parentPosZ + pos[2];
+
+          const isTextured = !!(textureLayer && (textureLayer.dataUrl || textureLayer.mediaId || textureLayer.type === 'image' || textureLayer.type === 'video'));
+
+          const faceLayer = {
+            id,
+            name,
+            type: isTextured ? (textureLayer.type === 'video' ? 'video' : 'image') : 'shape',
+            is3D: true,
+            startPx: Math.round(startSec * pps),
+            startSec,
+            durationSec,
+            widthPx: Math.round(durationSec * pps),
+            posX,
+            posY,
+            posZ,
+            rotX: ori[0] || 0,
+            rotY: ori[1] || 0,
+            rotZ: ori[2] || 0,
+            rotation: ori[2] || 0,
+            scaleW: Math.max(1, Math.round(w)),
+            scaleH: Math.max(1, Math.round(h)),
+            _userResized: true,
+            _userResizedManual: true,
+            opacity,
+            blendMode: 'normal',
+            parentId: parent ? parent.id : null,
+            parentBind: parent ? {
+              parentPosX: parent.posX,
+              parentPosY: parent.posY,
+              parentPosZ: parent.posZ || 0,
+              parentRotX: parent.rotX || 0,
+              parentRotY: parent.rotY || 0,
+              parentRotZ: parent.rotZ || 0,
+              parentScaleW: parent.scaleW || 100,
+              parentScaleH: parent.scaleH || 100
+            } : null
+          };
+
+          if (isTextured) {
+            faceLayer.dataUrl = textureLayer.dataUrl || null;
+            faceLayer.mediaId = textureLayer.mediaId || null;
+            faceLayer.mediaWidth = textureLayer.mediaWidth || Math.max(1, Math.round(w));
+            faceLayer.mediaHeight = textureLayer.mediaHeight || Math.max(1, Math.round(h));
+            if (textureLayer.naturalWidth) faceLayer.naturalWidth = textureLayer.naturalWidth;
+            if (textureLayer.naturalHeight) faceLayer.naturalHeight = textureLayer.naturalHeight;
+            if (textureLayer.speed !== undefined) faceLayer.speed = textureLayer.speed;
+            if (textureLayer.sourceOffsetSec !== undefined) faceLayer.sourceOffsetSec = textureLayer.sourceOffsetSec;
+          } else {
+            faceLayer.shapeType = 'rectangle';
+            faceLayer.shapeProps = {
+              sizeX: Math.max(1, Math.round(w)),
+              sizeY: Math.max(1, Math.round(h)),
+              roundness: roundness || 0
+            };
+            faceLayer.fillType = 'color';
+            faceLayer.fillColor = color;
+            faceLayer.strokeColor = color;
+            faceLayer.strokeWidth = 0;
+          }
+
+          return faceLayer;
+        },
+
+        wrapIn3DPrecomp({
+          name,
+          compW,
+          compH,
+          startSec,
+          durationSec,
+          childLayers,
+          replaceLayer = null,
+          pps = 80
+        }) {
+          const host = getHostWindow();
+          const [baseW, baseH] = this.getBaseDims();
+          const state = ctx.getProjectState() || {};
+          state.layers = state.layers || [];
+
+          const precompId = this.generateId('layer_precomp');
+          const mediaId = this.generateId('media_comp');
+
+          const pX = replaceLayer && replaceLayer.posX !== undefined ? replaceLayer.posX : Math.round(baseW / 2);
+          const pY = replaceLayer && replaceLayer.posY !== undefined ? replaceLayer.posY : Math.round(baseH / 2);
+          const pZ = replaceLayer && replaceLayer.posZ !== undefined ? replaceLayer.posZ : 0;
+
+          if (Array.isArray(childLayers)) {
+            childLayers.forEach(l => {
+              if (l) {
+                const lStart = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps);
+                const relStart = Math.max(0, lStart - (startSec || 0));
+                l.startSec = Number(relStart.toFixed(4));
+                l.startPx = Math.round(l.startSec * pps);
+                l.durationSec = Number((l.durationSec !== undefined ? l.durationSec : durationSec).toFixed(4));
+                l.widthPx = Math.round(l.durationSec * pps);
+              }
+            });
+          }
+
+          const precompLayer = {
+            id: precompId,
+            mediaId,
+            name,
+            type: 'precomp',
+            startSec,
+            durationSec,
+            startPx: Math.round(startSec * pps),
+            widthPx: Math.round(durationSec * pps),
+            posX: pX,
+            posY: pY,
+            posZ: pZ,
+            rotX: 0,
+            rotY: 0,
+            rotZ: 0,
+            rotation: 0,
+            scaleW: compW,
+            scaleH: compH,
+            mediaWidth: compW,
+            mediaHeight: compH,
+            _userResized: true,
+            normX: Number(((pX - compW / 2) / baseW).toFixed(4)),
+            normY: Number(((pY - compH / 2) / baseH).toFixed(4)),
+            normW: Number((compW / baseW).toFixed(4)),
+            normH: Number((compH / baseH).toFixed(4)),
+            opacity: 1,
+            blendMode: 'normal',
+            is3D: true,
+            collapseTransformations: true,
+            layers: childLayers
+          };
+
+          const precompMediaItem = {
+            id: mediaId,
+            projectId: state.id,
+            name,
+            type: 'precomp',
+            precompId,
+            duration: durationSec,
+            width: compW,
+            height: compH,
+            is3D: true,
+            collapseTransformations: true,
+            layers: JSON.parse(JSON.stringify(childLayers))
+          };
+
+          if (host && host.FishDatabase && typeof host.FishDatabase.saveMedia === 'function' && state.id) {
+            host.FishDatabase.saveMedia(precompMediaItem).catch(err => {
+              console.warn('[scene3d] saveMedia error:', err);
+            });
+          }
+
+          if (replaceLayer) {
+            const idx = state.layers.findIndex(l => l.id === replaceLayer.id);
+            if (idx !== -1) {
+              state.layers.splice(idx, 1, precompLayer);
+            } else {
+              state.layers.unshift(precompLayer);
+            }
+          } else {
+            state.layers.unshift(precompLayer);
+          }
+
+          if (host) {
+            if (host.PreviewCacheManager && typeof host.PreviewCacheManager.deletePool === 'function') {
+              host.PreviewCacheManager.deletePool(precompId);
+            }
+            if (typeof host.invalidatePreviewCacheForLayer === 'function') {
+              if (replaceLayer) host.invalidatePreviewCacheForLayer(replaceLayer);
+              host.invalidatePreviewCacheForLayer(precompLayer);
+            }
+            if (host.selectedLayerIds) host.selectedLayerIds.clear();
+            host.selectedLayerId = precompId;
+            if (host.selectedLayerIds) host.selectedLayerIds.add(precompId);
+
+            if (typeof host.renderTimelineLayers === 'function') host.renderTimelineLayers();
+            if (typeof host.updateEditorHeaderMode === 'function') host.updateEditorHeaderMode();
+            if (typeof host.redrawComposition === 'function') host.redrawComposition('3d-gen');
+            if (typeof host.saveCurrentProjectLayers === 'function') host.saveCurrentProjectLayers(true);
+            if (typeof host.showEffectsRackToast === 'function') {
+              host.showEffectsRackToast(`${name} created`);
+            }
+          }
+
+          return JSON.stringify({
+            error: false,
+            message: `${name} generated successfully!`,
+            layerId: precompId,
+            is3D: true,
+            collapseTransformations: true
+          });
         }
       },
 
@@ -770,6 +1631,8 @@
         }
       }
     };
+
+    return ctx;
   }
 
   /**
@@ -782,6 +1645,15 @@
     }
 
     _cardRegistry.set(def.id, def);
+
+    // Automatically register any declarative tools map defined on the Card
+    if (def.tools && typeof def.tools === 'object') {
+      Object.entries(def.tools).forEach(([toolName, fn]) => {
+        if (typeof fn === 'function') {
+          _toolRegistry.set(String(toolName), { cardId: def.id, fn });
+        }
+      });
+    }
 
     // Bridge with FishExtensions if available
     if (global.FishExtensions && typeof global.FishExtensions.register === 'function') {
@@ -820,95 +1692,42 @@
   }
 
   /**
-   * Strict Validator for user-imported .jsx files
-  /**
-   * Helper to convert raw ExtendScript JSX into a standard Card
+   * Strict Validator for user-imported .js extension files
+   * Ensures modular Card({ ... }) definition with interactive UI and actions.
    */
-  function convertScriptToCard(jsxContent, filename = 'custom_script.jsx') {
-    const rawBase = filename ? filename.replace(/\.[^/.]+$/, '') : 'Custom Script';
-    const cleanName = rawBase.replace(/[-_]/g, ' ') || 'Custom Script';
-    const cleanId = 'card_' + (rawBase.replace(/[^a-zA-Z0-9_]/g, '_').toLowerCase() || 'custom_' + Date.now());
-    return `
-Card({
-  id: ${JSON.stringify(cleanId)},
-  name: ${JSON.stringify(cleanName)},
-  icon: 'code',
-  description: 'Imported Adobe ExtendScript JSX Script',
-  build: function(ui, ctx) {
-    ui.section('ExtendScript Action');
-    ui.button({
-      label: ${JSON.stringify('RUN ' + cleanName.toUpperCase())},
-      icon: 'play_arrow',
-      className: 'w-full tool-btn-primary',
-      onClick: function() {
-        try {
-          ctx.executeJSX(${JSON.stringify(jsxContent)});
-          ctx.showToast('Script executed successfully');
-        } catch (e) {
-          ctx.showToast('Script error: ' + e.message, true);
-        }
-      }
-    });
-  }
-});
-`;
-  }
-
-  /**
-   * Strict Validator for user-imported .jsx files
-   * Supports:
-   * 1. Declarative Card({ ... }) definitions with UI buttons and executable functions.
-   * 2. Raw Adobe ExtendScript scripts (auto-wrapped into interactive cards).
-   */
-  function validateJSX(jsxContent, filename = '') {
-    if (!jsxContent || typeof jsxContent !== 'string' || !jsxContent.trim()) {
+  function validateExtensionJS(jsContent) {
+    if (!jsContent || typeof jsContent !== 'string' || !jsContent.trim()) {
       return { valid: false, error: 'File kosong atau tidak dapat dibaca.' };
     }
 
-    // 1. Basic structural check
-    const hasCardCall = /Card\s*\(\s*\{/.test(jsxContent) || /FishExtensions\.defineCard/.test(jsxContent);
-
+    const hasCardCall = /Card\s*\(\s*\{/.test(jsContent) || /FishExtensions\.defineCard/.test(jsContent);
     if (!hasCardCall) {
-      // Check if this is a raw ExtendScript / JavaScript script
-      try {
-        new Function('app', 'window', 'globalThis', jsxContent);
-      } catch (syntaxErr) {
-        return {
-          valid: false,
-          error: `Kesalahan sintaks JavaScript pada file .jsx: ${syntaxErr.message}`
-        };
-      }
-
-      // Automatically wrap raw ExtendScript into a Card
-      const wrapped = convertScriptToCard(jsxContent, filename);
-      const res = validateJSX(wrapped, filename);
-      if (res.valid) {
-        res.wrappedContent = wrapped;
-      }
-      return res;
-    }
-
-    const hasButton = /ui\.button|createButton|<button|createElement\(['"]button['"]\)/.test(jsxContent);
-    const hasFunction = /function|onClick|=>|\.addEventListener/.test(jsxContent);
-
-    if (!hasButton) {
       return {
         valid: false,
-        error: 'Format tidak lengkap: Card harus memiliki minimal satu tombol (ui.button).'
+        error: 'Format tidak valid: File ekstensi .js harus mendeklarasikan Card({ id, name, build(ui, ctx) { ... } }).'
+      };
+    }
+
+    const hasInteractiveUI = /ui\.(button|segmented|anchorGrid|checklist|slider|switch|input|textarea)|createElement\(['"]button['"]\)/.test(jsContent);
+    const hasFunction = /function|onClick|onSelect|onChange|=>|\.addEventListener/.test(jsContent);
+
+    if (!hasInteractiveUI) {
+      return {
+        valid: false,
+        error: 'Format tidak lengkap: Card harus memiliki minimal satu komponen UI interaktif (misalnya ui.button, ui.slider, ui.segmented).'
       };
     }
 
     if (!hasFunction) {
       return {
         valid: false,
-        error: 'Format tidak lengkap: Tombol harus memiliki fungsi aksi (onClick) yang dapat dieksekusi.'
+        error: 'Format tidak lengkap: Komponen Card harus memiliki fungsi aksi (onClick / onChange) yang dapat dieksekusi.'
       };
     }
 
-    // 2. Safe sandbox execution to extract definition
     try {
       let extractedDef = null;
-      const sandboxFn = new Function('Card', 'window', 'globalThis', jsxContent);
+      const sandboxFn = new Function('Card', 'window', 'globalThis', jsContent);
       const mockCard = function(def) {
         extractedDef = def;
         return def;
@@ -934,28 +1753,26 @@ Card({
     } catch (err) {
       return {
         valid: false,
-        error: `Kesalahan sintaks JavaScript pada file .jsx: ${err.message}`
+        error: `Kesalahan sintaks JavaScript pada file .js: ${err.message}`
       };
     }
   }
 
   /**
-   * Load and evaluate a .jsx string dynamically into runtime
+   * Load and evaluate a modular .js extension string dynamically into runtime
    */
-  function loadJSXString(jsxContent, isCustom = false, filename = '') {
-    const val = validateJSX(jsxContent, filename);
+  function loadExtensionJS(jsContent, isCustom = false, filename = '') {
+    const val = validateExtensionJS(jsContent, filename);
     if (!val.valid) return val;
 
-    const codeToRun = val.wrappedContent || jsxContent;
-
     try {
-      const fn = new Function('Card', 'window', 'globalThis', codeToRun);
+      const fn = new Function('Card', 'window', 'globalThis', jsContent);
       fn(defineCard, global, global);
 
       if (val.def && val.def.id) {
-        _cardSourceMap.set(val.def.id, jsxContent);
+        _cardSourceMap.set(val.def.id, jsContent);
         if (isCustom) {
-          saveCustomCardSource(val.def.id, jsxContent);
+          saveCustomCardSource(val.def.id, jsContent);
         }
       }
 
@@ -972,9 +1789,9 @@ Card({
     return readStorage(STORAGE_CUSTOM_KEY, []);
   }
 
-  function saveCustomCardSource(id, jsxContent) {
+  function saveCustomCardSource(id, jsContent) {
     const list = getAllCustomCards().filter(item => item.id !== id);
-    list.push({ id, code: jsxContent, timestamp: Date.now() });
+    list.push({ id, code: jsContent, timestamp: Date.now() });
     writeStorage(STORAGE_CUSTOM_KEY, list);
   }
 
@@ -998,7 +1815,7 @@ Card({
     const customList = getAllCustomCards();
     customList.forEach(item => {
       if (item && item.code) {
-        loadJSXString(item.code, false, item.id);
+        loadExtensionJS(item.code, false, item.id);
       }
     });
   }
@@ -1009,15 +1826,39 @@ Card({
   const CardBuilder = {
     Card: defineCard,
     defineCard,
-    validateJSX,
-    loadJSXString,
+    validateExtensionJS,
+    loadExtensionJS,
+    // Backward-compatible aliases
+    validateJSX: validateExtensionJS,
+    loadJSXString: loadExtensionJS,
     State: CardState,
     getRegistry: () => Array.from(_cardRegistry.values()),
     getCard: (id) => _cardRegistry.get(id) || null,
     getCardSource: (id) => _cardSourceMap.get(id) || null,
+    hasTool: (toolName) => _toolRegistry.has(String(toolName)),
+    runTool(toolName, ...args) {
+      const entry = _toolRegistry.get(String(toolName));
+      if (!entry || typeof entry.fn !== 'function') return undefined;
+      const def = _cardRegistry.get(entry.cardId) || { id: entry.cardId || 'global', name: entry.cardId || 'Global' };
+      const ctx = createCardContext(def);
+      return entry.fn.call(def, ctx, ...args);
+    },
+    createContext: (id = 'global') => createCardContext(_cardRegistry.get(id) || { id, name: id }),
     getAllCustomCards,
     deleteCustomCard,
     initCustomCards,
+    /**
+     * Render a card definition into an arbitrary host element.
+     * Optional ctxOverride allows sandboxed contexts (used by Extension Builder preview).
+     */
+    mount(def, host, ctxOverride = null) {
+      host.innerHTML = '';
+      const ctx = ctxOverride || createCardContext(def);
+      const ui = createUIBuilder(host, ctx);
+      if (typeof def.build === 'function') def.build(ui, ctx);
+      if (typeof def.setup === 'function') def.setup(ctx, host);
+      return ctx;
+    },
     syncToFishExtensions() {
       if (!global.FishExtensions) return;
       _cardRegistry.forEach(def => {

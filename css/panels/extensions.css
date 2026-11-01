@@ -459,6 +459,22 @@
   line-height: 1;
 }
 
+/* --- ui.text variants: label (default) and hint --- */
+.extension-text--label {
+  font-family: var(--font-brand);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.extension-text--hint {
+  font-family: var(--font-brand);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
 /* --- Form Rows & Grouped Controls (Side-by-Side Dimension Inputs) --- */
 .form-row {
   display: flex;

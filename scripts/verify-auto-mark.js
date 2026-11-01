@@ -5,8 +5,8 @@ const assert = require('assert');
 console.log('--- Testing Auto Mark Extension ---');
 
 // 1. Check file existence
-const extPath = path.join(__dirname, '..', 'Extension', 'auto_mark.jsx');
-assert.strictEqual(fs.existsSync(extPath), true, 'Extension/auto_mark.jsx must exist');
+const extPath = path.join(__dirname, '..', 'Extension', 'auto_mark.js');
+assert.strictEqual(fs.existsSync(extPath), true, 'Extension/auto_mark.js must exist');
 const jsxContent = fs.readFileSync(extPath, 'utf8');
 
 // 2. Validate JSX Structure

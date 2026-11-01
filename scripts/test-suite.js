@@ -25,7 +25,7 @@ function getJsFilesRecursive(dir, excludes = []) {
 const walkJsFiles = getJsFilesRecursive;
 
 const vendorExcludes = ['vendor', 'node_modules', '.git', '.min.js', 'jszip.min.js'];
-const targetDirs = ['js', 'effects', 'scripts', 'element', 'shapes', 'text', 'functions'];
+const targetDirs = ['js', 'Extension', 'extension-builder', 'effects', 'scripts', 'element', 'shapes', 'text', 'functions'];
 let allJsFiles = [];
 targetDirs.forEach(d => {
   allJsFiles.push(...getJsFilesRecursive(d, vendorExcludes));
@@ -91,7 +91,8 @@ console.log('\n[4/4] HTML File Integrity & Structure Check...');
 const expectedHtmlFiles = [
   { file: 'index.html', minLines: 2500 },
   { file: 'editor.html', minLines: 4500 },
-  { file: 'desktop.html', minLines: 4500 }
+  { file: 'desktop.html', minLines: 4500 },
+  { file: 'extension-builder.html', minLines: 120 }
 ];
 
 let htmlFailures = 0;

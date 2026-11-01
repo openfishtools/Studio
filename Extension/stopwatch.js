@@ -1,12 +1,12 @@
 /**
- * OpenFishTools Extension - Stopwatch Card
+ * OpenFishTools Extension - Stopwatch Card (.js)
  * Provides: Work session timer with Play, Pause, and Reset controls.
  */
 Card({
   id: 'stopwatch',
   name: 'Stopwatch',
   icon: 'schedule',
-  description: 'Work session timer (00:00:00) dengan kontrol Play, Pause, dan Reset.',
+  description: 'Timer waktu kerja (00:00:00) dengan kontrol Play, Pause, dan Reset.',
   category: 'Dashboard',
   defaultEnabled: true,
 
@@ -47,7 +47,6 @@ Card({
           }, 25);
         }
       }),
-
       ui.button({
         id: 'sw-pause',
         label: 'PAUSE',
@@ -61,7 +60,6 @@ Card({
           ctx.storage.set('elapsed_ms', elapsedMs);
         }
       }),
-
       ui.button({
         id: 'sw-reset',
         label: 'RESET',

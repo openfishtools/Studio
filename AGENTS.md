@@ -40,7 +40,7 @@ The codebase is organized into clean, domain-categorized directories:
 - `Studio/js/core/`: Core 2D/3D affine transformation matrix pipeline, multi-layer canvas rendering, camera projections, text layout, motion blur, and wireframe overlay (`fishtool-engine.js`, `motion-blur-engine.js`, `text-engine.js`, `canvas-overlay.js`, `wireframe.js`).
 - `Studio/js/media/`: Audio/video processing, frame extraction, cache, export, and streaming (`fish-export-engine.js`, `fish-audio-engine.js`, `videocomp-enggine.js`, `preview-cache.js`, `bg-removal-engine.js`, `video-stream-manager.js`, `video-decoder-worker.js`).
 - `Studio/js/editor/`: 11 modular subsystems decomposed from monolithic `editor.js` (< 400 KB each).
-- `Studio/js/extensions/`: Extension hosts, controllers, and bridges (`extension-manager.js`, `extensions.js`, `openfishtools-controller.js`, `openfishtools-generators3d.js`, `JSX-Translator.js`, `fishtools-adapter.js`, `attributes-clipboard.js`).
+- `Studio/js/extensions/`: Extension hosts, controllers, and bridges (`extension-manager.js`, `extensions.js`, `attributes-clipboard.js`).
 - `Studio/js/ui/`: UI controls, modal overlays, drawers, popovers, and widgets (`modal.js`, `drawer.js`, `popover.js`, `color-picker.js`, `context-menu.js`, `switch.js`, `sync-height.js`, `folderanim.js`, `elements/`).
 - `Studio/js/plugins/`: Plugin extensions for shapes, typography, and procedural visual effects (`shapes/`, `text/`, `effects/`).
 - `Studio/js/storage/`: IndexedDB client database persistence layer (`db.js`).
@@ -50,7 +50,8 @@ The codebase is organized into clean, domain-categorized directories:
 - `Studio/css/components/`: Reusable UI component stylesheets (`modal.css`, `drawer.css`, `popover.css`, `context-menu.css`, `color-picker.css`, `switch.css`, `segmented-button.css`).
 - `Studio/css/panels/`: Dedicated tool panel stylesheets (`transform-controller.css`, `effects-rack.css`, `text-format.css`, `wireframe.css`, `template-editor.css`, `extensions.css`).
 - `Studio/css/fixes/`: Platform and browser-specific fixes (`safari.css`).
-- `Studio/Extension/`: Standalone `.jsx` card extensions executable in Studio (`actions.jsx`, `beat_effects.jsx`, `cube_generator.jsx`, `sticky_note.jsx`, `toolbox.jsx`, `extension_creator.jsx`, etc.).
+- `Studio/extension-builder/` + `Studio/extension-builder.html`: Drag-and-drop Extension Builder (palette, WYSIWYG canvas mirroring the editor's Extensions panel, CodeMirror script editor with SDK helper, live preview that injects the draft into an embedded real editor). Output is a plain `Studio/Extension/*.js` file. Details in `Extension/README.md`.
+- `Studio/Extension/`: Standalone modular `.js` card extensions (Single Source of Truth) executable in Studio via `Card({...})` (`actions.js`, `beat_effects.js`, `cube_generator.js`, `generator_3d.js`, `sticky_note.js`, `toolbox.js`, `auto_mark.js`, etc.).
 - `Studio/effects/`: Standalone modular effect plugins registered directly via `FishEffectsRegistry.register({...})`, `manifest.json`, and `effects.wasm`.
 - `Studio/fticons/`: Vector icon assets and font glyph definitions (`fticons.css`, `fticons.woff2`, `raw icons/`).
 - `Studio/scripts/`: Build synchronizers, scope auditors, and test runners (`test-suite.js`, `static-scope-audit.js`, `sync-effects.js`, `sync-version.js`, `audit-effects.js`).
@@ -70,10 +71,10 @@ The legacy monolithic `editor.js` (~2 MB, 43k lines) has been decomposed into 11
 | `editor-timeline-core.js` | ~184 KB | Timeline ruler, playhead scrubbing, viewport zoom/pan, timecode formatting, transport loop, beatmarks | `seekTimelineToTime`, `playAnimationLoop`, `pausePlayback`, `updateRulerScale`, `setTimelineZoom`, `addTimelineBeatmark` |
 | `editor-timeline-ops.js` | ~355 KB | Timeline layer tracks rendering, multi-selection, trimming, cut/split, precompose, reflow-guarded reorder handles | `renderTimelineLayers`, `selectTimelineLayer`, `selectedLayerId`, `selectedLayerIds`, `splitLayerAtPlayhead`, `trimLayerStart`, `trimLayerEnd`, `updateReorderHandlesContrast` |
 | `editor-export.js` | ~131 KB | Client-side video export pipeline, WebCodecs MP4 encoding via `mp4-muxer`, ZIP image sequences, audio mixdown, OFTS package | `exportVideoMP4`, `exportImageSequenceZIP`, `exportAudioMixdownWAV`, `exportOFTSPackage`, `showExportModal` |
-| `editor-extension-bridge.js` | ~93 KB | Host controller communication, CEP / JSX extension translation, action routing, 3D procedural bridges, layer alignment | `editorExecuteFishTool`, `executeFishTool`, `setAnchorPointForSelectedLayers`, `alignSelectedLayers`, `showEditorToast` |
+| `editor-extension-bridge.js` | ~61 KB | Host controller communication, modular `.js` extension bridge, action routing, 3D procedural bridges, layer alignment | `editorExecuteFishTool`, `executeFishTool`, `setAnchorPointForSelectedLayers`, `alignSelectedLayers`, `showEditorToast` |
 
 ### 1.4 Backward-Compatibility Facade (`Studio/js/editor.js`)
-`Studio/js/editor.js` (~3 KB) serves as the backward-compatibility facade stub. It preserves 100% interoperability with all 373 public `window.*` globals, ensuring that existing callers (`desktop.js`, `openfishtools-controller.js`, `JSX-Translator.js`, and inline HTML event handlers) operate without breaking changes or regressions.
+`Studio/js/editor.js` (~3 KB) serves as the backward-compatibility facade stub. It preserves 100% interoperability with all 373 public `window.*` globals, ensuring that existing callers (`desktop.js`, `Extension/*.js`, and inline HTML event handlers) operate without breaking changes or regressions.
 
 ## 2. Runtime Performance Optimization (R6) & Memory Hygiene Protocols
 
@@ -194,9 +195,10 @@ When debugging errors, unexpected behavior, or UI bugs:
 - **Registry Pattern**: Effects register via `FishEffectsRegistry.register({...})`.
 - **Manifest Synchronization**: Run `npm run sync:effects` after adding or editing effects.
 
-## 14. Extension System Synchronization & Layer Mutation Rules (`Extension/`)
-- **UI Dual-Source Sync**: When modifying any built-in extension UI or preset grid, update BOTH `Extension/<id>.jsx` AND the runtime renderer in `js/extensions/extension-manager.js`.
-- **Action Dispatch Sync**: When adding, renaming, or changing extension actions/presets, synchronize all dispatch layers: `js/extensions/openfishtools-controller.js`, `js/extensions/JSX-Translator.js`, and `js/editor/editor-extension-bridge.js` (and the `js/editor.js` facade).
+## 14. Extension System Architecture & Layer Mutation Rules (`Extension/`)
+- **Single Source of Truth (`Extension/*.js`)**: Built-in extensions are standalone modular `.js` files in `Studio/Extension/<id>.js` registered via `Card({ id, name, icon, category, order, defaultEnabled, render(ui, ctx) })`. `js/extensions/extension-manager.js` dynamically syncs from `CardBuilder` without duplicating card renderers.
+- **Modular Extension SDK (`ctx` & `ui`)**: Extensions use declarative UI builders (`ui.button`, `ui.grid`, `ui.slider`, `ui.segmented`, `ui.anchorGrid`, `ui.checklist`, etc.) and SDK namespaces (`ctx.layers`, `ctx.timeline`, `ctx.effects`, `ctx.audio`, `ctx.storage`, `ctx.runTool`) defined in `js/ui/elements/card-builder.js`.
+- **Action Dispatch Sync**: When adding or modifying low-level editor tools invoked via `ctx.runTool()`, synchronize `js/extensions/openfishtools-controller.js` and `js/editor/editor-extension-bridge.js` (and the `js/editor.js` facade).
 - **Window Scope Bridge**: `js/extensions/openfishtools-controller.js` runs in an IIFE; any editor function it calls (`setAnchorPointForSelectedLayers`, `alignSelectedLayers`, `editorExecuteFishTool`) MUST be exported on `window`.
 - **Effective Props Cache Invalidation**: Whenever mutating layer transform/anchor properties (`x`, `y`, `anchorX`, `anchorY`, or `move` keyframes), always call `invalidateEffectivePropsCache()` (or `delete layer._effectivePropsCache`) before calling `draw()`, `redrawComposition()`, or `updatePlayheadPosition()`.
 

@@ -2138,6 +2138,7 @@ html, body {
 }
 
 .extension-import-btn {
+  text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2274,20 +2275,30 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-muted);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--color-danger-bg);
+  border: 1.5px solid var(--color-danger);
+  color: var(--color-danger);
   cursor: pointer;
   padding: 0;
-  transition: color 0.15s ease, background-color 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
 }
 
 .extension-delete-btn:hover {
-  background-color: var(--color-danger-bg);
-  color: var(--color-danger);
+  background-color: var(--color-danger);
+  border-color: var(--color-danger);
+  color: var(--color-danger-text, #fff);
+}
+
+.extension-delete-btn:active {
+  transform: scale(0.92);
+}
+
+.extension-delete-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 
 /* Switch Styles */

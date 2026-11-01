@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12170e">
+  <title>Extension Builder — OpenFishTools Studio</title>
+  <link rel="icon" type="image/svg+xml" href="assets/icon.svg">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('oft_theme');
+        if (t && t !== 'default') document.documentElement.setAttribute('data-theme', t);
+      } catch (_) {}
+    })();
+  </script>
+  <link rel="stylesheet" href="css/tokens/theme.css">
+  <link rel="stylesheet" href="fticons/fticons.css?v=5">
+  <link rel="stylesheet" href="css/layout/editor.css">
+  <link rel="stylesheet" href="css/components/switch.css">
+  <link rel="stylesheet" href="css/components/segmented-button.css">
+  <link rel="stylesheet" href="css/panels/text-format.css">
+  <link rel="stylesheet" href="css/panels/transform-controller.css">
+  <link rel="stylesheet" href="css/panels/effects-rack.css">
+  <link rel="stylesheet" href="css/components/color-picker.css">
+  <link rel="stylesheet" href="css/panels/extensions.css">
+  <link rel="stylesheet" href="extension-builder/css/builder.css">
+</head>
+<body class="oft-builder" data-view="canvas" data-panel="">
+  <header class="eb-top">
+    <a class="eb-back" href="index.html" title="Back to Studio"><span class="material-icons" aria-hidden="true">arrow_back</span></a>
+    <h1 class="eb-title"><span class="material-icons" aria-hidden="true">extension</span> Extension Builder</h1>
+    <div class="eb-top-actions">
+      <button type="button" id="btn-undo" title="Undo (Ctrl/Cmd+Z)" aria-label="Undo (Ctrl/Cmd+Z)"><span class="material-icons" aria-hidden="true">undo</span></button>
+      <button type="button" id="btn-redo" title="Redo (Ctrl/Cmd+Shift+Z)" aria-label="Redo (Ctrl/Cmd+Shift+Z)"><span class="material-icons" aria-hidden="true">redo</span></button>
+      <button type="button" id="btn-new" title="New extension" aria-label="New extension"><span class="material-icons" aria-hidden="true">note_add</span><span class="eb-lbl">New</span></button>
+      <button type="button" id="btn-import" title="Import a .js made with Extension Builder" aria-label="Import a .js made with Extension Builder"><span class="material-icons" aria-hidden="true">upload_file</span><span class="eb-lbl">Import</span></button>
+      <button type="button" id="btn-copy" title="Copy code" aria-label="Copy code"><span class="material-icons" aria-hidden="true">content_copy</span><span class="eb-lbl">Copy</span></button>
+      <button type="button" id="btn-export" class="eb-primary" title="Download .js for Studio/Extension/" aria-label="Download .js for Studio/Extension/"><span class="material-icons" aria-hidden="true">download</span><span class="eb-lbl">Export .js</span></button>
+      <input type="file" id="file-import" accept=".js,text/javascript" hidden>
+    </div>
+  </header>
+
+  <main class="eb-main" id="eb-main">
+    <!-- Floating bar: view switch (Canvas | Preview), zoom, and (desktop) panel toggles -->
+    <div class="eb-floatbar" id="floatbar">
+      <div class="eb-center-tabs" id="center-tabs" role="tablist">
+        <button type="button" data-center="canvas" class="is-active" role="tab" aria-selected="true">Canvas</button>
+        <button type="button" data-center="preview" role="tab" aria-selected="false">Preview</button>
+      </div>
+      <span class="eb-sep"></span>
+      <div class="cv-zoom">
+        <button type="button" id="cv-zoom-out" title="Zoom out" aria-label="Zoom out"><span class="material-icons" aria-hidden="true">remove</span></button>
+        <button type="button" id="cv-zoom-reset" title="Reset view (double-tap background)" aria-label="Reset view (double-tap background)"><span id="cv-zoom-label">100%</span></button>
+        <button type="button" id="cv-zoom-in" title="Zoom in" aria-label="Zoom in"><span class="material-icons" aria-hidden="true">add</span></button>
+      </div>
+      <span class="eb-sep pc-only"></span>
+      <div class="eb-pc-toggles pc-only" id="pc-toggles">
+        <button type="button" data-pc="palette" class="is-active" title="Add element" aria-label="Add element" aria-pressed="true"><span class="material-icons" aria-hidden="true">widgets</span></button>
+        <button type="button" data-pc="props" class="is-active" title="Properties" aria-label="Properties" aria-pressed="true"><span class="material-icons" aria-hidden="true">tune</span></button>
+        <button type="button" data-pc="script" class="is-active" title="Script" aria-label="Script" aria-pressed="true"><span class="material-icons" aria-hidden="true">code</span></button>
+      </div>
+    </div>
+
+    <!-- Views (full-bleed) -->
+    <section class="pane pane-canvas" aria-label="Canvas">
+      <div class="cv-viewport" id="cv-viewport">
+        <div class="cv-stage" id="cv-stage"></div>
+      </div>
+    </section>
+
+    <section class="pane pane-preview" aria-label="Live preview (the real Studio editor)">
+      <div class="pv-stage" id="pv-stage"></div>
+      <div class="pv-msg" id="pv-msg" role="status" aria-live="polite" hidden></div>
+    </section>
+
+    <!-- Floating panels. Mobile: Add element morphs out of the FAB; Properties + Script share one drawer. Desktop: floating cards. -->
+    <section class="pane float pane-palette" id="pane-palette" data-pane="palette" aria-label="Add element">
+      <div class="pane-head">
+        <span class="pane-title"><span class="material-icons" aria-hidden="true">widgets</span> Add element</span>
+        <span class="pane-tools">
+          <button type="button" class="mini m-only" data-panel="props" title="Properties" aria-label="Properties"><span class="material-icons" aria-hidden="true">tune</span></button>
+          <button type="button" class="mini m-only" data-panel="script" title="Script" aria-label="Script"><span class="material-icons" aria-hidden="true">code</span></button>
+          <button type="button" class="mini pc-only" data-collapse title="Collapse" aria-label="Collapse"><span class="material-icons" aria-hidden="true">expand_more</span></button>
+          <button type="button" class="mini m-only" data-close title="Close" aria-label="Close"><span class="material-icons" aria-hidden="true">close</span></button>
+        </span>
+      </div>
+      <div class="pane-body" id="palette"></div>
+    </section>
+
+    <section class="pane float pane-props" data-pane="props" aria-label="Properties">
+      <div class="pane-head">
+        <span class="pane-title pc-only"><span class="material-icons" aria-hidden="true">tune</span> Properties</span>
+        <div class="eb-center-tabs drawer-switch m-only" role="tablist">
+          <button type="button" data-panel="props" class="is-active" role="tab" aria-selected="true">Properties</button>
+          <button type="button" data-panel="script" role="tab" aria-selected="false">Script</button>
+        </div>
+        <span class="pane-tools">
+          <button type="button" class="mini pc-only" data-collapse title="Collapse" aria-label="Collapse"><span class="material-icons" aria-hidden="true">expand_more</span></button>
+          <button type="button" class="mini m-only" data-close title="Close" aria-label="Close"><span class="material-icons" aria-hidden="true">close</span></button>
+        </span>
+      </div>
+      <div class="pane-body">
+        <div class="eb-center-tabs sub-tabs" id="props-tabs" role="tablist">
+          <button type="button" data-ptab="props" class="is-active" role="tab" aria-selected="true">Component</button>
+          <button type="button" data-ptab="meta" role="tab" aria-selected="false">Extension</button>
+        </div>
+        <div id="ins-props"></div>
+        <div id="ins-meta" hidden></div>
+      </div>
+    </section>
+
+    <section class="pane float pane-script" data-pane="script" aria-label="Script">
+      <div class="pane-head">
+        <span class="pane-title pc-only"><span class="material-icons" aria-hidden="true">code</span> Script</span>
+        <div class="eb-center-tabs drawer-switch m-only" role="tablist">
+          <button type="button" data-panel="props" role="tab" aria-selected="false">Properties</button>
+          <button type="button" data-panel="script" class="is-active" role="tab" aria-selected="true">Script</button>
+        </div>
+        <span class="pane-tools">
+          <button type="button" class="mini pc-only" data-collapse title="Collapse" aria-label="Collapse"><span class="material-icons" aria-hidden="true">expand_more</span></button>
+          <button type="button" class="mini m-only" data-close title="Close" aria-label="Close"><span class="material-icons" aria-hidden="true">close</span></button>
+        </span>
+      </div>
+      <div class="se-body">
+        <div class="se-editor">
+          <div class="eb-center-tabs sub-tabs" id="se-tabs" role="tablist">
+            <button type="button" data-mode="handler" class="is-active" role="tab" aria-selected="true">Handler</button>
+            <button type="button" data-mode="shared" role="tab" aria-selected="false">Shared</button>
+            <button type="button" data-mode="output" role="tab" aria-selected="false">Output</button>
+          </div>
+          <div class="se-sig" id="se-sig-top"></div>
+          <div class="se-cm" id="se-cm"></div>
+          <div class="se-sig" id="se-sig-bottom"></div>
+          <p class="se-hint" id="se-hint" hidden></p>
+          <pre class="se-output" id="se-output" hidden></pre>
+        </div>
+        <aside class="se-helper" id="se-helper">
+          <input type="search" id="se-search" placeholder="Search SDK (ctx.…)" aria-label="Search SDK">
+          <div class="se-helper-list" id="se-helper-list"></div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <!-- Mobile FAB: morphs into the Add element card. -->
+  <button type="button" class="eb-fab" id="fab-main" aria-haspopup="dialog" aria-expanded="false" aria-controls="pane-palette" title="Add element" aria-label="Add element"><span class="material-icons" aria-hidden="true">add</span></button>
+
+  <div class="cv-indicator" id="cv-indicator" hidden></div>
+  <div class="cv-ghost" id="cv-ghost" hidden></div>
+  <div class="eb-toast" id="eb-toast" role="status" hidden></div>
+
+  <script src="js/ui/elements/card-builder.js"></script>
+  <script src="vendor/codemirror/codemirror.bundle.js"></script>
+  <script src="extension-builder/js/sdk-manifest.js"></script>
+  <script src="extension-builder/js/palette.js"></script>
+  <script src="extension-builder/js/model.js"></script>
+  <script src="extension-builder/js/codegen.js"></script>
+  <script src="extension-builder/js/frame.js"></script>
+  <script src="extension-builder/js/preview.js"></script>
+  <script src="extension-builder/js/live-preview.js"></script>
+  <script src="extension-builder/js/canvas.js"></script>
+  <script src="extension-builder/js/inspector.js"></script>
+  <script src="extension-builder/js/script-editor.js"></script>
+  <script src="extension-builder/js/export.js"></script>
+  <script src="extension-builder/js/app.js"></script>
+</body>
+</html>
