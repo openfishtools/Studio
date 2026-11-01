@@ -529,6 +529,7 @@
       if (typeof window.pausePlayback === 'function') {
         try { window.pausePlayback(); } catch (_) {}
       }
+      this._enterLightPlayback();
       this.currentTime = 0;
       this.isPlaying = false;
       window.isTimelinePlaying = false;
@@ -557,6 +558,7 @@
       if (!this.isOpen) return;
       this.pause();
       window.isTimelinePlaying = false;
+      this._leaveLightPlayback();
       if (window.Popover && window.Popover.activePopover && window.Popover.activePopover.id === 'popover-template-next') {
         window.Popover.close(false);
       }
@@ -1440,9 +1442,40 @@
       }
     },
 
+    /**
+     * Uncached "light" playback mode (same engine as the main timeline with Cache = Off):
+     *  - no RAM preview cache reads/writes and no idle/lookahead baking workers while the template editor is open,
+     *  - the Web Audio scheduler clock drives the playhead (picture and sound share one clock, no stutter after loop/seek).
+     */
+    _enterLightPlayback() {
+      if (this._lightMode) return;
+      this._lightMode = true;
+      this._savedCacheEnabled = window.isPreviewCacheEnabled;
+      window.isPreviewCacheEnabled = false;
+      const pcm = window.PreviewCacheManager;
+      if (pcm) {
+        try { if (typeof pcm.setIdleCacheEnabled === 'function') pcm.setIdleCacheEnabled(false); } catch (_) {}
+        try { if (typeof pcm.stopIdleWorker === 'function') pcm.stopIdleWorker(); } catch (_) {}
+        try { if (typeof pcm.stopLookaheadWorker === 'function') pcm.stopLookaheadWorker(); } catch (_) {}
+      }
+    },
+
+    _leaveLightPlayback() {
+      if (!this._lightMode) return;
+      this._lightMode = false;
+      const prev = this._savedCacheEnabled;
+      window.isPreviewCacheEnabled = prev;   // restores the user's own Cache setting (on/off/default)
+      const pcm = window.PreviewCacheManager;
+      if (pcm && prev !== false) {
+        try { if (typeof pcm.setIdleCacheEnabled === 'function') pcm.setIdleCacheEnabled(true); } catch (_) {}
+        try { if (typeof pcm.scheduleIdleCheck === 'function') pcm.scheduleIdleCheck(true); } catch (_) {}
+      }
+    },
+
     play() {
       if (window.isExporting) return;
       if (this.isPlaying) return;
+      this._enterLightPlayback();
       this.isPlaying = true;
       window.isTimelinePlaying = true;
       if (this._elements.playOverlay) {
@@ -1450,6 +1483,7 @@
       }
       this._lastTime = performance.now();
       this._playTickCount = 0;
+      this._lastTimelineSyncMs = 0;
 
       if (window.FishAudioEngine) {
         if (!window.FishAudioEngine.isUnlocked) {
@@ -1461,8 +1495,17 @@
         this.currentTime = 0;
       }
 
-      const layers = window.currentProjectState ? (window.currentProjectState.layers || []) : [];
+      const state = window.currentProjectState || {};
+      const layers = state.layers || [];
       const pps = window.currentPixelsPerSecond || 80;
+      const fps = Math.max(1, parseInt(state.fps, 10) || 60);
+      const frameDuration = 1 / fps;
+
+      // Prime Web Audio scheduler inside the user gesture (same call the main timeline makes)
+      const sched = window.FishAudioScheduler;
+      if (sched && typeof sched.start === 'function') {
+        sched.start(layers, this.currentTime, pps, 1.0);
+      }
       if (window.FishAudioEngine) {
         window.FishAudioEngine.syncPlayback(layers, this.currentTime, pps, 1.0);
       }
@@ -1477,6 +1520,12 @@
           }
 
           const rawDeltaSec = (now - this._lastTime) / 1000;
+
+          // Light on CPU/GPU: do not re-render faster than the project's frame rate (e.g. 30 fps content on a 60/120 Hz display)
+          if (this._playTickCount > 0 && fps < 50 && rawDeltaSec < frameDuration * 0.72) {
+            this._rafId = requestAnimationFrame(loop);
+            return;
+          }
           this._lastTime = now;
 
           if (rawDeltaSec > 1.0) {
@@ -1487,22 +1536,39 @@
           const effectiveDeltaSec = Math.min(0.25, rawDeltaSec);
           let nextSec = this.currentTime + effectiveDeltaSec;
 
-          const pps = window.currentPixelsPerSecond || 80;
-          const layers = window.currentProjectState ? (window.currentProjectState.layers || []) : [];
+          const curPps = window.currentPixelsPerSecond || 80;
+          const curLayers = window.currentProjectState ? (window.currentProjectState.layers || []) : [];
+          const audioSched = window.FishAudioScheduler;
+          const schedRunning = !!(audioSched && audioSched.isClockRunning && audioSched.isClockRunning());
+          let slaved = false;
 
-          // Master Audio Clock synchronization (smooth slewing matching main timeline)
-          if (window.FishAudioEngine && this._playTickCount > 3) {
-            const masterSec = window.FishAudioEngine.getMasterAudioTime(layers, this.currentTime, pps);
+          if (schedRunning) {
+            // Web Audio clock (AudioContext time, output-latency compensated) drives the playhead
+            const schedSec = audioSched.getTimelineSec();
+            if (schedSec !== null && isFinite(schedSec)) {
+              if (Math.abs(schedSec - nextSec) < 0.25) {
+                nextSec = Math.max(this.currentTime, schedSec);
+                slaved = true;
+                audioSched.setRate(1.0);
+              } else if (Math.abs(schedSec - nextSec) > 0.3 && (!this._lastReseekMs || now - this._lastReseekMs > 600)) {
+                this._lastReseekMs = now;   // clock diverged (tab stall etc.): pull the audio back to the picture
+                audioSched.seek(nextSec);
+              }
+            }
+          } else if (window.FishAudioEngine && this._playTickCount > 3) {
+            // Fallback (scheduler disabled / not decoded yet): legacy master-audio soft slewing
+            const masterSec = window.FishAudioEngine.getMasterAudioTime(curLayers, this.currentTime, curPps);
             if (masterSec !== null && !isNaN(masterSec) && Number.isFinite(masterSec) && masterSec >= 0) {
               const drift = masterSec - nextSec;
               if (drift >= 0.060) {
                 nextSec += Math.min(effectiveDeltaSec * 0.35, drift * 0.25);
               } else if (drift < -0.060 && drift > -0.80) {
                 nextSec = this.currentTime + (effectiveDeltaSec * 0.85);
-              } else {
-                nextSec = this.currentTime + effectiveDeltaSec;
               }
             }
+          }
+          if (!slaved && window.FishAudioEngine) {
+            window.FishAudioEngine._masterAudioElement = null;   // not slaved to audio: let drift correction own the sync
           }
           // Strict monotonic forward motion
           nextSec = Math.max(this.currentTime + (effectiveDeltaSec * 0.5), nextSec);
@@ -1511,23 +1577,29 @@
             nextSec = 0;
             this._lastTime = now;
             this._playTickCount = 0;
+            if (audioSched && audioSched.playing) audioSched.seek(0);
             if (window.FishAudioEngine && typeof window.FishAudioEngine.handleLoopReset === 'function') {
-              window.FishAudioEngine.handleLoopReset(layers, 0, pps, 1.0);
+              window.FishAudioEngine.handleLoopReset(curLayers, 0, curPps, 1.0);
             } else if (window.FishAudioEngine) {
-              window.FishAudioEngine.syncPlayback(layers, 0, pps, 1.0);
+              window.FishAudioEngine.syncPlayback(curLayers, 0, curPps, 1.0);
             }
           }
 
           this.currentTime = nextSec;
-
           this._updateScrubberUI();
-          if (typeof window.seekTimelineToTime === 'function') {
+
+          // Playhead globals are enough while playing (the frame is rendered with an explicit time below);
+          // the heavy timeline DOM refresh only runs a few times per second instead of on every frame.
+          window.currentPlaybackSec = nextSec;
+          window.currentSec = nextSec;
+          if (typeof window.seekTimelineToTime === 'function' && (now - this._lastTimelineSyncMs) > 250) {
+            this._lastTimelineSyncMs = now;
             window.seekTimelineToTime(this.currentTime, false);
           }
 
           this._playTickCount++;
           if (window.FishAudioEngine) {
-            window.FishAudioEngine.syncPlayback(layers, this.currentTime, pps, 1.0);
+            window.FishAudioEngine.syncPlayback(curLayers, this.currentTime, curPps, 1.0);
           }
 
           this.renderFrame();

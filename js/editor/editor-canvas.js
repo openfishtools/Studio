@@ -1344,7 +1344,7 @@
       const isScrubbing = !!(window.isTimelineScrubbing || window.isTimelinePanning || (typeof window.isPanning !== 'undefined' && window.isPanning));
       // RAM preview cache: used during playback, scrubbing, and frame park for instant 60fps blit.
       // Canvas wireframe transform interaction bypasses cache to track cursor movements live.
-      if (!isExport && !isIdleCache && !isTransformDragging && window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
+      if (!isExport && !isIdleCache && !isTemplate && !isTransformDragging && window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
         cachedBitmap = window.PreviewCacheManager.getFrame(frameIndex, w, h);
       }
 

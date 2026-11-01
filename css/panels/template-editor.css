@@ -579,14 +579,23 @@
 @media (min-width: 601px) {
   .template-editor-overlay {
     background-color: var(--bg-canvas);
-    padding: clamp(12px, 2.5vw, 24px);
     box-sizing: border-box;
+    /* keep clear of the notch / home indicator / rounded tablet corners */
+    padding-top: max(clamp(12px, 2.5vw, 24px), env(safe-area-inset-top));
+    padding-right: max(clamp(12px, 2.5vw, 24px), env(safe-area-inset-right));
+    padding-bottom: max(clamp(12px, 2.5vw, 24px), env(safe-area-inset-bottom));
+    padding-left: max(clamp(12px, 2.5vw, 24px), env(safe-area-inset-left));
   }
 
+  /* Sized against the overlay's content box (100dvh minus padding) instead of raw vh/vw:
+     vh includes the browser toolbars on tablets, which pushed the bottom of the window out of view. */
   .template-shell {
-    width: min(1100px, 94vw);
-    max-height: min(850px, 94vh);
-    height: min(850px, 94vh);
+    box-sizing: border-box;
+    width: min(1100px, 100%);
+    height: min(850px, 100%);
+    max-width: 100%;
+    max-height: 100%;
+    min-height: 0;
     background-color: var(--bg-dashboard);
     border: 1px solid var(--border-panel);
     border-radius: 16px;
@@ -603,10 +612,13 @@
   .template-body {
     display: grid;
     grid-template-columns: 1.25fr 0.95fr;
+    grid-template-rows: minmax(0, 1fr);
     gap: clamp(16px, 2.2vw, 24px);
     padding: clamp(16px, 2.5vw, 24px);
     overflow: hidden;
-    height: calc(100% - 56px);
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
   }
 
   .template-player-col {
@@ -622,8 +634,9 @@
     width: 100%;
     aspect-ratio: 16 / 10;
     height: auto;
-    flex: 1;
-    max-height: 52vh;
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 100%;
     background-color: var(--bg-canvas);
     border-radius: 12px;
     border: 1px solid var(--border-panel);
@@ -693,3 +706,16 @@
   font-size: 24px;
   font-size: 24px;}
 }
+
+/* Short tablets / landscape: tighten the chrome so nothing gets clipped */
+@media (min-width: 601px) and (max-height: 720px) {
+  .template-topbar {
+    height: 48px;
+  }
+
+  .template-body {
+    padding: 12px 16px;
+    gap: 14px;
+  }
+}
+
