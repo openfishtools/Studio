@@ -3205,7 +3205,7 @@
       gl.enable(gl.BLEND);
       if (this.locations.noDiscard) {
         gl.useProgram(this.program);
-        gl.uniform1f(this.locations.noDiscard, 1);
+        gl.uniform1f(this.locations.noDiscard, 0);
       }
 
       let completed = 0;
@@ -3226,6 +3226,7 @@
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
         gl.useProgram(this.program);
+        if (this.locations.noDiscard) gl.uniform1f(this.locations.noDiscard, 0);
         gl.uniform1i(this.locations.mode, 0);
         gl.disableVertexAttribArray(this.locations.color);
         gl.vertexAttrib4f(this.locations.color, 1.0, 1.0, 1.0, 1.0);
@@ -3246,9 +3247,7 @@
           const subEff = (typeof getEff === 'function' && srcLayer)
             ? getEff(srcLayer, subSec, null, pool)
             : null;
-          let subAnimLayer = subEff
-            ? Object.assign({}, m.item.layer, subEff)
-            : Object.assign({}, (m.item.animLayer || m.item.layer));
+          let subAnimLayer = Object.assign({}, m.item.animLayer || m.item.layer, subEff || {});
           subAnimLayer._currentSec = subSec;
           if (subAnimLayer.type === 'text' && window.FishMotionBlurEngine && typeof window.FishMotionBlurEngine.compensateTextPad === 'function') {
             subAnimLayer = window.FishMotionBlurEngine.compensateTextPad(m.item.layer, srcEl, subAnimLayer);
@@ -3269,9 +3268,32 @@
           gl.depthMask(normOp >= 0.999);
           if (this.locations.lensDistort) gl.uniform1f(this.locations.lensDistort, this._getLensDistort(mvpCamera));
           gl.uniformMatrix4fv(this.locations.matrix, false, mvp);
-          this._drawQuadOrTile(gl, mvp, null, vw, vh, subBounds);
+
+          const bFx = Array.isArray(subAnimLayer.effects) ? subAnimLayer.effects.find(f => f && !f.disabled && f.type === 'box_3d') : null;
+          const eFx = Array.isArray(subAnimLayer.effects) ? subAnimLayer.effects.find(f => f && !f.disabled && f.type === 'extrude_3d') : null;
+          const pFx = Array.isArray(subAnimLayer.effects) ? subAnimLayer.effects.find(f => f && !f.disabled && f.type === 'pyramid_3d') : null;
+          const sFx = Array.isArray(subAnimLayer.effects) ? subAnimLayer.effects.find(f => f && !f.disabled && f.type === 'sphere_3d') : null;
+
+          if (bFx) this._draw3DBoxMesh(gl, mvp, bFx, subBounds, normOp, subAnimLayer);
+          else if (eFx) this._draw3DExtrudeMesh(gl, mvp, eFx, subBounds, normOp, subAnimLayer, srcEl);
+          else if (pFx) this._draw3DPyramidMesh(gl, mvp, pFx, subBounds, normOp, subAnimLayer);
+          else if (sFx) this._draw3DSphereMesh(gl, mvp, sFx, subBounds, normOp, subAnimLayer);
+          else {
+            gl.uniform1i(this.locations.mode, 0);
+            gl.disableVertexAttribArray(this.locations.color);
+            gl.vertexAttrib4f(this.locations.color, 1.0, 1.0, 1.0, 1.0);
+            gl.enableVertexAttribArray(this.locations.position);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
+            gl.vertexAttribPointer(this.locations.position, 2, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(this.locations.texCoord);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
+            gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffers.index);
+            this._drawQuadOrTile(gl, mvp, null, vw, vh, subBounds);
+          }
           drawn++;
         }
+        gl.depthMask(true);
         if (!drawn) continue;
 
         // Blend this sample over the running mean in the default framebuffer.
@@ -3314,13 +3336,15 @@
     /**
      * Batch membership rule for the shared 3D depth pass (single source of truth).
      * A layer joins a depth-shared run iff it is 3D with normal blending, no
-     * effects/filters and no depth-of-field — mirrors AE's "2D breaks 3D space".
+     * 2D post-effects/filters and no depth-of-field — mirrors AE's "2D breaks 3D space".
+     * Volumetric 3D effects (box_3d, extrude_3d, pyramid_3d, sphere_3d) are rendered directly
+     * in the hardware WebGL depth buffer and preserve mutual 3D penetration.
      * js/editor.js uses the same rule to group motion-blur scene passes.
      */
     isBatchable3D(layer, bounds) {
       if (!layer || !bounds || !bounds.is3D) return false;
       if (layer.blendMode && layer.blendMode !== 'normal') return false;
-      if (Array.isArray(layer.effects) && layer.effects.some(f => f && !f.disabled)) return false;
+      if (Array.isArray(layer.effects) && layer.effects.some(f => f && !f.disabled && f.type !== 'box_3d' && f.type !== 'extrude_3d' && f.type !== 'pyramid_3d' && f.type !== 'sphere_3d')) return false;
       if (window.FishEffects && typeof window.FishEffects.buildFilter === 'function' && window.FishEffects.buildFilter(layer) !== '') return false;
       if (layer._dofBlur && layer._dofBlur > 0.5) return false;
       const isPrecompCollapsed = (layer.type === 'precomp' && !!layer.collapseTransformations);

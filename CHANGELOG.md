@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unstyled `ui.text` Variants (`css/panels/extensions.css`)**: `label` and `hint` variants now have styles.
 - **Sticky Note Clipboard Rejection (`Extension/sticky_note.js`)**: A blocked clipboard write no longer raises an unhandled promise rejection and shows a toast instead.
 - **Accessibility (`extension-builder/`, `js/ui/elements/card-builder.js`)**: Pinch-zoom no longer disabled, decorative icons are `aria-hidden`, icon buttons have labels, tabs expose `role="tab"` / `aria-selected`, canvas components are keyboard operable (Enter / Space select, Alt+arrows move, Ctrl/Cmd+D duplicate), text contrast raised to ≥ 4.5:1 and control borders to ≥ 3:1 across all six themes, 44 px touch targets on touch screens, and a visible `:focus-visible` ring.
+- **3D Motion Blur Hardware Z-Buffer Penetration (`js/core/fishtool-engine.js`)**: Fixed an issue where rotating 3D layers with motion blur caused the topmost track in the timeline to always render on top regardless of 3D spatial depth. `render3DSceneMotionBlur` now maintains `u_noDiscard = 0` inside `_sceneFbo` so transparent texels discard properly instead of writing depth, retains pre-computed `scaleW`/`scaleH` text padding compensation from `animLayer`, and dispatches true 3D volumetric mesh effects (`box_3d`, `extrude_3d`, `pyramid_3d`, `sphere_3d`) so 3D layers retain full hardware depth intersection across 0°–360° rotations matching motion blur off behavior.
 
 ## [0.6.10] - 2026-10-31
 
