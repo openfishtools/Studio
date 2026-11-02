@@ -1,0 +1,946 @@
+/* ==========================================================================
+   Extension Builder — Visual Scripting (Scratch / Node Blocks)
+   Theme-Native (100% tokens from theme.css) & Fully Mobile-Responsive
+   ========================================================================== */
+
+/* ---------- Category Accent Tokens (Theme Harmonized) ---------- */
+:root {
+  --cat-history: #3b82f6;
+  --cat-layer: var(--track-video, #10b981);
+  --cat-project: var(--color-accent, #6366f1);
+  --cat-timeline: var(--track-audio, #06b6d4);
+  --cat-storage: #f59e0b;
+  --cat-feedback: #ec4899;
+  --cat-control: #8b5cf6;
+  --cat-custom: var(--text-muted);
+}
+
+/* ---------- Container View ---------- */
+.pane-script-view {
+  position: absolute;
+  inset: 58px 0 0 0;
+  background: var(--bg-canvas);
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 10;
+  font-family: var(--font-brand, system-ui, sans-serif);
+}
+
+body[data-view="script"] .pane-script-view {
+  display: flex;
+}
+
+/* Hide floating canvas toolcards & main canvas FAB when in Script view */
+body[data-view="script"] .float,
+body[data-view="script"] .eb-pc-toggles,
+body[data-view="script"] .eb-floatbar .eb-sep.pc-only,
+body[data-view="script"] #fab-main,
+body[data-view="script"] .cv-zoom {
+  display: none !important;
+}
+
+/* ---------- Top Control Bar ---------- */
+.sv-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-dashboard);
+  border-bottom: 1px solid var(--border-panel);
+  flex: 0 0 auto;
+  z-index: 2;
+  min-height: 48px;
+}
+
+.sv-bar-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sv-target-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.sv-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.sv-label .material-icons {
+  font-size: 18px;
+  color: var(--color-primary);
+}
+
+.sv-select {
+  height: 36px;
+  padding: 0 10px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: 320px;
+  outline: none;
+}
+
+.sv-select:hover, .sv-select:focus {
+  background: var(--bg-panel-hover);
+  border-color: var(--border-focus);
+}
+
+.sv-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+  margin-left: auto;
+}
+
+.sv-actions .eb-small {
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  border: 1px solid var(--ui-border);
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.sv-actions .eb-small:hover {
+  background: var(--bg-panel-hover);
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+
+.sv-actions .eb-small .material-icons {
+  font-size: 17px;
+  color: var(--color-primary);
+}
+
+/* Bottom Navigation Bar: [ Blocks ] [ Code ] */
+.sv-bottom-bar {
+  position: absolute;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: transform .25s var(--ease-out), opacity .2s ease;
+}
+
+.sv-bottom-bar .sv-nav-tabs {
+  pointer-events: auto;
+  display: flex;
+  gap: 4px;
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 4px 6px;
+  border-radius: 14px;
+  border: 1px solid var(--border-panel);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.sv-bottom-bar .sv-nav-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 18px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all .15s ease;
+  white-space: nowrap;
+}
+
+.sv-bottom-bar .sv-nav-tabs button:hover:not(.is-active) {
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+.sv-bottom-bar .sv-nav-tabs button.is-active {
+  background: var(--bg-panel);
+  color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.sv-bottom-bar .sv-nav-tabs button .material-icons {
+  font-size: 17px;
+}
+
+/* Preset dropdown menu */
+.sv-presets-menu {
+  position: absolute;
+  top: 42px;
+  right: 0;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-panel);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.5);
+  padding: 6px 0;
+  z-index: 60;
+  min-width: 240px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+}
+
+.sv-preset-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  gap: 2px;
+  transition: background .12s ease;
+}
+
+.sv-preset-item:hover {
+  background: var(--bg-panel-hover);
+  color: var(--color-primary);
+}
+
+.sv-preset-item small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ---------- Workspace Layout ---------- */
+.sv-workspace {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ---------- Block Toolbox (100% Matched to Studio Palette) ---------- */
+.sv-palette {
+  background: var(--bg-dashboard);
+  border-right: 1px solid var(--border-panel);
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+.sv-palette-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-panel);
+  min-height: 44px;
+  flex: 0 0 auto;
+}
+
+.sv-palette-head .pane-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sv-palette-head .pane-title .material-icons {
+  font-size: 18px;
+  color: var(--color-primary);
+}
+
+.sv-palette-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Palette categories and grid matching builder.css */
+.sv-palette .pal-group {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  margin: 10px 4px 6px;
+  font-weight: 700;
+}
+
+.sv-palette .pal-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sv-pal-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 6px;
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease, transform .12s ease;
+  user-select: none;
+  min-height: 72px;
+}
+
+.sv-pal-item:hover {
+  background: var(--bg-panel-hover);
+  border-color: var(--border-focus);
+  color: var(--text-primary);
+}
+
+.sv-pal-item:active {
+  transform: scale(.95);
+}
+
+.sv-pal-item .material-icons {
+  font-size: 22px;
+  color: var(--color-primary);
+}
+
+/* Category-specific icon accents in toolbox */
+.sv-pal-item[data-category="history"] .material-icons { color: var(--cat-history); }
+.sv-pal-item[data-category="layer"] .material-icons { color: var(--cat-layer); }
+.sv-pal-item[data-category="project"] .material-icons { color: var(--cat-project); }
+.sv-pal-item[data-category="timeline"] .material-icons { color: var(--cat-timeline); }
+.sv-pal-item[data-category="storage"] .material-icons { color: var(--cat-storage); }
+.sv-pal-item[data-category="feedback"] .material-icons { color: var(--cat-feedback); }
+.sv-pal-item[data-category="control"] .material-icons { color: var(--cat-control); }
+.sv-pal-item[data-category="custom"] .material-icons { color: var(--cat-custom); }
+
+/* ---------- Center Canvas Workspace ---------- */
+.sv-canvas-container {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px 16px 80px 16px;
+  background-color: var(--bg-canvas);
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+  background-size: 20px 20px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sv-canvas {
+  max-width: 680px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+}
+
+/* Empty drop guidance */
+.sv-empty-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 36px 16px;
+  margin-top: 14px;
+  border: 2px dashed var(--border-panel);
+  border-radius: 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  background: color-mix(in srgb, var(--bg-panel) 35%, transparent);
+}
+
+.sv-empty-drop .material-icons {
+  font-size: 36px;
+  color: var(--color-primary);
+  opacity: .8;
+}
+
+/* ---------- Scratch Blocks (Themed & Clean) ---------- */
+/* Hat Block (Event Trigger) */
+.sv-hat-block {
+  position: relative;
+  background: var(--color-primary);
+  color: var(--badge-count-text, #12170e);
+  padding: 12px 14px 14px 14px;
+  border-radius: 18px 18px 6px 6px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.25);
+  font-weight: 700;
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 5;
+  margin-bottom: 2px;
+  border: 1px solid var(--color-primary-active, var(--color-primary));
+}
+
+/* Scratch Connector Notch at bottom of hat */
+.sv-hat-block::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 28px;
+  width: 16px;
+  height: 6px;
+  background: var(--color-primary);
+  clip-path: polygon(0 0, 100% 0, 80% 100%, 20% 100%);
+  z-index: 6;
+}
+
+.sv-hat-block .material-icons {
+  font-size: 22px;
+  color: var(--badge-count-text, #12170e);
+}
+
+.sv-hat-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sv-hat-badge {
+  background: color-mix(in srgb, var(--badge-count-text, #12170e) 18%, transparent);
+  color: var(--badge-count-text, #12170e);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Block Stack */
+.sv-block-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  position: relative;
+}
+
+/* Individual Scratch Action Block */
+.sv-block {
+  --block-accent: var(--cat-custom);
+  position: relative;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--block-accent) 18%, var(--bg-panel));
+  color: var(--text-primary);
+  border: 1px solid color-mix(in srgb, var(--block-accent) 45%, var(--ui-border));
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(0,0,0,.2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  user-select: none;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+
+.sv-block.cat-history { --block-accent: var(--cat-history); }
+.sv-block.cat-layer { --block-accent: var(--cat-layer); }
+.sv-block.cat-project { --block-accent: var(--cat-project); }
+.sv-block.cat-timeline { --block-accent: var(--cat-timeline); }
+.sv-block.cat-storage { --block-accent: var(--cat-storage); }
+.sv-block.cat-feedback { --block-accent: var(--cat-feedback); }
+.sv-block.cat-control { --block-accent: var(--cat-control); }
+.sv-block.cat-custom { --block-accent: var(--cat-custom); }
+
+.sv-block:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,.3);
+  border-color: var(--block-accent);
+}
+
+/* Scratch puzzle notches */
+.sv-block::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 28px;
+  width: 16px;
+  height: 5px;
+  background: inherit;
+  clip-path: polygon(20% 0%, 80% 0%, 100% 100%, 0% 100%);
+  z-index: 3;
+}
+
+.sv-block::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 28px;
+  width: 16px;
+  height: 5px;
+  background: inherit;
+  clip-path: polygon(0 0, 100% 0, 80% 100%, 20% 100%);
+  z-index: 3;
+}
+
+.sv-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.sv-block-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+}
+
+.sv-block-icon {
+  font-size: 18px;
+  color: var(--block-accent);
+}
+
+.sv-block-label {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+/* Chips Row inside block */
+.sv-block-fields {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+}
+
+/* Scratch Parameter Chips (inputs/dropdowns inside blocks) */
+.sv-chip {
+  background: var(--bg-panel-inner, var(--bg-canvas));
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  min-height: 36px;
+  box-sizing: border-box;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+
+.sv-chip:focus {
+  border-color: var(--border-focus);
+  background: var(--bg-panel-hover);
+}
+
+.sv-chip-input {
+  flex: 1 1 120px;
+  min-width: 90px;
+}
+
+.sv-chip-select {
+  cursor: pointer;
+  flex: 1 1 140px;
+}
+
+.sv-chip-select option {
+  background: var(--bg-panel);
+  color: var(--text-primary);
+}
+
+/* Block Actions (move up, move down, remove) */
+.sv-block-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.sv-tool-btn {
+  background: color-mix(in srgb, var(--bg-dashboard) 60%, transparent);
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all .12s ease;
+}
+
+.sv-tool-btn:hover {
+  background: var(--bg-panel-hover);
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+
+.sv-tool-btn.sv-del {
+  color: var(--color-danger);
+}
+
+.sv-tool-btn.sv-del:hover {
+  background: var(--color-danger);
+  color: #ffffff;
+  border-color: var(--color-danger);
+}
+
+.sv-tool-btn .material-icons {
+  font-size: 16px;
+}
+
+/* ---------- C-Block (Nested Loop/Condition Blocks) ---------- */
+.sv-c-block {
+  --block-accent: var(--cat-layer);
+  position: relative;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--block-accent) 18%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--block-accent) 45%, var(--ui-border));
+  color: var(--text-primary);
+  box-shadow: 0 3px 8px rgba(0,0,0,.25);
+  display: flex;
+  flex-direction: column;
+}
+
+.sv-c-block.cat-layer { --block-accent: var(--cat-layer); }
+.sv-c-block.cat-control { --block-accent: var(--cat-control); }
+
+.sv-c-head {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: inherit;
+  border-radius: 8px 8px 0 0;
+}
+
+.sv-c-slot {
+  margin-left: 18px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--bg-canvas) 60%, transparent);
+  border-left: 10px solid var(--block-accent);
+  min-height: 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sv-c-slot.is-empty::after {
+  content: 'Drop or add child blocks inside';
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 12px;
+  text-align: center;
+}
+
+.sv-c-foot {
+  height: 12px;
+  background: inherit;
+  border-radius: 0 0 8px 8px;
+  position: relative;
+}
+
+/* ---------- Right Panel: Generated Code / CodeMirror ---------- */
+.sv-code-panel {
+  background: var(--bg-dashboard);
+  border-left: 1px solid var(--border-panel);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sv-code-header {
+  padding: 10px 14px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-panel);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.sv-code-host {
+  flex: 1 1 auto;
+  overflow: auto;
+  background: var(--bg-canvas);
+  padding: 12px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sv-code-pre {
+  margin: 0;
+  font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  background: var(--bg-panel);
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--ui-border);
+}
+
+.sv-custom-code-area {
+  width: 100%;
+  min-height: 70px;
+  background: var(--bg-canvas);
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: monospace;
+  font-size: 12.5px;
+  padding: 8px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+#sv-fab {
+  display: none !important;
+}
+
+/* ==========================================================================
+   Responsive: Desktop (>=1024px) vs Mobile (<1024px)
+   ========================================================================== */
+
+/* ---------- Desktop (>= 1024px) ---------- */
+@media (min-width: 1024px) {
+  #sv-fab {
+    display: none !important;
+  }
+  .sv-bar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sv-bar-main {
+    flex: 1 1 auto;
+  }
+  .sv-palette {
+    width: 250px;
+    flex: 0 0 250px;
+    border-right: 1px solid var(--border-panel);
+  }
+  .sv-code-panel {
+    width: 340px;
+    flex: 0 0 340px;
+  }
+  .pane-script-view[data-tab="code"] .sv-code-panel {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+  .pane-script-view[data-tab="code"] .sv-canvas-container {
+    display: none !important;
+  }
+  .pane-script-view:not([data-tab="code"]) .sv-canvas-container {
+    display: block !important;
+  }
+}
+
+/* ---------- Mobile (< 1024px) ---------- */
+@media (max-width: 1023.98px) {
+  .sv-bar {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+  .sv-bar-main {
+    gap: 6px;
+  }
+  .sv-target-wrap {
+    flex: 1 1 150px;
+  }
+  .sv-label-text {
+    display: none;
+  }
+  .sv-select {
+    height: 36px;
+    font-size: 13px;
+    max-width: 100%;
+  }
+  .sv-btn-label {
+    display: none;
+  }
+  .sv-actions .eb-small {
+    padding: 0 8px;
+    min-width: 36px;
+  }
+
+  .sv-bottom-bar {
+    bottom: calc(14px + env(safe-area-inset-bottom));
+  }
+  .sv-bottom-bar .sv-nav-tabs button {
+    padding: 8px 16px;
+    font-size: 13px;
+    min-height: 38px;
+  }
+
+  /* Hide bottom bar when toolbox drawer is open on mobile */
+  .pane-script-view[data-toolbox-open="true"] .sv-bottom-bar,
+  body[data-view="script"]:has(.pane-script-view[data-toolbox-open="true"]) .sv-bottom-bar {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-50%) translateY(20px);
+  }
+
+  /* Full-width canvas on mobile */
+  .sv-canvas-container {
+    display: block !important;
+    width: 100%;
+    padding: 12px 10px 80px 10px;
+  }
+
+  /* Code view toggle on mobile */
+  .pane-script-view[data-tab="code"] .sv-code-panel {
+    display: flex !important;
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    width: 100%;
+    border-left: none;
+  }
+  .pane-script-view:not([data-tab="code"]) .sv-code-panel {
+    display: none !important;
+  }
+
+  /* Floating Action Button (FAB) for Script Toolbox on Mobile */
+  body[data-view="script"] #sv-fab {
+    display: flex !important;
+    position: fixed;
+    z-index: 40;
+    right: 14px;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    border: 0;
+    cursor: pointer;
+    background: var(--color-primary);
+    color: var(--badge-count-text, var(--bg-canvas));
+    box-shadow: 0 6px 18px rgba(0,0,0,.45);
+    align-items: center;
+    justify-content: center;
+    transition: bottom .34s var(--ease-out), transform .25s var(--ease-out), opacity .2s ease;
+  }
+  body[data-view="script"] #sv-fab .material-icons {
+    font-size: 28px;
+  }
+  body[data-view="script"] #sv-fab:active {
+    transform: scale(.92);
+  }
+
+  /* Hide FAB when in Code tab or when toolbox is open */
+  .pane-script-view[data-tab="code"] #sv-fab,
+  .pane-script-view[data-toolbox-open="true"] #sv-fab,
+  .pane-script-view[data-tab="code"] ~ #sv-fab,
+  .pane-script-view[data-toolbox-open="true"] ~ #sv-fab,
+  body[data-view="script"]:has(.pane-script-view[data-tab="code"]) #sv-fab,
+  body[data-view="script"]:has(.pane-script-view[data-toolbox-open="true"]) #sv-fab {
+    opacity: 0;
+    transform: scale(.4);
+    pointer-events: none;
+  }
+
+  /* Mobile Toolbox Card (Morphs open from FAB) */
+  .sv-palette {
+    display: flex;
+    position: fixed;
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    z-index: 45;
+    width: 56px;
+    height: 56px;
+    border-radius: 28px;
+    overflow: hidden;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform-origin: right bottom;
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--border-panel);
+    box-shadow: 0 12px 36px rgba(0,0,0,.5);
+    transition: width .38s var(--ease-out), height .38s var(--ease-out), border-radius .38s var(--ease-out), opacity .2s ease, visibility 0s linear .38s;
+  }
+
+  .sv-palette > * {
+    opacity: 0;
+    transition: opacity .15s ease;
+  }
+
+  .pane-script-view[data-toolbox-open="true"] .sv-palette {
+    width: min(92vw, 400px);
+    height: 58dvh;
+    border-radius: 20px;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: width .38s var(--ease-out), height .38s var(--ease-out), border-radius .38s var(--ease-out), opacity .12s ease, visibility 0s;
+  }
+
+  .pane-script-view[data-toolbox-open="true"] .sv-palette > * {
+    opacity: 1;
+    transition: opacity .2s ease .16s;
+  }
+
+  /* Mobile Block adjustments */
+  .sv-block {
+    padding: 10px;
+  }
+  .sv-tool-btn {
+    width: 36px;
+    height: 36px;
+  }
+  .sv-chip {
+    min-height: 40px;
+    font-size: 14px;
+  }
+}

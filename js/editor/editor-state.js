@@ -954,6 +954,10 @@
           if (layer._shapeBufferCanvas) layer._shapeBufferCanvas._lastShapeKey = null;
           if (layer._fillBufferCanvas) layer._fillBufferCanvas._lastRenderKey = null;
         }
+        if (layer.type === 'text') {
+          layer._textDirty = true;
+          if (layer._textBufferCanvas) layer._textBufferCanvas._lastRenderKey = null;
+        }
         const curStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
         const curDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pps);
         const curEnd = curStart + curDur;

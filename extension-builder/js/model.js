@@ -163,6 +163,14 @@
       r.node.handler = code;
       this._changed('script', id);
     },
+    setBlocks(id, blocks, code) {
+      const r = this.find(id);
+      if (!r) return;
+      this._coalesce('blocks:' + id);
+      r.node.blocks = blocks;
+      if (code !== undefined) r.node.handler = code;
+      this._changed('script', id);
+    },
     setShared(code) { this._coalesce('shared'); this.data.shared = code; this._changed('script'); },
     setMeta(key, value) { this._coalesce('meta:' + key); this.data.meta[key] = value; this._changed('meta'); },
 

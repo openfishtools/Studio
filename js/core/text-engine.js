@@ -185,6 +185,19 @@
     const aIn  = mk(p.animPosX, p.animPosY, p.animRotation, p.animScale, p.animOpacity, p.animEase);
     const aOut = mk(p.animOutPosX, p.animOutPosY, p.animOutRotation, p.animOutScale, p.animOutOpacity, p.animOutEase);
 
+    // Sensible aesthetic defaults when user selects an animation preset but hasn't customized animator offsets
+    if (normIn === 'bounce' && !aIn.active) {
+      aIn.active = true;
+      aIn.posY = -35 * resScale;
+      aIn.scl = 0.85;
+      aIn.ease = TEXT_EASES.ease_out;
+    } else if (normIn === 'overshoot' && !aIn.active) {
+      aIn.active = true;
+      aIn.posY = 30 * resScale;
+      aIn.scl = 0.8;
+      aIn.ease = TEXT_EASES.back;
+    }
+
     return {
       normIn, normOut, inDur, outDur, outStartSec, fontSize, totalUnits,
       inRtl: p.animInOrder === 'rtl',
@@ -230,23 +243,27 @@
     } else if (UNIT_IN_TYPES[normIn]) {
       const t = sec - cfg.inStep * idxIn;
       const d = cfg.inUnitDur;
-      if (cfg.aIn.active) {
-        const ez = normIn === 'overshoot' ? TEXT_EASES.back : cfg.aIn.ease;
-        amtIn = 1 - ez(clamp01(t / d));
+      const u = clamp01(t / d);
+
+      if (normIn === 'bounce') {
+        // Spring drives ONLY the Animator state (1 -> 0 with overshoot); tapered to 0 at unit end.
+        const tail = 1 - smoothstep(0.5, 1, u);
+        const spring = Math.cos(cfg.freq * Math.max(0, t) * 2 * Math.PI) / Math.exp(cfg.decay * Math.max(0, t));
+        const k = spring >= 0 ? 1 : Math.min(2, cfg.amp / 0.6);
+        amtIn = (t < 0) ? 1.0 : (t >= d ? 0 : spring * k * tail);
+      } else if (normIn === 'overshoot') {
+        const ez = TEXT_EASES.back;
+        amtIn = (t < 0) ? 1.0 : (t >= d ? 0 : 1 - ez(u));
+      } else if (cfg.aIn.active) {
+        amtIn = (t < 0) ? 1.0 : (t >= d ? 0 : 1 - cfg.aIn.ease(u));
       }
-      if (t <= 0) {
-        st.alpha = 0;
-        return st;
-      } else if (t < d) {
-        const u = t / d;
-        if (normIn === 'bounce') {
-          // Spring drives ONLY the Animator state (1 -> 0 with overshoot); tapered to 0 at unit end.
-          const tail = 1 - smoothstep(0.5, 1, u);
-          const spring = Math.cos(cfg.freq * t * 2 * Math.PI) / Math.exp(cfg.decay * t);
-          const k = spring >= 0 ? 1 : Math.min(2, cfg.amp / 0.6);
-          amtIn = spring * k * tail;
-        } else if (normIn === 'fade') {
-          st.alpha = easeOutCubic(clamp01(u / 0.8));
+
+      if (normIn === 'fade') {
+        st.alpha = (t <= 0) ? 0 : (t >= d ? 1 : easeOutCubic(clamp01(u / 0.8)));
+      } else if (cfg.aIn.active && cfg.aIn.op < 0.999) {
+        // If opacity is explicitly animated, maintain initial op until glyph start
+        if (t <= 0) {
+          st.alpha = cfg.aIn.op;
         }
       }
     }
@@ -786,7 +803,10 @@
           const offY = anim.offY;
           const scaleX = anim.scaleX;
           const scaleY = anim.scaleY;
-          const charAlpha = anim.alpha;
+          let charAlpha = anim.alpha;
+          if (isInteracting) {
+            charAlpha = Math.max(0.6, charAlpha);
+          }
           const charRotation = anim.rot;
 
           if (charAlpha <= 0.001) {

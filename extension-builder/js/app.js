@@ -57,14 +57,15 @@
   }
 
   // ----------------------------------------------------------------- tabs
-  // Views (center): canvas | preview.  Panels (bottom sheets on mobile): palette | props | script.
+  // Views (center): canvas | script | preview. Panels (bottom sheets on mobile): palette | props.
   function setView(view) {
     document.body.dataset.view = view;
     document.querySelectorAll('#center-tabs button').forEach(b => { const on = b.dataset.center === view; b.classList.toggle('is-active', on); b.setAttribute('aria-selected', String(on)); });
-    if (view === 'preview') { closePanel(); window.OFTBuilderLivePreview.show(snapshot()); }   // the embedded editor has its own UI
+    if (view === 'preview') { closePanel(); window.OFTBuilderLivePreview.show(snapshot()); }
+    else if (view === 'script') { closePanel(); if (window.OFTVisualScript) window.OFTVisualScript.refresh(); }
   }
 
-  // Mobile: one panel at a time (palette = morph card, props/script = drawer). Opening one closes the other.
+  // Mobile: one panel at a time (palette = morph card, props = drawer). Opening one closes the other.
   const isMobileLayout = () => window.matchMedia('(max-width: 1023.98px)').matches;
   function openPanel(panel) {
     const prev = document.body.dataset.panel;
@@ -159,11 +160,14 @@
     window.OFTBuilderLivePreview.init({ stage: $('pv-stage'), msg: $('pv-msg') });
     window.OFTBuilderCanvas.init({ viewport: $('cv-viewport'), stage: $('cv-stage'), indicator: $('cv-indicator'), ghost: $('cv-ghost') });
     window.OFTBuilderInspector.init({ propsHost: $('ins-props'), metaHost: $('ins-meta') });
-    window.OFTBuilderScript.init({
-      tabs: $('se-tabs'), cmHost: $('se-cm'), output: $('se-output'), hint: $('se-hint'),
-      sigTop: $('se-sig-top'), sigBottom: $('se-sig-bottom'),
-      helper: $('se-helper'), helperList: $('se-helper-list'), search: $('se-search')
-    });
+    if (window.OFTBuilderScript && $('se-tabs')) {
+      window.OFTBuilderScript.init({
+        tabs: $('se-tabs'), cmHost: $('se-cm'), output: $('se-output'), hint: $('se-hint'),
+        sigTop: $('se-sig-top'), sigBottom: $('se-sig-bottom'),
+        helper: $('se-helper'), helperList: $('se-helper-list'), search: $('se-search')
+      });
+    }
+    if (window.OFTVisualScript) window.OFTVisualScript.init();
 
     Model.on(() => {
       refreshHistoryButtons();

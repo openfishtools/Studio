@@ -1835,6 +1835,10 @@
           if (!layer._textBufferCanvas || !(layer._textBufferCanvas instanceof HTMLCanvasElement) || typeof layer._textBufferCanvas.getContext !== 'function') {
             layer._textBufferCanvas = document.createElement('canvas');
           }
+          if (layer.is3D !== layer._lastRenderedIs3D) {
+            layer._textDirty = true;
+            layer._lastRenderedIs3D = layer.is3D;
+          }
           const nat = (window.FishTextEngine && window.FishTextEngine.getNaturalSize)
             ? window.FishTextEngine.getNaturalSize(layer)
             : { width: 320, height: 100 };
@@ -2447,9 +2451,9 @@
               if (el && el._isPlaceholder) {
                 renderAnimLayer = Object.assign({}, animLayer, { effects: [] });
               }
-              if (isText && layer._textPadY > 0 && el && el.width && el.height) {
-                const natW = layer._textNaturalW || (el.width - 2 * layer._textPadX);
-                const natH = layer._textNaturalH || (el.height - 2 * layer._textPadY);
+              if (isText && ((layer._textPadY && layer._textPadY > 0) || (layer._textPadX && layer._textPadX > 0)) && el && el.width && el.height) {
+                const natW = layer._textNaturalW || (el.width - 2 * (layer._textPadX || 0));
+                const natH = layer._textNaturalH || (el.height - 2 * (layer._textPadY || 0));
                 const padRatioW = el.width / Math.max(1, natW);
                 const padRatioH = el.height / Math.max(1, natH);
                 renderAnimLayer = Object.assign({}, renderAnimLayer, {
@@ -2527,9 +2531,9 @@
                 else if (Array.isArray(layer.effects)) animLayerPost.effects = layer.effects;
 
                 // Text or Vector layers with expanded buffer padding: draw canvas WITHOUT squishing.
-                if (isText && layer._textPadY > 0 && el instanceof HTMLCanvasElement) {
-                  const natW = layer._textNaturalW || (el.width - 2 * layer._textPadX);
-                  const natH = layer._textNaturalH || (el.height - 2 * layer._textPadY);
+                if (isText && ((layer._textPadY && layer._textPadY > 0) || (layer._textPadX && layer._textPadX > 0)) && el instanceof HTMLCanvasElement) {
+                  const natW = layer._textNaturalW || (el.width - 2 * (layer._textPadX || 0));
+                  const natH = layer._textNaturalH || (el.height - 2 * (layer._textPadY || 0));
                   const padRatioW = el.width / Math.max(1, natW);
                   const padRatioH = el.height / Math.max(1, natH);
                   const drawW = absW * padRatioW;

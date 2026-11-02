@@ -28,7 +28,7 @@
       label: 'Button', icon: 'smart_button', group: 'Input',
       fields: [
         { key: 'label', label: 'Label', kind: 'text', def: 'BUTTON' },
-        { key: 'icon', label: 'Icon (material name)', kind: 'text', def: 'bolt' },
+        { key: 'icon', label: 'Icon', kind: 'icon', def: 'bolt' },
         { key: 'title', label: 'Tooltip', kind: 'text', def: '' }
       ],
       handler: { name: 'onClick', params: 'e, ctx', hint: 'Runs when the button is clicked.', body: "ctx.toast('Clicked!');" }

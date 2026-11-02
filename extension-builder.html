@@ -25,6 +25,7 @@
   <link rel="stylesheet" href="css/components/color-picker.css">
   <link rel="stylesheet" href="css/panels/extensions.css">
   <link rel="stylesheet" href="extension-builder/css/builder.css">
+  <link rel="stylesheet" href="extension-builder/css/visual-script.css">
 </head>
 <body class="oft-builder" data-view="canvas" data-panel="">
   <header class="eb-top">
@@ -46,6 +47,7 @@
     <div class="eb-floatbar" id="floatbar">
       <div class="eb-center-tabs" id="center-tabs" role="tablist">
         <button type="button" data-center="canvas" class="is-active" role="tab" aria-selected="true">Canvas</button>
+        <button type="button" data-center="script" role="tab" aria-selected="false">Script</button>
         <button type="button" data-center="preview" role="tab" aria-selected="false">Preview</button>
       </div>
       <span class="eb-sep"></span>
@@ -58,7 +60,6 @@
       <div class="eb-pc-toggles pc-only" id="pc-toggles">
         <button type="button" data-pc="palette" class="is-active" title="Add element" aria-label="Add element" aria-pressed="true"><span class="material-icons" aria-hidden="true">widgets</span></button>
         <button type="button" data-pc="props" class="is-active" title="Properties" aria-label="Properties" aria-pressed="true"><span class="material-icons" aria-hidden="true">tune</span></button>
-        <button type="button" data-pc="script" class="is-active" title="Script" aria-label="Script" aria-pressed="true"><span class="material-icons" aria-hidden="true">code</span></button>
       </div>
     </div>
 
@@ -74,13 +75,76 @@
       <div class="pv-msg" id="pv-msg" role="status" aria-live="polite" hidden></div>
     </section>
 
-    <!-- Floating panels. Mobile: Add element morphs out of the FAB; Properties + Script share one drawer. Desktop: floating cards. -->
+    <!-- Visual Script View (Scratch / Node blocks full-bleed tab) -->
+    <section class="pane pane-script-view" id="pane-script-view" data-tab="canvas" aria-label="Visual Script Editor">
+      <div class="sv-bar">
+        <div class="sv-bar-main">
+          <div class="sv-target-wrap">
+            <span class="sv-label"><span class="material-icons" aria-hidden="true">code</span> <span class="sv-label-text">Component:</span></span>
+            <select id="sv-target-select" class="sv-select" aria-label="Select component to script"></select>
+          </div>
+          <div class="sv-actions" id="sv-actions">
+            <button type="button" id="sv-btn-preset" class="eb-small" title="Apply logic preset"><span class="material-icons" aria-hidden="true">auto_fix_high</span> <span class="sv-btn-label">Presets</span></button>
+            <button type="button" id="sv-btn-clear" class="eb-small" title="Clear blocks"><span class="material-icons" aria-hidden="true">clear_all</span> <span class="sv-btn-label">Clear</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="sv-workspace" id="sv-workspace">
+        <aside class="sv-palette" id="sv-palette" aria-label="Block Toolbox">
+          <div class="pane-head sv-palette-head">
+            <span class="pane-title"><span class="material-icons" aria-hidden="true">widgets</span> Block Toolbox</span>
+            <span class="pane-tools">
+              <button type="button" class="mini m-only" id="sv-toolbox-close" title="Close" aria-label="Close"><span class="material-icons" aria-hidden="true">close</span></button>
+            </span>
+          </div>
+          <div class="pane-body sv-palette-body" id="sv-palette-categories"></div>
+        </aside>
+
+        <div class="sv-canvas-container" id="sv-canvas-container">
+          <div class="sv-canvas" id="sv-canvas">
+            <div class="sv-hat-block" id="sv-hat-block"></div>
+            <div class="sv-block-stack" id="sv-block-stack"></div>
+            <div class="sv-empty-drop" id="sv-empty-drop">
+              <span class="material-icons" aria-hidden="true">add_circle_outline</span>
+              <span>No blocks yet. Tap + to add from toolbox or choose a Preset.</span>
+            </div>
+          </div>
+        </div>
+
+        <aside class="sv-code-panel" id="sv-code-panel">
+          <div class="sv-code-header">
+            <span>Generated JavaScript</span>
+            <button type="button" id="sv-btn-copy-code" class="eb-small" title="Copy code"><span class="material-icons" aria-hidden="true">content_copy</span></button>
+          </div>
+          <div class="sv-code-host" id="sv-code-host">
+            <pre class="sv-code-pre" id="sv-code-pre"></pre>
+          </div>
+        </aside>
+      </div>
+
+      <!-- Bottom tab switcher ([Blocks] [Code]) -->
+      <div class="sv-bottom-bar" id="sv-bottom-bar">
+        <div class="sv-nav-tabs" role="tablist">
+          <button type="button" data-sv-tab="blocks" class="is-active" role="tab" aria-selected="true" title="Blocks Canvas">
+            <span class="material-icons" aria-hidden="true">extension</span> <span>Blocks</span>
+          </button>
+          <button type="button" data-sv-tab="code" role="tab" aria-selected="false" title="JavaScript Code">
+            <span class="material-icons" aria-hidden="true">javascript</span> <span>Code</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Mobile FAB: morphs into the Script Toolbox card (Script view only). -->
+      <button type="button" class="eb-fab sv-fab" id="sv-fab" aria-haspopup="dialog" aria-expanded="false" aria-controls="sv-palette" title="Add block" aria-label="Add block"><span class="material-icons" aria-hidden="true">add</span></button>
+    </section>
+
+    <!-- Floating panels. Mobile: Add element morphs out of the FAB; Properties is the drawer. Desktop: floating cards. -->
     <section class="pane float pane-palette" id="pane-palette" data-pane="palette" aria-label="Add element">
       <div class="pane-head">
         <span class="pane-title"><span class="material-icons" aria-hidden="true">widgets</span> Add element</span>
         <span class="pane-tools">
           <button type="button" class="mini m-only" data-panel="props" title="Properties" aria-label="Properties"><span class="material-icons" aria-hidden="true">tune</span></button>
-          <button type="button" class="mini m-only" data-panel="script" title="Script" aria-label="Script"><span class="material-icons" aria-hidden="true">code</span></button>
           <button type="button" class="mini pc-only" data-collapse title="Collapse" aria-label="Collapse"><span class="material-icons" aria-hidden="true">expand_more</span></button>
           <button type="button" class="mini m-only" data-close title="Close" aria-label="Close"><span class="material-icons" aria-hidden="true">close</span></button>
         </span>
@@ -90,11 +154,7 @@
 
     <section class="pane float pane-props" data-pane="props" aria-label="Properties">
       <div class="pane-head">
-        <span class="pane-title pc-only"><span class="material-icons" aria-hidden="true">tune</span> Properties</span>
-        <div class="eb-center-tabs drawer-switch m-only" role="tablist">
-          <button type="button" data-panel="props" class="is-active" role="tab" aria-selected="true">Properties</button>
-          <button type="button" data-panel="script" role="tab" aria-selected="false">Script</button>
-        </div>
+        <span class="pane-title"><span class="material-icons" aria-hidden="true">tune</span> Properties</span>
         <span class="pane-tools">
           <button type="button" class="mini pc-only" data-collapse title="Collapse" aria-label="Collapse"><span class="material-icons" aria-hidden="true">expand_more</span></button>
           <button type="button" class="mini m-only" data-close title="Close" aria-label="Close"><span class="material-icons" aria-hidden="true">close</span></button>
@@ -109,41 +169,9 @@
         <div id="ins-meta" hidden></div>
       </div>
     </section>
-
-    <section class="pane float pane-script" data-pane="script" aria-label="Script">
-      <div class="pane-head">
-        <span class="pane-title pc-only"><span class="material-icons" aria-hidden="true">code</span> Script</span>
-        <div class="eb-center-tabs drawer-switch m-only" role="tablist">
-          <button type="button" data-panel="props" role="tab" aria-selected="false">Properties</button>
-          <button type="button" data-panel="script" class="is-active" role="tab" aria-selected="true">Script</button>
-        </div>
-        <span class="pane-tools">
-          <button type="button" class="mini pc-only" data-collapse title="Collapse" aria-label="Collapse"><span class="material-icons" aria-hidden="true">expand_more</span></button>
-          <button type="button" class="mini m-only" data-close title="Close" aria-label="Close"><span class="material-icons" aria-hidden="true">close</span></button>
-        </span>
-      </div>
-      <div class="se-body">
-        <div class="se-editor">
-          <div class="eb-center-tabs sub-tabs" id="se-tabs" role="tablist">
-            <button type="button" data-mode="handler" class="is-active" role="tab" aria-selected="true">Handler</button>
-            <button type="button" data-mode="shared" role="tab" aria-selected="false">Shared</button>
-            <button type="button" data-mode="output" role="tab" aria-selected="false">Output</button>
-          </div>
-          <div class="se-sig" id="se-sig-top"></div>
-          <div class="se-cm" id="se-cm"></div>
-          <div class="se-sig" id="se-sig-bottom"></div>
-          <p class="se-hint" id="se-hint" hidden></p>
-          <pre class="se-output" id="se-output" hidden></pre>
-        </div>
-        <aside class="se-helper" id="se-helper">
-          <input type="search" id="se-search" placeholder="Search SDK (ctx.…)" aria-label="Search SDK">
-          <div class="se-helper-list" id="se-helper-list"></div>
-        </aside>
-      </div>
-    </section>
   </main>
 
-  <!-- Mobile FAB: morphs into the Add element card. -->
+  <!-- Mobile FAB: morphs into the Add element card (Canvas view). -->
   <button type="button" class="eb-fab" id="fab-main" aria-haspopup="dialog" aria-expanded="false" aria-controls="pane-palette" title="Add element" aria-label="Add element"><span class="material-icons" aria-hidden="true">add</span></button>
 
   <div class="cv-indicator" id="cv-indicator" hidden></div>
@@ -161,7 +189,7 @@
   <script src="extension-builder/js/live-preview.js"></script>
   <script src="extension-builder/js/canvas.js"></script>
   <script src="extension-builder/js/inspector.js"></script>
-  <script src="extension-builder/js/script-editor.js"></script>
+  <script src="extension-builder/js/visual-script.js"></script>
   <script src="extension-builder/js/export.js"></script>
   <script src="extension-builder/js/app.js"></script>
 </body>
