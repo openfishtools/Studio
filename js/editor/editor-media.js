@@ -1983,6 +1983,32 @@
     })();
 
     let mediaPoolInitialized = false;
+    let _currentMediaFilter = 'all'; // 'all' | 'video' | 'image' | 'audio' | 'precomp'
+    let _mediaSearchQuery = '';
+
+    function formatMediaDuration(sec) {
+      if (!sec || isNaN(sec) || !isFinite(sec) || sec <= 0) return '';
+      const totalSec = Math.floor(sec);
+      const hrs = Math.floor(totalSec / 3600);
+      const mins = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      const sStr = s < 10 ? '0' + s : String(s);
+      if (hrs > 0) {
+        const mStr = mins < 10 ? '0' + mins : String(mins);
+        return `${hrs}:${mStr}:${sStr}`;
+      }
+      return `${mins}:${sStr}`;
+    }
+
+    function syncMediaFilterPillsUI() {
+      document.querySelectorAll('.media-filter-pill').forEach(pill => {
+        const filter = pill.dataset.mediaFilter;
+        const isActive = (filter === _currentMediaFilter);
+        pill.classList.toggle('is-active', isActive);
+        pill.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      });
+    }
+
     function initProjectMediaPool() {
       const gridEl = document.getElementById('drawer-media-grid');
       const importBtn = document.getElementById('btn-import-media');
@@ -2501,11 +2527,108 @@
           }
         });
 
+        // Calculate counts for each media category
+        const counts = {
+          all: mediaItems.length,
+          video: 0,
+          image: 0,
+          audio: 0,
+          precomp: 0
+        };
+        mediaItems.forEach(item => {
+          if (item.type === 'video') counts.video++;
+          else if (item.type === 'image') counts.image++;
+          else if (item.type === 'audio') counts.audio++;
+          else if (item.type === 'precomp') counts.precomp++;
+        });
+
+        // Update count badges across mobile and desktop
+        document.querySelectorAll('#media-count-all').forEach(el => el.textContent = String(counts.all));
+        document.querySelectorAll('#media-count-video').forEach(el => el.textContent = String(counts.video));
+        document.querySelectorAll('#media-count-image').forEach(el => el.textContent = String(counts.image));
+        document.querySelectorAll('#media-count-audio').forEach(el => el.textContent = String(counts.audio));
+        document.querySelectorAll('#media-count-precomp').forEach(el => el.textContent = String(counts.precomp));
+
+        // Show/hide precomp pill if there are precomps
+        document.querySelectorAll('#media-filter-pill-precomp').forEach(el => {
+          el.style.display = counts.precomp > 0 ? 'inline-flex' : 'none';
+        });
+
+        // Fallback filter if precomp selected but none exist
+        if (_currentMediaFilter === 'precomp' && counts.precomp === 0) {
+          _currentMediaFilter = 'all';
+          syncMediaFilterPillsUI();
+        }
+
+        // Filter items by category and search query
+        const query = (_mediaSearchQuery || '').trim().toLowerCase();
+        const filteredItems = mediaItems.filter(item => {
+          if (_currentMediaFilter !== 'all') {
+            if (_currentMediaFilter === 'video' && item.type !== 'video') return false;
+            if (_currentMediaFilter === 'image' && item.type !== 'image') return false;
+            if (_currentMediaFilter === 'audio' && item.type !== 'audio') return false;
+            if (_currentMediaFilter === 'precomp' && item.type !== 'precomp') return false;
+          }
+          if (query) {
+            const name = (item.name || '').toLowerCase();
+            if (!name.includes(query)) return false;
+          }
+          return true;
+        });
+
+        // Update contextual empty state
+        const emptyEls = document.querySelectorAll('#media-pool-empty');
+        if (emptyEls.length > 0) {
+          if (filteredItems.length === 0) {
+            let emptyIconClass = 'fticon-media-category';
+            let emptyTitle = 'Belum ada media';
+            let emptyDesc = 'Klik tombol + atau seret file ke sini untuk menambahkan media.';
+
+            if (query) {
+              emptyIconClass = 'fticon-search';
+              emptyTitle = 'Media tidak ditemukan';
+              emptyDesc = `Tidak ada media yang cocok dengan "${_mediaSearchQuery.trim()}".`;
+            } else if (_currentMediaFilter === 'video') {
+              emptyIconClass = 'fticon-track-video';
+              emptyTitle = 'Belum ada video';
+              emptyDesc = 'Impor berkas video (MP4) untuk melihatnya di sini.';
+            } else if (_currentMediaFilter === 'image') {
+              emptyIconClass = 'fticon-media-fill';
+              emptyTitle = 'Belum ada foto/gambar';
+              emptyDesc = 'Impor berkas gambar (PNG, JPG) untuk melihatnya di sini.';
+            } else if (_currentMediaFilter === 'audio') {
+              emptyIconClass = 'fticon-track-audio';
+              emptyTitle = 'Belum ada audio';
+              emptyDesc = 'Impor berkas audio (MP3) untuk melihatnya di sini.';
+            } else if (_currentMediaFilter === 'precomp') {
+              emptyIconClass = 'fticon-edit-group-enter-precompose';
+              emptyTitle = 'Belum ada prekomposisi';
+              emptyDesc = 'Buat prekomposisi dari timeline untuk melihatnya di sini.';
+            }
+
+            emptyEls.forEach(emptyEl => {
+              emptyEl.style.display = 'flex';
+              const iconEl = emptyEl.querySelector('.media-empty-icon');
+              if (iconEl) {
+                iconEl.className = `fticon ${emptyIconClass} media-empty-icon`;
+              }
+              const titleEl = emptyEl.querySelector('#media-empty-title') || emptyEl.querySelector('.media-empty-title');
+              if (titleEl) titleEl.textContent = emptyTitle;
+              const descEl = emptyEl.querySelector('#media-empty-desc') || emptyEl.querySelector('.media-empty-desc');
+              if (descEl) descEl.textContent = emptyDesc;
+            });
+          } else {
+            emptyEls.forEach(emptyEl => {
+              emptyEl.style.display = 'none';
+            });
+          }
+        }
+
         // Remove existing media item tiles
         gridEl.querySelectorAll('.media-item-tile').forEach(el => el.remove());
 
         // Render each media item tile before importBtn
-        mediaItems.forEach(item => {
+        filteredItems.forEach(item => {
           const tile = document.createElement('div');
           tile.className = 'media-item-tile';
           tile.dataset.mediaId = item.id;
@@ -2526,9 +2649,12 @@
             tile.classList.add('is-selected');
           }
 
+          const durStr = (item.type !== 'image' && item.duration > 0) ? formatMediaDuration(item.duration) : '';
+          const durHtml = durStr ? `<span class="media-item-duration">${durStr}</span>` : '';
+
           let previewHtml = '';
           if (item.type === 'image') {
-            previewHtml = `<img class="media-item-thumb" src="${item.dataUrl}" alt="${item.name}">`;
+            previewHtml = `<img class="media-item-thumb" src="${item.dataUrl}" alt="${item.name}"><span class="media-item-type-badge">IMG</span>`;
           } else if (item.type === 'video') {
             const thumbSrc = item.thumbUrl || '';
             if (thumbSrc) {
@@ -2562,6 +2688,18 @@
                 });
               }
             }
+          } else if (item.type === 'audio') {
+            tile.classList.add('is-audio');
+            const safeName = (item.name || 'Audio').replace(/"/g, '&quot;');
+            previewHtml = `
+              <div class="media-item-audio-card">
+                <div class="media-audio-icon-wrap">
+                  <i class='fticon fticon-track-audio' aria-hidden='true'></i>
+                </div>
+                <div class="media-audio-title" title="${safeName}">${safeName}</div>
+              </div>
+              <span class="media-item-type-badge">AUD</span>
+            `;
           } else if (item.type === 'precomp') {
             previewHtml = `
               <div class="media-item-fallback media-item-precomp-placeholder">
@@ -2580,6 +2718,7 @@
 
           tile.innerHTML = `
             ${previewHtml}
+            ${durHtml}
             <button type="button" class="media-item-delete-btn" title="Delete Media" aria-label="Delete Media">
               <i class='fticon fticon-delete-media' aria-hidden='true'></i>
             </button>
@@ -2740,6 +2879,67 @@
         return;
       }
       mediaPoolInitialized = true;
+
+      // 1b. Media Pool Toolbar Filter Pills (Delegated for mobile & desktop)
+      document.addEventListener('click', (e) => {
+        const pill = e.target.closest('.media-filter-pill');
+        if (!pill) return;
+        const filter = pill.dataset.mediaFilter;
+        if (!filter || filter === _currentMediaFilter) return;
+        _currentMediaFilter = filter;
+        syncMediaFilterPillsUI();
+        renderMediaGrid();
+      });
+
+      // 1c. Media Pool Search Input (Delegated & synced across panels)
+      document.addEventListener('input', (e) => {
+        const searchInput = e.target.closest('.media-search-input');
+        if (!searchInput) return;
+        _mediaSearchQuery = searchInput.value || '';
+        document.querySelectorAll('.media-search-input').forEach(inp => {
+          if (inp !== searchInput && inp.value !== _mediaSearchQuery) {
+            inp.value = _mediaSearchQuery;
+          }
+        });
+        document.querySelectorAll('.media-search-clear-btn').forEach(btn => {
+          btn.style.display = _mediaSearchQuery.trim() ? 'flex' : 'none';
+        });
+        renderMediaGrid();
+      });
+
+      // 1d. Clear Media Pool Search Button
+      document.addEventListener('click', (e) => {
+        const clearBtn = e.target.closest('.media-search-clear-btn');
+        if (!clearBtn) return;
+        e.preventDefault();
+        e.stopPropagation();
+        _mediaSearchQuery = '';
+        document.querySelectorAll('.media-search-input').forEach(inp => {
+          inp.value = '';
+          try { inp.focus(); } catch (_) {}
+        });
+        document.querySelectorAll('.media-search-clear-btn').forEach(btn => {
+          btn.style.display = 'none';
+        });
+        renderMediaGrid();
+      });
+
+      // 1e. Escape key in search input clears query
+      document.addEventListener('keydown', (e) => {
+        const searchInput = e.target.closest('.media-search-input');
+        if (!searchInput) return;
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          _mediaSearchQuery = '';
+          document.querySelectorAll('.media-search-input').forEach(inp => {
+            inp.value = '';
+          });
+          document.querySelectorAll('.media-search-clear-btn').forEach(btn => {
+            btn.style.display = 'none';
+          });
+          renderMediaGrid();
+        }
+      });
 
       // 2. Click & Keyboard accessibility on import box
       importBtn.addEventListener('click', (e) => {
@@ -2948,7 +3148,7 @@
 
                 // Update video tile placeholder with generated thumbnail
                 if (mediaItem.thumbUrl) {
-                  const grid = document.getElementById('project-media-grid');
+                  const grid = document.getElementById('drawer-media-grid') || document.getElementById('project-media-grid');
                   const tile = grid ? grid.querySelector(`.media-item-tile[data-media-id="${mediaItem.id}"]`) : null;
                   if (tile) {
                     const ph = tile.querySelector('.media-item-vid-placeholder');

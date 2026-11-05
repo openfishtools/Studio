@@ -5,6 +5,17 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.13] - 2026-11-05
+
+### Added
+- **Organized Media Pool Toolbar & Sub-Filter Pills (`editor.html`, `desktop.html`, `css/components/drawer.css`, `css/layout/desktop.css`, `js/editor/editor-media.js`)**: Added quick category filter tabs (All, Videos, Photos, Audio, and Comps) with dynamic live item count badges that automatically update upon import or deletion. Comps tab dynamically reveals itself whenever precompositions exist in the project.
+- **Quick Media Search Bar (`editor.html`, `desktop.html`, `css/components/drawer.css`, `js/editor/editor-media.js`)**: Real-time client-side media search filtering by file name across both mobile and desktop panels, complete with search icon, clear button (`×`), and `Escape` keyboard shortcut.
+- **Specialized Audio Tiles & Duration Badges (`css/components/drawer.css`, `js/editor/editor-media.js`)**: Audio assets now render as elegant dark-gradient cards featuring sound wave iconography, legible track titles, an `AUD` badge, and timestamped duration badges (`m:ss` or `h:mm:ss`). Videos display crisp thumbnails, `VID` badges, and duration badges.
+
+### Improved
+- **Contextual Empty States for Media Pool (`editor.html`, `desktop.html`, `css/components/drawer.css`, `js/editor/editor-media.js`)**: When an active category filter has no assets or search returns zero matches, informative empty states with contextual icons and friendly guidance are displayed instead of blank screens.
+- **Desktop & Mobile Media Panel Synchronization (`css/layout/desktop.css`, `js/editor/editor-media.js`)**: Unified event delegation and bidirectional state synchronization between mobile bottom drawer and desktop left sidebar panels for seamless responsive workflow.
+
 ## [0.6.12] - 2026-11-05
 
 ### Added

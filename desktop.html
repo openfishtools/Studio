@@ -275,11 +275,63 @@
                         </div>
                       </div>
                     </div>
+                    <!-- Media Pool Toolbar: Search & Sub-Filter Pills -->
+                    <div class="media-pool-toolbar" id="media-pool-toolbar">
+                      <div class="media-pool-search-row">
+                        <div class="media-search-wrap">
+                          <svg class="media-search-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="11" cy="11" r="7"></circle>
+                            <line x1="21" y1="21" x2="16.5" y2="16.5"></line>
+                          </svg>
+                          <input type="text" class="media-search-input" id="media-pool-search" placeholder="Cari media..." autocomplete="off" spellcheck="false" aria-label="Cari media">
+                          <button type="button" class="media-search-clear-btn" id="btn-media-search-clear" style="display: none;" title="Hapus pencarian" aria-label="Hapus pencarian">
+                            <i class='fticon fticon-close-2' aria-hidden='true'></i>
+                          </button>
+                        </div>
+                      </div>
+                      <div class="media-filter-pills" id="media-filter-pills" role="tablist" aria-label="Filter Jenis Media">
+                        <button type="button" class="media-filter-pill is-active" data-media-filter="all" role="tab" aria-selected="true">
+                          <i class='fticon fticon-media-category' aria-hidden='true'></i>
+                          <span class="media-filter-label">All</span>
+                          <span class="media-filter-count" id="media-count-all">0</span>
+                        </button>
+                        <button type="button" class="media-filter-pill" data-media-filter="video" role="tab" aria-selected="false">
+                          <i class='fticon fticon-track-video' aria-hidden='true'></i>
+                          <span class="media-filter-label">Videos</span>
+                          <span class="media-filter-count" id="media-count-video">0</span>
+                        </button>
+                        <button type="button" class="media-filter-pill" data-media-filter="image" role="tab" aria-selected="false">
+                          <i class='fticon fticon-media-fill' aria-hidden='true'></i>
+                          <span class="media-filter-label">Photos</span>
+                          <span class="media-filter-count" id="media-count-image">0</span>
+                        </button>
+                        <button type="button" class="media-filter-pill" data-media-filter="audio" role="tab" aria-selected="false">
+                          <i class='fticon fticon-track-audio' aria-hidden='true'></i>
+                          <span class="media-filter-label">Audio</span>
+                          <span class="media-filter-count" id="media-count-audio">0</span>
+                        </button>
+                        <button type="button" class="media-filter-pill" data-media-filter="precomp" role="tab" aria-selected="false" id="media-filter-pill-precomp" style="display: none;">
+                          <i class='fticon fticon-edit-group-enter-precompose' aria-hidden='true'></i>
+                          <span class="media-filter-label">Comps</span>
+                          <span class="media-filter-count" id="media-count-precomp">0</span>
+                        </button>
+                      </div>
+                    </div>
+
                     <div class="drawer-media-grid" id="drawer-media-grid">
                       <!-- Square Card with Centered + Icon for Importing Media -->
                       <button type="button" class="media-import-box" id="btn-import-media" title="Import Media (MP4, MP3, PNG, JPG)" aria-label="Import Media">
                         <i class='fticon fticon-import-media media-import-plus-icon' aria-hidden='true'></i>
                       </button>
+                    </div>
+
+                    <!-- Media Pool Empty State -->
+                    <div class="media-pool-empty" id="media-pool-empty" style="display: none;">
+                      <div class="media-empty-icon-wrap">
+                        <i class='fticon fticon-media-category media-empty-icon' aria-hidden='true'></i>
+                      </div>
+                      <div class="media-empty-title" id="media-empty-title">Belum ada media</div>
+                      <div class="media-empty-desc" id="media-empty-desc">Klik tombol + atau seret file ke sini untuk menambahkan media.</div>
                     </div>
                   </div>
 
@@ -3893,7 +3945,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.6.12</span>
+          <span class="welcome-badge">v0.6.13</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3923,11 +3975,54 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.13 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.13</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Nov 5, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Organized Media Pool Toolbar &amp; Sub-Filter Pills (`editor.html`, `desktop.html`, `css/components/drawer.css`, `css/layout/desktop.css`, `js/editor/editor-media.js`)</span>
+                  <span class="changelog-item-desc">Added quick category filter tabs (All, Videos, Photos, Audio, and Comps) with dynamic live item count badges that automatically update upon import or deletion. Comps tab dynamically reveals itself whenever precompositions exist in the project.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Quick Media Search Bar (`editor.html`, `desktop.html`, `css/components/drawer.css`, `js/editor/editor-media.js`)</span>
+                  <span class="changelog-item-desc">Real-time client-side media search filtering by file name across both mobile and desktop panels, complete with search icon, clear button (`×`), and `Escape` keyboard shortcut.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Specialized Audio Tiles &amp; Duration Badges (`css/components/drawer.css`, `js/editor/editor-media.js`)</span>
+                  <span class="changelog-item-desc">Audio assets now render as elegant dark-gradient cards featuring sound wave iconography, legible track titles, an `AUD` badge, and timestamped duration badges (`m:ss` or `h:mm:ss`). Videos display crisp thumbnails, `VID` badges, and duration badges.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Contextual Empty States for Media Pool (`editor.html`, `desktop.html`, `css/components/drawer.css`, `js/editor/editor-media.js`)</span>
+                  <span class="changelog-item-desc">When an active category filter has no assets or search returns zero matches, informative empty states with contextual icons and friendly guidance are displayed instead of blank screens.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Desktop &amp; Mobile Media Panel Synchronization (`css/layout/desktop.css`, `js/editor/editor-media.js`)</span>
+                  <span class="changelog-item-desc">Unified event delegation and bidirectional state synchronization between mobile bottom drawer and desktop left sidebar panels for seamless responsive workflow.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.12 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.12</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Nov 5, 2026</span>
               </div>
               <div class="welcome-changelog-item">

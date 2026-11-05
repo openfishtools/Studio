@@ -55,7 +55,7 @@
         <h1 class="brand-title">FishTools</h1>
         <div class="brand-subtitle-row">
           <span class="brand-subtitle">Studio</span>
-          <span class="badge-pre-alpha" id="studio-version-badge">0.6.12</span>
+          <span class="badge-pre-alpha" id="studio-version-badge">0.6.13</span>
         </div>
 
         <!-- Desktop Folders Shelf in Photo 2 area -->
@@ -783,7 +783,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">FishTools Studio</h3>
-          <span class="welcome-badge">v0.6.12</span>
+          <span class="welcome-badge">v0.6.13</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
@@ -819,11 +819,54 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.13 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.13</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Nov 5, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Organized Media Pool Toolbar &amp; Sub-Filter Pills (`editor.html`, `desktop.html`, `css/components/drawer.css`, `css/layout/desktop.css`, `js/editor/editor-media.js`)</span>
+                  <span class="changelog-item-desc">Added quick category filter tabs (All, Videos, Photos, Audio, and Comps) with dynamic live item count badges that automatically update upon import or deletion. Comps tab dynamically reveals itself whenever precompositions exist in the project.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Quick Media Search Bar (`editor.html`, `desktop.html`, `css/components/drawer.css`, `js/editor/editor-media.js`)</span>
+                  <span class="changelog-item-desc">Real-time client-side media search filtering by file name across both mobile and desktop panels, complete with search icon, clear button (`×`), and `Escape` keyboard shortcut.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Specialized Audio Tiles &amp; Duration Badges (`css/components/drawer.css`, `js/editor/editor-media.js`)</span>
+                  <span class="changelog-item-desc">Audio assets now render as elegant dark-gradient cards featuring sound wave iconography, legible track titles, an `AUD` badge, and timestamped duration badges (`m:ss` or `h:mm:ss`). Videos display crisp thumbnails, `VID` badges, and duration badges.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Contextual Empty States for Media Pool (`editor.html`, `desktop.html`, `css/components/drawer.css`, `js/editor/editor-media.js`)</span>
+                  <span class="changelog-item-desc">When an active category filter has no assets or search returns zero matches, informative empty states with contextual icons and friendly guidance are displayed instead of blank screens.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Desktop &amp; Mobile Media Panel Synchronization (`css/layout/desktop.css`, `js/editor/editor-media.js`)</span>
+                  <span class="changelog-item-desc">Unified event delegation and bidirectional state synchronization between mobile bottom drawer and desktop left sidebar panels for seamless responsive workflow.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.12 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.12</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Nov 5, 2026</span>
               </div>
               <div class="welcome-changelog-item">

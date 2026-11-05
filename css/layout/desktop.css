@@ -500,6 +500,26 @@
   position: relative;
 }
 
+.desktop-panel-left .media-pool-toolbar {
+  margin-bottom: 6px;
+  gap: 6px;
+}
+.desktop-panel-left .media-search-wrap {
+  height: 30px;
+}
+.desktop-panel-left .media-search-input {
+  font-size: 11px;
+}
+.desktop-panel-left .media-filter-pill {
+  padding: 4px 8px;
+  font-size: 10px;
+  gap: 4px;
+}
+.desktop-panel-left .media-filter-count {
+  font-size: 9px;
+  padding: 0 4px;
+}
+
 .desktop-panel-left .drawer-media-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
