@@ -5,6 +5,21 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.12] - 2026-11-05
+
+### Added
+- **H.265 (HEVC) Video Export with Hardware Probe (`js/editor/editor-export.js`, `js/media/fish-export-engine.js`, `css/components/modal.css`, `editor.html`, `desktop.html`)**: Added Video Codec setting to Video Export dialog (`H.264 (AVC)` vs `H.265 (HEVC)`). Dynamically probes WebCodecs support via `VideoEncoder.isConfigSupported` (`hvc1` and `hev1` profiles) and gracefully disables the H.265 pill with an explanatory tooltip on browsers without hardware HEVC encoding (e.g. Firefox default). Configures `Mp4Muxer` with native `hevc` tracks and includes graceful runtime fallback to H.264.
+- **Detached View Scrubbing During Playback (`js/editor/editor-timeline-core.js`, `css/layout/editor.css`)**: Panning or scrubbing the timeline during active playback now seamlessly detaches the viewport from the playhead, allowing users to freely browse clips while audio/video playback continues uninterrupted. Re-centering re-locks focus instantly without delay.
+
+### Improved
+- **Automatic Project Aspect Ratio Inheritance on Video Export (`editor.html`, `desktop.html`, `js/editor/editor-export.js`)**: Removed the redundant Aspect Ratio selector grid from the Video Export dialog; video exports now strictly inherit the project's aspect ratio and dimensions from Project Settings.
+- **High-Efficiency H.265 Bitrate Presets (`js/media/fish-export-engine.js`, `js/editor/editor-export.js`)**: Tuned `computeExportVideoBitrate` with a `0.6` multiplier for H.265 (~12 Mbps for 1080p Detail preset), achieving ~40% smaller file sizes with transparent visual quality. Realtime export file size estimation immediately updates when toggling codecs.
+- **Compact Edge-to-Edge Batch Selection Drawer (`css/layout/editor.css`, `editor.html`, `desktop.html`)**: Rebuilt the layer multi-selection drawer into a compact, full-width, icon-only action bar with automatic height and hidden text labels, preventing overlay clipping.
+- **Sub-Pixel Timeline Ruler Alignment (`css/layout/editor.css`, `editor.html`, `desktop.html`)**: Refactored the selection button in the ruler using absolute positioning and a clean dual-circle checkmark icon, eliminating ruler displacement and ensuring 0.0px needle precision.
+
+### Fixed
+- **Duplicate Playhead Lines on Detached Playback (`js/editor/editor-timeline-core.js`)**: Unified the current time needle to prevent duplicate indicator lines when scrubbing while playback is active.
+
 ## [0.6.11] - 2026-11-01
 
 ### Added

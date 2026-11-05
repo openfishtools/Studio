@@ -67,14 +67,14 @@
 
     void main() {
       if (u_mode == 1) {
-        if (u_noDiscard < 0.5 && v_color.a <= 0.003) discard;
+        if (u_noDiscard < 0.5 && v_color.a <= 0.015) discard;
         gl_FragColor = v_color * u_opacity;
       } else {
         vec4 col = texture2D(u_texture, v_texCoord);
         // During motion-blur accumulation transparent texels must emit (0,0,0,0)
         // instead of discard, so the running-mean blend dilutes the mean and
         // trails stay symmetric (discard would freeze early-sample coverage).
-        if (u_noDiscard < 0.5 && col.a <= 0.003) discard;
+        if (u_noDiscard < 0.5 && col.a <= 0.015) discard;
         vec4 tint = (v_color.a > 0.001 && (v_color.r > 0.001 || v_color.g > 0.001 || v_color.b > 0.001)) ? v_color : vec4(1.0, 1.0, 1.0, 1.0);
         gl_FragColor = col * tint * u_opacity;
       }
@@ -413,7 +413,8 @@
 
     _uploadToTexture(gl, tex, el, ew, eh) {
       gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      const isAlreadyPremultiplied = (el instanceof HTMLCanvasElement || (typeof ImageBitmap !== 'undefined' && el instanceof ImageBitmap));
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, !isAlreadyPremultiplied);
       if (ew > 0 && eh > 0 && tex._texW === ew && tex._texH === eh) {
         gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, el);
       } else {
@@ -3471,7 +3472,8 @@
         const rawBatchOp = (layer.opacity !== undefined && layer.opacity !== null) ? Number(layer.opacity) : 1.0;
         const layerOpacity = (rawBatchOp > 1.0) ? Math.max(0, Math.min(1, rawBatchOp / 100)) : Math.max(0, Math.min(1, rawBatchOp));
         gl.uniform1f(this.locations.opacity, layerOpacity);
-        gl.depthMask(layerOpacity >= 0.999);
+        const isCutoutQuad = (layer.type === 'image' || layer.type === 'text');
+        gl.depthMask(!isCutoutQuad && layerOpacity >= 0.999);
         if (this.locations.lensDistort) gl.uniform1f(this.locations.lensDistort, this._getLensDistort(camera));
         gl.uniformMatrix4fv(this.locations.matrix, false, mvp);
 

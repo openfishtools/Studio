@@ -1494,15 +1494,16 @@
 
       // Export entry: delegates to FishExportEngine (offline deterministic render) for MP4.
       // Falls back to legacy exportVideoHardware if engine not loaded.
-      async function exportVideoMP4(preset, customName, format) {
+      async function exportVideoMP4(preset, customName, format, codec) {
         if (typeof pausePlayback === 'function') {
           try { pausePlayback(false); } catch (_) {}
         }
         format = format || 'mp4';
+        codec = codec || 'h264';
         if (format === 'mp4' && window.FishExportEngine && typeof window.FishExportEngine.export === 'function') {
-          await window.FishExportEngine.export({ preset: preset, customName: customName, format: 'mp4' });
+          await window.FishExportEngine.export({ preset: preset, customName: customName, format: 'mp4', codec: codec });
         } else {
-          await exportVideoHardware(preset, customName, format);
+          await exportVideoHardware(preset, customName, format, codec);
         }
       }
       window.exportVideoMP4 = exportVideoMP4;
@@ -1589,6 +1590,51 @@
         return `${String(mins).padStart(2, '0')}:${String(rem).padStart(2, '0')}`;
       }
 
+      let _browserHevcSupported = null;
+      async function checkBrowserHevcSupport() {
+        if (_browserHevcSupported !== null) return _browserHevcSupported;
+        try {
+          if (typeof VideoEncoder !== 'undefined' && typeof VideoEncoder.isConfigSupported === 'function') {
+            const probeConfigs = [
+              { codec: 'hvc1.1.6.L120.B0', width: 1920, height: 1080, bitrate: 12000000, framerate: 30 },
+              { codec: 'hev1.1.6.L120.B0', width: 1920, height: 1080, bitrate: 12000000, framerate: 30 }
+            ];
+            for (const cfg of probeConfigs) {
+              try {
+                const res = await VideoEncoder.isConfigSupported(cfg);
+                if (res && res.supported) {
+                  _browserHevcSupported = true;
+                  return true;
+                }
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
+        _browserHevcSupported = false;
+        return false;
+      }
+
+      async function updateHevcCodecUI() {
+        const isSupported = await checkBrowserHevcSupport();
+        const hevcBtns = document.querySelectorAll('#btn-export-codec-h265, [data-video-codec="h265"]');
+        hevcBtns.forEach(btn => {
+          if (!isSupported) {
+            btn.disabled = true;
+            btn.classList.add('is-disabled');
+            btn.classList.remove('is-active');
+            btn.setAttribute('title', 'Browser atau perangkat ini tidak mendukung encoding H.265/HEVC');
+            const row = btn.closest('.export-format-pill-row');
+            const h264Btn = row ? row.querySelector('[data-video-codec="h264"]') : null;
+            if (h264Btn) h264Btn.classList.add('is-active');
+          } else {
+            btn.disabled = false;
+            btn.classList.remove('is-disabled');
+            btn.removeAttribute('title');
+          }
+        });
+        updateExportPreviewAndSpecs();
+      }
+
       function getSettingsResolutionAndFps(prefix) {
         const ps = window.currentProjectState || {};
         const grid = document.getElementById(`${prefix}-aspect-grid`);
@@ -1660,6 +1706,9 @@
         const bitrateBtn = document.querySelector('[data-video-bitrate].is-active');
         const preset = bitrateBtn ? bitrateBtn.dataset.videoBitrate : 'normal';
         const presetLabel = preset === 'light' ? 'Light' : (preset === 'detail' ? 'Detail' : 'Normal');
+        const codecBtn = document.querySelector('[data-video-codec].is-active');
+        const codec = codecBtn ? codecBtn.dataset.videoCodec : 'h264';
+        const codecLabel = codec === 'h265' ? 'H.265' : 'H.264';
         const includeAudio = document.getElementById('export-video-audio') ? document.getElementById('export-video-audio').checked : true;
 
         let baseBps = 25000000;
@@ -1677,7 +1726,10 @@
         }
         const pixelScale = Math.max(0.25, Math.min(3.2, (vCfg.w * vCfg.h) / (1920 * 1080)));
         const fpsScale = Math.max(0.5, Math.min(1.6, Math.pow(vCfg.fps / 60, 0.45)));
-        const effectiveVideoBps = baseBps * vbrFactor * Math.pow(pixelScale, 0.65) * fpsScale;
+        let effectiveVideoBps = baseBps * vbrFactor * Math.pow(pixelScale, 0.65) * fpsScale;
+        if (codec === 'h265') {
+          effectiveVideoBps *= 0.6; // H.265 efisiensi kompresi ~40% lebih tinggi (kualitas setara di bitrate lebih rendah)
+        }
         const audioBps = includeAudio ? 192000 : 0;
         const estVideoBytes = ((effectiveVideoBps + audioBps) / 8) * totalDur;
         const estVideoSizeStr = formatExportBytes(estVideoBytes);
@@ -1689,7 +1741,7 @@
         const vSumSize = document.getElementById('export-video-summary-size');
         if (vSumRes) vSumRes.textContent = `${vCfg.w}×${vCfg.h}`;
         if (vSumFps) vSumFps.textContent = `${vCfg.fps} FPS`;
-        if (vSumQual) vSumQual.textContent = presetLabel;
+        if (vSumQual) vSumQual.textContent = `${presetLabel} · ${codecLabel}`;
         if (vSumSize) vSumSize.textContent = estVideoSizeStr;
 
         // 3. Compute Sequence Settings Specs
@@ -1722,7 +1774,7 @@
         const estFrameBytes = projDims[0] * projDims[1] * 0.42;
         const estFrameSizeStr = formatExportBytes(estFrameBytes);
 
-        if (cardDescVideo) cardDescVideo.textContent = `MP4 · ${vCfg.resLabel} · ${presetLabel} · ${vCfg.fps} FPS`;
+        if (cardDescVideo) cardDescVideo.textContent = `MP4 (${codecLabel}) · ${vCfg.resLabel} · ${presetLabel} · ${vCfg.fps} FPS`;
         if (cardDescFrame) cardDescFrame.textContent = `PNG · ${projDims[0]}×${projDims[1]} · ${estFrameSizeStr}`;
         if (cardDescSeq) cardDescSeq.textContent = `${seqFmtLabel} · ${sCfg.resLabel} · ${sCfg.fps} FPS`;
 
@@ -1738,7 +1790,7 @@
         const progSizeEl = document.getElementById('export-progress-spec-size');
 
         let displaySize = estVideoSizeStr;
-        let displayQual = `${vCfg.resLabel} · ${presetLabel}`;
+        let displayQual = `${vCfg.resLabel} · ${presetLabel} (${codecLabel})`;
         let displayFps = `${vCfg.fps} FPS`;
         let displayBadge = `${formatExportDurationBadge(totalDur)} · ${vCfg.w}×${vCfg.h}`;
 
@@ -1913,6 +1965,7 @@
         syncExportSettingsPanel('export-video');
         syncExportSettingsPanel('export-seq');
         updateExportPreviewAndSpecs();
+        try { updateHevcCodecUI(); } catch (_) {}
       }
 
       function closeExportOverlay() {
@@ -2080,6 +2133,16 @@
         });
       });
 
+      // Codec pill selection in video settings
+      document.querySelectorAll('[data-video-codec]').forEach(pill => {
+        pill.addEventListener('click', () => {
+          if (pill.disabled || pill.classList.contains('is-disabled')) return;
+          document.querySelectorAll('[data-video-codec]').forEach(p => p.classList.remove('is-active'));
+          pill.classList.add('is-active');
+          updateExportPreviewAndSpecs();
+        });
+      });
+
       const _exportAudioToggle = document.getElementById('export-video-audio');
       if (_exportAudioToggle) {
         _exportAudioToggle.addEventListener('change', updateExportPreviewAndSpecs);
@@ -2145,9 +2208,8 @@
 
           switch (_currentExportType) {
             case 'video': {
-              // Read settings
-              const aspectGrid = document.getElementById('export-video-aspect-grid');
-              const selectedRatio = aspectGrid?.querySelector('.aspect-ratio-frame.is-selected')?.dataset.val || currentProjectState.aspectRatio || '16:9';
+              // Read settings — aspect ratio is strictly inherited from project settings
+              const selectedRatio = currentProjectState.aspectRatio || '16:9';
               let res = '';
               if (selectedRatio === 'Custom') {
                 const cw = parseInt(document.getElementById('export-video-custom-res-w')?.value, 10);
@@ -2174,6 +2236,8 @@
               const fps = fpsEl ? parseInt(fpsEl.value, 10) : (currentProjectState.fps || 60);
               const bitrateBtn = document.querySelector('[data-video-bitrate].is-active');
               const preset = bitrateBtn ? bitrateBtn.dataset.videoBitrate : 'normal';
+              const codecBtn = document.querySelector('[data-video-codec].is-active');
+              const codec = codecBtn ? codecBtn.dataset.videoCodec : 'h264';
               const fnInput = document.getElementById('export-video-filename');
               const customName = fnInput ? fnInput.value.trim() : '';
 
@@ -2203,7 +2267,7 @@
               currentProjectState.aspectRatio = targetAspect;
 
               try {
-                await exportVideoMP4(preset, customName, 'mp4');
+                await exportVideoMP4(preset, customName, 'mp4', codec);
               } finally {
                 currentProjectState.resolution = _origRes;
                 currentProjectState.fps = _origFps;

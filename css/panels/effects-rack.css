@@ -1498,7 +1498,7 @@ i.fticon.effects-card-caret::before {
   background-color: var(--bg-panel);
   box-sizing: border-box;
   flex-shrink: 0;
-  z-index: 2;
+  z-index: 10;
 }
 
 .effects-gallery-header-left {
@@ -1576,7 +1576,7 @@ i.fticon.effects-card-caret::before {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0 12px 20px;
+  padding: 0 12px calc(48px + env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
@@ -1862,6 +1862,7 @@ i.fticon.effects-card-caret::before {
 
 .effects-gallery-item-thumb {
   position: relative;
+  isolation: isolate;
   width: 100%;
   aspect-ratio: 1 / 1;
   border-radius: 8px;

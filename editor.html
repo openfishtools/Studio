@@ -346,6 +346,13 @@
 
           <!-- 2. Sticky Top Header: Time Ruler (Always on top, zero vertical scroll) -->
           <header class="timeline-header-ruler">
+            <button type="button" class="timeline-ruler-selection-pill" id="timeline-btn-selection-mode" title="Toggle Multi-Selection Mode" aria-label="Selection Mode">
+              <svg class="timeline-ruler-selection-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <path d="M15 9A6 6 0 1 0 9 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="15" cy="15" r="6" stroke="currentColor" stroke-width="2"/>
+                <path d="M12.5 15L14.3 16.8L17.5 13.2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
             <div class="timeline-ruler-viewport" id="timeline-ruler-viewport">
               <div class="timeline-ruler-track" id="timeline-ruler-track">
                 <canvas id="timeline-cache-ruler-bar" class="timeline-cache-ruler-bar"></canvas>
@@ -391,39 +398,6 @@
             <div class="timeline-lane-heads-overlay" id="timeline-lane-heads-overlay"></div>
             <!-- Floating Right Reorder Pill (Single Floating Handle anchored to Selected Layer) -->
             <div class="timeline-lane-reorder-overlay" id="timeline-lane-reorder-overlay"></div>
-          </div>
-
-          <!-- 3. Floating Multi-Select Batch Actions Pill (Icon-Only, Bottom-Left of Timeline) -->
-          <div class="timeline-batch-floating-bar" id="timeline-batch-floating-bar" style="display: none;" role="toolbar" aria-label="Batch Layer Actions">
-            <!-- Group / Precompose Button -->
-            <button type="button" class="batch-floating-btn" id="btn-batch-float-group" title="Group Layer(s)" aria-label="Group Layer(s)">
-              <i class='fticon fticon-group-layer-s' style='width:20px;height:20px;font-size:20px;line-height:1;' aria-hidden='true'></i>
-            </button>
-
-            <!-- Mask Group Button -->
-            <button type="button" class="batch-floating-btn" id="btn-batch-float-mask" title="Mask Group (Group and Mask)" aria-label="Mask Group (Group and Mask)">
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                <defs>
-                  <clipPath id="float-mask-group-clip">
-                    <polygon points="10,7.5 5.5,16.5 14.5,16.5"/>
-                  </clipPath>
-                </defs>
-                <rect x="3" y="3" width="18" height="18" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 1.6"/>
-                <polygon points="10,7.5 5.5,16.5 14.5,16.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" opacity="0.45"/>
-                <circle cx="14.5" cy="13.5" r="3.5" fill="currentColor" clip-path="url(#float-mask-group-clip)"/>
-                <circle cx="14.5" cy="13.5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
-              </svg>
-            </button>
-
-            <!-- Exclude Group Button -->
-            <button type="button" class="batch-floating-btn" id="btn-batch-float-exclude" title="Exclude Group (Group and Exclude)" aria-label="Exclude Group (Group and Exclude)">
-              <i class='fticon fticon-exclude-group-group-and-exclude' style='width:20px;height:20px;font-size:20px;line-height:1;' aria-hidden='true'></i>
-            </button>
-
-            <!-- Save as Element Button -->
-            <button type="button" class="batch-floating-btn" id="btn-batch-float-save-element" title="Save Selected Layers as Element" aria-label="Save as Element">
-              <i class='fticon fticon-save-preset' style='width:20px;height:20px;font-size:20px;line-height:1;' aria-hidden='true'></i>
-            </button>
           </div>
 
           <!-- 4. Floating Round Action Button (Add Track / Layer) -->
@@ -2434,6 +2408,91 @@
             </div>
           </div>
 
+          <!-- 7. Multi-Selection Batch Action Drawer (No Backdrop, Compact Drawer) -->
+          <div class="drawer-container" id="timeline-batch-drawer" role="dialog" aria-modal="true" aria-label="Selection Actions" aria-hidden="true">
+            <div class="drawer-card drawer-card-compact-selection">
+              <div class="drawer-drag-handle" title="Drag to Resize / Dismiss" aria-label="Resize Drawer">
+                <div class="drawer-drag-pill" aria-hidden="true"></div>
+              </div>
+              <div class="drawer-body">
+                <div class="layer-action-grid selection-drawer-grid">
+                  <!-- ROW 1: Cut Operations Bar -->
+                  <div class="layer-cut-bar-row selection-cut-bar-row" role="group" aria-label="Cut Operations">
+                    <!-- Mode 1: Playhead INSIDE selected layers (Normal 3-way cut) -->
+                    <div class="segmented-button-group layer-cut-group batch-cut-group" id="batch-cut-group-normal" role="group" aria-label="Batch Cut Options">
+                      <button type="button" class="segmented-button batch-cut-btn" id="btn-batch-cut-left" title="Cut Left — trim start of selected layers to playhead" aria-label="Batch Cut Left">
+                        <span class="fticon fticon-cut-left" aria-hidden="true"></span>
+                      </button>
+                      <button type="button" class="segmented-button batch-cut-btn" id="btn-batch-cut-mid" title="Split — cut selected layers at playhead position" aria-label="Batch Split">
+                        <span class="fticon fticon-cut-middle" aria-hidden="true"></span>
+                      </button>
+                      <button type="button" class="segmented-button batch-cut-btn" id="btn-batch-cut-right" title="Cut Right — trim end of selected layers to playhead" aria-label="Batch Cut Right">
+                        <span class="fticon fticon-cut-right" aria-hidden="true"></span>
+                      </button>
+                    </div>
+
+                    <!-- Mode 2: Playhead is AFTER selected layers (Expand Right, Move Right) -->
+                    <div class="segmented-button-group layer-cut-group batch-cut-group" id="batch-cut-group-after" role="group" aria-label="Batch Out-of-Bounds (After)" style="display: none;">
+                      <button type="button" class="segmented-button batch-cut-btn" id="btn-batch-expand-right" title="Expand selected layers to current frame" aria-label="Expand Selected Layers to Current Frame">
+                        <span class="fticon fticon-expand-right" aria-hidden="true"></span>
+                      </button>
+                      <button type="button" class="segmented-button batch-cut-btn" id="btn-batch-move-right" title="Move selected layers to current frame" aria-label="Move Selected Layers to Current Frame">
+                        <span class="fticon fticon-move-right" aria-hidden="true"></span>
+                      </button>
+                    </div>
+
+                    <!-- Mode 3: Playhead is BEFORE selected layers (Move Left, Expand Left) -->
+                    <div class="segmented-button-group layer-cut-group batch-cut-group" id="batch-cut-group-before" role="group" aria-label="Batch Out-of-Bounds (Before)" style="display: none;">
+                      <button type="button" class="segmented-button batch-cut-btn" id="btn-batch-move-left" title="Move selected layers to current frame" aria-label="Move Selected Layers to Current Frame">
+                        <span class="fticon fticon-move-left" aria-hidden="true"></span>
+                      </button>
+                      <button type="button" class="segmented-button batch-cut-btn" id="btn-batch-expand-left" title="Expand selected layers to current frame" aria-label="Expand Selected Layers to Current Frame">
+                        <span class="fticon fticon-expand-left" aria-hidden="true"></span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- ROW 2: Batch Action Button Grid -->
+                  <div class="layer-action-btn-grid selection-action-btn-grid">
+                    <!-- Group / Precompose Button -->
+                    <button type="button" class="layer-action-btn batch-action-btn" id="btn-batch-float-group" title="Group Layer(s)" aria-label="Group Layer(s)">
+                      <i class='fticon fticon-group-layer-s layer-action-icon' aria-hidden='true'></i>
+                      <span class="layer-action-label">Group</span>
+                    </button>
+
+                    <!-- Mask Group Button -->
+                    <button type="button" class="layer-action-btn batch-action-btn" id="btn-batch-float-mask" title="Mask Group (Group and Mask)" aria-label="Mask Group">
+                      <svg class="layer-action-icon" viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+                        <defs>
+                          <clipPath id="batch-mask-group-clip">
+                            <polygon points="10,7.5 5.5,16.5 14.5,16.5"/>
+                          </clipPath>
+                        </defs>
+                        <rect x="3" y="3" width="18" height="18" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 1.6"/>
+                        <polygon points="10,7.5 5.5,16.5 14.5,16.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" opacity="0.45"/>
+                        <circle cx="14.5" cy="13.5" r="3.5" fill="currentColor" clip-path="url(#batch-mask-group-clip)"/>
+                        <circle cx="14.5" cy="13.5" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                      </svg>
+                      <span class="layer-action-label">Mask Group</span>
+                    </button>
+
+                    <!-- Exclude Group Button -->
+                    <button type="button" class="layer-action-btn batch-action-btn" id="btn-batch-float-exclude" title="Exclude Group (Group and Exclude)" aria-label="Exclude Group">
+                      <i class='fticon fticon-exclude-group-group-and-exclude layer-action-icon' aria-hidden='true'></i>
+                      <span class="layer-action-label">Exclude</span>
+                    </button>
+
+                    <!-- Save as Element Button -->
+                    <button type="button" class="layer-action-btn batch-action-btn" id="btn-batch-float-save-element" title="Save Selected Layers as Element" aria-label="Save as Element">
+                      <i class='fticon fticon-save-preset layer-action-icon' aria-hidden='true'></i>
+                      <span class="layer-action-label">Save Element</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
         </section>
       </div>
     </div>
@@ -2912,11 +2971,6 @@
       <i class='fticon fticon-paste' aria-hidden='true'></i>
     </button>
 
-    <!-- 6. Freeze Current Frame icon button -->
-    <button type="button" class="popover-icon-btn" id="editor-btn-freeze-frame" title="Freeze Current Frame (Cut & Time Remap)" aria-label="Freeze Current Frame">
-      <i class='fticon fticon-freeze-frame' aria-hidden='true'></i>
-    </button>
-
     <!-- Separator Divider -->
     <div class="popover-icon-divider"></div>
 
@@ -3010,6 +3064,11 @@
       <!-- 6. Extract Audio (Only for Single Video Layer) -->
       <button type="button" class="popover-menu-item" id="popover-btn-extract-audio" title="Extract Audio to Timeline & Media Pool">
         <span>Extract Audio</span>
+      </button>
+
+      <!-- 7. Freeze Frame (Only for Single Video / Visual Layer) -->
+      <button type="button" class="popover-menu-item" id="popover-btn-freeze-frame" title="Freeze Current Frame (Cut & Time Remap)">
+        <span id="popover-label-freeze-frame">Freeze Frame</span>
       </button>
     </div>
   </div>
@@ -3150,44 +3209,7 @@
         <span class="export-setting-label">File Name</span>
         <input type="text" class="export-setting-select" id="export-video-filename" placeholder="New_Project" spellcheck="false" autocomplete="off" style="font-family:var(--font-brand);font-size:14px;font-weight:600;background-image:none;padding-right:14px;">
       </div>
-      <!-- 1. Aspect Ratio (Visual Frames) -->
-      <div class="modal-form-group">
-        <label class="modal-label">ASPECT RATIO</label>
-        <div class="modal-aspect-grid" id="export-video-aspect-grid">
-          <button type="button" class="aspect-ratio-frame is-selected" data-val="16:9" title="16:9 Landscape">
-            <div class="aspect-frame-box ratio-16-9">
-              <span class="aspect-ratio-text">16:9</span>
-            </div>
-          </button>
-          <button type="button" class="aspect-ratio-frame" data-val="9:16" title="9:16 Portrait">
-            <div class="aspect-frame-box ratio-9-16">
-              <span class="aspect-ratio-text">9:16</span>
-            </div>
-          </button>
-          <button type="button" class="aspect-ratio-frame" data-val="1:1" title="1:1 Square">
-            <div class="aspect-frame-box ratio-1-1">
-              <span class="aspect-ratio-text">1:1</span>
-            </div>
-          </button>
-          <button type="button" class="aspect-ratio-frame" data-val="4:3" title="4:3 Standard">
-            <div class="aspect-frame-box ratio-4-3">
-              <span class="aspect-ratio-text">4:3</span>
-            </div>
-          </button>
-          <button type="button" class="aspect-ratio-frame" data-val="21:9" title="21:9 Ultrawide">
-            <div class="aspect-frame-box ratio-21-9">
-              <span class="aspect-ratio-text">21:9</span>
-            </div>
-          </button>
-          <button type="button" class="aspect-ratio-frame" data-val="Custom" title="Custom Resolution">
-            <div class="aspect-frame-box ratio-1-1">
-              <i class='fticon fticon-custom-resolution aspect-ratio-icon' style='width:16px;height:16px;font-size:16px;line-height:1;' aria-hidden='true'></i>
-            </div>
-          </button>
-        </div>
-      </div>
-
-      <!-- 2. Resolution Dropdown Row -->
+      <!-- 1. Resolution Dropdown Row -->
       <div class="modal-form-row" id="row-export-video-resolution">
         <label class="modal-label">Resolution</label>
         <div class="resolution-ctrl-wrap" id="container-export-video-resolution">
@@ -3221,7 +3243,7 @@
         </div>
       </div>
 
-      <!-- 3. FPS Dropdown Row -->
+      <!-- 2. FPS Dropdown Row -->
       <div class="modal-form-row" id="row-export-video-fps">
         <label class="modal-label">FPS</label>
         <div class="modal-fps-ctrl">
@@ -3229,13 +3251,21 @@
           <span class="modal-fps-unit">FPS</span>
         </div>
       </div>
-      <!-- Bitrate -->
+      <!-- Bitrate / Quality -->
       <div class="export-setting-group">
         <span class="export-setting-label">Quality Preset</span>
         <div class="export-format-pill-row">
           <button type="button" class="export-format-pill" data-video-bitrate="light">Light</button>
           <button type="button" class="export-format-pill is-active" data-video-bitrate="normal">Normal</button>
           <button type="button" class="export-format-pill" data-video-bitrate="detail">Detail</button>
+        </div>
+      </div>
+      <!-- Codec -->
+      <div class="export-setting-group">
+        <span class="export-setting-label">Video Codec</span>
+        <div class="export-format-pill-row" id="export-video-codec-grid">
+          <button type="button" class="export-format-pill is-active" data-video-codec="h264">H.264 (AVC)</button>
+          <button type="button" class="export-format-pill" data-video-codec="h265" id="btn-export-codec-h265">H.265 (HEVC)</button>
         </div>
       </div>
       <!-- Audio -->
@@ -3867,7 +3897,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.6.11</span>
+          <span class="welcome-badge">v0.6.12</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3897,11 +3927,68 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.12 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.12</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Nov 5, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">H.265 (HEVC) Video Export with Hardware Probe (`js/editor/editor-export.js`, `js/media/fish-export-engine.js`, `css/components/modal.css`, `editor.html`, `desktop.html`)</span>
+                  <span class="changelog-item-desc">Added Video Codec setting to Video Export dialog (`H.264 (AVC)` vs `H.265 (HEVC)`). Dynamically probes WebCodecs support via `VideoEncoder.isConfigSupported` (`hvc1` and `hev1` profiles) and gracefully disables the H.265 pill with an explanatory tooltip on browsers without hardware HEVC encoding (e.g. Firefox default). Configures `Mp4Muxer` with native `hevc` tracks and includes graceful runtime fallback to H.264.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Detached View Scrubbing During Playback (`js/editor/editor-timeline-core.js`, `css/layout/editor.css`)</span>
+                  <span class="changelog-item-desc">Panning or scrubbing the timeline during active playback now seamlessly detaches the viewport from the playhead, allowing users to freely browse clips while audio/video playback continues uninterrupted. Re-centering re-locks focus instantly without delay.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Automatic Project Aspect Ratio Inheritance on Video Export (`editor.html`, `desktop.html`, `js/editor/editor-export.js`)</span>
+                  <span class="changelog-item-desc">Removed the redundant Aspect Ratio selector grid from the Video Export dialog; video exports now strictly inherit the project's aspect ratio and dimensions from Project Settings.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">High-Efficiency H.265 Bitrate Presets (`js/media/fish-export-engine.js`, `js/editor/editor-export.js`)</span>
+                  <span class="changelog-item-desc">Tuned `computeExportVideoBitrate` with a `0.6` multiplier for H.265 (~12 Mbps for 1080p Detail preset), achieving ~40% smaller file sizes with transparent visual quality. Realtime export file size estimation immediately updates when toggling codecs.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Compact Edge-to-Edge Batch Selection Drawer (`css/layout/editor.css`, `editor.html`, `desktop.html`)</span>
+                  <span class="changelog-item-desc">Rebuilt the layer multi-selection drawer into a compact, full-width, icon-only action bar with automatic height and hidden text labels, preventing overlay clipping.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Sub-Pixel Timeline Ruler Alignment (`css/layout/editor.css`, `editor.html`, `desktop.html`)</span>
+                  <span class="changelog-item-desc">Refactored the selection button in the ruler using absolute positioning and a clean dual-circle checkmark icon, eliminating ruler displacement and ensuring 0.0px needle precision.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Duplicate Playhead Lines on Detached Playback (`js/editor/editor-timeline-core.js`)</span>
+                  <span class="changelog-item-desc">Unified the current time needle to prevent duplicate indicator lines when scrubbing while playback is active.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.11 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.11</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Nov 1, 2026</span>
               </div>
               <div class="welcome-changelog-item">

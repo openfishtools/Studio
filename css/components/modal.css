@@ -3534,9 +3534,20 @@
   background-color: var(--color-primary);
   color: var(--bg-canvas);
 }
-.export-format-pill:hover:not(.is-active) {
+.export-format-pill:hover:not(.is-active):not(:disabled):not(.is-disabled) {
   background-color: var(--bg-panel-hover);
   color: var(--text-primary);
+}
+.export-format-pill:disabled,
+.export-format-pill.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: auto;
+}
+.export-format-pill:disabled:hover,
+.export-format-pill.is-disabled:hover {
+  background-color: var(--bg-panel);
+  color: var(--text-muted);
 }
 
 /* ==========================================================================

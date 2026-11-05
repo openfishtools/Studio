@@ -136,7 +136,9 @@ class DrawerManager {
         card.classList.contains('is-effects-gallery')
       );
 
-      const isTablet = window.innerWidth >= 601;
+      const isTablet = window.innerWidth >= 601 &&
+        !document.documentElement.classList.contains('force-mobile-view') &&
+        !(document.body && document.body.classList.contains('force-mobile-view'));
       const containerH = (isEffectsGallery && isTablet)
         ? (container.clientHeight || (window.innerHeight / dragZoom - 44))
         : (isEffectsGallery

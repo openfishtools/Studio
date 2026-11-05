@@ -954,7 +954,12 @@
 
           let childPadRatioW = 1;
           let childPadRatioH = 1;
-          if (targetChild.type === 'shape' && targetChild.shapeType === 'vector' && targetChild.shapeProps && typeof window.getVectorLocalBounds === 'function') {
+          if (targetChild.type === 'text' && ((targetChild._textPadY && targetChild._textPadY > 0) || (targetChild._textPadX && targetChild._textPadX > 0)) && targetEl && targetEl.width && targetEl.height) {
+            const natW = targetChild._textNaturalW || (targetEl.width - 2 * (targetChild._textPadX || 0));
+            const natH = targetChild._textNaturalH || (targetEl.height - 2 * (targetChild._textPadY || 0));
+            childPadRatioW = targetEl.width / Math.max(1, natW);
+            childPadRatioH = targetEl.height / Math.max(1, natH);
+          } else if (targetChild.type === 'shape' && targetChild.shapeType === 'vector' && targetChild.shapeProps && typeof window.getVectorLocalBounds === 'function') {
             const vb = window.getVectorLocalBounds(targetChild.shapeProps);
             childPadRatioW = (targetEl.width || vb.bufferW || 24) / Math.max(1, vb.width || 24);
             childPadRatioH = (targetEl.height || vb.bufferH || 24) / Math.max(1, vb.height || 24);
@@ -2387,7 +2392,7 @@
             const signY = Math.sign(bh) || 1;
             const absW = Math.abs(bw);
             const absH = Math.abs(bh);
-            if (!layer.is3D && (layer.type === 'image' || layer.type === 'video') && (!layer.fillType || layer.fillType === 'media') && typeof window.getFittedMediaElement === 'function') {
+            if ((layer.type === 'image' || layer.type === 'video') && (!layer.fillType || layer.fillType === 'media') && typeof window.getFittedMediaElement === 'function') {
               el = window.getFittedMediaElement(layer, el, absW, absH);
             }
 

@@ -325,11 +325,21 @@ function initTimelineOperations() {
           if (window.Drawer.isOpen('timeline-layer-drawer')) {
             window.Drawer.close('timeline-layer-drawer', false);
           }
+          if (window.Drawer.isOpen('timeline-batch-drawer')) {
+            window.Drawer.close('timeline-batch-drawer', false);
+          }
           const layerDrawer = document.getElementById('timeline-layer-drawer');
           if (layerDrawer && layerDrawer.classList.contains('is-active')) {
             layerDrawer.classList.remove('is-active');
             layerDrawer.setAttribute('aria-hidden', 'true');
             const card = layerDrawer.querySelector('.drawer-card');
+            if (card) card.style.height = '';
+          }
+          const batchDrawer = document.getElementById('timeline-batch-drawer');
+          if (batchDrawer && batchDrawer.classList.contains('is-active')) {
+            batchDrawer.classList.remove('is-active');
+            batchDrawer.setAttribute('aria-hidden', 'true');
+            const card = batchDrawer.querySelector('.drawer-card');
             if (card) card.style.height = '';
           }
           const fxGal = document.getElementById('drawer-effects-gallery');
@@ -345,6 +355,11 @@ function initTimelineOperations() {
             document.querySelectorAll('.editor-timeline.has-drawer-open').forEach(t => t.classList.remove('has-drawer-open'));
           }
         }
+        const fab = document.getElementById('timeline-btn-add');
+        if (fab) fab.style.display = '';
+        const mainTl = document.getElementById('main-editor-timeline');
+        if (mainTl) mainTl.classList.remove('is-selection-mode');
+        document.body.classList.remove('is-selection-mode');
         const resetDrawerSubviewsToMain = () => {
           window._layerDrawerResetTimer = null;
           if (window.selectedLayerId || (window.selectedLayerIds && window.selectedLayerIds.size > 0)) return;
@@ -397,6 +412,9 @@ function initTimelineOperations() {
           window.clearSelectedKeyframes();
         }
         isSelectorMode = false;
+        window.isSelectorMode = false;
+        window._isExplicitSelectionMode = false;
+        if (typeof syncSelectionModeButtonUI === 'function') syncSelectionModeButtonUI();
         const vp = document.getElementById('timeline-layers-viewport');
         if (vp) vp.classList.remove('has-drawer-open');
         const tl = document.getElementById('main-editor-timeline');
@@ -456,22 +474,23 @@ function initTimelineOperations() {
         if (!projectNav || !layerNav) return;
 
         let count = selectedLayerIds && selectedLayerIds.size > 0 ? selectedLayerIds.size : (selectedLayerId ? 1 : 0);
-        if (count === 0 && isSelectorMode) {
+        if (count === 0 && isSelectorMode && !window._isExplicitSelectionMode) {
           isSelectorMode = false;
         }
+        if (typeof syncSelectionModeButtonUI === 'function') syncSelectionModeButtonUI();
         const prevBtn = document.getElementById('editor-btn-prev');
         const nextBtn = document.getElementById('editor-btn-next');
+        const fab = document.getElementById('timeline-btn-add');
+        const mainTl = document.getElementById('main-editor-timeline');
 
-        if (count > 0) {
+        if (count > 0 || isSelectorMode) {
           if (prevBtn) prevBtn.setAttribute('title', 'Previous Keyframe / Beatmark');
           if (nextBtn) nextBtn.setAttribute('title', 'Next Keyframe / Beatmark');
           projectNav.style.display = 'none';
           layerNav.style.display = 'flex';
 
-          const batchFloatingBar = document.getElementById('timeline-batch-floating-bar');
-
           if (isSelectorMode || count > 1) {
-            // Batch select: show "(count) Selected" in header & show floating bottom bar
+            // Batch select: show "(count) Selected" in header & open timeline-batch-drawer
             if (layerNameInput) layerNameInput.style.display = 'none';
             // Show link button so users can batch-link multiple selected layers
             if (btnLink) {
@@ -488,12 +507,33 @@ function initTimelineOperations() {
               batchTitle.textContent = `${count} Selected`;
               batchTitle.style.display = 'block';
             }
-            if (batchFloatingBar) {
-              batchFloatingBar.style.display = 'inline-flex';
+
+            // Hide FAB during selection mode and mark timeline
+            if (fab) fab.style.display = 'none';
+            if (mainTl) mainTl.classList.add('is-selection-mode');
+            document.body.classList.add('is-selection-mode');
+
+            // Open batch drawer & close single layer drawer
+            if (window.Drawer) {
+              if (window.Drawer.isOpen('timeline-layer-drawer')) {
+                window.Drawer.close('timeline-layer-drawer', false);
+              }
+              if (!window.Drawer.isOpen('timeline-batch-drawer')) {
+                window.Drawer.open('timeline-batch-drawer');
+              }
+            }
+            if (typeof updateCutBarRowState === 'function') {
+              updateCutBarRowState();
             }
           } else if (count === 1) {
-            // Single select: show layer rename input & link button, hide group buttons & floating bar
-            if (batchFloatingBar) batchFloatingBar.style.display = 'none';
+            // Single select: show layer rename input & link button, hide group buttons & batch drawer
+            if (window.Drawer && window.Drawer.isOpen('timeline-batch-drawer')) {
+              window.Drawer.close('timeline-batch-drawer', false);
+            }
+            if (fab) fab.style.display = '';
+            if (mainTl) mainTl.classList.remove('is-selection-mode');
+            document.body.classList.remove('is-selection-mode');
+
             if (batchActions) batchActions.style.display = 'none';
             if (btnPrecomp) btnPrecomp.style.display = 'none';
             if (btnGroupMask) btnGroupMask.style.display = 'none';
@@ -515,6 +555,9 @@ function initTimelineOperations() {
               }
             }
             if (batchTitle) batchTitle.style.display = 'none';
+            if (window.Drawer && !window.Drawer.isOpen('timeline-layer-drawer')) {
+              window.Drawer.open('timeline-layer-drawer');
+            }
           }
 
           const btnMotionBlur = document.getElementById('btn-layer-header-motion-blur');
@@ -554,8 +597,17 @@ function initTimelineOperations() {
           if (nextBtn) nextBtn.setAttribute('title', 'Next Beatmark / Frame');
           layerNav.style.display = 'none';
           projectNav.style.display = 'flex';
-          const batchFloatingBar = document.getElementById('timeline-batch-floating-bar');
-          if (batchFloatingBar) batchFloatingBar.style.display = 'none';
+          if (window.Drawer) {
+            if (window.Drawer.isOpen('timeline-batch-drawer')) {
+              window.Drawer.close('timeline-batch-drawer', false);
+            }
+            if (window.Drawer.isOpen('timeline-layer-drawer')) {
+              window.Drawer.close('timeline-layer-drawer', false);
+            }
+          }
+          if (fab) fab.style.display = '';
+          if (mainTl) mainTl.classList.remove('is-selection-mode');
+          document.body.classList.remove('is-selection-mode');
           if (btnLink) btnLink.style.display = 'none';
           if (btnPrecomp) btnPrecomp.style.display = 'none';
           if (btnGroupMask) btnGroupMask.style.display = 'none';
@@ -610,6 +662,9 @@ function initTimelineOperations() {
         }
         if (typeof window.updateClipboardButtonsVisibility === 'function') {
           window.updateClipboardButtonsVisibility();
+        }
+        if (typeof syncSelectionModeButtonUI === 'function') {
+          syncSelectionModeButtonUI();
         }
       }
       window.updateEditorHeaderMode = updateEditorHeaderMode;
@@ -1229,6 +1284,15 @@ function initTimelineOperations() {
             extractAudioFromSelectedVideo();
           });
         }
+
+        const btnPopoverFreeze = document.getElementById('popover-btn-freeze-frame');
+        if (btnPopoverFreeze) {
+          btnPopoverFreeze.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (window.Popover) window.Popover.close(false);
+            executeFreezeCurrentFrame();
+          });
+        }
       })();
 
       // Internal Layer & Keyframe Clipboard & Modular Actions Logic
@@ -1619,6 +1683,10 @@ function initTimelineOperations() {
         }
         if (extractBtn) {
           extractBtn.style.display = isSingleVideo ? 'flex' : 'none';
+        }
+        const freezeBtn = document.getElementById('popover-btn-freeze-frame');
+        if (freezeBtn) {
+          freezeBtn.style.display = isSingleVideo ? 'flex' : 'none';
         }
         if (audioDivider) {
           audioDivider.style.display = isSingleVideo ? 'block' : 'none';
@@ -3562,7 +3630,7 @@ function initTimelineOperations() {
       }
       window.extractAudioFromSelectedVideo = extractAudioFromSelectedVideo;
 
-      // Close layer drawer → deselect layer & clear spotlight
+      // Close layer or batch drawer → deselect layer & clear spotlight
       window.addEventListener('drawer-closed', (e) => {
         if (e.detail && e.detail.id === 'timeline-layer-drawer') {
           const vp = document.getElementById('timeline-layers-viewport');
@@ -3578,6 +3646,19 @@ function initTimelineOperations() {
             drawerEl.style.removeProperty('--spotlight-bottom');
           }
           if (typeof deselectTimelineLayer === 'function') deselectTimelineLayer();
+        } else if (e.detail && e.detail.id === 'timeline-batch-drawer') {
+          const vp = document.getElementById('timeline-layers-viewport');
+          if (vp) vp.classList.remove('has-drawer-open');
+          const tl = document.getElementById('main-editor-timeline');
+          if (tl) {
+            tl.classList.remove('has-layer-drawer-open');
+            tl.style.removeProperty('--timeline-drawer-height');
+          }
+          isSelectorMode = false;
+          window.isSelectorMode = false;
+          window._isExplicitSelectionMode = false;
+          if (typeof deselectTimelineLayer === 'function') deselectTimelineLayer();
+          if (typeof syncSelectionModeButtonUI === 'function') syncSelectionModeButtonUI();
         }
       });
       window.addEventListener('drawer-opened', (e) => {
@@ -3597,6 +3678,11 @@ function initTimelineOperations() {
               }
             }, 270);
           }
+        } else if (e.detail && e.detail.id === 'timeline-batch-drawer') {
+          const vp = document.getElementById('timeline-layers-viewport');
+          if (vp) vp.classList.add('has-drawer-open');
+          const tl = document.getElementById('main-editor-timeline');
+          if (tl) tl.classList.add('has-layer-drawer-open');
         }
       });
 
@@ -3743,6 +3829,9 @@ function initTimelineOperations() {
         if (overlayContainer) {
           overlayContainer.innerHTML = '';
           overlayContainer.classList.toggle('is-selector-mode', isSelectorMode);
+        }
+        if (typeof syncSelectionModeButtonUI === 'function') {
+          syncSelectionModeButtonUI();
         }
 
         const layers = currentProjectState.layers || [];
@@ -4311,6 +4400,9 @@ function initTimelineOperations() {
             let panStartY = 0;
             let panStartPanX = 0;
             let panStartScrollTop = 0;
+            let clipPanVx = 0;
+            let clipPanLastX = 0;
+            let clipPanLastTime = 0;
             let initialStartPx = 0;
             let justFinishedSlide = false;
             let justTappedInPointerUp = false;
@@ -4344,6 +4436,9 @@ function initTimelineOperations() {
               hasSlid = false;
               hasMenuOpened = false;
               isPanPassthrough = false;
+              clipPanVx = 0;
+              clipPanLastX = e.clientX;
+              clipPanLastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
               const isSelectedLayer = (layer.id === window.selectedLayerId);
 
@@ -4633,24 +4728,49 @@ function initTimelineOperations() {
                       isPanPassthrough = true;
                       panStartX = moveEvent.clientX;
                       panStartY = moveEvent.clientY;
+                      clipPanLastX = moveEvent.clientX;
+                      clipPanLastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+                      clipPanVx = 0;
                       panStartPanX = window.timelinePanX !== undefined ? window.timelinePanX : 0;
                       panStartScrollTop = document.getElementById('timeline-layers-viewport')?.scrollTop || 0;
                       window.isTimelinePanning = true;
-                      window.isTimelineScrubbing = true;
-                      if (window.FishAudioEngine) window.FishAudioEngine.startScrub();
+                      const isPlayingActive = Boolean(window.isTimelinePlaying || (typeof isPlaying !== 'undefined' && isPlaying));
+                      if (isPlayingActive) {
+                        window._isPlaybackUserPanned = true;
+                        window._isPlaybackRecentering = false;
+                        if (window._playbackRecenterTimer) clearTimeout(window._playbackRecenterTimer);
+                        if (window._isPlaybackRecenteringRaf) cancelAnimationFrame(window._isPlaybackRecenteringRaf);
+                        if (window._timelineInertiaRaf) cancelAnimationFrame(window._timelineInertiaRaf);
+                      } else {
+                        window.isTimelineScrubbing = true;
+                        if (window.FishAudioEngine) window.FishAudioEngine.startScrub();
+                      }
                       const vp = document.getElementById('timeline-layers-viewport');
                       if (vp) vp.classList.add('is-dragging');
                     }
+
+                    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+                    if (clipPanLastTime && now > clipPanLastTime) {
+                      const dt = (now - clipPanLastTime) / 1000;
+                      const dx = moveEvent.clientX - clipPanLastX;
+                      const instVx = dx / Math.max(0.003, dt);
+                      clipPanVx = clipPanVx * 0.30 + instVx * 0.70;
+                    }
+                    clipPanLastX = moveEvent.clientX;
+                    clipPanLastTime = now;
 
                     const deltaX = moveEvent.clientX - panStartX;
                     const deltaY = moveEvent.clientY - panStartY;
                     const bounds = (typeof getTimelineBounds === 'function') ? getTimelineBounds() : { min: -10000, max: 0 };
                     let targetPanX = Math.max(bounds.min, Math.min(0, panStartPanX + deltaX));
-                    const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || 60);
-                    const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
-                    const rawSec = Math.max(0, -targetPanX / activePps);
-                    const snappedSec = Math.round(rawSec * safeFps) / safeFps;
-                    targetPanX = -snappedSec * activePps;
+                    const isPlayingActive = Boolean(window.isTimelinePlaying || (typeof isPlaying !== 'undefined' && isPlaying));
+                    if (!isPlayingActive) {
+                      const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || 60);
+                      const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
+                      const rawSec = Math.max(0, -targetPanX / activePps);
+                      const snappedSec = Math.round(rawSec * safeFps) / safeFps;
+                      targetPanX = -snappedSec * activePps;
+                    }
                     if (typeof updateTimelinePosition === 'function') {
                       updateTimelinePosition(targetPanX);
                     }
@@ -4702,15 +4822,33 @@ function initTimelineOperations() {
                   isPanPassthrough = false;
                   window.isTimelinePanning = false;
                   window.isTimelineScrubbing = false;
-                  if (window.FishAudioEngine) window.FishAudioEngine.stopScrub();
+                  const isPlayingActive = Boolean(window.isTimelinePlaying || (typeof isPlaying !== 'undefined' && isPlaying));
+                  if (!isPlayingActive && window.FishAudioEngine) {
+                    window.FishAudioEngine.stopScrub();
+                  }
                   const vp = document.getElementById('timeline-layers-viewport');
                   if (vp) vp.classList.remove('is-dragging');
-                  const rawSec = (typeof getCurrentPlayheadTime === 'function') ? getCurrentPlayheadTime() : Math.max(0, -(window.timelinePanX || 0) / pixelsPerSecond);
-                  const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || 60);
-                  const finalSnappedSec = Math.round(rawSec * safeFps) / safeFps;
-                  const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
-                  if (typeof updateTimelinePosition === 'function') {
-                    updateTimelinePosition(-finalSnappedSec * pps, true);
+
+                  if (isPlayingActive) {
+                    if (typeof window.startTimelineInertia === 'function' && Math.abs(clipPanVx) > 40) {
+                      window.startTimelineInertia(clipPanVx);
+                    } else if (typeof window.startSmoothRecenter === 'function') {
+                      window.startSmoothRecenter();
+                    } else if (typeof window.schedulePlaybackRecenter === 'function') {
+                      window.schedulePlaybackRecenter(0);
+                    }
+                  } else {
+                    if (typeof window.startTimelineInertia === 'function' && Math.abs(clipPanVx) > 40) {
+                      window.startTimelineInertia(clipPanVx);
+                    } else {
+                      const rawSec = (typeof getCurrentPlayheadTime === 'function') ? getCurrentPlayheadTime() : Math.max(0, -(window.timelinePanX || 0) / pixelsPerSecond);
+                      const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || 60);
+                      const finalSnappedSec = Math.round(rawSec * safeFps) / safeFps;
+                      const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
+                      if (typeof updateTimelinePosition === 'function') {
+                        updateTimelinePosition(-finalSnappedSec * pps, true);
+                      }
+                    }
                   }
                   justFinishedSlide = true;
                   setTimeout(() => { justFinishedSlide = false; }, 150);
@@ -7972,6 +8110,45 @@ function initTimelineOperations() {
           groupAfter.style.display = 'none';
           groupBefore.style.display = 'none';
         }
+
+        // Also adapt batch floating cut row based on collective span of selected layers
+        const batchNormal = document.getElementById('batch-cut-group-normal');
+        const batchAfter = document.getElementById('batch-cut-group-after');
+        const batchBefore = document.getElementById('batch-cut-group-before');
+        if (batchNormal && batchAfter && batchBefore) {
+          const batchTargets = getSelectedLayersForOperation();
+          const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
+          const curPlaySec = getPlayheadSecForOperation();
+          if (!batchTargets || batchTargets.length === 0) {
+            batchNormal.style.display = 'inline-flex';
+            batchAfter.style.display = 'none';
+            batchBefore.style.display = 'none';
+          } else {
+            const allBefore = batchTargets.every(l => {
+              const st = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps);
+              return curPlaySec < (st - 0.02);
+            });
+            const allAfter = batchTargets.every(l => {
+              const st = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps);
+              const dur = l.durationSec !== undefined ? l.durationSec : ((l.widthPx || 320) / pps);
+              return curPlaySec > (st + dur + 0.02);
+            });
+
+            if (allAfter) {
+              batchNormal.style.display = 'none';
+              batchAfter.style.display = 'inline-flex';
+              batchBefore.style.display = 'none';
+            } else if (allBefore) {
+              batchNormal.style.display = 'none';
+              batchAfter.style.display = 'none';
+              batchBefore.style.display = 'inline-flex';
+            } else {
+              batchNormal.style.display = 'inline-flex';
+              batchAfter.style.display = 'none';
+              batchBefore.style.display = 'none';
+            }
+          }
+        }
       }
 
       // Hubungkan tombol Cut & Trim ke logic
@@ -8045,6 +8222,219 @@ function initTimelineOperations() {
         desktopBtnFreeze.addEventListener('click', (e) => {
           e.stopPropagation();
           executeFreezeCurrentFrame();
+        });
+      }
+
+      function executeBatchCutMid() {
+        const targets = getSelectedLayersForOperation();
+        if (!targets || targets.length === 0) return;
+        const pps = window.currentPixelsPerSecond || (typeof pixelsPerSecond !== 'undefined' ? pixelsPerSecond : 80);
+        const fps = (typeof getProjectFps === 'function') ? getProjectFps() : (parseInt(currentProjectState?.fps, 10) || window.currentTimelineFps || 60);
+        const currentSec = getPlayheadSecForOperation();
+        const minDuration = 1 / fps;
+
+        const newRightLayerIds = [];
+        let didCutAny = false;
+
+        targets.forEach(layer => {
+          const startSec = Math.round((layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps)) * fps) / fps;
+          const durSec = Math.max(1 / fps, Math.round((layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps)) * fps) / fps);
+          const endSec = Math.round((startSec + durSec) * fps) / fps;
+
+          if (currentSec <= startSec + (minDuration * 0.5) || currentSec >= endSec - (minDuration * 0.5)) return;
+
+          const leftDurSec = Math.max(minDuration, Math.round((currentSec - startSec) * fps) / fps);
+          const rightStartSec = Math.round((startSec + leftDurSec) * fps) / fps;
+          const rightDurSec = Math.max(minDuration, Math.round((endSec - rightStartSec) * fps) / fps);
+
+          const leftStartPx = Math.round(startSec * pps);
+          const leftWidthPx = Math.round(rightStartSec * pps) - leftStartPx;
+          const rightStartPx = leftStartPx + leftWidthPx;
+          const rightWidthPx = Math.round((rightStartSec + rightDurSec) * pps) - rightStartPx;
+
+          const cutSrcId = layer.sourceLayerId || layer.id;
+          layer.sourceLayerId = cutSrcId;
+
+          const newLayerId = 'layer_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+
+          const fxIdMap = new Map();
+          let clonedEffects = [];
+          if (Array.isArray(layer.effects)) {
+            clonedEffects = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(layer.effects) : (Array.isArray(layer.effects) ? [] : {}));
+            clonedEffects.forEach(fx => {
+              const oldFxId = fx.id;
+              const newFxId = 'fx_' + (fx.type || 'effect') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+              fx.id = newFxId;
+              if (oldFxId) fxIdMap.set(oldFxId, newFxId);
+            });
+          }
+
+          let clonedAudioEffects = [];
+          if (Array.isArray(layer.audioEffects)) {
+            clonedAudioEffects = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(layer.audioEffects) : (Array.isArray(layer.audioEffects) ? [] : {}));
+            clonedAudioEffects.forEach(afx => {
+              afx.id = 'afx_' + (afx.type || 'audio') + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+            });
+          }
+
+          const leftKf = {};
+          const rightKf = {};
+          if (layer.keyframes) {
+            Object.keys(layer.keyframes).forEach(prop => {
+              const list = layer.keyframes[prop];
+              if (!Array.isArray(list)) return;
+              const mappedProp = (prop.startsWith('fx_') && fxIdMap.has(prop)) ? fxIdMap.get(prop) : prop;
+              leftKf[prop] = [];
+              rightKf[mappedProp] = [];
+              list.forEach(kf => {
+                if (kf.time < currentSec) {
+                  leftKf[prop].push(Object.assign({}, kf));
+                } else {
+                  rightKf[mappedProp].push(Object.assign({}, kf));
+                }
+              });
+            });
+          }
+
+          const originalSourceOffset = layer.sourceOffsetSec || 0;
+          const effSpeed = (layer.speed !== undefined && layer.speed !== 0) ? Math.abs(layer.speed) : 1.0;
+          let newRightOffset = originalSourceOffset;
+          if (layer.type === 'video' || layer.type === 'audio') {
+            newRightOffset = originalSourceOffset + (leftDurSec * effSpeed);
+          }
+
+          const rightLayer = Object.assign({}, layer, {
+            id: newLayerId,
+            name: layer.name,
+            startPx: rightStartPx,
+            widthPx: rightWidthPx,
+            startSec: rightStartSec,
+            durationSec: rightDurSec,
+            sourceOffsetSec: newRightOffset,
+            sourceLayerId: cutSrcId,
+            effects: clonedEffects,
+            audioEffects: clonedAudioEffects,
+            keyframes: rightKf,
+            _userTrimmed: true
+          });
+
+          layer.durationSec = leftDurSec;
+          layer.widthPx = leftWidthPx;
+          layer.keyframes = leftKf;
+          layer.isDurationExplicit = true;
+          layer._userTrimmed = true;
+
+          const idx = (currentProjectState.layers || []).indexOf(layer);
+          if (idx !== -1) {
+            currentProjectState.layers.splice(idx, 0, rightLayer);
+          } else {
+            currentProjectState.layers.push(rightLayer);
+          }
+
+          newRightLayerIds.push(newLayerId);
+          didCutAny = true;
+        });
+
+        if (!didCutAny) return;
+
+        newRightLayerIds.forEach(id => selectedLayerIds.add(id));
+        isSelectorMode = true;
+
+        renderTimelineLayers();
+        redrawComposition();
+        saveCurrentProjectLayers();
+        updateTimelineDuration(true);
+
+        if (typeof updateCutBarRowState === 'function') {
+          try { updateCutBarRowState(); } catch (_) {}
+        }
+      }
+      window.executeBatchCutMid = executeBatchCutMid;
+
+      // Batch Cut Row Event Listeners
+      const btnBatchCutLeft = document.getElementById('btn-batch-cut-left');
+      if (btnBatchCutLeft) {
+        btnBatchCutLeft.addEventListener('click', (e) => {
+          e.stopPropagation();
+          executeTrimIn();
+        });
+      }
+      const btnBatchCutMid = document.getElementById('btn-batch-cut-mid');
+      if (btnBatchCutMid) {
+        btnBatchCutMid.addEventListener('click', (e) => {
+          e.stopPropagation();
+          executeBatchCutMid();
+        });
+      }
+      const btnBatchCutRight = document.getElementById('btn-batch-cut-right');
+      if (btnBatchCutRight) {
+        btnBatchCutRight.addEventListener('click', (e) => {
+          e.stopPropagation();
+          executeTrimOut();
+        });
+      }
+      const btnBatchExpandRight = document.getElementById('btn-batch-expand-right');
+      if (btnBatchExpandRight) {
+        btnBatchExpandRight.addEventListener('click', (e) => {
+          e.stopPropagation();
+          executeTrimOut();
+        });
+      }
+      const btnBatchMoveRight = document.getElementById('btn-batch-move-right');
+      if (btnBatchMoveRight) {
+        btnBatchMoveRight.addEventListener('click', (e) => {
+          e.stopPropagation();
+          executeMoveOut();
+        });
+      }
+      const btnBatchMoveLeft = document.getElementById('btn-batch-move-left');
+      if (btnBatchMoveLeft) {
+        btnBatchMoveLeft.addEventListener('click', (e) => {
+          e.stopPropagation();
+          executeMoveIn();
+        });
+      }
+      const btnBatchExpandLeft = document.getElementById('btn-batch-expand-left');
+      if (btnBatchExpandLeft) {
+        btnBatchExpandLeft.addEventListener('click', (e) => {
+          e.stopPropagation();
+          executeTrimIn();
+        });
+      }
+
+      // Selection Mode Ruler Button Listener
+      function syncSelectionModeButtonUI() {
+        const btn = document.getElementById('timeline-btn-selection-mode');
+        if (btn) {
+          const active = Boolean(isSelectorMode);
+          btn.classList.toggle('is-active', active);
+          btn.classList.toggle('is-selected', active);
+        }
+      }
+      window.syncSelectionModeButtonUI = syncSelectionModeButtonUI;
+
+      const btnSelectionMode = document.getElementById('timeline-btn-selection-mode');
+      if (btnSelectionMode) {
+        btnSelectionMode.addEventListener('click', (e) => {
+          e.stopPropagation();
+          isSelectorMode = !isSelectorMode;
+          window.isSelectorMode = isSelectorMode;
+          window._isExplicitSelectionMode = isSelectorMode;
+          if (isSelectorMode) {
+            if (selectedLayerId && selectedLayerIds && !selectedLayerIds.has(selectedLayerId)) {
+              selectedLayerIds.add(selectedLayerId);
+            }
+          } else {
+            if (selectedLayerIds && selectedLayerIds.size > 1) {
+              const keepId = selectedLayerId || Array.from(selectedLayerIds)[0];
+              selectedLayerIds.clear();
+              if (keepId) selectedLayerIds.add(keepId);
+            }
+          }
+          updateEditorHeaderMode();
+          renderTimelineLayers();
+          syncSelectionModeButtonUI();
+          if (typeof updateCutBarRowState === 'function') updateCutBarRowState();
         });
       }
 

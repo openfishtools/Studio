@@ -1065,6 +1065,7 @@
     var fpsFactor = Math.pow(Math.max(12, Math.min(120, fps || 30)) / 30, 0.6);
     var bps = base * pxRatio * fpsFactor;
     if (family === 'vp9') bps *= 0.7; // VP9 reaches the same quality at lower bitrate
+    if (family === 'hevc') bps *= 0.6; // H.265 reaches high quality at ~40% lower bitrate (~12 Mbps for 1080p detail)
     // Very long exports: keep in-memory Mp4Muxer buffer bounded
     if (totalDur > 60) bps *= Math.max(0.5, Math.min(1.0, 90 / totalDur));
     return Math.round(Math.max(2000000, Math.min(100000000, bps)));
@@ -1078,8 +1079,11 @@
     var preset     = options.preset     || 'normal';
     var customName = options.customName || '';
     var onProgress = options.onProgress;
+    var reqCodec   = String(options.codec || 'h264').toLowerCase();
+    var isHevc     = (reqCodec === 'h265' || reqCodec === 'hevc');
+    var family     = isHevc ? 'hevc' : 'avc';
 
-    logExportInfo('WebCodecs', 'Initializing Tier 1 WebCodecs pipeline...');
+    logExportInfo('WebCodecs', 'Initializing Tier 1 WebCodecs pipeline (' + (isHevc ? 'H.265/HEVC' : 'H.264/AVC') + ')...');
     if (typeof VideoEncoder === 'undefined' || typeof Mp4Muxer === 'undefined') {
       logExportWarn('WebCodecs', 'VideoEncoder or Mp4Muxer missing in window. WebCodecs unavailable.');
       return false;
@@ -1098,7 +1102,7 @@
     var totalFrames = Math.max(1, Math.round(totalDur * fps));
     var pps   = window.currentPixelsPerSecond || 80;
 
-    var videoBps    = computeExportVideoBitrate(preset, baseW, baseH, fps, totalDur, 'avc');
+    var videoBps    = computeExportVideoBitrate(preset, baseW, baseH, fps, totalDur, family);
     var bitrateMode = 'variable';
 
     var pixelRate = baseW * baseH * fps;
@@ -1107,21 +1111,37 @@
 
     // Best compression first (High: CABAC + B-frames + 8x8 transform => much smaller files at equal quality).
     // Each candidate is actively probed, so unsupported ones fall through safely to Main/Baseline/VP9.
-    var candidates = [
+    var h264Candidates = [
       { codec: 'avc1.6400' + h264Level, muxerCodec: 'avc', name: 'H.264 High' },
       { codec: 'avc1.4d40' + h264Level, muxerCodec: 'avc', name: 'H.264 Main' },
       { codec: 'avc1.42e0' + h264Level, muxerCodec: 'avc', name: 'H.264 Constrained' },
-      { codec: 'avc1.4200' + h264Level, muxerCodec: 'avc', name: 'H.264 Baseline' },
+      { codec: 'avc1.4200' + h264Level, muxerCodec: 'avc', name: 'H.264 Baseline' }
+    ];
+
+    var hevcCandidates = [
+      { codec: 'hvc1.1.6.L120.B0', muxerCodec: 'hevc', name: 'H.265/HEVC Main L4.0' },
+      { codec: 'hvc1.1.6.L123.B0', muxerCodec: 'hevc', name: 'H.265/HEVC Main L4.1' },
+      { codec: 'hvc1.1.6.L150.B0', muxerCodec: 'hevc', name: 'H.265/HEVC Main L5.0' },
+      { codec: 'hvc1.1.6.L153.B0', muxerCodec: 'hevc', name: 'H.265/HEVC Main L5.1' },
+      { codec: 'hev1.1.6.L120.B0', muxerCodec: 'hevc', name: 'HEVC Main (hev1) L4.0' },
+      { codec: 'hev1.1.6.L150.B0', muxerCodec: 'hevc', name: 'HEVC Main (hev1) L5.0' }
+    ];
+
+    var vp9Candidates = [
       { codec: 'vp09.00.10.08', muxerCodec: 'vp9', name: 'VP9 Profile 0' },
       { codec: 'vp09.02.10.10', muxerCodec: 'vp9', name: 'VP9 Profile 2' }
     ];
+
+    var candidates = isHevc
+      ? hevcCandidates.concat(h264Candidates)
+      : h264Candidates.concat(vp9Candidates);
 
     var chosenCodec = null, chosenConfig = null;
     var hwModes  = ['prefer-hardware', 'no-preference'];
     var brModes  = ['variable'];
     var latModes = ['quality', 'realtime']; // Offline render defaults to quality; realtime is fallback
 
-    logExportInfo('WebCodecs', 'Testing ' + candidates.length + ' H.264/VP9 candidate profiles at ' + baseW + 'x' + baseH + ' @ ' + fps + 'fps (' + (videoBps/1000000).toFixed(1) + ' Mbps)...');
+    logExportInfo('WebCodecs', 'Testing ' + candidates.length + ' ' + (isHevc ? 'H.265/' : '') + 'H.264/VP9 candidate profiles at ' + baseW + 'x' + baseH + ' @ ' + fps + 'fps (' + (videoBps/1000000).toFixed(1) + ' Mbps)...');
 
     outer:
     for (var ci = 0; ci < candidates.length; ci++) {

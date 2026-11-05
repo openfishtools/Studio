@@ -779,14 +779,49 @@
       _cachedIsDesktop = null;
       window.addEventListener('resize', () => { _cachedIsDesktop = null; }, { passive: true });
 
+      function syncNeedleToActivePlayback() {
+        const needle = document.getElementById('timeline-center-needle');
+        const badge = document.getElementById('timeline-time-badge');
+        if (!needle && !badge) return;
+
+        const isDetached = isAnyPlaybackActive() && (window._isPlaybackUserPanned || window._isPlaybackRecentering);
+        if (isDetached) {
+          const pps = window.currentPixelsPerSecond || (typeof pixelsPerSecond !== 'undefined' ? pixelsPerSecond : 80);
+          const curPlaySec = (typeof window.activePlaybackSec === 'number' && window.activePlaybackSec >= 0)
+            ? window.activePlaybackSec
+            : (typeof window.currentPlaybackSec === 'number' && window.currentPlaybackSec >= 0 ? window.currentPlaybackSec : 0);
+          const offsetPx = panX + (curPlaySec * pps);
+          const leftStr = `calc(50% + ${offsetPx.toFixed(1)}px)`;
+          if (needle) needle.style.left = leftStr;
+          if (badge) badge.style.left = leftStr;
+        } else {
+          resetNeedleToCenter();
+        }
+      }
+      window.syncNeedleToActivePlayback = syncNeedleToActivePlayback;
+
+      function resetNeedleToCenter() {
+        const needle = document.getElementById('timeline-center-needle');
+        const badge = document.getElementById('timeline-time-badge');
+        if (needle && needle.style.left !== '') needle.style.left = '';
+        if (badge && badge.style.left !== '') badge.style.left = '';
+        const oldEl = document.getElementById('timeline-detached-playhead');
+        if (oldEl) oldEl.remove();
+      }
+      window.resetNeedleToCenter = resetNeedleToCenter;
+
       function renderTimeline(force = false) {
         rafScheduled = false;
         if (!force && panX === lastRenderedPanX) return;
         lastRenderedPanX = panX;
         window.timelinePanX = panX;
         const curSec = Math.max(0, -panX / pixelsPerSecond);
-        window.currentPlaybackSec = curSec;
-        window.currentSec = curSec;
+
+        const isDetachedPlayback = isAnyPlaybackActive() && (window._isPlaybackUserPanned || window._isPlaybackRecentering);
+        if (!isDetachedPlayback) {
+          window.currentPlaybackSec = curSec;
+          window.currentSec = curSec;
+        }
 
         const isDesktop = (_cachedIsDesktop !== null)
           ? _cachedIsDesktop
@@ -795,12 +830,16 @@
           const panStr = `translate3d(${panX.toFixed(2)}px, 0, 0)`;
           rulerTrack.style.transform = panStr;
           layersTrack.style.transform = panStr;
+          syncNeedleToActivePlayback();
         } else if (typeof window.syncDesktopPlayhead === 'function') {
           window.syncDesktopPlayhead();
         }
 
         // Calculate current timecode in exact milliseconds
-        const currentMs = Math.round((Math.max(0, -panX) / pixelsPerSecond) * 1000);
+        const displaySec = (isDetachedPlayback && typeof window.activePlaybackSec === 'number')
+          ? window.activePlaybackSec
+          : curSec;
+        const currentMs = Math.round(displaySec * 1000);
         const isActivelyPlaying = isAnyPlaybackActive();
         if (currentMs !== lastDisplayedMs && (!isActivelyPlaying || Math.abs(currentMs - lastDisplayedMs) >= 40)) {
           lastDisplayedMs = currentMs;
@@ -900,8 +939,14 @@
           panX = -curSec * pps;
         }
         window.timelinePanX = panX;
-        window.currentPlaybackSec = curSec;
-        window.currentSec = curSec;
+
+        const isDetachedPlayback = isAnyPlaybackActive() && (window._isPlaybackUserPanned || window._isPlaybackRecentering);
+        if (!isDetachedPlayback) {
+          window.activePlaybackSec = curSec;
+          window.currentPlaybackSec = curSec;
+          window.currentSec = curSec;
+        }
+
         if (immediate) {
           renderTimeline(true);
         } else {
@@ -1557,10 +1602,29 @@
           }
           return;
         }
-        const curSecAtPause = Math.max(0, -panX / pixelsPerSecond);
+        const curSecAtPause = (typeof window.activePlaybackSec === 'number' && window.activePlaybackSec >= 0)
+          ? window.activePlaybackSec
+          : Math.max(0, -panX / pixelsPerSecond);
         window.lastPausePlaybackSec = curSecAtPause;
         isPlaying = false;
         window.isTimelinePlaying = false;
+        window.activePlaybackSec = curSecAtPause;
+        window.currentPlaybackSec = curSecAtPause;
+        window.currentSec = curSecAtPause;
+        const wasUserPanned = Boolean(window._isPlaybackUserPanned || window._isPlaybackRecentering);
+        window._isPlaybackUserPanned = false;
+        window._isPlaybackRecentering = false;
+        if (window._isPlaybackRecenteringRaf) {
+          cancelAnimationFrame(window._isPlaybackRecenteringRaf);
+          window._isPlaybackRecenteringRaf = null;
+        }
+        if (window._playbackRecenterTimer) {
+          clearTimeout(window._playbackRecenterTimer);
+          window._playbackRecenterTimer = null;
+        }
+        if (typeof resetNeedleToCenter === 'function') {
+          resetNeedleToCenter();
+        }
         updatePlayButtonUI();
         if (playAnimationId) {
           cancelAnimationFrame(playAnimationId);
@@ -1622,6 +1686,10 @@
         if (returnToStart && window.playbackPlayFromMode === 'last_pause' && typeof window.playbackPlayStartSec === 'number' && !isNaN(window.playbackPlayStartSec)) {
           if (typeof seekTimelineToTime === 'function') {
             seekTimelineToTime(window.playbackPlayStartSec, true);
+          }
+        } else if (wasUserPanned) {
+          if (typeof seekTimelineToTime === 'function') {
+            seekTimelineToTime(curSecAtPause, true);
           }
         }
         if (window._adaptiveDraftState) {
@@ -1766,6 +1834,13 @@
       let timelineEmptyLpTimer = null;
       let hasTimelineEmptyLpFired = false;
       let timelineTweenRaf = null;
+      let _panVx = 0;
+      let _panLastX = 0;
+      let _panLastTime = 0;
+      window._isPlaybackUserPanned = false;
+      window._isPlaybackRecentering = false;
+      window._isPlaybackRecenteringRaf = null;
+      window._timelineInertiaRaf = null;
 
       // Touch 2-finger timeline 2D pinch-to-zoom state (Horizontal + Vertical)
       let isTimelinePinching = false;
@@ -1974,17 +2049,151 @@
         }
       };
 
+      function startSmoothRecenter() {
+        if (!isPlaying && !window.isTimelinePlaying) {
+          window._isPlaybackRecentering = false;
+          window._isPlaybackUserPanned = false;
+          if (typeof resetNeedleToCenter === 'function') resetNeedleToCenter();
+          return;
+        }
+        window._isPlaybackRecentering = true;
+        if (window._isPlaybackRecenteringRaf) {
+          cancelAnimationFrame(window._isPlaybackRecenteringRaf);
+        }
+        const animateRecenter = () => {
+          if ((!isPlaying && !window.isTimelinePlaying) || isPanning || window.isTimelinePanning) {
+            window._isPlaybackRecentering = false;
+            window._isPlaybackRecenteringRaf = null;
+            if (!isPlaying && !window.isTimelinePlaying) {
+              window._isPlaybackUserPanned = false;
+              if (typeof resetNeedleToCenter === 'function') resetNeedleToCenter();
+            }
+            return;
+          }
+          const pps = window.currentPixelsPerSecond || (typeof pixelsPerSecond !== 'undefined' ? pixelsPerSecond : 80);
+          const curPlaySec = (typeof window.activePlaybackSec === 'number' && window.activePlaybackSec >= 0)
+            ? window.activePlaybackSec
+            : (typeof window.currentPlaybackSec === 'number' && window.currentPlaybackSec >= 0
+                ? window.currentPlaybackSec
+                : Math.abs(panX) / pps);
+          const targetPan = -curPlaySec * pps;
+          const diff = targetPan - panX;
+          if (Math.abs(diff) < 2.0) {
+            panX = targetPan;
+            updateTimelinePosition(panX, true);
+            window._isPlaybackRecentering = false;
+            window._isPlaybackUserPanned = false;
+            window._isPlaybackRecenteringRaf = null;
+            if (typeof resetNeedleToCenter === 'function') resetNeedleToCenter();
+            return;
+          }
+          // Smooth, lively ease-out follow
+          panX += diff * 0.18;
+          updateTimelinePosition(panX, true);
+          if (typeof syncNeedleToActivePlayback === 'function') syncNeedleToActivePlayback();
+          window._isPlaybackRecenteringRaf = requestAnimationFrame(animateRecenter);
+        };
+        window._isPlaybackRecenteringRaf = requestAnimationFrame(animateRecenter);
+      }
+      window.startSmoothRecenter = startSmoothRecenter;
+
+      function schedulePlaybackRecenter(delayMs = 0) {
+        if (window._playbackRecenterTimer) {
+          clearTimeout(window._playbackRecenterTimer);
+          window._playbackRecenterTimer = null;
+        }
+        if (delayMs <= 0) {
+          startSmoothRecenter();
+          return;
+        }
+        window._playbackRecenterTimer = setTimeout(() => {
+          window._playbackRecenterTimer = null;
+          startSmoothRecenter();
+        }, delayMs);
+      }
+      window.schedulePlaybackRecenter = schedulePlaybackRecenter;
+
+      function startTimelineInertia(initialVx) {
+        if (window._timelineInertiaRaf) {
+          cancelAnimationFrame(window._timelineInertiaRaf);
+          window._timelineInertiaRaf = null;
+        }
+        if (window._playbackRecenterTimer) {
+          clearTimeout(window._playbackRecenterTimer);
+          window._playbackRecenterTimer = null;
+        }
+        let inertiaVx = Math.max(-3600, Math.min(3600, initialVx));
+        let lastInertiaT = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+        const stepInertia = () => {
+          if (isPanning || window.isTimelinePanning) {
+            window._timelineInertiaRaf = null;
+            return;
+          }
+          const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+          const dt = Math.min(0.04, (now - lastInertiaT) / 1000);
+          lastInertiaT = now;
+
+          panX += inertiaVx * dt;
+          const bounds = getTimelineBounds();
+          if (panX < bounds.min) {
+            panX = bounds.min;
+            inertiaVx = 0;
+          } else if (panX > bounds.max) {
+            panX = bounds.max;
+            inertiaVx = 0;
+          }
+
+          updateTimelinePosition(panX, true);
+          inertiaVx *= 0.945; // slick low-friction momentum glide ("licin")
+
+          if (Math.abs(inertiaVx) > 16) {
+            window._timelineInertiaRaf = requestAnimationFrame(stepInertia);
+          } else {
+            window._timelineInertiaRaf = null;
+            if (isPlaying || window.isTimelinePlaying) {
+              startSmoothRecenter();
+            } else {
+              const rawSec = getCurrentPlayheadTime();
+              const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
+              const finalSnappedSec = Math.round(rawSec * safeFps) / safeFps;
+              const pps = window.currentPixelsPerSecond || (typeof pixelsPerSecond !== 'undefined' ? pixelsPerSecond : 80);
+              updateTimelinePosition(-finalSnappedSec * pps, true);
+            }
+          }
+        };
+
+        window._timelineInertiaRaf = requestAnimationFrame(stepInertia);
+      }
+      window.startTimelineInertia = startTimelineInertia;
+
       function onPanStart(e) {
         // On desktop workstation, timeline scrubbing is handled by ruler seek / playhead drag and marquee
         if (document.querySelector('.desktop-workstation, .desktop-viewport')) return;
         if (isTimelinePinching || window.isTimelinePinching || (timelinePinchEndTime && Date.now() - timelinePinchEndTime < 250)) return;
         if (isPanning) return; // Already panning with another pointer
-        if (isPlaying) {
-          pausePlayback();
+        if (window._isPlaybackRecenteringRaf) {
+          cancelAnimationFrame(window._isPlaybackRecenteringRaf);
+          window._isPlaybackRecenteringRaf = null;
+        }
+        if (window._playbackRecenterTimer) {
+          clearTimeout(window._playbackRecenterTimer);
+          window._playbackRecenterTimer = null;
+        }
+        if (window._timelineInertiaRaf) {
+          cancelAnimationFrame(window._timelineInertiaRaf);
+          window._timelineInertiaRaf = null;
         }
         if (timelineTweenRaf) {
           cancelAnimationFrame(timelineTweenRaf);
           timelineTweenRaf = null;
+        }
+        if (isPlaying || window.isTimelinePlaying) {
+          window._isPlaybackUserPanned = true;
+          window._isPlaybackRecentering = false;
+        } else {
+          window._isPlaybackUserPanned = false;
+          window._isPlaybackRecentering = false;
         }
         if (e.button !== undefined && e.button !== 0) return;
 
@@ -1997,7 +2206,7 @@
         );
 
         if (!hasOtherActiveItemDrag) {
-          if (e.target.closest('.timeline-clip-block') || e.target.closest('.timeline-layer-ctrl-pill') || e.target.closest('.timeline-layer-reorder-pill') || e.target.closest('.timeline-beatmark-item')) return; // Allow clip and pill interactions
+          if (e.target.closest('.timeline-clip-block') || e.target.closest('.timeline-layer-ctrl-pill') || e.target.closest('.timeline-layer-reorder-pill') || e.target.closest('.timeline-beatmark-item') || e.target.closest('.timeline-ruler-selection-pill')) return; // Allow clip, pill and selection button interactions
         }
 
         isPanning = true;
@@ -2010,6 +2219,10 @@
         startScrollTop = layersViewport ? layersViewport.scrollTop : 0;
         isLayersDrag = !!e.target.closest('#timeline-layers-viewport');
         isRulerDrag = !!e.target.closest('.timeline-header-ruler') || !!e.target.closest('#timeline-ruler-viewport');
+
+        _panVx = 0;
+        _panLastX = e.clientX;
+        _panLastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
         if (isRulerDrag) {
           rulerStartZoomPps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
@@ -2035,23 +2248,25 @@
           }, 450);
         }
 
-        if (window.FishAudioEngine) {
+        if (!isPlaying && !window.isTimelinePlaying && window.FishAudioEngine) {
           window.FishAudioEngine.startScrub();
         }
 
         if (rulerViewport) rulerViewport.classList.add('is-dragging');
         if (layersViewport) layersViewport.classList.add('is-dragging');
 
-        // Mute video/audio during scrub to eliminate clicks/crackles
-        const layers = currentProjectState.layers || [];
-        layers.forEach(layer => {
-          if (layer.type === 'video' || layer.type === 'audio') {
-            const media = getOrLoadLayerMedia(layer);
-            if (media && media.el) {
-              try { media.el.pause(); } catch (_) {}
+        // Mute video/audio during scrub to eliminate clicks/crackles (only when not in playback)
+        if (!isPlaying && !window.isTimelinePlaying) {
+          const layers = currentProjectState.layers || [];
+          layers.forEach(layer => {
+            if (layer.type === 'video' || layer.type === 'audio') {
+              const media = getOrLoadLayerMedia(layer);
+              if (media && media.el) {
+                try { media.el.pause(); } catch (_) {}
+              }
             }
-          }
-        });
+          });
+        }
       }
 
       function onPanMove(e) {
@@ -2066,6 +2281,16 @@
 
         const deltaX = lastEvent.clientX - startX;
         const deltaY = lastEvent.clientY - startY;
+
+        const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        if (_panLastTime && now > _panLastTime) {
+          const dt = (now - _panLastTime) / 1000;
+          const dx = lastEvent.clientX - _panLastX;
+          const instVx = dx / Math.max(0.003, dt);
+          _panVx = _panVx * 0.35 + instVx * 0.65;
+        }
+        _panLastX = lastEvent.clientX;
+        _panLastTime = now;
 
         // Cancel empty timeline long-press if user moves pointer beyond slight jitter threshold
         if (timelineEmptyLpTimer && (Math.abs(deltaX) > 6 || Math.abs(deltaY) > 6)) {
@@ -2121,19 +2346,21 @@
           targetPanX = bounds.min;
         }
 
-        // Quantize scrubbing to exact project FPS frame boundary
-        const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
-        const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
-        const rawSec = Math.max(0, -targetPanX / activePps);
-        const snappedSec = Math.round(rawSec * safeFps) / safeFps;
-        targetPanX = -snappedSec * activePps;
+        if (!isPlaying && !window.isTimelinePlaying) {
+          // Quantize scrubbing to exact project FPS frame boundary
+          const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
+          const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
+          const rawSec = Math.max(0, -targetPanX / activePps);
+          const snappedSec = Math.round(rawSec * safeFps) / safeFps;
+          targetPanX = -snappedSec * activePps;
+        }
 
         // Pure smooth playhead scrubbing without snapping to beatmarks or layer start/end
         const needle = document.getElementById('timeline-center-needle');
         if (needle) needle.classList.remove('is-snapped');
         window._lastScrubSnapPx = null;
 
-        // Scrub timeline horizontally
+        // Scrub / pan timeline horizontally
         updateTimelinePosition(targetPanX);
 
         // Pan layers vertically if scrubbing inside layers viewport
@@ -2188,23 +2415,39 @@
         window.isTimelinePanning = false;
         window.isTimelineScrubbing = false;
 
-        if (window.FishAudioEngine) {
+        if (window.FishAudioEngine && !isPlaying && !window.isTimelinePlaying) {
           window.FishAudioEngine.stopScrub();
         }
 
-        // Align exactly to nearest project FPS frame when parking (for both ruler drag and layers drag)
-        const rawSec = getCurrentPlayheadTime();
-        const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
-        const finalSnappedSec = Math.round(rawSec * safeFps) / safeFps;
-        const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
-        updateTimelinePosition(-finalSnappedSec * pps, true);
+        if (rulerViewport) rulerViewport.classList.remove('is-dragging');
+        if (layersViewport) layersViewport.classList.remove('is-dragging');
+
+        // 1. IF PLAYBACK IS RUNNING: immediately start smooth recenter with zero delay!
+        if (isPlaying || window.isTimelinePlaying) {
+          if (Math.abs(_panVx) > 120) {
+            startTimelineInertia(_panVx);
+          } else {
+            startSmoothRecenter();
+          }
+          isRulerDrag = false;
+          return;
+        }
+
+        // 2. IF PLAYBACK IS NOT RUNNING: apply slick momentum inertia glide ("licin")
+        if (Math.abs(_panVx) > 40) {
+          startTimelineInertia(_panVx);
+        } else {
+          // Align exactly to nearest project FPS frame when parking
+          const rawSec = getCurrentPlayheadTime();
+          const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
+          const finalSnappedSec = Math.round(rawSec * safeFps) / safeFps;
+          const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
+          updateTimelinePosition(-finalSnappedSec * pps, true);
+        }
 
         isRulerDrag = false;
 
         const curSec = getCurrentPlayheadTime();
-
-        if (rulerViewport) rulerViewport.classList.remove('is-dragging');
-        if (layersViewport) layersViewport.classList.remove('is-dragging');
 
         // Precise park seek on active unmuted audio streams + frame extractor priority for video/precomp
         const layers = currentProjectState.layers || [];
@@ -2483,7 +2726,13 @@
         const pixelsPerFrame = pixelsPerSecond / fps;
 
         const isFirstTick = (_playTickCount === 0);
-        const currentSec = Math.max(0, -panX / pixelsPerSecond);
+        let currentSec;
+        if (isFirstTick || typeof window.activePlaybackSec !== 'number') {
+          currentSec = Math.max(0, -panX / pixelsPerSecond);
+          window.activePlaybackSec = currentSec;
+        } else {
+          currentSec = window.activePlaybackSec;
+        }
         const layers = currentProjectState.layers || [];
         const currentFrameIdx = Math.round(currentSec * fps);
         const nextFrameIdx = currentFrameIdx + 1;
@@ -2638,6 +2887,7 @@
           if (window.isPlaybackLoopEnabled !== false) {
             nextPan = bounds.max;
             nextSec = Math.abs(bounds.max) / pixelsPerSecond;
+            window.activePlaybackSec = nextSec;
             lastTime = timestamp;
             _playTickCount = 0;
             window._nleSmoothedFrameSec = frameDuration;
@@ -2666,7 +2916,26 @@
           // 3. Slave all active audio/video tracks directly to NLE timeline position nextSec and stepped slow-mo speed
           window.FishAudioEngine.syncPlayback(layers, nextSec, pixelsPerSecond, effectiveAudioSpeed);
         }
-        updateTimelinePosition(nextPan, true);
+
+        window.activePlaybackSec = nextSec;
+        window.currentPlaybackSec = nextSec;
+        window.currentSec = nextSec;
+
+        if (!window._isPlaybackUserPanned && !window._isPlaybackRecentering) {
+          updateTimelinePosition(nextPan, true);
+          if (typeof resetNeedleToCenter === 'function') {
+            resetNeedleToCenter();
+          }
+        } else {
+          const timeText = document.getElementById('playhead-current-time');
+          if (timeText && typeof window.formatTimecode === 'function') {
+            const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || 60);
+            timeText.textContent = window.formatTimecode(nextSec, safeFps);
+          }
+          if (typeof syncNeedleToActivePlayback === 'function') {
+            syncNeedleToActivePlayback();
+          }
+        }
 
         // 4. Render synchronous canvas frame for the new playhead position
         const canvas = document.getElementById('editor-active-canvas');
@@ -2768,6 +3037,14 @@
             // Record starting timestamp where user clicked play
             const startSec = Math.max(0, -panX / pixelsPerSecond);
             window.playbackPlayStartSec = startSec;
+            window.activePlaybackSec = startSec;
+            window.currentPlaybackSec = startSec;
+            window.currentSec = startSec;
+            window._isPlaybackUserPanned = false;
+            window._isPlaybackRecentering = false;
+            if (typeof resetNeedleToCenter === 'function') {
+              resetNeedleToCenter();
+            }
 
             if (window.PreviewCacheManager) {
               window.PreviewCacheManager.stopIdleWorker();

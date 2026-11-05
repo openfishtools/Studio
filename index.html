@@ -55,7 +55,7 @@
         <h1 class="brand-title">FishTools</h1>
         <div class="brand-subtitle-row">
           <span class="brand-subtitle">Studio</span>
-          <span class="badge-pre-alpha" id="studio-version-badge">0.6.11</span>
+          <span class="badge-pre-alpha" id="studio-version-badge">0.6.12</span>
         </div>
 
         <!-- Desktop Folders Shelf in Photo 2 area -->
@@ -783,7 +783,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">FishTools Studio</h3>
-          <span class="welcome-badge">v0.6.11</span>
+          <span class="welcome-badge">v0.6.12</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
@@ -819,11 +819,68 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.12 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.12</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Nov 5, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">H.265 (HEVC) Video Export with Hardware Probe (`js/editor/editor-export.js`, `js/media/fish-export-engine.js`, `css/components/modal.css`, `editor.html`, `desktop.html`)</span>
+                  <span class="changelog-item-desc">Added Video Codec setting to Video Export dialog (`H.264 (AVC)` vs `H.265 (HEVC)`). Dynamically probes WebCodecs support via `VideoEncoder.isConfigSupported` (`hvc1` and `hev1` profiles) and gracefully disables the H.265 pill with an explanatory tooltip on browsers without hardware HEVC encoding (e.g. Firefox default). Configures `Mp4Muxer` with native `hevc` tracks and includes graceful runtime fallback to H.264.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Detached View Scrubbing During Playback (`js/editor/editor-timeline-core.js`, `css/layout/editor.css`)</span>
+                  <span class="changelog-item-desc">Panning or scrubbing the timeline during active playback now seamlessly detaches the viewport from the playhead, allowing users to freely browse clips while audio/video playback continues uninterrupted. Re-centering re-locks focus instantly without delay.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Automatic Project Aspect Ratio Inheritance on Video Export (`editor.html`, `desktop.html`, `js/editor/editor-export.js`)</span>
+                  <span class="changelog-item-desc">Removed the redundant Aspect Ratio selector grid from the Video Export dialog; video exports now strictly inherit the project's aspect ratio and dimensions from Project Settings.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">High-Efficiency H.265 Bitrate Presets (`js/media/fish-export-engine.js`, `js/editor/editor-export.js`)</span>
+                  <span class="changelog-item-desc">Tuned `computeExportVideoBitrate` with a `0.6` multiplier for H.265 (~12 Mbps for 1080p Detail preset), achieving ~40% smaller file sizes with transparent visual quality. Realtime export file size estimation immediately updates when toggling codecs.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Compact Edge-to-Edge Batch Selection Drawer (`css/layout/editor.css`, `editor.html`, `desktop.html`)</span>
+                  <span class="changelog-item-desc">Rebuilt the layer multi-selection drawer into a compact, full-width, icon-only action bar with automatic height and hidden text labels, preventing overlay clipping.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Sub-Pixel Timeline Ruler Alignment (`css/layout/editor.css`, `editor.html`, `desktop.html`)</span>
+                  <span class="changelog-item-desc">Refactored the selection button in the ruler using absolute positioning and a clean dual-circle checkmark icon, eliminating ruler displacement and ensuring 0.0px needle precision.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Duplicate Playhead Lines on Detached Playback (`js/editor/editor-timeline-core.js`)</span>
+                  <span class="changelog-item-desc">Unified the current time needle to prevent duplicate indicator lines when scrubbing while playback is active.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.11 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.11</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Nov 1, 2026</span>
               </div>
               <div class="welcome-changelog-item">

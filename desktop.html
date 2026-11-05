@@ -3186,44 +3186,7 @@
         <span class="export-setting-label">File Name</span>
         <input type="text" class="export-setting-select" id="export-video-filename" placeholder="New_Project" spellcheck="false" autocomplete="off" style="font-family:var(--font-brand);font-size:14px;font-weight:600;background-image:none;padding-right:14px;">
       </div>
-      <!-- 1. Aspect Ratio (Visual Frames) -->
-      <div class="modal-form-group">
-        <label class="modal-label">ASPECT RATIO</label>
-        <div class="modal-aspect-grid" id="export-video-aspect-grid">
-          <button type="button" class="aspect-ratio-frame is-selected" data-val="16:9" title="16:9 Landscape">
-            <div class="aspect-frame-box ratio-16-9">
-              <span class="aspect-ratio-text">16:9</span>
-            </div>
-          </button>
-          <button type="button" class="aspect-ratio-frame" data-val="9:16" title="9:16 Portrait">
-            <div class="aspect-frame-box ratio-9-16">
-              <span class="aspect-ratio-text">9:16</span>
-            </div>
-          </button>
-          <button type="button" class="aspect-ratio-frame" data-val="1:1" title="1:1 Square">
-            <div class="aspect-frame-box ratio-1-1">
-              <span class="aspect-ratio-text">1:1</span>
-            </div>
-          </button>
-          <button type="button" class="aspect-ratio-frame" data-val="4:3" title="4:3 Standard">
-            <div class="aspect-frame-box ratio-4-3">
-              <span class="aspect-ratio-text">4:3</span>
-            </div>
-          </button>
-          <button type="button" class="aspect-ratio-frame" data-val="21:9" title="21:9 Ultrawide">
-            <div class="aspect-frame-box ratio-21-9">
-              <span class="aspect-ratio-text">21:9</span>
-            </div>
-          </button>
-          <button type="button" class="aspect-ratio-frame" data-val="Custom" title="Custom Resolution">
-            <div class="aspect-frame-box ratio-1-1">
-              <i class='fticon fticon-custom-resolution aspect-ratio-icon' style='width:16px;height:16px;font-size:16px;line-height:1;' aria-hidden='true'></i>
-            </div>
-          </button>
-        </div>
-      </div>
-
-      <!-- 2. Resolution Dropdown Row -->
+      <!-- 1. Resolution Dropdown Row -->
       <div class="modal-form-row" id="row-export-video-resolution">
         <label class="modal-label">Resolution</label>
         <div class="resolution-ctrl-wrap" id="container-export-video-resolution">
@@ -3257,7 +3220,7 @@
         </div>
       </div>
 
-      <!-- 3. FPS Dropdown Row -->
+      <!-- 2. FPS Dropdown Row -->
       <div class="modal-form-row" id="row-export-video-fps">
         <label class="modal-label">FPS</label>
         <div class="modal-fps-ctrl">
@@ -3265,13 +3228,21 @@
           <span class="modal-fps-unit">FPS</span>
         </div>
       </div>
-      <!-- Bitrate -->
+      <!-- Bitrate / Quality -->
       <div class="export-setting-group">
         <span class="export-setting-label">Quality Preset</span>
         <div class="export-format-pill-row">
           <button type="button" class="export-format-pill" data-video-bitrate="light">Light</button>
           <button type="button" class="export-format-pill is-active" data-video-bitrate="normal">Normal</button>
           <button type="button" class="export-format-pill" data-video-bitrate="detail">Detail</button>
+        </div>
+      </div>
+      <!-- Codec -->
+      <div class="export-setting-group">
+        <span class="export-setting-label">Video Codec</span>
+        <div class="export-format-pill-row" id="export-video-codec-grid">
+          <button type="button" class="export-format-pill is-active" data-video-codec="h264">H.264 (AVC)</button>
+          <button type="button" class="export-format-pill" data-video-codec="h265" id="btn-export-codec-h265">H.265 (HEVC)</button>
         </div>
       </div>
       <!-- Audio -->
@@ -3922,7 +3893,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.6.11</span>
+          <span class="welcome-badge">v0.6.12</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3952,11 +3923,68 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.6.12 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.6.12</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Nov 5, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">H.265 (HEVC) Video Export with Hardware Probe (`js/editor/editor-export.js`, `js/media/fish-export-engine.js`, `css/components/modal.css`, `editor.html`, `desktop.html`)</span>
+                  <span class="changelog-item-desc">Added Video Codec setting to Video Export dialog (`H.264 (AVC)` vs `H.265 (HEVC)`). Dynamically probes WebCodecs support via `VideoEncoder.isConfigSupported` (`hvc1` and `hev1` profiles) and gracefully disables the H.265 pill with an explanatory tooltip on browsers without hardware HEVC encoding (e.g. Firefox default). Configures `Mp4Muxer` with native `hevc` tracks and includes graceful runtime fallback to H.264.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Detached View Scrubbing During Playback (`js/editor/editor-timeline-core.js`, `css/layout/editor.css`)</span>
+                  <span class="changelog-item-desc">Panning or scrubbing the timeline during active playback now seamlessly detaches the viewport from the playhead, allowing users to freely browse clips while audio/video playback continues uninterrupted. Re-centering re-locks focus instantly without delay.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Automatic Project Aspect Ratio Inheritance on Video Export (`editor.html`, `desktop.html`, `js/editor/editor-export.js`)</span>
+                  <span class="changelog-item-desc">Removed the redundant Aspect Ratio selector grid from the Video Export dialog; video exports now strictly inherit the project's aspect ratio and dimensions from Project Settings.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">High-Efficiency H.265 Bitrate Presets (`js/media/fish-export-engine.js`, `js/editor/editor-export.js`)</span>
+                  <span class="changelog-item-desc">Tuned `computeExportVideoBitrate` with a `0.6` multiplier for H.265 (~12 Mbps for 1080p Detail preset), achieving ~40% smaller file sizes with transparent visual quality. Realtime export file size estimation immediately updates when toggling codecs.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Compact Edge-to-Edge Batch Selection Drawer (`css/layout/editor.css`, `editor.html`, `desktop.html`)</span>
+                  <span class="changelog-item-desc">Rebuilt the layer multi-selection drawer into a compact, full-width, icon-only action bar with automatic height and hidden text labels, preventing overlay clipping.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Sub-Pixel Timeline Ruler Alignment (`css/layout/editor.css`, `editor.html`, `desktop.html`)</span>
+                  <span class="changelog-item-desc">Refactored the selection button in the ruler using absolute positioning and a clean dual-circle checkmark icon, eliminating ruler displacement and ensuring 0.0px needle precision.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Duplicate Playhead Lines on Detached Playback (`js/editor/editor-timeline-core.js`)</span>
+                  <span class="changelog-item-desc">Unified the current time needle to prevent duplicate indicator lines when scrubbing while playback is active.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.11 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.11</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Nov 1, 2026</span>
               </div>
               <div class="welcome-changelog-item">

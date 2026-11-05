@@ -188,12 +188,12 @@
     // Sensible aesthetic defaults when user selects an animation preset but hasn't customized animator offsets
     if (normIn === 'bounce' && !aIn.active) {
       aIn.active = true;
-      aIn.posY = -35 * resScale;
+      aIn.posY = (p.animPosY !== undefined && p.animPosY !== null && p.animPosY !== '' && isFinite(Number(p.animPosY))) ? (Number(p.animPosY) * resScale) : 0;
       aIn.scl = 0.85;
       aIn.ease = TEXT_EASES.ease_out;
     } else if (normIn === 'overshoot' && !aIn.active) {
       aIn.active = true;
-      aIn.posY = 30 * resScale;
+      aIn.posY = (p.animPosY !== undefined && p.animPosY !== null && p.animPosY !== '' && isFinite(Number(p.animPosY))) ? (Number(p.animPosY) * resScale) : 0;
       aIn.scl = 0.8;
       aIn.ease = TEXT_EASES.back;
     }
