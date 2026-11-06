@@ -901,8 +901,16 @@
           updateReorderHandlesContrast();
         }
 
-        // Live refresh canvas preview to show/hide layers matching playhead timecode
-        if (!isActivelyPlaying) {
+        // Live refresh canvas preview to show/hide layers matching playhead timecode.
+        // Defer full-canvas redraw while the user is actively dragging / inertia-gliding
+        // the timeline to avoid per-frame redraw spam that makes the "licin" glide laggy.
+        // Canvas is redrawn once when the interaction ends (onPanEnd / end of inertia).
+        const isTimelineInteracting = !!(
+          window.isTimelineScrubbing ||
+          window.isTimelinePanning ||
+          window._timelineInertiaRaf
+        );
+        if (!isActivelyPlaying && !isTimelineInteracting) {
           redrawComposition('renderTimeline');
         }
       }
