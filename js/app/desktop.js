@@ -237,6 +237,9 @@
       if (category === 'media' && typeof window.renderProjectMediaGrid === 'function') {
         window.renderProjectMediaGrid();
       }
+      if (category === 'control' && typeof window.syncAddLightButtons === 'function') {
+        window.syncAddLightButtons();
+      }
       if (category === 'shape' && typeof window.syncShapeButtonsUI === 'function') {
         window.syncShapeButtonsUI();
       }
@@ -304,6 +307,7 @@
         window.redrawComposition();
       }
     }
+    syncInspectorState();
   }
   window.setDesktopSelectedLayers = setDesktopSelectedLayers;
 
@@ -477,6 +481,13 @@
         window.updateVolumeAndSpeedBtnState(currentLayer);
       }
 
+      if (typeof window.syncLightLayerInspector === 'function') {
+        window.syncLightLayerInspector(currentLayer);
+      }
+      if (typeof window.syncEdit3DInspector === 'function') {
+        window.syncEdit3DInspector(currentLayer);
+      }
+
       const layerNameInput = document.getElementById('editor-layer-name-input');
       const batchTitle = document.getElementById('editor-layer-batch-title');
       let name = 'Selected';
@@ -487,6 +498,12 @@
       }
       if (inspectorTitle) inspectorTitle.textContent = 'Inspector';
     } else {
+      if (typeof window.syncLightLayerInspector === 'function') {
+        window.syncLightLayerInspector(null);
+      }
+      if (typeof window.syncEdit3DInspector === 'function') {
+        window.syncEdit3DInspector(null);
+      }
       if (inspectorEmpty) {
         inspectorEmpty.style.display = 'flex';
       }
@@ -1187,7 +1204,7 @@
 
         let btn3D = controlCol.querySelector('.desktop-layer-3d-btn');
         const is3DOn = !!(layer && layer.is3D);
-        const canBe3D = layer && layer.type !== 'audio';
+        const canBe3D = layer && layer.type !== 'audio' && layer.type !== 'light';
 
         if (!canBe3D) {
           if (btn3D) btn3D.style.display = 'none';
@@ -1253,7 +1270,7 @@
             if (typeof window.redrawComposition === 'function') window.redrawComposition();
           });
         } else {
-          btn3D.style.display = '';
+          btn3D.style.display = canBe3D ? '' : 'none';
           btn3D.classList.toggle('is-active', is3DOn);
           btn3D.title = is3DOn ? '3D Layer: Enabled' : '3D Layer: Disabled (Click to enable)';
         }
@@ -1414,8 +1431,9 @@
                 const ev = _layerDragLastE;
                 if (!ev || !isDragging || !dragGhost) return;
 
-                dragGhost.style.left = (ev.clientX + 10) + 'px';
-                dragGhost.style.top = (ev.clientY - 17) + 'px';
+                const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || (window.__OFT_ZOOM || 1) || 1;
+                dragGhost.style.left = ((ev.clientX + 10) / _z) + 'px';
+                dragGhost.style.top = ((ev.clientY - 17) / _z) + 'px';
 
                 const curSlots = Array.from(overlayContainer.querySelectorAll('.timeline-lane-pill-slot'));
                 const track = document.getElementById('timeline-layers-track');
@@ -1437,15 +1455,15 @@
                 const vpRect = layersViewport.getBoundingClientRect();
                 if (dropIdx < curSlots.length) {
                   const targetSlotRect = curSlots[dropIdx].getBoundingClientRect();
-                  indicator.style.top = (targetSlotRect.top - vpRect.top + layersViewport.scrollTop) + 'px';
+                  indicator.style.top = (((targetSlotRect.top - vpRect.top) / _z) + layersViewport.scrollTop) + 'px';
                 } else if (curSlots.length > 0) {
                   const lastSlotRect = curSlots[curSlots.length - 1].getBoundingClientRect();
-                  indicator.style.top = (lastSlotRect.bottom - vpRect.top + layersViewport.scrollTop) + 'px';
+                  indicator.style.top = (((lastSlotRect.bottom - vpRect.top) / _z) + layersViewport.scrollTop) + 'px';
                 }
 
                 // 1. Live translate all moving slots & lanes smoothly with pointer
                 const pitch = 34;
-                const deltaY = ev.clientY - startY;
+                const deltaY = (ev.clientY - startY) / _z;
                 const movingIndices = movingLayers.map(l => curLayers.findIndex(x => String(x.id) === String(l.id))).sort((a, b) => a - b);
                 const movingCount = movingLayers.length;
                 const minMovingIdx = movingIndices.length > 0 ? movingIndices[0] : fromIdx;
@@ -2613,13 +2631,14 @@
       isMarquee = false;
 
       function updateMarqueeGeometry() {
+        const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || (window.__OFT_ZOOM || 1) || 1;
         const vpRect = layersViewport.getBoundingClientRect();
         const curScrollX = (typeof window.getDesktopScrollX === 'function') ? window.getDesktopScrollX() : (desktopScrollX || 0);
         const curScrollY = layersViewport.scrollTop;
 
         // Content-anchored start position projected to current screen space
-        const screenStartX = startClientX - (curScrollX - startScrollX);
-        const screenStartY = startClientY - (curScrollY - startScrollY);
+        const screenStartX = startClientX - (curScrollX - startScrollX) * _z;
+        const screenStartY = startClientY - (curScrollY - startScrollY) * _z;
 
         // Clamp X to viewport
         const clampedClientX = Math.max(vpRect.left, Math.min(vpRect.right, currentClientX));
@@ -2637,28 +2656,28 @@
         const boxW = Math.max(0, boxRight - boxLeft);
         const boxH = Math.max(0, boxBottom - boxTop);
 
-        marqueeBox.style.left = `${boxLeft}px`;
-        marqueeBox.style.top = `${boxTop}px`;
-        marqueeBox.style.width = `${boxW}px`;
-        marqueeBox.style.height = `${boxH}px`;
+        marqueeBox.style.left = `${boxLeft / _z}px`;
+        marqueeBox.style.top = `${boxTop / _z}px`;
+        marqueeBox.style.width = `${boxW / _z}px`;
+        marqueeBox.style.height = `${boxH / _z}px`;
 
         // Convert marquee to scroll-space for intersection — use UNCLAMPED rawClientY
         // so clips scrolled below/above the visible viewport are still detected
         const rawBoxTop    = Math.min(screenStartY, rawClientY);
         const rawBoxBottom = Math.max(screenStartY, rawClientY);
-        const mScrollLeft   = boxLeft    - vpRect.left + curScrollX;
-        const mScrollTop    = rawBoxTop  - vpRect.top  + curScrollY;
-        const mScrollRight  = boxRight   - vpRect.left + curScrollX;
-        const mScrollBottom = rawBoxBottom - vpRect.top + curScrollY;
+        const mScrollLeft   = boxLeft    - vpRect.left + curScrollX * _z;
+        const mScrollTop    = rawBoxTop  - vpRect.top  + curScrollY * _z;
+        const mScrollRight  = boxRight   - vpRect.left + curScrollX * _z;
+        const mScrollBottom = rawBoxBottom - vpRect.top + curScrollY * _z;
 
         const clips = layersViewport.querySelectorAll('.timeline-clip-block');
         clips.forEach(clip => {
           const cr = clip.getBoundingClientRect();
           // Convert clip rect to scroll-space
-          const crLeft   = cr.left   - vpRect.left + curScrollX;
-          const crTop    = cr.top    - vpRect.top  + curScrollY;
-          const crRight  = cr.right  - vpRect.left + curScrollX;
-          const crBottom = cr.bottom - vpRect.top  + curScrollY;
+          const crLeft   = cr.left   - vpRect.left + curScrollX * _z;
+          const crTop    = cr.top    - vpRect.top  + curScrollY * _z;
+          const crRight  = cr.right  - vpRect.left + curScrollX * _z;
+          const crBottom = cr.bottom - vpRect.top  + curScrollY * _z;
           const intersects = !(
             crRight  < mScrollLeft  ||
             crLeft   > mScrollRight ||
@@ -2671,10 +2690,10 @@
         const diamonds = layersViewport.querySelectorAll('.desktop-kf-diamond');
         diamonds.forEach(diamond => {
           const dr = diamond.getBoundingClientRect();
-          const drLeft   = dr.left   - vpRect.left + curScrollX;
-          const drTop    = dr.top    - vpRect.top  + curScrollY;
-          const drRight  = dr.right  - vpRect.left + curScrollX;
-          const drBottom = dr.bottom - vpRect.top  + curScrollY;
+          const drLeft   = dr.left   - vpRect.left + curScrollX * _z;
+          const drTop    = dr.top    - vpRect.top  + curScrollY * _z;
+          const drRight  = dr.right  - vpRect.left + curScrollX * _z;
+          const drBottom = dr.bottom - vpRect.top  + curScrollY * _z;
           const intersects = !(
             drRight  < mScrollLeft  ||
             drLeft   > mScrollRight ||
@@ -2773,11 +2792,12 @@
           isMarquee = false;
           marqueeBox.style.display = 'none';
 
+          const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || (window.__OFT_ZOOM || 1) || 1;
           const vpRect = layersViewport.getBoundingClientRect();
           const curScrollX = (typeof window.getDesktopScrollX === 'function') ? window.getDesktopScrollX() : (desktopScrollX || 0);
           const curScrollY = layersViewport.scrollTop;
-          const screenStartX = startClientX - (curScrollX - startScrollX);
-          const screenStartY = startClientY - (curScrollY - startScrollY);
+          const screenStartX = startClientX - (curScrollX - startScrollX) * _z;
+          const screenStartY = startClientY - (curScrollY - startScrollY) * _z;
 
           const clampedClientX = Math.max(vpRect.left, Math.min(vpRect.right, upEvent.clientX));
           const rawClientY = upEvent.clientY; // unclamped Y for full scroll-space coverage
@@ -2788,20 +2808,20 @@
           const boxBottom = Math.max(screenStartY, rawClientY);
 
           // Marquee in scroll-space for off-screen intersection
-          const mLeft   = boxLeft   - vpRect.left + curScrollX;
-          const mTop    = boxTop    - vpRect.top  + curScrollY;
-          const mRight  = boxRight  - vpRect.left + curScrollX;
-          const mBottom = boxBottom - vpRect.top  + curScrollY;
+          const mLeft   = boxLeft   - vpRect.left + curScrollX * _z;
+          const mTop    = boxTop    - vpRect.top  + curScrollY * _z;
+          const mRight  = boxRight  - vpRect.left + curScrollX * _z;
+          const mBottom = boxBottom - vpRect.top  + curScrollY * _z;
 
           const matchedDiamonds = [];
           const diamonds = layersViewport.querySelectorAll('.desktop-kf-diamond');
           diamonds.forEach(diamond => {
             diamond.classList.remove('is-marquee-candidate');
             const dr = diamond.getBoundingClientRect();
-            const drLeft   = dr.left   - vpRect.left + curScrollX;
-            const drTop    = dr.top    - vpRect.top  + curScrollY;
-            const drRight  = dr.right  - vpRect.left + curScrollX;
-            const drBottom = dr.bottom - vpRect.top  + curScrollY;
+            const drLeft   = dr.left   - vpRect.left + curScrollX * _z;
+            const drTop    = dr.top    - vpRect.top  + curScrollY * _z;
+            const drRight  = dr.right  - vpRect.left + curScrollX * _z;
+            const drBottom = dr.bottom - vpRect.top  + curScrollY * _z;
             const intersects = !(drRight < mLeft || drLeft > mRight || drBottom < mTop || drTop > mBottom);
             if (intersects) {
               matchedDiamonds.push(diamond);
@@ -2846,10 +2866,10 @@
           clips.forEach(clip => {
             clip.classList.remove('is-marquee-candidate');
             const cr = clip.getBoundingClientRect();
-            const crLeft   = cr.left   - vpRect.left + curScrollX;
-            const crTop    = cr.top    - vpRect.top  + curScrollY;
-            const crRight  = cr.right  - vpRect.left + curScrollX;
-            const crBottom = cr.bottom - vpRect.top  + curScrollY;
+            const crLeft   = cr.left   - vpRect.left + curScrollX * _z;
+            const crTop    = cr.top    - vpRect.top  + curScrollY * _z;
+            const crRight  = cr.right  - vpRect.left + curScrollX * _z;
+            const crBottom = cr.bottom - vpRect.top  + curScrollY * _z;
             const intersects = !(crRight < mLeft || crLeft > mRight || crBottom < mTop || crTop > mBottom);
             if (intersects && clip.dataset.layerId) {
               matchedIds.add(clip.dataset.layerId);
@@ -3626,15 +3646,27 @@
     const btnMagnet = document.getElementById('editor-btn-magnet');
     if (btnMagnet && !btnMagnet._bound) {
       btnMagnet._bound = true;
-      if (window.isTimelineSnapEnabled === undefined) window.isTimelineSnapEnabled = true;
+      if (window.isTimelineSnapEnabled === undefined) {
+        try {
+          const savedSnap = localStorage.getItem('oft_timeline_snap_enabled');
+          window.isTimelineSnapEnabled = savedSnap !== null ? (savedSnap === 'true') : true;
+        } catch (_) {
+          window.isTimelineSnapEnabled = true;
+        }
+      }
       btnMagnet.classList.toggle('is-active', window.isTimelineSnapEnabled !== false);
 
       btnMagnet.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         window.isTimelineSnapEnabled = !window.isTimelineSnapEnabled;
-        btnMagnet.classList.toggle('is-active', window.isTimelineSnapEnabled);
-        btnMagnet.setAttribute('title', window.isTimelineSnapEnabled ? 'Snapping Enabled (N)' : 'Snapping Disabled (N)');
+        try {
+          localStorage.setItem('oft_timeline_snap_enabled', String(window.isTimelineSnapEnabled));
+        } catch (_) {}
+        document.querySelectorAll('#editor-icon-magnet, #editor-btn-magnet').forEach(btn => {
+          btn.classList.toggle('is-active', window.isTimelineSnapEnabled);
+          btn.setAttribute('title', window.isTimelineSnapEnabled ? 'Snapping Enabled (N)' : 'Snapping Disabled (N)');
+        });
         if (!window.isTimelineSnapEnabled && typeof window.hideTimelineSnapGuide === 'function') {
           window.hideTimelineSnapGuide();
         }

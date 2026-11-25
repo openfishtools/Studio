@@ -1295,6 +1295,8 @@
     const _effectivePropsCache = new Map();
 
     function invalidateEffectivePropsCache(targetLayerId = null) {
+      // Bump so per-layer derived caches (e.g. 3D asset-readiness flags) revalidate after any mutation
+      window._layerPropsVersion = ((window._layerPropsVersion | 0) + 1) | 0;
       if (!targetLayerId) {
         _effectivePropsCache.clear();
         return;
@@ -1309,6 +1311,28 @@
     window.invalidateEffectivePropsCache = invalidateEffectivePropsCache;
 
     // Get effective animated properties of layer at given time (with hierarchical parenting)
+    const _fxCamZoomScratch = {};
+    function _maybeApplyFxCamScale(layer, props) {
+      if (!window._fishFxApplyCamScaleToZoom || !layer || layer.type !== 'camera' || !props) return props;
+      const ps = window.currentProjectState;
+      let baseW = (ps && (ps._baseW || ps.baseW)) || 0;
+      let baseH = (ps && (ps._baseH || ps.baseH)) || 0;
+      if ((!baseW || !baseH) && ps && typeof window.getProjectDimensions === 'function' && ps.resolution && ps.aspectRatio) {
+        const dims = window.getProjectDimensions(ps.resolution, ps.aspectRatio);
+        if (dims && dims[0] && dims[1]) { baseW = dims[0]; baseH = dims[1]; }
+      }
+      if (!(baseW > 0 && baseH > 0)) return props;
+      const sw = (typeof props.scaleW === 'number' && !isNaN(props.scaleW)) ? props.scaleW : baseW;
+      const sh = (typeof props.scaleH === 'number' && !isNaN(props.scaleH)) ? props.scaleH : baseH;
+      const invX = 1 / Math.max(0.01, Math.abs(sw) / baseW);
+      const invY = 1 / Math.max(0.01, Math.abs(sh) / baseH);
+      const invAvg = (invX + invY) * 0.5;
+      if (Math.abs(invAvg - 1) < 1e-5) return props;
+      Object.assign(_fxCamZoomScratch, props);
+      _fxCamZoomScratch.cameraZoom = (props.cameraZoom !== undefined ? props.cameraZoom : 100) * invAvg;
+      return _fxCamZoomScratch;
+    }
+
     function getLayerEffectivePropsAtTime(layer, currentSec, visited = null, layerPool = null, skipParenting = false) {
       if (!layer) return {};
       if (visited && visited.has(layer.id)) return {};
@@ -1316,7 +1340,7 @@
       const cacheKey = layer.id + ':' + currentSec + ':' + (skipParenting ? '1' : '0');
       const cached = _effectivePropsCache.get(cacheKey);
       if (cached) {
-        return cached;
+        return _maybeApplyFxCamScale(layer, cached);
       }
 
       if (!visited) visited = new Set();
@@ -1356,7 +1380,11 @@
         cameraBlurBalance: layer.cameraBlurBalance !== undefined ? layer.cameraBlurBalance : 0,
         cameraLensPreset: layer.cameraLensPreset || 'standard',
         brightness: layer.brightness !== undefined ? layer.brightness : (layer.effects && layer.effects[0] && layer.effects[0].brightness !== undefined ? layer.effects[0].brightness : 0),
-        contrast: layer.contrast !== undefined ? layer.contrast : (layer.effects && layer.effects[0] && layer.effects[0].contrast !== undefined ? layer.effects[0].contrast : 0)
+        contrast: layer.contrast !== undefined ? layer.contrast : (layer.effects && layer.effects[0] && layer.effects[0].contrast !== undefined ? layer.effects[0].contrast : 0),
+        lightType: layer.lightType || 'point',
+        intensity: layer.intensity !== undefined ? layer.intensity : 100,
+        radius: layer.radius !== undefined ? layer.radius : 600,
+        color: layer.color || '#ffffff'
       };
 
       if (Array.isArray(layer.effects)) {
@@ -1802,7 +1830,7 @@
       }
       _effectivePropsCache.set(cacheKey, baseProps);
 
-      return baseProps;
+      return _maybeApplyFxCamScale(layer, baseProps);
     }
     window.getLayerEffectivePropsAtTime = getLayerEffectivePropsAtTime;
 

@@ -31,7 +31,7 @@
         return window.resMap[res][aspect];
       }
       if (typeof window !== 'undefined' && typeof window.showToast === 'function') {
-        window.showToast(`Error: Resolusi project '${res}' (${aspect}) tidak valid!`, 'error');
+        window.showToast(`Error: Invalid project resolution '${res}' (${aspect}).`, 'error');
       } else if (typeof console !== 'undefined' && console.error) {
         console.error(`[Resolution Error] Invalid resolution '${res}' (${aspect})`);
       }
@@ -127,6 +127,12 @@
       fps: 60,
       bgColor: 'transparent',
       defaultDuration: 5,
+      threeDEngine: 'classic',
+      ambientOcclusion: 'disabled',
+      shadowQuality: 'disabled',
+      enableReflection: false,
+      environmentMediaId: null,
+      environmentName: '',
       beatmarks: []
     };
     let _compositionStack = [];
@@ -1188,6 +1194,13 @@
               fps: String(currentProjectState.fps || 60),
               defaultDuration: currentProjectState.defaultDuration || 5,
               bgColor: currentProjectState.bgColor || 'transparent',
+              threeDEngine: currentProjectState.threeDEngine || 'classic',
+              ambientOcclusion: currentProjectState.ambientOcclusion || 'disabled',
+              shadowQuality: currentProjectState.shadowQuality || 'disabled',
+              enableReflection: Boolean(currentProjectState.enableReflection),
+              environmentMediaId: currentProjectState.environmentMediaId || null,
+              environmentName: currentProjectState.environmentName || '',
+              previewCacheEnabled: typeof currentProjectState.previewCacheEnabled === 'boolean' ? currentProjectState.previewCacheEnabled : (window.isPreviewCacheEnabled !== false),
               motionBlur: currentProjectState.motionBlur ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(currentProjectState.motionBlur) : (Array.isArray(currentProjectState.motionBlur) ? [] : {})) : undefined,
               layers: []
             };
@@ -1316,7 +1329,16 @@
                 // Speed & Video Interpolation settings
                 speed: l.speed !== undefined ? l.speed : 1.0,
                 speedInterpolation: l.speedInterpolation || 'none',
-                preservePitch: l.preservePitch !== undefined ? l.preservePitch : true
+                preservePitch: l.preservePitch !== undefined ? l.preservePitch : true,
+                // Light & 3D Material properties
+                lightType: l.lightType || undefined,
+                intensity: l.intensity !== undefined ? l.intensity : undefined,
+                radius: l.radius !== undefined ? l.radius : undefined,
+                color: l.color || undefined,
+                acceptsLights: l.acceptsLights !== undefined ? l.acceptsLights : undefined,
+                materialOptions: (l.materialOptions && typeof l.materialOptions === 'object') ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.materialOptions) : { ...l.materialOptions }) : undefined,
+                materialSlots: (Array.isArray(l.materialSlots)) ? (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(l.materialSlots) : l.materialSlots.map(s => Object.assign({}, s))) : undefined,
+                modelMediaId: l.modelMediaId || undefined
               };
             }
 
@@ -1333,6 +1355,17 @@
               prj.customEasingPresets = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(currentProjectState.customEasingPresets) : (Array.isArray(currentProjectState.customEasingPresets) ? [] : {}));
             }
             prj.isTemplate = !!currentProjectState.isTemplate;
+            prj.threeDEngine = currentProjectState.threeDEngine || 'classic';
+            prj.ambientOcclusion = currentProjectState.ambientOcclusion || 'disabled';
+            prj.shadowQuality = currentProjectState.shadowQuality || 'disabled';
+            prj.enableReflection = Boolean(currentProjectState.enableReflection);
+            prj.environmentMediaId = currentProjectState.environmentMediaId || null;
+            prj.environmentName = currentProjectState.environmentName || '';
+            if (typeof currentProjectState.previewCacheEnabled === 'boolean') {
+              prj.previewCacheEnabled = currentProjectState.previewCacheEnabled;
+            } else if (typeof window.isPreviewCacheEnabled === 'boolean') {
+              prj.previewCacheEnabled = window.isPreviewCacheEnabled;
+            }
 
             // Auto-capture project thumbnail from composition canvas
             const thumb = captureProjectThumbnailPreview();
@@ -1650,7 +1683,13 @@
         fps: currentActivePrecomp.fps || currentProjectState.fps || 60,
         defaultDuration: currentActivePrecomp.durationSec || currentProjectState.defaultDuration || 5,
         bgColor: currentActivePrecomp.bgColor || 'transparent',
-        motionBlur: (currentActivePrecomp.motionBlur && typeof currentActivePrecomp.motionBlur === 'object') ? currentActivePrecomp.motionBlur : (currentProjectState.motionBlur || { enabled: false, shutterAngle: 180, shutterPhase: 0, samples: 16 })
+        motionBlur: (currentActivePrecomp.motionBlur && typeof currentActivePrecomp.motionBlur === 'object') ? currentActivePrecomp.motionBlur : (currentProjectState.motionBlur || { enabled: false, shutterAngle: 180, shutterPhase: 0, samples: 16 }),
+        threeDEngine: currentProjectState.threeDEngine || 'classic',
+        ambientOcclusion: currentProjectState.ambientOcclusion || 'disabled',
+        shadowQuality: currentProjectState.shadowQuality || 'disabled',
+        enableReflection: Boolean(currentProjectState.enableReflection),
+        environmentMediaId: currentProjectState.environmentMediaId || null,
+        environmentName: currentProjectState.environmentName || ''
       } : currentProjectState;
 
       // 1. Sync Aspect Ratio Frame selection
@@ -1782,9 +1821,74 @@
         }
       }
 
+      // 8b. Sync 3D Engine Settings Dropdowns
+      const engineVal = targetState.threeDEngine || 'classic';
+      const aoVal = targetState.ambientOcclusion || 'disabled';
+      const shadowVal = targetState.shadowQuality || 'disabled';
+
+      const engineDropdown = document.getElementById('dropdown-3d-engine');
+      if (engineDropdown) {
+        engineDropdown.dataset.value = engineVal;
+        const label = engineDropdown.querySelector('.custom-dropdown-label');
+        if (label) label.textContent = engineVal === 'advance' ? 'Advance 3D' : 'Classic 3D';
+        engineDropdown.querySelectorAll('.custom-dropdown-item').forEach(item => {
+          item.classList.toggle('is-selected', item.dataset.val === engineVal);
+        });
+      }
+
+      const advanceOptions = document.getElementById('settings-advance-3d-options');
+      if (advanceOptions) {
+        advanceOptions.classList.toggle('is-hidden', engineVal !== 'advance');
+      }
+
+      const aoDropdown = document.getElementById('dropdown-ambient-occlusion');
+      if (aoDropdown) {
+        aoDropdown.dataset.value = aoVal;
+        const label = aoDropdown.querySelector('.custom-dropdown-label');
+        const activeItem = aoDropdown.querySelector(`.custom-dropdown-item[data-val="${aoVal}"]`);
+        if (label) label.textContent = activeItem ? activeItem.textContent : aoVal;
+        aoDropdown.querySelectorAll('.custom-dropdown-item').forEach(item => {
+          item.classList.toggle('is-selected', item.dataset.val === aoVal);
+        });
+      }
+
+      const shadowDropdown = document.getElementById('dropdown-shadow-quality');
+      if (shadowDropdown) {
+        shadowDropdown.dataset.value = shadowVal;
+        const label = shadowDropdown.querySelector('.custom-dropdown-label');
+        const activeItem = shadowDropdown.querySelector(`.custom-dropdown-item[data-val="${shadowVal}"]`);
+        if (label) label.textContent = activeItem ? activeItem.textContent : shadowVal;
+        shadowDropdown.querySelectorAll('.custom-dropdown-item').forEach(item => {
+          item.classList.toggle('is-selected', item.dataset.val === shadowVal);
+        });
+      }
+
+      if (typeof window.syncEnvironmentPickerTrigger === 'function') {
+        window.syncEnvironmentPickerTrigger(targetState.environmentMediaId || null, targetState.environmentName || '');
+      }
+
+      const reflToggle = document.getElementById('toggle-enable-reflection');
+      if (reflToggle) {
+        const reflOn = Boolean(currentProjectState && currentProjectState.enableReflection);
+        reflToggle.classList.toggle('is-active', reflOn);
+        reflToggle.setAttribute('aria-checked', reflOn ? 'true' : 'false');
+        if (!reflToggle.dataset.boundReflectionToggle) {
+          reflToggle.dataset.boundReflectionToggle = '1';
+          reflToggle.addEventListener('click', () => {
+            const next = !reflToggle.classList.contains('is-active');
+            reflToggle.classList.toggle('is-active', next);
+            reflToggle.setAttribute('aria-checked', next ? 'true' : 'false');
+            if (typeof window.updateProjectSettingsSummaries === 'function') {
+              window.updateProjectSettingsSummaries();
+            }
+          });
+        }
+      }
+
       // 9. Reset category accordion default collapsed states (Motion Blur unexpanded by default)
       const catCanvas = document.getElementById('cat-settings-canvas');
       const catMb = document.getElementById('cat-settings-motion-blur');
+      const cat3d = document.getElementById('cat-settings-3d-engine');
       const catAdvanced = document.getElementById('cat-settings-advanced');
 
       if (catCanvas) {
@@ -1794,6 +1898,10 @@
       if (catMb) {
         catMb.classList.add('is-collapsed');
         catMb.querySelector('.settings-category-header')?.setAttribute('aria-expanded', 'false');
+      }
+      if (cat3d) {
+        cat3d.classList.add('is-collapsed');
+        cat3d.querySelector('.settings-category-header')?.setAttribute('aria-expanded', 'false');
       }
       if (catAdvanced) {
         catAdvanced.style.display = isPrecomp ? 'none' : '';
@@ -1862,6 +1970,17 @@
       const summaryMb = document.getElementById('summary-settings-mb');
       if (summaryMb) {
         summaryMb.textContent = `${angle}° • ${samples} Samples`;
+      }
+
+      const engine = document.getElementById('dropdown-3d-engine')?.dataset.value || 'classic';
+      const envId = document.getElementById('btn-settings-environment-picker')?.dataset.mediaId || '';
+      const summary3d = document.getElementById('summary-settings-3d-engine');
+      if (summary3d) {
+        summary3d.textContent = engine === 'advance' ? (envId ? 'Advance 3D • Env' : 'Advance 3D') : 'Classic 3D';
+      }
+      const advanceOpts = document.getElementById('settings-advance-3d-options');
+      if (advanceOpts) {
+        advanceOpts.classList.toggle('is-hidden', engine !== 'advance');
       }
 
       const undo = document.getElementById('dropdown-max-undo')?.dataset.value || '30';
@@ -2184,7 +2303,7 @@
         const h = parseInt(hVal, 10);
         if (isNaN(w) || isNaN(h) || w <= 0 || h <= 0) {
           if (typeof showEditorToast === 'function') {
-            showEditorToast('Resolusi kustom tidak valid! Masukkan angka lebar dan tinggi yang benar.', 3000, 'error');
+            showEditorToast('Invalid custom resolution. Enter valid width and height values.', 3000, 'error');
           }
           return;
         }
@@ -2193,7 +2312,7 @@
         selectedRes = document.getElementById('dropdown-resolution')?.dataset.value;
         if (!selectedRes) {
           if (typeof showEditorToast === 'function') {
-            showEditorToast('Pilih resolusi project yang valid!', 3000, 'error');
+            showEditorToast('Please select a valid project resolution.', 3000, 'error');
           }
           return;
         }
@@ -2204,6 +2323,13 @@
       const selectedMbAngle = parseFloat(document.getElementById('dropdown-mb-shutter-angle')?.dataset.value || '180');
       const selectedMbPhase = parseFloat(document.getElementById('dropdown-mb-shutter-phase')?.dataset.value || '-90');
       const selectedMbSamples = parseInt(document.getElementById('dropdown-mb-samples')?.dataset.value || '16', 10);
+      const selected3dEngine = document.getElementById('dropdown-3d-engine')?.dataset.value || 'classic';
+      const selectedAO = document.getElementById('dropdown-ambient-occlusion')?.dataset.value || 'disabled';
+      const selectedShadowQuality = document.getElementById('dropdown-shadow-quality')?.dataset.value || 'disabled';
+      const selectedEnableReflection = Boolean(document.getElementById('toggle-enable-reflection')?.classList.contains('is-active'));
+      const envTriggerBtn = document.getElementById('btn-settings-environment-picker');
+      const selectedEnvMediaId = (envTriggerBtn && envTriggerBtn.dataset.mediaId) ? envTriggerBtn.dataset.mediaId : null;
+      const selectedEnvName = (envTriggerBtn && envTriggerBtn.dataset.mediaName) ? envTriggerBtn.dataset.mediaName : '';
 
       if (currentActivePrecomp) {
         currentActivePrecomp.aspectRatio = selectedRatio;
@@ -2215,6 +2341,16 @@
         currentActivePrecomp.motionBlur.shutterAngle = selectedMbAngle;
         currentActivePrecomp.motionBlur.shutterPhase = selectedMbPhase;
         currentActivePrecomp.motionBlur.samples = selectedMbSamples;
+
+        currentProjectState.threeDEngine = selected3dEngine;
+        currentProjectState.ambientOcclusion = selectedAO;
+        currentProjectState.shadowQuality = selectedShadowQuality;
+        currentProjectState.enableReflection = selectedEnableReflection;
+        currentProjectState.environmentMediaId = selectedEnvMediaId;
+        currentProjectState.environmentName = selectedEnvName;
+        if (typeof window.syncProjectEnvironmentTexture === 'function') {
+          window.syncProjectEnvironmentTexture();
+        }
 
         const baseDims = window.getProjectDimensions(selectedRes, selectedRatio);
         currentActivePrecomp.mediaWidth = baseDims[0];
@@ -2243,6 +2379,7 @@
         }
         if (typeof redrawComposition === 'function') {
           redrawComposition('savePrecompSettings');
+          redrawComposition('engineChange');
         }
         if (typeof renderTimelineLayers === 'function') {
           renderTimelineLayers();
@@ -2264,6 +2401,18 @@
       currentProjectState.maxUndo = selectedMaxUndo;
       currentProjectState.idleCache = selectedIdle;
       currentProjectState.bgColor = selectedBg;
+      currentProjectState.threeDEngine = selected3dEngine;
+      currentProjectState.ambientOcclusion = selectedAO;
+      currentProjectState.shadowQuality = selectedShadowQuality;
+      currentProjectState.enableReflection = selectedEnableReflection;
+      currentProjectState.environmentMediaId = selectedEnvMediaId;
+      currentProjectState.environmentName = selectedEnvName;
+      if (typeof window.syncProjectEnvironmentTexture === 'function') {
+        window.syncProjectEnvironmentTexture();
+      }
+      if (typeof window.refreshImported3DModelsGrid === 'function') {
+        window.refreshImported3DModelsGrid();
+      }
       currentProjectState.motionBlur = currentProjectState.motionBlur || {};
       currentProjectState.motionBlur.shutterAngle = selectedMbAngle;
       currentProjectState.motionBlur.shutterPhase = selectedMbPhase;
@@ -2319,8 +2468,21 @@
         if (typeof window.updateTimelineDuration === 'function') {
           window.updateTimelineDuration(true);
         }
+        if (window.PreviewCacheManager) {
+          window.PreviewCacheManager.clearAll();
+        }
+        if (typeof invalidateEffectivePropsCache === 'function') {
+          invalidateEffectivePropsCache();
+        }
+        if (typeof window.syncAddLightButtons === 'function') {
+          window.syncAddLightButtons();
+        }
+        if (typeof window.syncInspectorState === 'function') {
+          window.syncInspectorState();
+        }
         if (typeof redrawComposition === 'function') {
           redrawComposition('saveProjectSettings');
+          redrawComposition('engineChange');
         }
 
         // 5. Asynchronously persist to FishDatabase in background without blocking UI
@@ -2332,6 +2494,12 @@
               proj.fps = String(selectedFps);
               proj.defaultDuration = selectedDur;
               proj.bgColor = selectedBg;
+              proj.threeDEngine = selected3dEngine;
+              proj.ambientOcclusion = selectedAO;
+              proj.shadowQuality = selectedShadowQuality;
+              proj.enableReflection = selectedEnableReflection;
+              proj.environmentMediaId = selectedEnvMediaId;
+              proj.environmentName = selectedEnvName;
               if (currentProjectState.motionBlur) {
                 proj.motionBlur = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(currentProjectState.motionBlur) : (Array.isArray(currentProjectState.motionBlur) ? [] : {}));
               }
@@ -2863,6 +3031,29 @@
           currentProjectState.motionBlur.enabled = true;
         }
       }
+      currentProjectState.threeDEngine = (currentProject && currentProject.threeDEngine) || 'classic';
+      currentProjectState.ambientOcclusion = (currentProject && currentProject.ambientOcclusion) || 'disabled';
+      currentProjectState.shadowQuality = (currentProject && currentProject.shadowQuality) || 'disabled';
+      currentProjectState.enableReflection = Boolean(currentProject && currentProject.enableReflection);
+      currentProjectState.environmentMediaId = (currentProject && currentProject.environmentMediaId) || null;
+      currentProjectState.environmentName = (currentProject && currentProject.environmentName) || '';
+      if (currentProject && typeof currentProject.previewCacheEnabled === 'boolean') {
+        currentProjectState.previewCacheEnabled = currentProject.previewCacheEnabled;
+      } else {
+        const storedPreviewCache = localStorage.getItem('oft_preview_cache_enabled');
+        if (storedPreviewCache === 'true' || storedPreviewCache === 'false') {
+          currentProjectState.previewCacheEnabled = (storedPreviewCache === 'true');
+        }
+      }
+      if (typeof window.syncAddLightButtons === 'function') {
+        window.syncAddLightButtons();
+      }
+      if (typeof window.syncProjectEnvironmentTexture === 'function') {
+        window.syncProjectEnvironmentTexture();
+      }
+      if (typeof window.refreshImported3DModelsGrid === 'function') {
+        window.refreshImported3DModelsGrid();
+      }
       if (currentProject && Array.isArray(currentProject.customEasingPresets)) {
         currentProjectState.customEasingPresets = currentProject.customEasingPresets;
         try {
@@ -2890,6 +3081,14 @@
           if (!l.shapeType) l.shapeType = 'rectangle';
           if (!l.shapeProps) l.shapeProps = { sizeX: Number(l.scaleW) || 300, sizeY: Number(l.scaleH) || 300 };
           if (!l.fillColor) l.fillColor = '#98ce7b';
+        }
+        if (l.type === 'light' || (l.id && l.id.startsWith('layer_light_'))) {
+          l.type = 'light';
+          if (!l.lightType) l.lightType = 'point';
+          if (l.intensity === undefined) l.intensity = 100;
+          if (l.radius === undefined) l.radius = 600;
+          if (!l.color) l.color = '#ffffff';
+          if (l.acceptsLights === undefined) l.acceptsLights = false;
         }
         if (l.parentId && !existingLayerIdSet.has(l.parentId)) {
           l.parentId = null;
@@ -3043,13 +3242,33 @@
         if (globalMbBtn) {
           globalMbBtn.classList.toggle('is-active', isMbOn);
         }
+
+        const savedSnap = localStorage.getItem('oft_timeline_snap_enabled');
+        if (savedSnap !== null) {
+          window.isTimelineSnapEnabled = (savedSnap === 'true');
+        } else if (window.isTimelineSnapEnabled === undefined) {
+          window.isTimelineSnapEnabled = true;
+        }
+        const magnetBtn = document.getElementById('editor-icon-magnet');
+        if (magnetBtn) {
+          magnetBtn.classList.toggle('is-active', window.isTimelineSnapEnabled !== false);
+        }
+        const desktopMagnetBtn = document.getElementById('editor-btn-magnet');
+        if (desktopMagnetBtn) {
+          desktopMagnetBtn.classList.toggle('is-active', window.isTimelineSnapEnabled !== false);
+        }
       } catch (e) {
         console.warn('Could not restore more settings from localStorage:', e);
       }
 
       // Initialize RAM Preview Cache BEFORE initial preview canvas rendering
-      // Idle cache disabled by default (can be toggled in Project Settings)
-      const savedIdleCache = localStorage.getItem('oft_idle_cache') === 'true'; // default FALSE
+      const storedPreviewCache = localStorage.getItem('oft_preview_cache_enabled');
+      const savedPreviewCache = (typeof currentProjectState.previewCacheEnabled === 'boolean')
+        ? currentProjectState.previewCacheEnabled
+        : (storedPreviewCache !== null ? (storedPreviewCache === 'true') : true);
+      window.isPreviewCacheEnabled = savedPreviewCache;
+      currentProjectState.previewCacheEnabled = savedPreviewCache;
+      const savedIdleCache = savedPreviewCache && (localStorage.getItem('oft_idle_cache') === 'true');
       currentProjectState.idleCache = savedIdleCache;
       const initialFps = currentProjectState.fps || 60;
       window.currentTimelineFps = initialFps;
@@ -3058,6 +3277,13 @@
         window.PreviewCacheManager.init({ defaultFps: initialFps });
         window.PreviewCacheManager.setDraftMode(isDraftActive);
         window.PreviewCacheManager.setIdleCacheEnabled(savedIdleCache);
+        if (!savedPreviewCache) {
+          window.PreviewCacheManager.stopIdleWorker();
+        }
+        window.PreviewCacheManager.updateRulerUI();
+      }
+      if (typeof window.syncPlaySettingsUI === 'function') {
+        window.syncPlaySettingsUI();
       }
       if (window.VideoFrameExtractor) {
         window.VideoFrameExtractor.init({ defaultFps: initialFps });

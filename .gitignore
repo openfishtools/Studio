@@ -18,6 +18,15 @@ vercelgate
 wrangler.jsonc
 .wrangler/
 
+# Agent / AI assistant folders
+.agent/
+.agents/
+.opencode/
+.cursor/
+.clinerules/
+.windsurf/
+.claude/
+
 # IDE & Editor files
 .idea/
 .vscode/

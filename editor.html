@@ -441,7 +441,7 @@
 
                   <!-- 2. Bottom Media Pool Area -->
                   <div class="add-layer-media-pool" id="add-layer-media-pool">
-                    <input type="file" id="media-file-input" class="media-file-input" multiple accept=".mp4,.mov,.webm,.mkv,.mp3,.wav,.ogg,.m4a,.aac,.flac,.png,.jpg,.jpeg,.webp,video/*,audio/*,image/*" style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; opacity: 0;">
+                    <input type="file" id="media-file-input" class="media-file-input" multiple style="position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; opacity: 0;">
                     <!-- Split Dual Dropzone Overlay for Media Pool -->
                     <div class="media-dropzone-split" id="media-pool-dropzone-split" aria-hidden="true">
                       <div class="media-dropzone-col media-dropzone-mp3" data-drop-action="convert-mp3">
@@ -475,7 +475,7 @@
                             <line x1="21" y1="21" x2="16.5" y2="16.5"></line>
                           </svg>
                           <input type="text" class="media-search-input" id="media-pool-search" placeholder="Cari media..." autocomplete="off" spellcheck="false" aria-label="Cari media">
-                          <button type="button" class="media-search-clear-btn" id="btn-media-search-clear" style="display: none;" title="Hapus pencarian" aria-label="Hapus pencarian">
+                          <button type="button" class="media-search-clear-btn" id="btn-media-search-clear" style="display: none;" title="Clear search" aria-label="Clear search">
                             <i class='fticon fticon-close-2' aria-hidden='true'></i>
                           </button>
                         </div>
@@ -501,6 +501,11 @@
                           <span class="media-filter-label">Audio</span>
                           <span class="media-filter-count" id="media-count-audio">0</span>
                         </button>
+                        <button type="button" class="media-filter-pill" data-media-filter="3d_model" role="tab" aria-selected="false">
+                          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5zm0 2.18L18.56 7.8 12 11.45 5.44 7.8 12 4.18zM5 9.65l6 3.33v6.84l-6-3.33V9.65zm8 10.17v-6.84l6-3.33v6.84l-6 3.33z"/></svg>
+                          <span class="media-filter-label">3D</span>
+                          <span class="media-filter-count" id="media-count-3d">0</span>
+                        </button>
                         <button type="button" class="media-filter-pill" data-media-filter="precomp" role="tab" aria-selected="false" id="media-filter-pill-precomp" style="display: none;">
                           <i class='fticon fticon-edit-group-enter-precompose' aria-hidden='true'></i>
                           <span class="media-filter-label">Comps</span>
@@ -514,15 +519,6 @@
                       <button type="button" class="media-import-box" id="btn-import-media" title="Import Media (MP4, MP3, PNG, JPG)" aria-label="Import Media">
                         <i class='fticon fticon-import-media media-import-plus-icon' aria-hidden='true'></i>
                       </button>
-                    </div>
-
-                    <!-- Media Pool Empty State -->
-                    <div class="media-pool-empty" id="media-pool-empty" style="display: none;">
-                      <div class="media-empty-icon-wrap">
-                        <i class='fticon fticon-media-category media-empty-icon' aria-hidden='true'></i>
-                      </div>
-                      <div class="media-empty-title" id="media-empty-title">Belum ada media</div>
-                      <div class="media-empty-desc" id="media-empty-desc">Klik tombol + atau seret file ke sini untuk menambahkan media.</div>
                     </div>
                   </div>
 
@@ -587,11 +583,46 @@
                         <i class='fticon fticon-layer-solid layer-action-icon' aria-hidden='true'></i>
                         <span class="layer-action-label">Solid</span>
                       </button>
+
+                      <!-- 7. Point Light Button -->
+                      <button type="button" class="layer-action-btn" id="btn-add-point-light" title="Point Light Layer" aria-label="Point Light">
+                        <svg viewBox="0 0 24 24" fill="currentColor" class="layer-action-icon" aria-hidden="true">
+                          <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2.85 11.1l-.85.6V16h-4v-1.3l-.85-.6A4.997 4.997 0 0 1 7 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.63-.8 3.16-2.15 4.1z"/>
+                        </svg>
+                        <span class="layer-action-label">Point Light</span>
+                      </button>
+
+                      <!-- 8. Sun Light Button -->
+                      <button type="button" class="layer-action-btn" id="btn-add-sun-light" title="Sun Light Layer" aria-label="Sun Light">
+                        <svg viewBox="0 0 24 24" fill="currentColor" class="layer-action-icon" aria-hidden="true">
+                          <path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zm0 8c-1.65 0-3-1.35-3-3s1.35-3 3-3 3 1.35 3 3-1.35 3-3 3zm0-13c-.55 0-1 .45-1 1v2c0 .55.45 1 1 1s1-.45 1-1V3c0-.55-.45-1-1-1zm0 18c-.55 0-1 .45-1 1v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1zm9-9h-2c-.55 0-1 .45-1 1s.45 1 1 1h2c.55 0 1-.45 1-1s-.45-1-1-1zM5 12c0-.55-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1h2c.55 0 1-.45 1-1zm14.36-6.36l-1.41 1.41c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.41-1.41c.39-.39.39-1.02 0-1.41-.39-.39-1.02-.39-1.41 0zM6.05 16.54l-1.41 1.41c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.41-1.41c.39-.39.39-1.02 0-1.41-.39-.39-1.02-.39-1.41 0zm12.72 2.82c-.39-.39-1.02-.39-1.41 0l-1.41 1.41c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0l1.41-1.41c.39-.39.39-1.02 0-1.41zM6.05 7.46c.39-.39.39-1.02 0-1.41L4.64 4.64c-.39-.39-1.02-.39-1.41 0-.39.39-.39 1.02 0 1.41l1.41 1.41c.39.39 1.02.39 1.41 0z"/>
+                        </svg>
+                        <span class="layer-action-label">Sun Light</span>
+                      </button>
+
+                      <!-- 9. Ambient Light Button -->
+                      <button type="button" class="layer-action-btn" id="btn-add-ambient-light" title="Ambient Light Layer" aria-label="Ambient Light">
+                        <svg viewBox="0 0 24 24" fill="currentColor" class="layer-action-icon" aria-hidden="true">
+                          <path d="M12 3c-4.97 0-9 4.03-9 9 0 2.12.74 4.07 1.97 5.61L4.35 19.3a1 1 0 0 0 1.41 1.41l1.7-1.7C9.07 19.98 10.49 20.5 12 20.5s2.93-.52 4.54-1.49l1.7 1.7a1 1 0 0 0 1.41-1.41l-.62-1.69A8.956 8.956 0 0 0 21 12c0-4.97-4.03-9-9-9zm0 15.5c-3.58 0-6.5-2.92-6.5-6.5S8.42 5.5 12 5.5s6.5 2.92 6.5 6.5-2.92 6.5-6.5 6.5zm0-10.5c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4z"/>
+                        </svg>
+                        <span class="layer-action-label">Ambient Light</span>
+                      </button>
                     </div>
                   </div>
 
-                  <!-- 4. Category Panel: Shape Layer (Flexible Grid: Kotak, Segitiga, Lingkaran - Icon Only) -->
+                  <!-- 4. Category Panel: Shape Layer (Sub-categories: 2D & 3D) -->
                   <div class="add-layer-shape-panel" id="add-layer-shape-panel" style="display: none; width: 100%; padding: 4px 0;">
+                    <!-- Sub-category Segmented Switch: 2D Shape vs 3D Shape -->
+                    <div class="segmented-switch is-pill shape-subcategories-switch" id="shape-subcategories-switch" role="tablist" aria-label="Shape Categories" style="margin-bottom: 8px;">
+                      <button type="button" class="segmented-switch-item is-active" data-shape-cat="2d" role="tab" aria-selected="true">
+                        <span class="category-label">2D Shape</span>
+                      </button>
+                      <button type="button" class="segmented-switch-item" data-shape-cat="3d" role="tab" aria-selected="false">
+                        <span class="category-label">3D Shape</span>
+                      </button>
+                    </div>
+
+                    <!-- 2D Shapes Grid -->
                     <div class="layer-action-btn-grid" id="add-layer-shape-grid">
                       <!-- 1. Rectangle Button -->
                       <button type="button" class="layer-action-btn layer-action-btn-icon-only" id="btn-add-shape-kotak" title="Rectangle" aria-label="Rectangle">
@@ -645,6 +676,28 @@
                       <!-- 8. Vector / Pen Path Button -->
                       <button type="button" class="layer-action-btn layer-action-btn-icon-only" id="btn-add-shape-vector" title="Vector / Pen Path" aria-label="Vector">
                         <i class="fticon fticon-edit-vector layer-action-icon shape-render-icon" aria-hidden="true"></i>
+                      </button>
+                    </div>
+
+                    <!-- 3D Shapes Grid -->
+                    <div class="layer-action-btn-grid" id="shape-grid-3d" style="display: none;">
+                      <button type="button" class="layer-action-btn layer-action-btn-icon-only shape-3d-btn" id="btn-add-shape-3d-box" title="3D Box" aria-label="3D Box">
+                        <canvas class="shape-3d-thumb-canvas" width="48" height="48" aria-hidden="true"></canvas>
+                      </button>
+                      <button type="button" class="layer-action-btn layer-action-btn-icon-only shape-3d-btn" id="btn-add-shape-3d-sphere" title="3D Sphere" aria-label="3D Sphere">
+                        <canvas class="shape-3d-thumb-canvas" width="48" height="48" aria-hidden="true"></canvas>
+                      </button>
+                      <button type="button" class="layer-action-btn layer-action-btn-icon-only shape-3d-btn" id="btn-add-shape-3d-pyramid" title="3D Pyramid" aria-label="3D Pyramid">
+                        <canvas class="shape-3d-thumb-canvas" width="48" height="48" aria-hidden="true"></canvas>
+                      </button>
+                      <button type="button" class="layer-action-btn layer-action-btn-icon-only shape-3d-btn" id="btn-add-shape-3d-cone" title="3D Cone" aria-label="3D Cone">
+                        <canvas class="shape-3d-thumb-canvas" width="48" height="48" aria-hidden="true"></canvas>
+                      </button>
+                      <button type="button" class="layer-action-btn layer-action-btn-icon-only shape-3d-btn" id="btn-add-shape-3d-cylinder" title="3D Cylinder" aria-label="3D Cylinder">
+                        <canvas class="shape-3d-thumb-canvas" width="48" height="48" aria-hidden="true"></canvas>
+                      </button>
+                      <button type="button" class="layer-action-btn layer-action-btn-icon-only shape-3d-btn" id="btn-add-shape-3d-torus" title="3D Torus" aria-label="3D Torus">
+                        <canvas class="shape-3d-thumb-canvas" width="48" height="48" aria-hidden="true"></canvas>
                       </button>
                     </div>
                   </div>
@@ -746,6 +799,28 @@
                         <i class='fticon fticon-camera layer-action-icon' aria-hidden='true'></i>
                         <span class="layer-action-label">Camera settings</span>
                       </button>
+                      <button type="button" class="layer-action-btn is-hidden" id="btn-layer-edit-light" title="Edit Light">
+                        <svg viewBox="0 0 24 24" fill="currentColor" class="layer-action-icon" aria-hidden="true">
+                          <path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7zm2.85 11.1l-.85.6V16h-4v-1.3l-.85-.6A4.997 4.997 0 0 1 7 9c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.63-.8 3.16-2.15 4.1z"/>
+                        </svg>
+                        <span class="layer-action-label">Edit Light</span>
+                      </button>
+                      <button type="button" class="layer-action-btn is-hidden" id="btn-layer-edit-3d" title="Edit 3D">
+                        <svg viewBox="0 0 24 24" fill="currentColor" class="layer-action-icon" aria-hidden="true">
+                          <path d="M21 16.5l-9 5.25-9-5.25V7.5l9-5.25 9 5.25v9zM12 4.15L5.05 8.2 12 12.25l6.95-4.05L12 4.15zM4.5 9.85v5.8l6.5 3.79V13.6L4.5 9.85zm8.5 9.59l6.5-3.79v-5.8l-6.5 3.75v5.84z"/>
+                        </svg>
+                        <span class="layer-action-label">Edit 3D</span>
+                      </button>
+                      <button type="button" class="layer-action-btn is-hidden" id="btn-layer-texture" title="3D Texture &amp; Material">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="layer-action-icon" aria-hidden="true">
+                          <circle cx="12" cy="12" r="9"/>
+                          <path d="M12 3a13.5 13.5 0 0 0 0 18"/>
+                          <path d="M12 3a13.5 13.5 0 0 1 0 18"/>
+                          <path d="M3.6 9h16.8"/>
+                          <path d="M3.6 15h16.8"/>
+                        </svg>
+                        <span class="layer-action-label">Texture</span>
+                      </button>
                       <button type="button" class="layer-action-btn" id="btn-layer-fill" title="Fill (Color, Media, Gradient)">
                         <i class='fticon fticon-fill-color-media-gradient layer-action-icon' aria-hidden='true'></i>
                         <span class="layer-action-label">Fill</span>
@@ -834,28 +909,42 @@
 
                       <!-- PANE 2: ROTATE -->
                       <div class="transform-pane" id="pane-transform-rotate">
-                        <div class="transform-rotate-body">
-                          <div class="rotate-dial-wheel" id="dial-transform-rotate">
-                            <svg class="rotate-dial-svg" viewBox="0 0 320 160" preserveAspectRatio="none" aria-hidden="true">
-                              <path class="rotate-track-bg is-squircle" id="track-path-rotate" vector-effect="non-scaling-stroke" d="M 160 18 H 264 A 36 36 0 0 1 300 54 V 106 A 36 36 0 0 1 264 142 H 56 A 36 36 0 0 1 20 106 V 54 A 36 36 0 0 1 56 18 Z" />
-                              <path class="rotate-trail-arc is-squircle" id="rotate-trail-arc" vector-effect="non-scaling-stroke" d="M 160 18 H 264 A 36 36 0 0 1 300 54 V 106 A 36 36 0 0 1 264 142 H 56 A 36 36 0 0 1 20 106 V 54 A 36 36 0 0 1 56 18 Z" />
-                            </svg>
-                            <div class="rotate-center-badge">
-                              <span class="rotate-turns-count" id="val-rotate-turns" style="display: none;">+1</span>
-                              <span class="rotate-deg-val" id="val-rotate-deg">0°</span>
+                        <div class="transform-rotate-body is-mixed">
+                          <div class="rotate-main-row">
+                            <div class="rotate-dial-wheel is-watch-squircle" id="dial-transform-rotate-z" data-axis="z" role="slider" aria-label="Roll (Z-Axis)" aria-valuemin="-720" aria-valuemax="720" tabindex="0">
+                              <span class="rotate-axis-pill rotate-axis-pill-z">Z</span>
+                              <svg class="rotate-dial-svg" viewBox="0 0 200 200" aria-hidden="true">
+                                <path class="rotate-track-bg is-squircle" id="track-path-rotate-z" d="M 100 20 H 144 A 36 36 0 0 1 180 56 V 144 A 36 36 0 0 1 144 180 H 56 A 36 36 0 0 1 20 144 V 56 A 36 36 0 0 1 56 20 Z" />
+                                <path class="rotate-trail-arc is-squircle" id="rotate-trail-arc-z" d="M 100 20 H 144 A 36 36 0 0 1 180 56 V 144 A 36 36 0 0 1 144 180 H 56 A 36 36 0 0 1 20 144 V 56 A 36 36 0 0 1 56 20 Z" />
+                              </svg>
+                              <div class="rotate-center-badge" id="readout-rotate-z" title="Click to edit rotation angle">
+                                <span class="rotate-turns-count" id="val-rotate-turns-z"></span>
+                                <span class="rotate-deg-val" id="val-rotate-deg-z">0°</span>
+                              </div>
+                              <div class="rotate-knob" id="knob-transform-rotate-z"></div>
                             </div>
-                            <div class="segmented-switch rotate-axis-switch" id="rotate-axis-switch" role="tablist" aria-label="Rotation Axis">
-                              <button type="button" class="segmented-switch-item" data-axis="x" role="tab" aria-selected="false" title="Pitch (X-Axis)">
-                                <span>X</span>
-                              </button>
-                              <button type="button" class="segmented-switch-item" data-axis="y" role="tab" aria-selected="false" title="Yaw (Y-Axis)">
-                                <span>Y</span>
-                              </button>
-                              <button type="button" class="segmented-switch-item is-active is-selected" data-axis="z" role="tab" aria-selected="true" title="Roll (Z-Axis)">
-                                <span>Z</span>
-                              </button>
+                            <div class="rotate-jogwheel jog-wheel-container is-vertical" id="jog-rotate-x" data-axis="x" role="slider" aria-label="Pitch (X-Axis)" aria-valuemin="-720" aria-valuemax="720" tabindex="0">
+                              <span class="rotate-axis-pill rotate-axis-pill-x">X</span>
+                              <div class="jog-wheel-track-viewport">
+                                <div class="jog-wheel-ticks is-vertical"></div>
+                              </div>
+                              <div class="jog-wheel-needle is-vertical"></div>
+                              <div class="rotate-readout" id="readout-rotate-x">
+                                <span class="rotate-turns-count" id="val-rotate-turns-x"></span>
+                                <span class="rotate-deg-val" id="val-rotate-deg-x">0°</span>
+                              </div>
                             </div>
-                            <div class="rotate-knob" id="knob-transform-rotate"></div>
+                          </div>
+                          <div class="rotate-jogwheel jog-wheel-container is-horizontal" id="jog-rotate-y" data-axis="y" role="slider" aria-label="Yaw (Y-Axis)" aria-valuemin="-720" aria-valuemax="720" tabindex="0">
+                            <span class="rotate-axis-pill rotate-axis-pill-y">Y</span>
+                            <div class="jog-wheel-track-viewport">
+                              <div class="jog-wheel-ticks"></div>
+                            </div>
+                            <div class="jog-wheel-needle"></div>
+                            <div class="rotate-readout" id="readout-rotate-y">
+                              <span class="rotate-turns-count" id="val-rotate-turns-y"></span>
+                              <span class="rotate-deg-val" id="val-rotate-deg-y">0°</span>
+                            </div>
                           </div>
                         </div>
                         <div class="transform-pane-expression-badge">
@@ -1502,6 +1591,235 @@
                         </div>
                       </div>
                     </main>
+                  </div>
+                </div>
+
+                <!-- Subview 7b: Edit Light Controller UI -->
+                <div class="drawer-subview" id="layer-drawer-edit-light-view">
+                  <div class="camera-controller-layout" id="edit-light-controller">
+                    <!-- Left Navigation Column -->
+                    <aside class="transform-nav-col">
+                      <div class="transform-nav-group-top">
+                        <button type="button" class="transform-nav-btn" id="btn-edit-light-back" title="Back to Layer Actions" aria-label="Back">
+                          <i class='fticon fticon-back' aria-hidden='true'></i>
+                        </button>
+                      </div>
+                    </aside>
+
+                    <!-- Edit Light Work Area -->
+                    <main class="camera-work-area">
+                      <div id="light-classic-notice" class="light-classic-notice is-hidden" aria-live="polite">
+                        Switch to advance 3d to access this
+                      </div>
+                      <div id="light-controls-container">
+                        <!-- 1. Intensity (0-500%, default 100%) -->
+                        <div class="effects-control-row" id="row-light-intensity">
+                          <div class="effects-param-label-col">
+                            <span class="effects-param-label">Intensity</span>
+                          </div>
+                          <div class="effects-param-val-col">
+                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-light-intensity" title="Drag to adjust Light Intensity" role="slider" aria-label="Light Intensity" aria-valuemin="0" aria-valuemax="500" aria-valuenow="100" tabindex="0">
+                              <div class="jog-wheel-track-viewport">
+                                <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
+                              </div>
+                              <div class="jog-wheel-needle"></div>
+                              <span class="effects-param-pill-val" id="val-light-intensity" title="Click to edit Intensity">100%</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <!-- 2. Radius (Point Light only, default 600px) -->
+                        <div class="effects-control-row" id="row-light-radius">
+                          <div class="effects-param-label-col">
+                            <span class="effects-param-label">Radius</span>
+                          </div>
+                          <div class="effects-param-val-col">
+                            <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-light-radius" title="Drag to adjust Point Light Radius" role="slider" aria-label="Point Light Radius" aria-valuemin="10" aria-valuemax="5000" aria-valuenow="600" tabindex="0">
+                              <div class="jog-wheel-track-viewport">
+                                <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
+                              </div>
+                              <div class="jog-wheel-needle"></div>
+                              <span class="effects-param-pill-val" id="val-light-radius" title="Click to edit Radius">600 px</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </main>
+                  </div>
+                </div>
+
+                <!-- Subview: 3D Texture & Material Controller UI (3-Column) -->
+                <div class="drawer-subview" id="layer-drawer-texture-view">
+                  <div class="transform-controller texture-3d-controller" id="texture-3d-controller">
+                    <!-- Left Navigation Column -->
+                    <aside class="transform-nav-col">
+                      <div class="transform-nav-group-top">
+                        <button type="button" class="transform-nav-btn" id="btn-texture-back" title="Back to Layer Actions" aria-label="Back">
+                          <i class='fticon fticon-back' aria-hidden='true'></i>
+                        </button>
+                      </div>
+                    </aside>
+
+                    <!-- Center Switching Work Area -->
+                    <main class="transform-work-area texture-3d-work-area">
+                      <!-- Pane 1: Sphere Texture Pool -->
+                      <div class="transform-pane is-active" id="pane-texture-spheres">
+                        <div class="texture-sphere-pool-header">
+                          <span class="texture-sphere-pool-title" id="texture-sphere-pool-title">Textures</span>
+                          <button type="button" class="texture-split-btn is-hidden" id="btn-texture-toggle-slots" title="Split material slots per face">Split Faces</button>
+                        </div>
+                        <div class="texture-sphere-pool-grid" id="texture-sphere-pool-grid" role="listbox" aria-label="3D Material Spheres">
+                          <!-- Populated dynamically by editor-3d-materials.js -->
+                        </div>
+                      </div>
+
+                      <!-- Pane 2: Material Parameter Settings -->
+                      <div class="transform-pane" id="pane-texture-params">
+                        <div class="texture-param-slot-bar" id="texture-param-slot-bar">
+                          <canvas class="texture-param-slot-canvas" id="texture-param-slot-canvas" width="28" height="28" aria-hidden="true"></canvas>
+                          <span class="texture-param-slot-name" id="texture-param-slot-name">Surface</span>
+                          <div class="texture-surface-bar" id="texture-surface-bar" role="tablist" aria-label="Surface Source">
+                            <button type="button" class="texture-surface-btn is-active" data-surface-mode="inherit" role="tab" aria-selected="true">Fill</button>
+                            <button type="button" class="texture-surface-btn" data-surface-mode="solid" role="tab" aria-selected="false">Color</button>
+                            <button type="button" class="texture-surface-btn" data-surface-mode="media" role="tab" aria-selected="false">Image</button>
+                          </div>
+                        </div>
+
+                        <div class="texture-param-scroll">
+                          <!-- 1. Accepts Lights -->
+                          <div class="effects-control-row" id="row-material-accepts-lights">
+                            <div class="effects-param-label-col">
+                              <span class="effects-param-label">Accepts Lights</span>
+                            </div>
+                            <div class="effects-param-val-col">
+                              <div class="segmented-switch is-compact" id="switch-material-accepts-lights" role="tablist" aria-label="Toggle Accepts Lights">
+                                <button type="button" class="segmented-switch-item" data-val="off" role="tab" aria-selected="false">OFF</button>
+                                <button type="button" class="segmented-switch-item is-active is-selected" data-val="on" role="tab" aria-selected="true">ON</button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <!-- 2. Glossy (0-100%, default 0%) -->
+                          <div class="effects-control-row" id="row-material-glossy">
+                            <div class="effects-param-label-col">
+                              <span class="effects-param-label">Glossy</span>
+                            </div>
+                            <div class="effects-param-val-col">
+                              <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-material-glossy" title="Drag to adjust Glossy" role="slider" aria-label="Glossy" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+                                <div class="jog-wheel-track-viewport">
+                                  <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
+                                </div>
+                                <div class="jog-wheel-needle"></div>
+                                <span class="effects-param-pill-val" id="val-material-glossy" title="Click to edit Glossy">0%</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <!-- 3. Metallic (0-100%, default 0%) -->
+                          <div class="effects-control-row" id="row-material-metallic">
+                            <div class="effects-param-label-col">
+                              <span class="effects-param-label">Metallic</span>
+                            </div>
+                            <div class="effects-param-val-col">
+                              <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-material-metallic" title="Drag to adjust Metallic" role="slider" aria-label="Metallic" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+                                <div class="jog-wheel-track-viewport">
+                                  <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
+                                </div>
+                                <div class="jog-wheel-needle"></div>
+                                <span class="effects-param-pill-val" id="val-material-metallic" title="Click to edit Metallic">0%</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <!-- 4. Roughness (0-100%, default 50%) -->
+                          <div class="effects-control-row" id="row-material-roughness">
+                            <div class="effects-param-label-col">
+                              <span class="effects-param-label">Roughness</span>
+                            </div>
+                            <div class="effects-param-val-col">
+                              <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-material-roughness" title="Drag to adjust Roughness" role="slider" aria-label="Roughness" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">
+                                <div class="jog-wheel-track-viewport">
+                                  <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
+                                </div>
+                                <div class="jog-wheel-needle"></div>
+                                <span class="effects-param-pill-val" id="val-material-roughness" title="Click to edit Roughness">50%</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <!-- 5. Diffuse (0-100%, default 100%) -->
+                          <div class="effects-control-row" id="row-material-diffuse">
+                            <div class="effects-param-label-col">
+                              <span class="effects-param-label">Diffuse</span>
+                            </div>
+                            <div class="effects-param-val-col">
+                              <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-material-diffuse" title="Drag to adjust Diffuse" role="slider" aria-label="Diffuse" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" tabindex="0">
+                                <div class="jog-wheel-track-viewport">
+                                  <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
+                                </div>
+                                <div class="jog-wheel-needle"></div>
+                                <span class="effects-param-pill-val" id="val-material-diffuse" title="Click to edit Diffuse">100%</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <!-- 6. Specular (0-100%, default 50%) -->
+                          <div class="effects-control-row" id="row-material-specular">
+                            <div class="effects-param-label-col">
+                              <span class="effects-param-label">Specular</span>
+                            </div>
+                            <div class="effects-param-val-col">
+                              <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-material-specular" title="Drag to adjust Specular" role="slider" aria-label="Specular" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" tabindex="0">
+                                <div class="jog-wheel-track-viewport">
+                                  <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
+                                </div>
+                                <div class="jog-wheel-needle"></div>
+                                <span class="effects-param-pill-val" id="val-material-specular" title="Click to edit Specular">50%</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <!-- 7. Env Reflection (0-100%, default 100%) -->
+                          <div class="effects-control-row" id="row-material-env-reflection">
+                            <div class="effects-param-label-col">
+                              <span class="effects-param-label">Env Reflection</span>
+                            </div>
+                            <div class="effects-param-val-col">
+                              <div class="effects-param-pill jog-wheel-container is-horizontal effects-ruler-scrubber" id="jog-material-env-reflection" title="Drag to adjust Environment Reflection" role="slider" aria-label="Env Reflection" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100" tabindex="0">
+                                <div class="jog-wheel-track-viewport">
+                                  <div class="jog-wheel-ticks is-bounded-tape" style="--tape-width: 480px; --tape-offset: 0px;" data-tape-width="480"></div>
+                                </div>
+                                <div class="jog-wheel-needle"></div>
+                                <span class="effects-param-pill-val" id="val-material-env-reflection" title="Click to edit Env Reflection">100%</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </main>
+
+                    <!-- Right 2-Button Mode Rail -->
+                    <nav class="transform-tools-col texture-tools-col" aria-label="3D Texture Views">
+                      <button type="button" class="transform-tool-btn is-active" id="btn-texture-tab-spheres" data-tex-tab="spheres" title="Texture Spheres" aria-label="Texture Spheres">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <circle cx="12" cy="12" r="9"/>
+                          <path d="M12 3a13.5 13.5 0 0 0 0 18"/>
+                          <path d="M12 3a13.5 13.5 0 0 1 0 18"/>
+                          <path d="M3.6 9h16.8"/>
+                          <path d="M3.6 15h16.8"/>
+                        </svg>
+                      </button>
+                      <button type="button" class="transform-tool-btn" id="btn-texture-tab-params" data-tex-tab="params" title="Material Parameters" aria-label="Material Parameters">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <line x1="4" y1="6" x2="20" y2="6"/>
+                          <line x1="4" y1="12" x2="20" y2="12"/>
+                          <line x1="4" y1="18" x2="20" y2="18"/>
+                          <circle cx="9" cy="6" r="2" fill="currentColor"/>
+                          <circle cx="15" cy="12" r="2" fill="currentColor"/>
+                          <circle cx="10" cy="18" r="2" fill="currentColor"/>
+                        </svg>
+                      </button>
+                    </nav>
                   </div>
                 </div>
 
@@ -2844,6 +3162,91 @@
           </div>
         </section>
 
+        <!-- CATEGORY: 3D ENGINE (Unexpanded / Collapsed by default) -->
+        <section class="settings-category is-collapsed" id="cat-settings-3d-engine" aria-label="3D Engine Settings">
+          <button type="button" class="settings-category-header" aria-expanded="false" aria-controls="body-settings-3d-engine">
+            <div class="settings-category-title-wrap">
+              <span class="settings-category-title">3D Engine</span>
+            </div>
+            <div class="settings-category-meta">
+              <span class="settings-category-summary" id="summary-settings-3d-engine">Classic 3D</span>
+              <i class='fticon fticon-format-and-canvas-settings settings-category-chevron' aria-hidden='true'></i>
+            </div>
+          </button>
+
+          <div class="settings-category-body" id="body-settings-3d-engine">
+            <!-- Renderer Dropdown Row -->
+            <div class="modal-form-row" id="row-settings-3d-engine">
+              <label class="modal-label">Renderer</label>
+              <div class="custom-dropdown" id="dropdown-3d-engine" data-value="classic">
+                <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select 3D Renderer">
+                  <span class="custom-dropdown-label">Classic 3D</span>
+                  <i class='fticon fticon-select-animation-target custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
+                </button>
+                <div class="custom-dropdown-menu" role="listbox">
+                  <div class="custom-dropdown-item is-selected" role="option" data-val="classic">Classic 3D</div>
+                  <div class="custom-dropdown-item" role="option" data-val="advance">Advance 3D</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Advance 3D Options Container -->
+            <div class="settings-advance-3d-options is-hidden" id="settings-advance-3d-options">
+              <!-- Ambient Occlusion Row -->
+              <div class="modal-form-row" id="row-settings-ambient-occlusion">
+                <label class="modal-label">Ambient Occlusion</label>
+                <div class="custom-dropdown" id="dropdown-ambient-occlusion" data-value="disabled">
+                  <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select Ambient Occlusion">
+                    <span class="custom-dropdown-label">Disabled</span>
+                    <i class='fticon fticon-select-animation-target custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
+                  </button>
+                  <div class="custom-dropdown-menu" role="listbox">
+                    <div class="custom-dropdown-item is-selected" role="option" data-val="disabled">Disabled</div>
+                    <div class="custom-dropdown-item" role="option" data-val="low">Low</div>
+                    <div class="custom-dropdown-item" role="option" data-val="medium">Medium</div>
+                    <div class="custom-dropdown-item" role="option" data-val="high">High</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Shadow Quality Row -->
+              <div class="modal-form-row" id="row-settings-shadow-quality">
+                <label class="modal-label">Shadow Quality</label>
+                <div class="custom-dropdown" id="dropdown-shadow-quality" data-value="disabled">
+                  <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select Shadow Quality">
+                    <span class="custom-dropdown-label">Disabled</span>
+                    <i class='fticon fticon-select-animation-target custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
+                  </button>
+                  <div class="custom-dropdown-menu" role="listbox">
+                    <div class="custom-dropdown-item is-selected" role="option" data-val="disabled">Disabled</div>
+                    <div class="custom-dropdown-item" role="option" data-val="512">Fast (512px)</div>
+                    <div class="custom-dropdown-item" role="option" data-val="1024">High (1024px)</div>
+                    <div class="custom-dropdown-item" role="option" data-val="2048">Ultra (2048px)</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Environment Map Row (Media Pool Mirror Popover) -->
+              <div class="modal-form-row" id="row-settings-environment">
+                <label class="modal-label">Environment</label>
+                <button type="button" class="env-picker-trigger" id="btn-settings-environment-picker" data-media-id="" data-media-name="" aria-haspopup="dialog" aria-expanded="false" aria-label="Select Environment Image">
+                  <span class="env-picker-thumb" id="env-picker-trigger-thumb" aria-hidden="true"></span>
+                  <span class="env-picker-label" id="env-picker-trigger-label">None</span>
+                  <i class='fticon fticon-select-animation-target custom-dropdown-arrow' aria-hidden='true'></i>
+                </button>
+              </div>
+
+              <!-- Enable Reflection Row -->
+              <div class="modal-form-row" id="row-settings-enable-reflection">
+                <label class="modal-label" for="toggle-enable-reflection">Enable Reflection</label>
+                <button type="button" class="speed-switch" id="toggle-enable-reflection" role="switch" aria-checked="false" aria-label="Enable Reflection">
+                  <span class="speed-switch-thumb"></span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- CATEGORY 3: ENGINE & PERFORMANCE (Unexpanded / Collapsed by default) -->
         <section class="settings-category is-collapsed" id="cat-settings-advanced" aria-label="Engine and Performance Settings">
           <button type="button" class="settings-category-header" aria-expanded="false" aria-controls="body-settings-advanced">
@@ -2886,59 +3289,6 @@
                 <div class="custom-dropdown-menu" role="listbox">
                   <div class="custom-dropdown-item is-selected" role="option" data-val="false">Disabled</div>
                   <div class="custom-dropdown-item" role="option" data-val="true">Enabled</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- CATEGORY 4: APPEARANCE & THEME (Unexpanded / Collapsed by default) -->
-        <section class="settings-category is-collapsed" id="cat-settings-theme" aria-label="Appearance and Theme Settings">
-          <button type="button" class="settings-category-header" aria-expanded="false" aria-controls="body-settings-theme">
-            <div class="settings-category-title-wrap">
-              <span class="settings-category-title">Appearance &amp; Accent</span>
-            </div>
-            <div class="settings-category-meta">
-              <span class="settings-category-summary" id="summary-settings-theme">Matcha Tea</span>
-              <i class='fticon fticon-format-and-canvas-settings settings-category-chevron' aria-hidden='true'></i>
-            </div>
-          </button>
-
-          <div class="settings-category-body" id="body-settings-theme">
-            <div class="settings-theme-grid" id="editor-settings-theme-grid">
-              <!-- Swatches populated dynamically -->
-            </div>
-            <div class="settings-scale-list" style="margin-top: 12px;">
-              <div class="settings-scale-row" id="row-settings-tablet-view">
-                <div class="settings-scale-meta">
-                  <span class="settings-scale-name">Tablet Split View</span>
-                  <span class="settings-scale-val" id="tablet-view-val">Enabled</span>
-                </div>
-                <div class="custom-dropdown is-compact" id="dropdown-tablet-view" data-value="true" style="width: 110px;">
-                  <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Tablet Split View">
-                    <span class="custom-dropdown-label">Enabled</span>
-                    <i class='fticon fticon-select-animation-target custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
-                  </button>
-                  <div class="custom-dropdown-menu" role="listbox">
-                    <div class="custom-dropdown-item is-selected" role="option" data-val="true">Enabled</div>
-                    <div class="custom-dropdown-item" role="option" data-val="false">Disabled</div>
-                  </div>
-                </div>
-              </div>
-              <div class="settings-scale-row">
-                <div class="settings-scale-meta">
-                  <span class="settings-scale-name">UI Scale — Editor</span>
-                  <span class="settings-scale-val" id="ui-scale-editor-val">100%</span>
-                </div>
-                <input type="range" class="settings-scale-slider" id="ui-scale-editor" min="80" max="130" step="1" value="100" aria-label="Editor UI scale">
-              </div>
-              <div class="settings-scale-row">
-                <div class="settings-scale-meta">
-                  <span class="settings-scale-name">Storage</span>
-                  <span class="settings-scale-val" id="editor-settings-storage-status">Checking...</span>
-                </div>
-                <div class="settings-storage-bar" aria-hidden="true">
-                  <div class="settings-storage-fill" id="editor-settings-storage-fill"></div>
                 </div>
               </div>
             </div>
@@ -3003,7 +3353,12 @@
       <i class='fticon fticon-grid' aria-hidden='true'></i>
     </button>
 
-    <!-- 3. Global Motion Blur toggle icon button (default disabled) -->
+    <!-- 3. Snapping (Magnet) toggle icon button (default active) -->
+    <button type="button" class="popover-icon-btn is-active" id="editor-icon-magnet" title="Snapping" aria-label="Toggle Snapping">
+      <i class='fticon fticon-magnet' aria-hidden='true'></i>
+    </button>
+
+    <!-- 4. Global Motion Blur toggle icon button (default disabled) -->
     <button type="button" class="popover-icon-btn" id="editor-icon-motion-blur" title="Global Motion Blur" aria-label="Toggle Global Motion Blur">
       <svg viewBox="0 0 24 24" fill="currentColor">
         <circle cx="16.5" cy="12" r="4.5"/>
@@ -3047,6 +3402,28 @@
     <div class="attributes-popover-footer">
       <button type="button" class="attr-action-btn" id="attr-btn-action">Copy</button>
     </div>
+  </div>
+
+  <!-- ==========================================================================
+       ENVIRONMENT / 3D SLOT TEXTURE MEDIA POOL MIRROR POPOVER
+       ========================================================================== -->
+  <div class="popover-card is-env-media-popover" id="popover-environment-media-pool" role="dialog" aria-hidden="true" aria-label="Environment Media Pool">
+    <div class="popover-tail" aria-hidden="true"></div>
+    <div class="env-popover-header">
+      <span class="env-popover-title" id="env-popover-title">Environment Map</span>
+    </div>
+    <div class="segmented-switch is-pill env-popover-tabs" id="env-popover-tabs" role="tablist" aria-label="Environment Source">
+      <button type="button" class="segmented-switch-item is-active" data-env-tab="presets" role="tab" aria-selected="true">
+        <span class="category-label">Default</span>
+      </button>
+      <button type="button" class="segmented-switch-item" data-env-tab="media" role="tab" aria-selected="false">
+        <span class="category-label">Media Pool</span>
+      </button>
+    </div>
+    <div class="fill-media-pool-grid env-media-pool-grid" id="env-media-pool-grid">
+      <!-- Populated dynamically by renderEnvironmentMediaPool() -->
+    </div>
+    <input type="file" id="env-media-file-input" class="is-sr-file-input" accept="image/*,.png,.jpg,.jpeg,.webp">
   </div>
 
   <!-- ==========================================================================
@@ -3492,6 +3869,10 @@
   <div class="popover-card is-menu-popover" id="popover-media-item-menu" role="dialog" aria-hidden="true" style="min-width: 175px;">
     <div class="popover-tail" aria-hidden="true"></div>
     <div class="popover-menu-list">
+      <button type="button" class="popover-menu-item is-hidden-item" id="btn-media-replace-3d">
+        <span>Replace Selected 3D</span>
+      </button>
+      <div class="popover-menu-divider is-hidden-item" id="divider-media-replace-3d"></div>
       <button type="button" class="popover-menu-item" id="btn-media-convert-audio">
         <span>Convert to Audio</span>
       </button>
@@ -3949,7 +4330,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.6.13</span>
+          <span class="welcome-badge">v0.7.0</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -3979,11 +4360,96 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.7.0 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.7.0</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Nov 25, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Advance 3D Rendering Engine (`js/core/fishtool-engine.js`, `js/core/fish3d.js`, `js/editor/editor-state.js`, `editor.html`, `desktop.html`)</span>
+                  <span class="changelog-item-desc">Added a new **3D Engine** category in Project Settings with `Classic 3D` (default, pixel-identical) and `Advance 3D` modes, plus controls for **Ambient Occlusion** (`Disabled`, `Low`, `Medium`, `High`), **Shadow Quality** (`Disabled`, `512px`, `1024px`, `2048px`), **Environment** map selection, and **Enable Reflection**.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">3D Light Layers &amp; Live Viewport Gizmos (`js/core/canvas-overlay.js`, `js/editor/editor-inspector.js`, `js/editor/editor-canvas.js`)</span>
+                  <span class="changelog-item-desc">Introduced `Point Light`, `Sun Light`, and `Ambient Light` control layers (up to 4 simultaneous lights per composition level with keyframeable position, rotation, color, intensity 0–500%, and radius), Blinn-Phong diffuse/specular shading, and theme-aware editor-only overlays excluded from export.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Real-Time SSAO, Shadow Mapping &amp; Screen-Space Reflections (`js/core/fishtool-engine.js`)</span>
+                  <span class="changelog-item-desc">Added WebGL2 Screen-Space Ambient Occlusion (SSAO) with bilateral depth-aware blur, real-time 3×3 PCF depth shadow mapping for Sun and Point lights (supporting 3D shapes, imported 3D models, and alpha-cutout layers), and 2-pass WebGL2 Screen-Space Reflections (SSR) so glossy and metallic surfaces reflect neighboring 3D objects in real time.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Zero-Dependency 3D Model Importer &amp; FBX Skeletal Animation (`js/core/fish3d-loader.js`, `js/editor/editor-3d-materials.js`, `js/editor/editor-media.js`)</span>
+                  <span class="changelog-item-desc">Added native `.OBJ` + `.MTL`, Binary/ASCII `.FBX` (node hierarchy, `Skin`/`Cluster` skeletal rigs, multi-clip animation with Quaternion SLERP), and `.ZIP` bundle import with automatic diffuse texture matching. Imported models appear in the Media Pool under a dedicated `3D` filter with 3D thumbnails, long-press delete, and `Replace Selected 3D`.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Per-Slot 3D Material Editor &amp; Built-In Environment Gallery (`js/editor/editor-3d-materials.js`, `assets/environments/`, `css/components/popover.css`)</span>
+                  <span class="changelog-item-desc">Added multi-slot **Texture** inspector (`Fill`, `Color`, `Image`, `Accepts Lights`, `Glossy`, `Metallic`, `Roughness`, `Diffuse`, `Specular`, `Env Reflection`) with live shaded material preview spheres, plus a built-in gallery of 15 `Basic 2K` environment maps alongside custom Media Pool environments.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Tight 3D Model Wireframe &amp; Unified Panel Spacing (`js/core/fish3d-loader.js`, `js/core/canvas-overlay.js`, `js/editor/editor-inspector.js`, `css/components/drawer.css`, `css/layout/desktop.css`)</span>
+                  <span class="changelog-item-desc">Imported 3D models use tight local-bounds wireframes with near-plane clipping protection and disabled on-canvas resize handles; hid inapplicable `Edit Shape` on 3D shapes and models; standardized desktop Project Assets panel padding and `8px` spacing across all tabs; made Camera Settings scrollable and balanced the Inspector action grid.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Direct Timeline Scrubbing &amp; Preview Cache Gating (`js/editor/editor-timeline-core.js`, `js/editor/editor-state.js`, `js/editor/editor-canvas.js`)</span>
+                  <span class="changelog-item-desc">Removed timeline scroll momentum/inertia glide for crisp scrubbing, persisted the Play popup Cache toggle across sessions, and deferred RAM preview caching until 3D models, material slot textures, and environment maps finish loading.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">FBX Animation Gimbal Flip Spikes &amp; IndexedDB Reload Playback (`js/core/fish3d-loader.js`)</span>
+                  <span class="changelog-item-desc">Replaced linear Euler interpolation on FBX rotation tracks with zero-GC Quaternion SLERP (preserving single-axis multi-turn spins) to eliminate brief 1–2 frame bone-whip glitches on baked animations, and hardened scratch buffer initialization when reloading saved 3D rigs from IndexedDB.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">3D Motion Blur Depth, Opacity &amp; SSAO Preservation (`js/core/fishtool-engine.js`, `js/core/motion-blur-engine.js`)</span>
+                  <span class="changelog-item-desc">Fixed translucent artifacts on 3D meshes with motion blur via opaque offscreen FBO rendering, per-sample camera evaluation, and strided SSAO preservation.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Particle Engine &amp; Shatter Camera Zoom Scaling (`effects/loader.js`, `js/editor/editor-animation.js`)</span>
+                  <span class="changelog-item-desc">Bridged inverse camera scale to `cameraZoom` so particle and shatter effects scale accurately with 3D camera zoom.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">3D Material Texture Readiness Race Condition (`js/editor/editor-canvas.js`, `js/editor/editor-3d-materials.js`)</span>
+                  <span class="changelog-item-desc">Fixed readiness detection for `slot.surfaceMode === 'media'` and invalidated RAM preview cache once model `mtex_*` textures decode so reloaded 3D models always render with textures.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.13 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.13</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Nov 5, 2026</span>
               </div>
               <div class="welcome-changelog-item">
@@ -6824,6 +7290,12 @@
   <script src="js/plugins/shapes/capsule.js"></script>
   <script src="js/plugins/shapes/heart.js"></script>
   <script src="js/plugins/shapes/vector.js?v=vector-zigzag-3"></script>
+  <script src="js/plugins/shapes/3d_box.js"></script>
+  <script src="js/plugins/shapes/3d_sphere.js"></script>
+  <script src="js/plugins/shapes/3d_pyramid.js"></script>
+  <script src="js/plugins/shapes/3d_cone.js"></script>
+  <script src="js/plugins/shapes/3d_cylinder.js"></script>
+  <script src="js/plugins/shapes/3d_torus.js"></script>
   <script src="js/ui/elements/number-input.js"></script>
   <script src="js/ui/elements/slider.js"></script>
   <script src="js/ui/elements/dropdown.js"></script>
@@ -6834,6 +7306,8 @@
   <!-- All Modular Effects compiled in WASM binary core (Studio/effects/effects.wasm) -->
   <script src="effects/loader.js?v=wasm"></script>
   <script src="js/ui/color-picker.js"></script>
+  <script src="js/core/fish3d.js"></script>
+  <script src="js/core/fish3d-loader.js"></script>
   <script src="js/core/fishtool-engine.js?v=8"></script>
   <script src="js/media/frame-extractor.js"></script>
   <script src="js/media/videocomp-enggine.js"></script>
@@ -6854,6 +7328,7 @@
   <script src="js/editor/editor-canvas.js"></script>
   <script src="js/editor/editor-inspector.js"></script>
   <script src="js/editor/editor-layers.js?v=vector-zigzag-3"></script>
+  <script src="js/editor/editor-3d-materials.js"></script>
   <script src="js/editor/editor-effects.js"></script>
   <script src="js/editor/editor-timeline-core.js"></script>
   <script src="js/editor/editor-timeline-ops.js"></script>

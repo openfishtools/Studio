@@ -5,6 +5,25 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-11-25
+
+### Added
+- **Advance 3D Rendering Engine (`js/core/fishtool-engine.js`, `js/core/fish3d.js`, `js/editor/editor-state.js`, `editor.html`, `desktop.html`)**: Added a new **3D Engine** category in Project Settings with `Classic 3D` (default, pixel-identical) and `Advance 3D` modes, plus controls for **Ambient Occlusion** (`Disabled`, `Low`, `Medium`, `High`), **Shadow Quality** (`Disabled`, `512px`, `1024px`, `2048px`), **Environment** map selection, and **Enable Reflection**.
+- **3D Light Layers & Live Viewport Gizmos (`js/core/canvas-overlay.js`, `js/editor/editor-inspector.js`, `js/editor/editor-canvas.js`)**: Introduced `Point Light`, `Sun Light`, and `Ambient Light` control layers (up to 4 simultaneous lights per composition level with keyframeable position, rotation, color, intensity 0–500%, and radius), Blinn-Phong diffuse/specular shading, and theme-aware editor-only overlays excluded from export.
+- **Real-Time SSAO, Shadow Mapping & Screen-Space Reflections (`js/core/fishtool-engine.js`)**: Added WebGL2 Screen-Space Ambient Occlusion (SSAO) with bilateral depth-aware blur, real-time 3×3 PCF depth shadow mapping for Sun and Point lights (supporting 3D shapes, imported 3D models, and alpha-cutout layers), and 2-pass WebGL2 Screen-Space Reflections (SSR) so glossy and metallic surfaces reflect neighboring 3D objects in real time.
+- **Zero-Dependency 3D Model Importer & FBX Skeletal Animation (`js/core/fish3d-loader.js`, `js/editor/editor-3d-materials.js`, `js/editor/editor-media.js`)**: Added native `.OBJ` + `.MTL`, Binary/ASCII `.FBX` (node hierarchy, `Skin`/`Cluster` skeletal rigs, multi-clip animation with Quaternion SLERP), and `.ZIP` bundle import with automatic diffuse texture matching. Imported models appear in the Media Pool under a dedicated `3D` filter with 3D thumbnails, long-press delete, and `Replace Selected 3D`.
+- **Per-Slot 3D Material Editor & Built-In Environment Gallery (`js/editor/editor-3d-materials.js`, `assets/environments/`, `css/components/popover.css`)**: Added multi-slot **Texture** inspector (`Fill`, `Color`, `Image`, `Accepts Lights`, `Glossy`, `Metallic`, `Roughness`, `Diffuse`, `Specular`, `Env Reflection`) with live shaded material preview spheres, plus a built-in gallery of 15 `Basic 2K` environment maps alongside custom Media Pool environments.
+
+### Improved
+- **Tight 3D Model Wireframe & Unified Panel Spacing (`js/core/fish3d-loader.js`, `js/core/canvas-overlay.js`, `js/editor/editor-inspector.js`, `css/components/drawer.css`, `css/layout/desktop.css`)**: Imported 3D models use tight local-bounds wireframes with near-plane clipping protection and disabled on-canvas resize handles; hid inapplicable `Edit Shape` on 3D shapes and models; standardized desktop Project Assets panel padding and `8px` spacing across all tabs; made Camera Settings scrollable and balanced the Inspector action grid.
+- **Direct Timeline Scrubbing & Preview Cache Gating (`js/editor/editor-timeline-core.js`, `js/editor/editor-state.js`, `js/editor/editor-canvas.js`)**: Removed timeline scroll momentum/inertia glide for crisp scrubbing, persisted the Play popup Cache toggle across sessions, and deferred RAM preview caching until 3D models, material slot textures, and environment maps finish loading.
+
+### Fixed
+- **FBX Animation Gimbal Flip Spikes & IndexedDB Reload Playback (`js/core/fish3d-loader.js`)**: Replaced linear Euler interpolation on FBX rotation tracks with zero-GC Quaternion SLERP (preserving single-axis multi-turn spins) to eliminate brief 1–2 frame bone-whip glitches on baked animations, and hardened scratch buffer initialization when reloading saved 3D rigs from IndexedDB.
+- **3D Motion Blur Depth, Opacity & SSAO Preservation (`js/core/fishtool-engine.js`, `js/core/motion-blur-engine.js`)**: Fixed translucent artifacts on 3D meshes with motion blur via opaque offscreen FBO rendering, per-sample camera evaluation, and strided SSAO preservation.
+- **Particle Engine & Shatter Camera Zoom Scaling (`effects/loader.js`, `js/editor/editor-animation.js`)**: Bridged inverse camera scale to `cameraZoom` so particle and shatter effects scale accurately with 3D camera zoom.
+- **3D Material Texture Readiness Race Condition (`js/editor/editor-canvas.js`, `js/editor/editor-3d-materials.js`)**: Fixed readiness detection for `slot.surfaceMode === 'media'` and invalidated RAM preview cache once model `mtex_*` textures decode so reloaded 3D models always render with textures.
+
 ## [0.6.13] - 2026-11-05
 
 ### Added

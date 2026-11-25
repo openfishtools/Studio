@@ -18,7 +18,7 @@
 .popover-card {
   position: fixed;
   z-index: 2000;
-  background-color: var(--bg-panel);
+  background-color: var(--bg-panel-hover);
   color: var(--text-primary);
   border-radius: 12px;
   box-sizing: border-box;
@@ -26,10 +26,8 @@
   min-width: 180px;
   max-width: calc(100vw - 24px);
   outline: none;
-  border: none;
+  border: 1px solid var(--border-subtle);
   box-shadow: none;
-  -webkit-filter: var(--shadow-popover, drop-shadow(0 4px 14px rgba(0, 0, 0, 0.35)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2)));
-  filter: var(--shadow-popover, drop-shadow(0 4px 14px rgba(0, 0, 0, 0.35)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2)));
   pointer-events: none;
   opacity: 0;
   transform: scale(0);
@@ -47,16 +45,16 @@
   transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.18s ease-out;
 }
 
-/* Sharp Pointy Arrow Tail (Placed behind card so inner half is masked seamlessly) */
+/* Sharp Pointy Arrow Tail (Masked against card border seamlessly) */
 .popover-tail {
   position: absolute;
   width: 12px;
   height: 12px;
-  background-color: inherit;
+  background-color: var(--bg-panel-hover);
   border: none;
   pointer-events: none;
   box-sizing: border-box;
-  z-index: -1;
+  z-index: 1;
   -webkit-transform-origin: 50% 50%;
   transform-origin: 50% 50%;
 }
@@ -67,6 +65,10 @@
   bottom: auto !important;
   -webkit-transform: translateX(-50%) rotate(45deg);
   transform: translateX(-50%) rotate(45deg);
+  border-top: 1px solid var(--border-subtle);
+  border-left: 1px solid var(--border-subtle);
+  border-right: none;
+  border-bottom: none;
 }
 
 .popover-card[data-placement^="top"] > .popover-tail {
@@ -74,18 +76,30 @@
   top: auto !important;
   -webkit-transform: translateX(-50%) rotate(45deg);
   transform: translateX(-50%) rotate(45deg);
+  border-bottom: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  border-top: none;
+  border-left: none;
 }
 
 .popover-card[data-placement^="right"] > .popover-tail {
   left: -6px;
   -webkit-transform: translateY(-50%) rotate(45deg);
   transform: translateY(-50%) rotate(45deg);
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 1px solid var(--border-subtle);
+  border-top: none;
+  border-right: none;
 }
 
 .popover-card[data-placement^="left"] > .popover-tail {
   right: -6px;
   -webkit-transform: translateY(-50%) rotate(45deg);
   transform: translateY(-50%) rotate(45deg);
+  border-top: 1px solid var(--border-subtle);
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: none;
+  border-left: none;
 }
 
 /* Popover Content Typography & Sections */
@@ -95,7 +109,7 @@
   justify-content: space-between;
   margin-bottom: 8px;
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--bg-panel-hover);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .popover-title {
@@ -200,7 +214,7 @@
 
 .popover-menu-divider {
   height: 1px;
-  background-color: var(--bg-panel-hover);
+  background-color: var(--border-subtle);
   margin: 4px 6px;
 }
 
@@ -209,8 +223,8 @@
   padding: 6px;
   min-width: 168px;
   border-radius: 10px;
-  background-color: var(--bg-panel);
-  border: none;
+  background-color: var(--bg-panel-hover);
+  border: 1px solid var(--border-subtle);
   box-shadow: none;
 }
 
@@ -222,12 +236,12 @@
 
 /* ==========================================================================
    DESKTOP RIGHT-CLICK CONTEXT MENU (AFTER EFFECTS / NATIVE OS STYLE)
-   Clean flat rectangular surface, no tail, subtle drop shadow, instant response.
+   Clean flat rectangular surface, no tail, elevated surface, instant response.
    ========================================================================== */
 .popover-card.is-context-menu {
-  border-radius: 8px !important;
-  border: none !important;
-  background-color: var(--bg-panel-inner) !important;
+  border-radius: 10px !important;
+  border: 1px solid var(--border-subtle) !important;
+  background-color: var(--bg-panel-hover) !important;
   padding: 4px !important;
   min-width: 172px !important;
   max-width: 260px !important;
@@ -718,13 +732,12 @@
   box-sizing: border-box;
   overflow: visible;
   border-radius: 12px;
-  background-color: var(--bg-panel);
-  border: none;
+  background-color: var(--bg-panel-hover);
+  border: 1px solid var(--border-subtle);
 }
 
 .popover-card.is-embed-panel > .popover-tail {
-  background-color: var(--bg-panel);
-  border: none;
+  background-color: var(--bg-panel-hover);
 }
 
 .popover-embed-header {
@@ -732,7 +745,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 4px 8px;
-  border-bottom: 1px solid var(--bg-panel-hover);
+  border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
@@ -1592,6 +1605,74 @@
   background: var(--accent-subtle, rgba(152, 206, 123, 0.2)) !important;
   color: var(--accent-primary, #98ce7b) !important;
   border-color: var(--accent-primary, #98ce7b) !important;
+}
+
+/* Environment / 3D Slot Texture Media Pool Mirror Popover */
+.popover-card.is-env-media-popover {
+  width: 312px;
+  max-width: calc(100vw - 24px);
+  max-height: 380px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.env-popover-tabs {
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.env-popover-tabs.is-hidden-item {
+  display: none !important;
+}
+
+.popover-card.is-above-modal {
+  z-index: 10002;
+}
+
+.env-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 4px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.env-popover-title {
+  font-family: var(--font-brand);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.2px;
+}
+
+.env-media-pool-grid {
+  max-height: 268px;
+  padding: 2px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.env-media-none-tile .fill-media-thumbbox {
+  border-style: dashed;
+  background-color: var(--bg-panel-inner);
+  color: var(--text-muted);
+}
+
+.env-media-none-tile.is-active .fill-media-thumbbox {
+  border-style: solid;
+  border-color: var(--color-primary);
+  background-color: var(--color-primary);
+  color: var(--bg-canvas);
+}
+
+.is-sr-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 

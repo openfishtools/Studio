@@ -117,6 +117,259 @@
     const _scratchActiveIdSet = new Set();
     const _scratchEulerRot = { rotX: 0, rotY: 0, rotZ: 0 };
 
+    // Advance 3D Lighting Pipeline scratch buffers (zero per-frame allocation)
+    const MAX_LIGHTS = 4;
+    const _scratchLightTypes = new Int32Array(MAX_LIGHTS);
+    const _scratchLightColors = new Float32Array(MAX_LIGHTS * 3);
+    const _scratchLightIntensities = new Float32Array(MAX_LIGHTS);
+    const _scratchLightPositions = new Float32Array(MAX_LIGHTS * 3);
+    const _scratchLightDirections = new Float32Array(MAX_LIGHTS * 3);
+    const _scratchLightRadii = new Float32Array(MAX_LIGHTS);
+    const _scratchActiveLights = [];
+    const _scratchLightingParams = {
+      numLights: 0,
+      types: _scratchLightTypes,
+      colors: _scratchLightColors,
+      intensities: _scratchLightIntensities,
+      positions: _scratchLightPositions,
+      directions: _scratchLightDirections,
+      radii: _scratchLightRadii
+    };
+
+    function hexToRgb01(hex, out, offset) {
+      let c = (hex || '#ffffff').replace('#', '');
+      if (c.length === 3) c = c.split('').map(ch => ch + ch).join('');
+      const num = parseInt(c, 16) || 0;
+      out[offset] = ((num >> 16) & 255) / 255;
+      out[offset + 1] = ((num >> 8) & 255) / 255;
+      out[offset + 2] = (num & 255) / 255;
+    }
+
+    function buildLightCanvasBounds(layer, effProps, bufferScale, camEff, vw, vh) {
+      const lType = layer.lightType || effProps.lightType || 'point';
+      const compW = (currentProjectState && currentProjectState.width) ? currentProjectState.width : (vw / (bufferScale || 1));
+      const compH = (currentProjectState && currentProjectState.height) ? currentProjectState.height : (vh / (bufferScale || 1));
+      const lx = (effProps.posX !== undefined ? effProps.posX : (compW / 2)) * bufferScale;
+      const ly = (effProps.posY !== undefined ? effProps.posY : (compH / 2)) * bufferScale;
+      const lz = (effProps.posZ !== undefined ? effProps.posZ : (lType === 'point' ? 300 : 0)) * bufferScale;
+      const rotX = effProps.rotX !== undefined ? effProps.rotX : (layer.rotX || 0);
+      const rotY = effProps.rotY !== undefined ? effProps.rotY : (layer.rotY || 0);
+      const rotZ = effProps.rotZ !== undefined ? effProps.rotZ : (effProps.rotation !== undefined ? effProps.rotation : (layer.rotZ || layer.rotation || 0));
+      const lRadius = (effProps.radius !== undefined ? effProps.radius : 600) * bufferScale;
+
+      const engine = window.FishToolEngine || window.LayerTransform;
+      let cx = lx;
+      let cy = ly;
+      let isBehindCamera = false;
+      let light3D = null;
+
+      if (engine && typeof engine._computeMVP === 'function' && vw > 0 && vh > 0) {
+        const lensDistort = (typeof engine._getLensDistort === 'function') ? engine._getLensDistort(camEff) : 0;
+        const mvpWorld = engine._computeMVP({
+          cx: lx, cy: ly, posZ: lz, w: 1, h: 1, signX: 1, signY: 1,
+          rotX: 0, rotY: 0, rotZ: 0, bufferScale
+        }, vw, vh, 0, camEff);
+        const mvpRot = engine._computeMVP({
+          cx: lx, cy: ly, posZ: lz, w: 1, h: 1, signX: 1, signY: 1,
+          rotX, rotY, rotZ, bufferScale
+        }, vw, vh, 0, camEff);
+
+        const projectFromMvp = (mvp, dx, dy, dz) => {
+          if (!mvp) return { x: lx + dx, y: ly + dy, isBehind: true };
+          const clipX = mvp[0] * dx + mvp[4] * dy + mvp[8] * dz + mvp[12];
+          const clipY = mvp[1] * dx + mvp[5] * dy + mvp[9] * dz + mvp[13];
+          const clipW = mvp[3] * dx + mvp[7] * dy + mvp[11] * dz + mvp[15];
+          if (clipW <= 0.001) return { x: 0, y: 0, isBehind: true };
+          const invW = 1.0 / clipW;
+          let ndcX = clipX * invW;
+          let ndcY = clipY * invW;
+          if (Math.abs(lensDistort) > 0.001) {
+            const r2 = ndcX * ndcX + ndcY * ndcY;
+            const warp = 1.0 + lensDistort * r2;
+            ndcX *= warp;
+            ndcY *= warp;
+          }
+          return {
+            x: (ndcX * 0.5 + 0.5) * vw,
+            y: (-ndcY * 0.5 + 0.5) * vh,
+            isBehind: false
+          };
+        };
+
+        if (mvpWorld) {
+          const center = projectFromMvp(mvpWorld, 0, 0, 0);
+          cx = center.x;
+          cy = center.y;
+          isBehindCamera = center.isBehind;
+        } else {
+          isBehindCamera = true;
+        }
+
+        const axisLen = (lType === 'ambient' ? 18 : 24) * bufferScale;
+        const axisMvp = (lType === 'ambient') ? mvpWorld : (mvpRot || mvpWorld);
+        const axisX = [projectFromMvp(axisMvp, -axisLen, 0, 0), projectFromMvp(axisMvp, axisLen, 0, 0)];
+        const axisY = [projectFromMvp(axisMvp, 0, -axisLen, 0), projectFromMvp(axisMvp, 0, axisLen, 0)];
+        const axisZ = [projectFromMvp(axisMvp, 0, 0, -axisLen), projectFromMvp(axisMvp, 0, 0, axisLen)];
+
+        light3D = { axisX, axisY, axisZ };
+
+        if (lType === 'point' && lRadius > 1) {
+          const steps = 32;
+          const xyPts = [];
+          const xzPts = [];
+          const yzPts = [];
+          for (let s = 0; s <= steps; s++) {
+            const a = (s / steps) * Math.PI * 2;
+            const ca = Math.cos(a) * lRadius;
+            const sa = Math.sin(a) * lRadius;
+            xyPts.push(projectFromMvp(axisMvp, ca, sa, 0));
+            xzPts.push(projectFromMvp(axisMvp, ca, 0, sa));
+            yzPts.push(projectFromMvp(axisMvp, 0, ca, sa));
+          }
+          light3D.rings = [xyPts, xzPts, yzPts];
+        } else if (lType === 'sun') {
+          const rX = (rotX * Math.PI) / 180;
+          const rY = (rotY * Math.PI) / 180;
+          const rZ = (rotZ * Math.PI) / 180;
+          const cX = Math.cos(rX), sX = Math.sin(rX);
+          const cY = Math.cos(rY), sY = Math.sin(rY);
+          const cZ = Math.cos(rZ), sZ = Math.sin(rZ);
+          const dX = cX * sY * cZ + sX * sZ;
+          const dY = cX * sY * sZ - sX * cZ;
+          const dZ = -cX * cY;
+          const dLen = Math.hypot(dX, dY, dZ) || 1;
+          const rayLen = 160 * bufferScale;
+          light3D.rayTip = projectFromMvp(mvpWorld, (dX / dLen) * rayLen, (dY / dLen) * rayLen, (dZ / dLen) * rayLen);
+        } else if (lType === 'ambient') {
+          const steps = 24;
+          const microR = 32 * bufferScale;
+          const xyPts = [];
+          const xzPts = [];
+          for (let s = 0; s <= steps; s++) {
+            const a = (s / steps) * Math.PI * 2;
+            const ca = Math.cos(a) * microR;
+            const sa = Math.sin(a) * microR;
+            xyPts.push(projectFromMvp(mvpWorld, ca, sa, 0));
+            xzPts.push(projectFromMvp(mvpWorld, ca, 0, sa));
+          }
+          light3D.rings = [xyPts, xzPts];
+        }
+      }
+
+      const iconSize = 44;
+      return {
+        x: cx - iconSize / 2,
+        y: cy - iconSize / 2,
+        w: iconSize,
+        h: iconSize,
+        cx,
+        cy,
+        posZ: lz,
+        isBehindCamera,
+        rotation: rotZ,
+        rotX,
+        rotY,
+        rotZ,
+        isLight: true,
+        lightType: lType,
+        intensity: effProps.intensity !== undefined ? effProps.intensity : 100,
+        radius: lRadius,
+        color: effProps.color || '#ffffff',
+        name: layer.name || 'Light',
+        anchor: { x: cx, y: cy },
+        hitRadius: iconSize / 2 + 6,
+        light3D
+      };
+    }
+
+    function getActiveLightsAtPlayhead(sec, layerPool = null) {
+      const isAdvance = Boolean(currentProjectState && currentProjectState.threeDEngine === 'advance');
+      if (!isAdvance) {
+        _scratchLightingParams.numLights = 0;
+        return _scratchLightingParams;
+      }
+
+      const pps = window.currentPixelsPerSecond || 80;
+      const layers = Array.isArray(layerPool)
+        ? layerPool
+        : ((currentActivePrecomp && currentActivePrecomp.layers) || (currentProjectState && currentProjectState.layers) || []);
+
+      _scratchActiveLights.length = 0;
+      for (let i = 0; i < layers.length; i++) {
+        const l = layers[i];
+        if (!l || l.type !== 'light' || l.hidden) continue;
+        const startSec = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps);
+        const durSec = l.durationSec !== undefined ? l.durationSec : ((l.widthPx || 400) / pps);
+        if (sec >= startSec && sec < (startSec + durSec)) {
+          _scratchActiveLights.push(l);
+          if (_scratchActiveLights.length >= MAX_LIGHTS) break;
+        }
+      }
+
+      const count = _scratchActiveLights.length;
+      _scratchLightingParams.numLights = count;
+
+      for (let i = 0; i < count; i++) {
+        const light = _scratchActiveLights[i];
+        const eff = (typeof getLayerEffectivePropsAtTime === 'function')
+          ? getLayerEffectivePropsAtTime(light, sec, null, layers)
+          : light;
+
+        const lType = light.lightType || 'point';
+        _scratchLightTypes[i] = (lType === 'ambient') ? 0 : (lType === 'sun' ? 1 : 2);
+
+        const rawCol = eff.color || light.color || eff.fillColor || light.fillColor || '#ffffff';
+        hexToRgb01(rawCol, _scratchLightColors, i * 3);
+
+        const rawInt = eff.intensity !== undefined ? eff.intensity : (light.intensity !== undefined ? light.intensity : 100);
+        _scratchLightIntensities[i] = Math.max(0, Math.min(500, Number(rawInt) || 0)) / 100;
+
+        const rawRad = eff.radius !== undefined ? eff.radius : (light.radius !== undefined ? light.radius : 600);
+        _scratchLightRadii[i] = Math.max(10, Number(rawRad) || 600);
+
+        const pX = eff.posX !== undefined ? eff.posX : (light.posX !== undefined ? light.posX : 0);
+        const pY = eff.posY !== undefined ? eff.posY : (light.posY !== undefined ? light.posY : 0);
+        const pZ = eff.posZ !== undefined ? eff.posZ : (light.posZ !== undefined ? light.posZ : 0);
+        _scratchLightPositions[i * 3] = pX;
+        _scratchLightPositions[i * 3 + 1] = pY;
+        _scratchLightPositions[i * 3 + 2] = pZ;
+
+        const rX = ((eff.rotX !== undefined ? eff.rotX : (light.rotX || 0)) * Math.PI) / 180;
+        const rY = ((eff.rotY !== undefined ? eff.rotY : (light.rotY || 0)) * Math.PI) / 180;
+        const rZ = ((eff.rotZ !== undefined ? eff.rotZ : (light.rotZ !== undefined ? light.rotZ : (light.rotation || 0))) * Math.PI) / 180;
+
+        const cX = Math.cos(rX), sX = Math.sin(rX);
+        const cY = Math.cos(rY), sY = Math.sin(rY);
+        const cZ = Math.cos(rZ), sZ = Math.sin(rZ);
+
+        const dX = cX * sY * cZ + sX * sZ;
+        const dY = cX * sY * sZ - sX * cZ;
+        const dZ = -cX * cY;
+        const dLen = Math.hypot(dX, dY, dZ) || 1;
+        _scratchLightDirections[i * 3] = dX / dLen;
+        _scratchLightDirections[i * 3 + 1] = dY / dLen;
+        _scratchLightDirections[i * 3 + 2] = dZ / dLen;
+      }
+
+      for (let i = count; i < MAX_LIGHTS; i++) {
+        _scratchLightTypes[i] = 0;
+        _scratchLightColors[i * 3] = 0;
+        _scratchLightColors[i * 3 + 1] = 0;
+        _scratchLightColors[i * 3 + 2] = 0;
+        _scratchLightIntensities[i] = 0;
+        _scratchLightRadii[i] = 0;
+        _scratchLightPositions[i * 3] = 0;
+        _scratchLightPositions[i * 3 + 1] = 0;
+        _scratchLightPositions[i * 3 + 2] = 0;
+        _scratchLightDirections[i * 3] = 0;
+        _scratchLightDirections[i * 3 + 1] = 0;
+        _scratchLightDirections[i * 3 + 2] = -1;
+      }
+
+      return _scratchLightingParams;
+    }
+    window.getActiveLightsAtPlayhead = getActiveLightsAtPlayhead;
+
     var _redrawCount = 0;
     var _redrawRafId = null;
     var _redrawRafScheduled = false;
@@ -319,7 +572,7 @@
         const cd = child.durationSec !== undefined ? child.durationSec : ((child.widthPx || 320) / pps);
         return innerSec >= cs && innerSec < cs + cd;
       });
-      const validChildren = activeChildren.filter(c => c.type !== 'camera' && c.type !== 'null' && c.type !== 'audio' && !c.hidden);
+      const validChildren = activeChildren.filter(c => c.type !== 'camera' && c.type !== 'null' && c.type !== 'audio' && c.type !== 'light' && !c.hidden);
 
       const precompCenterBounds = engine.getBounds(Object.assign({}, precompLayer, effProps), bufferScale, camEff, w, h);
       if (validChildren.length === 0) {
@@ -737,13 +990,19 @@
         return innerSec >= cs && innerSec < cs + cd;
       });
 
-      const drawList = [...activeChildren].reverse().filter(c => c.type !== 'camera' && c.type !== 'null' && c.type !== 'audio' && !c.hidden);
+      const drawList = [...activeChildren].reverse().filter(c => c.type !== 'camera' && c.type !== 'null' && c.type !== 'audio' && c.type !== 'light' && !c.hidden);
       const isExport = (typeof triggerSource === 'string') && triggerSource.startsWith('export');
       // Camera inside this precomp drives its 3D children (previously dropped -> camera looked absent).
       const innerCamEff = getPrecompInnerCameraEff(activeChildren, innerSec, childLayers);
       const innerCamRaw = innerCamEff ? innerCamEff._rawCamera : null;
       // Engine expects composition-space props plus a uniform buffer scale (matches main comp path).
       const precompRenderScale = pw / (baseW || pw || 1);
+
+      const prevEngineLighting = (window.FishToolEngine && window.FishToolEngine._currentLighting) ? window.FishToolEngine._currentLighting : null;
+      if (window.FishToolEngine && typeof window.FishToolEngine.setLightingData === 'function') {
+        const childLighting = getActiveLightsAtPlayhead(innerSec, childLayers);
+        window.FishToolEngine.setLightingData(childLighting);
+      }
 
       drawList.forEach(child => {
         let childEl = null;
@@ -1059,6 +1318,10 @@
         }
       });
 
+      if (window.FishToolEngine && typeof window.FishToolEngine.setLightingData === 'function') {
+        window.FishToolEngine.setLightingData(prevEngineLighting);
+      }
+
       targetCanvas._lastRenderKey = frameKey;
       targetCanvas._contentVersion = (targetCanvas._contentVersion || 0) + 1;
       precompLayer._dirty = false;
@@ -1164,6 +1427,11 @@
               ],
               anchor: { x: w / 2, y: h / 2 }
             };
+          } else if (selL.type === 'light') {
+            const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
+              ? getLayerEffectivePropsAtTime(selL, targetSec)
+              : selL;
+            selL._canvasBounds = buildLightCanvasBounds(selL, effProps, bufferScale, camEff, w, h);
           } else if (engine) {
             if (isPrecompEffectivelyCollapsed(selL) && Array.isArray(selL.layers) && selL.layers.length > 0) {
               const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
@@ -1226,9 +1494,7 @@
           if (window.isExporting || window._isExportingVideo || window._isExportingSequence) return 1.0;
           const dBtn = (typeof document !== 'undefined') ? document.getElementById('editor-icon-low-quality') : null;
           if (!dBtn || !dBtn.classList.contains('is-active')) return 1.0;
-          return (typeof window._currentAdaptiveDraftScale === 'number' && window._currentAdaptiveDraftScale > 0)
-            ? window._currentAdaptiveDraftScale
-            : ((window._adaptiveDraftState && window._adaptiveDraftState.scale) || 1.0);
+          return 0.25;
         };
       }
 
@@ -1282,14 +1548,6 @@
           ctx.drawImage(earlyBitmap, 0, 0, w, h);
           window._lastFrameRenderDuration = 0.5;
           window._lastFrameWasCached = true;
-          if (window._adaptiveDraftState) {
-            window._adaptiveDraftState.fastStreak = (window._adaptiveDraftState.fastStreak || 0) + 1;
-            if (window._adaptiveDraftState.fastStreak >= 8 && window._adaptiveDraftState.scale < 1.0) {
-              window._adaptiveDraftState.scale = Math.min(1.0, window._adaptiveDraftState.scale + 0.15);
-              if (window._adaptiveDraftState.scale > 0.96) window._adaptiveDraftState.scale = 1.0;
-              window._currentAdaptiveDraftScale = window._adaptiveDraftState.scale;
-            }
-          }
           if (canvas && canvas.id === 'editor-active-canvas') {
             syncActiveViewerOverlay(currentSec, w, h);
           }
@@ -1346,6 +1604,53 @@
       let selectedWireframeBounds = null;
       let cachedBitmap = null;
       let hasUnreadyMedia = false;
+
+      // Defer RAM preview caching until 3D models, material slot textures, and environment map finish loading
+      if (!isExport && !isTemplate) {
+        const missingSet = window._missing3DMediaIds;
+        if (currentProjectState && currentProjectState.threeDEngine === 'advance' && currentProjectState.environmentMediaId) {
+          const envMissing = missingSet && missingSet.has(currentProjectState.environmentMediaId);
+          if (!envMissing && (!window.FishToolEngine || !window.FishToolEngine._hasEnvMap)) {
+            hasUnreadyMedia = true;
+          }
+        }
+        const propsVer = window._layerPropsVersion | 0;
+        const assetVer = window._assetReadyVersion | 0;
+        for (let ai = 0; ai < activeLayers.length; ai++) {
+          const al = activeLayers[ai];
+          if (!al || al.hidden) continue;
+          // Positive-only cache: skip re-checking layers already confirmed fully loaded
+          // until layer props or the asset set change.
+          if (al._rdyP === propsVer && al._rdyA === assetVer) continue;
+          let layerUnready = false;
+          if (al.shapeType === '3d_model' && al.modelMediaId) {
+            if (!window.Fish3DLoader || !window.Fish3DLoader.getModel(al.modelMediaId)) {
+              layerUnready = true;
+              if (window.Fish3DLoader && typeof window.Fish3DLoader.loadModel === 'function') {
+                window.Fish3DLoader.loadModel(al.modelMediaId);
+              }
+            }
+          }
+          if (Array.isArray(al.materialSlots) && al.materialSlots.length > 0 && typeof window.getMaterialMediaImage === 'function') {
+            for (let si = 0; si < al.materialSlots.length; si++) {
+              const slot = al.materialSlots[si];
+              if (slot && (slot.surfaceMode === 'media' || slot.mode === 'texture') && slot.mediaId) {
+                if (missingSet && missingSet.has(slot.mediaId)) continue;
+                const texEl = window.getMaterialMediaImage(slot.mediaId);
+                if (!texEl || (texEl.tagName === 'IMG' && (!texEl.complete || texEl.naturalWidth === 0))) {
+                  layerUnready = true;
+                }
+              }
+            }
+          }
+          if (layerUnready) {
+            hasUnreadyMedia = true;
+          } else {
+            al._rdyP = propsVer;
+            al._rdyA = assetVer;
+          }
+        }
+      }
       const isScrubbing = !!(window.isTimelineScrubbing || window.isTimelinePanning || (typeof window.isPanning !== 'undefined' && window.isPanning));
       // RAM preview cache: used during playback, scrubbing, and frame park for instant 60fps blit.
       // Canvas wireframe transform interaction bypasses cache to track cursor movements live.
@@ -1356,14 +1661,6 @@
       if (cachedBitmap) {
         ctx.clearRect(0, 0, w, h);
         ctx.drawImage(cachedBitmap, 0, 0, w, h);
-        if (window._adaptiveDraftState) {
-          window._adaptiveDraftState.fastStreak = (window._adaptiveDraftState.fastStreak || 0) + 1;
-          if (window._adaptiveDraftState.fastStreak >= 8 && window._adaptiveDraftState.scale < 1.0) {
-            window._adaptiveDraftState.scale = Math.min(1.0, window._adaptiveDraftState.scale + 0.15);
-            if (window._adaptiveDraftState.scale > 0.96) window._adaptiveDraftState.scale = 1.0;
-            window._currentAdaptiveDraftScale = window._adaptiveDraftState.scale;
-          }
-        }
       } else {
         const outerCanvas = canvas;
         const outerCtx = ctx;
@@ -1371,30 +1668,19 @@
         const outerH = h;
         const draftBtnEl = (typeof document !== 'undefined') ? document.getElementById('editor-icon-low-quality') : null;
         const isDraftModeActive = !!(draftBtnEl && draftBtnEl.classList.contains('is-active'));
-        const canUseAdaptiveDraft = isDraftModeActive && !isExport && !isIdleCache && !isTemplate && triggerSource !== 'lookahead-cache';
-
-        if (!window._adaptiveDraftState) {
-          window._adaptiveDraftState = { scale: 1.0, emaMs: 8.0, fastStreak: 0 };
-        }
-        const adState = window._adaptiveDraftState;
-        let adaptiveScale = 1.0;
-        if (canUseAdaptiveDraft) {
-          const isInteractiveMotion = !!(window.isTimelinePlaying || isScrubbing || isTransformDragging);
-          adaptiveScale = window.VideoCompEngine.computeAdaptiveDraftScale(activeLayers, {
-            canUseAdaptiveDraft,
-            isInteractiveMotion,
-            currentScale: adState.scale
-          });
-          adState.scale = adaptiveScale;
-        } else {
-          adState.scale = 1.0;
-        }
+        const canUseAdaptiveDraft = isDraftModeActive && !isExport && !isTemplate;
+        const adaptiveScale = canUseAdaptiveDraft ? 0.25 : 1.0;
         window._currentAdaptiveDraftScale = adaptiveScale;
+        if (!window._adaptiveDraftState) {
+          window._adaptiveDraftState = { scale: adaptiveScale, emaMs: 8.0, fastStreak: 0 };
+        } else {
+          window._adaptiveDraftState.scale = adaptiveScale;
+        }
 
         let useAdaptiveBuffer = false;
-        if (canUseAdaptiveDraft && adaptiveScale < 0.96 && outerW > 64 && outerH > 36) {
-          const rw = Math.max(64, Math.round(outerW * adaptiveScale));
-          const rh = Math.max(36, Math.round(outerH * adaptiveScale));
+        if (canUseAdaptiveDraft && outerCanvas.id !== 'editor-active-canvas' && outerW > 64 && outerH > 36) {
+          const rw = Math.max(32, Math.round(outerW * 0.25));
+          const rh = Math.max(18, Math.round(outerH * 0.25));
           if (!window._adaptiveDraftCanvas) {
             window._adaptiveDraftCanvas = document.createElement('canvas');
           }
@@ -1405,7 +1691,7 @@
           }
           const dCtx = dCanvas.getContext('2d', { alpha: needsAlphaCanvas }) || dCanvas.getContext('2d');
           if (dCtx) {
-            dCtx.imageSmoothingEnabled = adaptiveScale > 0.55;
+            dCtx.imageSmoothingEnabled = false;
             dCtx.imageSmoothingQuality = 'low';
             canvas = dCanvas;
             ctx = dCtx;
@@ -1440,7 +1726,7 @@
         _scratchRenderOrderLayers.length = 0;
         for (let i = activeLayers.length - 1; i >= 0; i--) {
           const l = activeLayers[i];
-          if (l.type !== 'camera' && l.type !== 'null' && l.type !== 'audio') {
+          if (l.type !== 'camera' && l.type !== 'null' && l.type !== 'audio' && l.type !== 'light') {
             _scratchRenderOrderLayers.push(l);
           }
         }
@@ -1448,6 +1734,11 @@
         _scratchLayersToRender.length = 0;
         const layersToRender = _scratchLayersToRender;
         let compositionBufferScale = bufferScale;
+
+        if (window.FishToolEngine && typeof window.FishToolEngine.setLightingData === 'function') {
+          const compLighting = getActiveLightsAtPlayhead(currentSec, activeLayers);
+          window.FishToolEngine.setLightingData(compLighting);
+        }
 
         // Apply camera viewport transformation if active camera exists (2D canvas squash only when FishToolEngine is not active)
         const engineActive = !!(window.FishToolEngine && window.FishToolEngine.isReady);
@@ -1464,11 +1755,20 @@
 
           const camDist = 1000 * lensFactor * bufferScale;
           const zDollyScale = camPosZ ? (camDist / Math.max(50 * bufferScale, camDist - camPosZ)) : 1;
-          const totalZoom = camZoom * lensFactor * zDollyScale;
+          const baseW2d = bufferScale > 0 ? (w / bufferScale) : w;
+          const baseH2d = bufferScale > 0 ? (h / bufferScale) : h;
+          const invCamX = (baseW2d > 0 && typeof camEff.scaleW === 'number' && !isNaN(camEff.scaleW))
+            ? ((camEff.scaleW < 0 ? -1 : 1) / Math.max(0.01, Math.abs(camEff.scaleW) / baseW2d))
+            : 1;
+          const invCamY = (baseH2d > 0 && typeof camEff.scaleH === 'number' && !isNaN(camEff.scaleH))
+            ? ((camEff.scaleH < 0 ? -1 : 1) / Math.max(0.01, Math.abs(camEff.scaleH) / baseH2d))
+            : 1;
+          const totalZoomX = camZoom * lensFactor * zDollyScale * invCamX;
+          const totalZoomY = camZoom * lensFactor * zDollyScale * invCamY;
 
           ctx.save();
           ctx.translate(w / 2, h / 2);
-          if (totalZoom !== 1) ctx.scale(totalZoom, totalZoom);
+          if (totalZoomX !== 1 || totalZoomY !== 1) ctx.scale(totalZoomX, totalZoomY);
           if (camRotZ) ctx.rotate((-camRotZ * Math.PI) / 180);
           if (camRotX || camRotY) {
             const cosCamX = Math.cos((-camRotX * Math.PI) / 180);
@@ -1481,7 +1781,7 @@
       renderOrderLayers.forEach(layer => {
         const isSelected = (layer.id === window.selectedLayerId) || (window.selectedLayerIds && window.selectedLayerIds.has(layer.id));
         if (layer.hidden) {
-          if (!isIdleCache && !isExport && isSelected && layer.type !== 'camera' && layer.type !== 'audio') {
+          if (!isIdleCache && !isExport && isSelected && layer.type !== 'camera' && layer.type !== 'audio' && layer.type !== 'light') {
             const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
               ? getLayerEffectivePropsAtTime(layer, currentSec)
               : layer;
@@ -1982,7 +2282,7 @@
               const cd = child.durationSec !== undefined ? child.durationSec : ((child.widthPx || 320) / pps);
               return innerSec >= cs && innerSec < cs + cd;
             });
-            const validChildren = [...activeChildren].reverse().filter(c => c.type !== 'camera' && c.type !== 'null' && c.type !== 'audio' && !c.hidden);
+            const validChildren = [...activeChildren].reverse().filter(c => c.type !== 'camera' && c.type !== 'null' && c.type !== 'audio' && c.type !== 'light' && !c.hidden);
 
             const scaleRatioW = (effProps.scaleW !== undefined ? effProps.scaleW : pw) / (pw || 1920);
             const scaleRatioH = (effProps.scaleH !== undefined ? effProps.scaleH : ph) / (ph || 1080);
@@ -2852,10 +3152,8 @@
 
         // LIVE FRAME CACHING (After Effects RAM Preview Style)
         // Caching during playback, scrubbing, and frame park ensures subsequent scrubbing is instant 60fps.
-        const currentRenderElapsed = performance.now() - t0;
         if (canUseAdaptiveDraft) {
-          window.VideoCompEngine.adjustAdaptiveDraftBudget(currentRenderElapsed, fps, adState);
-          window._currentAdaptiveDraftScale = adState.scale;
+          window._currentAdaptiveDraftScale = 0.25;
         }
 
         // Ensure active video layers actually rendered exact decoded frames (never cache fallback/stale frames!)
@@ -2973,12 +3271,15 @@
         currentProjectState._baseH = baseDims[1];
         const isMobileDevice = (typeof window !== 'undefined' && (window.innerWidth <= 600 || ('ontouchstart' in window && window.innerWidth <= 900)));
 
-        // Keep backing canvas at display DPR; Speed Draft scales internal render buffer via _adaptiveDraftCanvas
+        // Speed Draft: When active, render buffer is locked strictly at quarter resolution (0.25x) like After Effects Quarter Preview.
         const dpr = isMobileDevice ? 1.0 : Math.min(1.5, window.devicePixelRatio || 1);
-        const targetW = Math.max(1, Math.min(baseDims[0], Math.round(w * dpr)));
-        const targetH = Math.max(1, Math.min(baseDims[1], Math.round(h * dpr)));
+        const draftBtn = (typeof document !== 'undefined') ? document.getElementById('editor-icon-low-quality') : null;
+        const isDraftActive = !window.isExporting && !window._isExportingVideo && !window._isExportingSequence && !!(draftBtn && draftBtn.classList.contains('is-active'));
+        const draftMult = isDraftActive ? 0.25 : 1.0;
+        const targetW = Math.max(32, Math.round(Math.min(baseDims[0], Math.round(w * dpr)) * draftMult));
+        const targetH = Math.max(18, Math.round(Math.min(baseDims[1], Math.round(h * dpr)) * draftMult));
 
-        canvas.style.imageRendering = 'auto';
+        canvas.style.imageRendering = isDraftActive ? 'pixelated' : 'auto';
 
         if (canvas.width !== targetW || canvas.height !== targetH) {
           canvas.width = targetW;
@@ -2991,6 +3292,10 @@
             }
           }
           redrawComposition('fitPreviewCanvasBox');
+        }
+        if (window.CanvasOverlay && typeof window.CanvasOverlay.syncSize === 'function') {
+          window.CanvasOverlay.syncSize();
+          window.CanvasOverlay.scheduleRedraw();
         }
       }
     }
@@ -3033,14 +3338,19 @@
       const baseDims = window.getProjectDimensions(res, aspect);
       const baseW = baseDims[0];
       const baseH = baseDims[1];
+      const prevBaseW = currentProjectState._baseW || currentProjectState.baseW || baseW;
+      const prevBaseH = currentProjectState._baseH || currentProjectState.baseH || baseH;
+      const resChanged = (prevBaseW !== baseW || prevBaseH !== baseH) && prevBaseW > 0 && prevBaseH > 0;
       currentProjectState._baseW = baseW;
       currentProjectState._baseH = baseH;
       currentProjectState.baseW = baseW;
       currentProjectState.baseH = baseH;
       (currentProjectState.layers || []).forEach(l => {
         if (l.type === 'camera') {
-          l.scaleW = baseW;
-          l.scaleH = baseH;
+          if (typeof l.scaleW !== 'number' || isNaN(l.scaleW)) l.scaleW = baseW;
+          else if (resChanged) l.scaleW = Number((l.scaleW * (baseW / prevBaseW)).toFixed(2));
+          if (typeof l.scaleH !== 'number' || isNaN(l.scaleH)) l.scaleH = baseH;
+          else if (resChanged) l.scaleH = Number((l.scaleH * (baseH / prevBaseH)).toFixed(2));
         }
       });
 
@@ -3131,15 +3441,40 @@
         const activeLayers = getActiveLayersAtPlayhead();
         return activeLayers.find(l => l && l.type === 'camera') || (currentProjectState.layers || []).find(l => l && l.type === 'camera' && !l.hidden) || null;
       }
-      window.getActiveCameraLayer = getActiveCameraLayer;
+      function getLayerInteractionBounds(layer, overrideSec = null) {
+        if (!layer || layer.type === 'camera' || layer.type === 'audio') return null;
+        if (layer._canvasBounds) return layer._canvasBounds;
+        const engine = window.FishToolEngine || window.LayerTransform;
+        if (!engine) return null;
+        const pps = window.currentPixelsPerSecond || 80;
+        const currentPanX = window.timelinePanX !== undefined ? Math.min(0, window.timelinePanX) : 0;
+        const sec = overrideSec !== null ? overrideSec : Math.max(0, -currentPanX / pps);
+        const aspect = currentProjectState.aspectRatio || '16:9';
+        const res = currentProjectState.resolution || '1080p';
+        const baseDims = window.getProjectDimensions(res, aspect);
+        const baseW = baseDims[0];
+        const baseH = baseDims[1];
+        const bufferScale = window._lastBufferScale || (activeCanvasEl.width / (baseW || 1920));
+        const activeCam = getActiveCameraLayer();
+        const camEff = activeCam ? ((typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(activeCam, sec) : activeCam) : null;
+        const eff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(layer, sec) : layer;
+        if (layer.type === 'light') {
+          layer._canvasBounds = buildLightCanvasBounds(layer, eff, bufferScale, camEff, activeCanvasEl.width, activeCanvasEl.height);
+          return layer._canvasBounds;
+        }
+        layer._canvasBounds = engine.getBounds(Object.assign({}, layer, eff), bufferScale, camEff, activeCanvasEl.width, activeCanvasEl.height);
+        return layer._canvasBounds;
+      }
+      window.getLayerInteractionBounds = getLayerInteractionBounds;
 
       function isLayerPixelTransparent(layer, canvasX, canvasY) {
-        if (!layer || layer.type !== 'image' || !layer._canvasBounds) return false;
+        if (!layer || layer.type !== 'image') return false;
+        const b = getLayerInteractionBounds(layer);
+        if (!b) return false;
         const media = window.layerMediaCache && window.layerMediaCache.get(layer.type === 'video' ? layer.id : (layer.mediaId || layer.id));
         const img = media && media.el;
         if (!img || img.tagName !== 'IMG' || !img.complete || !img.naturalWidth || !img.naturalHeight) return false;
 
-        const b = layer._canvasBounds;
         const engine = window.FishToolEngine || window.LayerTransform;
         if (!engine || !engine.hitTest(b, canvasX, canvasY)) return false;
 
@@ -3205,41 +3540,60 @@
         const selectedLayer = layers.find(l => l.id === window.selectedLayerId);
         const isAnchorMode = typeof window.isAnchorMode === 'function' ? window.isAnchorMode() : (window.moveAnchorSubmode === 'anchor');
         const isMultiSelect = !!(window.selectedLayerIds && window.selectedLayerIds.size > 1);
+        const isShiftKey = !!(e.shiftKey || e.metaKey || e.ctrlKey);
 
-        if (!isMultiSelect && selectedLayer && selectedLayer._canvasBounds && window.CanvasWireframe) {
-          const b = selectedLayer._canvasBounds;
-          const hitTolerance = Math.max(12, Math.round(12 * coords.dprScale));
-
-          if (window.currentDrawerSubview === 'vector' && selectedLayer.type === 'shape' && selectedLayer.shapeType === 'vector' && window.CanvasOverlay && typeof window.CanvasOverlay.hitTestVectorOverlay === 'function') {
-            const vecHit = window.CanvasOverlay.hitTestVectorOverlay(selectedLayer, coords.x, coords.y, Math.max(14, hitTolerance));
-            if (vecHit) {
-              activeCanvasEl.style.cursor = vecHit.cursor || 'pointer';
+        if (isShiftKey) {
+          const activeLayers = getActiveLayersAtPlayhead().filter(l => l.type !== 'camera' && l.type !== 'audio');
+          for (let i = 0; i < activeLayers.length; i++) {
+            const l = activeLayers[i];
+            const b = getLayerInteractionBounds(l);
+            if (b && window.CanvasWireframe && window.CanvasWireframe.hitTest(b, coords.x, coords.y) &&
+                !(l.type === 'image' && isLayerPixelTransparent(l, coords.x, coords.y))) {
+              activeCanvasEl.style.cursor = 'pointer';
               return;
             }
           }
+          activeCanvasEl.style.cursor = 'default';
+          return;
+        }
 
-          if (window.CanvasOverlay && typeof window.CanvasOverlay.hitTestRoundnessHandle === 'function') {
-            const roundHit = window.CanvasOverlay.hitTestRoundnessHandle(selectedLayer, coords.x, coords.y, Math.max(13, hitTolerance));
-            if (roundHit) {
-              activeCanvasEl.style.cursor = roundHit.cursor || 'nwse-resize';
+        if (!isMultiSelect && selectedLayer && window.CanvasWireframe) {
+          const b = getLayerInteractionBounds(selectedLayer);
+          if (b) {
+            const hitTolerance = Math.max(12, Math.round(12 * coords.dprScale));
+
+            if (window.currentDrawerSubview === 'vector' && selectedLayer.type === 'shape' && selectedLayer.shapeType === 'vector' && window.CanvasOverlay && typeof window.CanvasOverlay.hitTestVectorOverlay === 'function') {
+              const vecHit = window.CanvasOverlay.hitTestVectorOverlay(selectedLayer, coords.x, coords.y, Math.max(14, hitTolerance));
+              if (vecHit) {
+                activeCanvasEl.style.cursor = vecHit.cursor || 'pointer';
+                return;
+              }
+            }
+
+            if (window.CanvasOverlay && typeof window.CanvasOverlay.hitTestRoundnessHandle === 'function') {
+              const roundHit = window.CanvasOverlay.hitTestRoundnessHandle(selectedLayer, coords.x, coords.y, Math.max(13, hitTolerance));
+              if (roundHit) {
+                activeCanvasEl.style.cursor = roundHit.cursor || 'nwse-resize';
+                return;
+              }
+            }
+
+            const h = window.CanvasWireframe.hitTestHandle(b, coords.x, coords.y, hitTolerance, isAnchorMode);
+            if (h && (h.type !== 'anchor' || isAnchorMode)) {
+              activeCanvasEl.style.cursor = (h.type === 'anchor') ? 'crosshair' : (h.cursor || 'pointer');
               return;
             }
-          }
-
-          const h = window.CanvasWireframe.hitTestHandle(b, coords.x, coords.y, hitTolerance, isAnchorMode);
-          if (h && (h.type !== 'anchor' || isAnchorMode)) {
-            activeCanvasEl.style.cursor = (h.type === 'anchor') ? 'crosshair' : (h.cursor || 'pointer');
-            return;
-          }
-          if (selectedLayer.type !== 'camera' && window.CanvasWireframe.hitTest(b, coords.x, coords.y) &&
-              !(selectedLayer.type === 'image' && !selectedLayer.hidden && isLayerPixelTransparent(selectedLayer, coords.x, coords.y))) {
-            activeCanvasEl.style.cursor = isAnchorMode ? 'crosshair' : 'move';
-            return;
+            if (selectedLayer.type !== 'camera' && window.CanvasWireframe.hitTest(b, coords.x, coords.y) &&
+                !(selectedLayer.type === 'image' && !selectedLayer.hidden && isLayerPixelTransparent(selectedLayer, coords.x, coords.y))) {
+              activeCanvasEl.style.cursor = isAnchorMode ? 'crosshair' : 'move';
+              return;
+            }
           }
         } else if (isMultiSelect && window.selectedLayerIds) {
           for (const id of window.selectedLayerIds) {
             const l = layers.find(layer => layer.id === id);
-            if (l && l._canvasBounds && l.type !== 'camera' && l.type !== 'audio' && window.CanvasWireframe && window.CanvasWireframe.hitTest(l._canvasBounds, coords.x, coords.y) &&
+            const b = l && getLayerInteractionBounds(l);
+            if (l && b && l.type !== 'camera' && l.type !== 'audio' && window.CanvasWireframe && window.CanvasWireframe.hitTest(b, coords.x, coords.y) &&
                 !(l.type === 'image' && !l.hidden && isLayerPixelTransparent(l, coords.x, coords.y))) {
               activeCanvasEl.style.cursor = 'move';
               return;
@@ -3250,7 +3604,8 @@
         const activeLayers = getActiveLayersAtPlayhead().filter(l => l.type !== 'camera' && l.type !== 'audio');
         for (let i = 0; i < activeLayers.length; i++) {
           const l = activeLayers[i];
-          if (l._canvasBounds && window.CanvasWireframe && window.CanvasWireframe.hitTest(l._canvasBounds, coords.x, coords.y) &&
+          const b = getLayerInteractionBounds(l);
+          if (b && window.CanvasWireframe && window.CanvasWireframe.hitTest(b, coords.x, coords.y) &&
               !(l.type === 'image' && isLayerPixelTransparent(l, coords.x, coords.y))) {
             activeCanvasEl.style.cursor = 'pointer';
             return;
@@ -3289,9 +3644,10 @@
 
         const isAnchorMode = typeof window.isAnchorMode === 'function' ? window.isAnchorMode() : (window.moveAnchorSubmode === 'anchor');
         const isMultiSelect = !!(window.selectedLayerIds && window.selectedLayerIds.size > 1);
+        const isAdditiveSelect = !!(e.shiftKey || e.metaKey || e.ctrlKey);
 
         // A0. If in Vector Edit Subview, handle direct Vector Points / Bezier Curve Handles / Segments / New Point on Canvas
-        if (!isMultiSelect && window.currentDrawerSubview === 'vector' && selectedLayer && selectedLayer.type === 'shape' && selectedLayer.shapeType === 'vector' && window.CanvasOverlay && typeof window.CanvasOverlay.hitTestVectorOverlay === 'function') {
+        if (!isAdditiveSelect && !isMultiSelect && window.currentDrawerSubview === 'vector' && selectedLayer && selectedLayer.type === 'shape' && selectedLayer.shapeType === 'vector' && window.CanvasOverlay && typeof window.CanvasOverlay.hitTestVectorOverlay === 'function') {
           const hitTolerance = Math.max(14, Math.round(14 * coords.dprScale));
           const vecHit = window.CanvasOverlay.hitTestVectorOverlay(selectedLayer, coords.x, coords.y, hitTolerance);
           if (vecHit) {
@@ -3392,7 +3748,7 @@
         }
 
         // A. If single layer selected, check Roundness handle or Scale handle click first
-        if (!isMultiSelect && selectedLayer && selectedLayer._canvasBounds && window.CanvasWireframe) {
+        if (!isAdditiveSelect && !isMultiSelect && selectedLayer && selectedLayer._canvasBounds && window.CanvasWireframe) {
           const b = selectedLayer._canvasBounds;
           const hitTolerance = Math.max(12, Math.round(12 * coords.dprScale));
 
@@ -3424,6 +3780,9 @@
           if (hitH && hitH.type !== 'anchor') {
             if (selectedLayer.expressions && selectedLayer.expressions.scale) {
               return; // Scale controlled by expression
+            }
+            if (selectedLayer.type === 'light' || selectedLayer.shapeType === '3d_model') {
+              return; // On-canvas resize handles disabled for light and imported 3D model layers
             }
             if (selectedLayer.type === 'camera') {
               window.isTransformInteracting = true;
@@ -3524,21 +3883,15 @@
             return;
           }
 
-          // B. Check if clicking inside selected layer bounding box or center anchor (moving)
-          const isAnchorHit = isAnchorMode && (hitH?.type === 'anchor');
-          const isBodyHit = selectedLayer.type !== 'camera' &&
-                            window.CanvasWireframe.hitTest(b, coords.x, coords.y) &&
-                            !(selectedLayer.type === 'image' && !selectedLayer.hidden && isLayerPixelTransparent(selectedLayer, coords.x, coords.y));
-          if (isAnchorHit || (isAnchorMode && isBodyHit) || isBodyHit) {
-            const isMoveAnchor = isAnchorMode;
-            if (selectedLayer.expressions && (selectedLayer.expressions.move || (isMoveAnchor && selectedLayer.expressions.anchor))) {
-              return; // Position/Anchor controlled by expression
+          if (isAnchorMode && hitH && hitH.type === 'anchor') {
+            if (selectedLayer.expressions && (selectedLayer.expressions.move || selectedLayer.expressions.anchor)) {
+              return;
             }
             window.isTransformInteracting = true;
             syncLayerWithEffectiveProps(selectedLayer);
 
-            activeOp = isMoveAnchor ? 'moveAnchor' : 'move';
-            activeHandleType = isMoveAnchor ? 'anchor' : 'move';
+            activeOp = 'moveAnchor';
+            activeHandleType = 'anchor';
             targetLayer = selectedLayer;
             startPointer = { x: coords.x, y: coords.y };
             startBounds = { ...b };
@@ -3565,54 +3918,230 @@
             };
 
             activeCanvasEl.setPointerCapture(e.pointerId);
-            activeCanvasEl.style.cursor = isMoveAnchor ? 'crosshair' : 'move';
+            activeCanvasEl.style.cursor = 'crosshair';
             e.preventDefault();
             e.stopPropagation();
             return;
           }
         }
 
-        // C. Check other active layers (from topmost to bottom)
+        // B. Check active layers under pointer (from topmost to bottom)
         const activeLayers = getActiveLayersAtPlayhead().filter(l => l.type !== 'camera' && l.type !== 'audio');
+        let hitLayer = null;
         for (let i = 0; i < activeLayers.length; i++) {
           const l = activeLayers[i];
-          const b = l._canvasBounds;
+          const b = getLayerInteractionBounds(l);
           if (b && window.CanvasWireframe && window.CanvasWireframe.hitTest(b, coords.x, coords.y) &&
               !(l.type === 'image' && isLayerPixelTransparent(l, coords.x, coords.y))) {
-            if (typeof window.selectTimelineLayer === 'function') {
-              window.selectTimelineLayer(l.id);
+            hitLayer = l;
+            break;
+          }
+        }
+
+        if (hitLayer) {
+          const isAlreadySelected = (hitLayer.id === window.selectedLayerId) ||
+            (window.selectedLayerIds && window.selectedLayerIds.has(hitLayer.id));
+
+          const aspect = currentProjectState.aspectRatio || '16:9';
+          const res = currentProjectState.resolution || '1080p';
+          const baseDims = window.getProjectDimensions(res, aspect);
+          const baseW = baseDims[0];
+          const baseH = baseDims[1];
+
+          if (isAdditiveSelect) {
+            // Shift-Click / Additive Multi-Select
+            if (!isAlreadySelected) {
+              const newSet = new Set(window.selectedLayerIds || []);
+              if (window.selectedLayerId) newSet.add(window.selectedLayerId);
+              newSet.add(hitLayer.id);
+
+              if (newSet.size > 1) {
+                window.isSelectorMode = true;
+                window._isExplicitSelectionMode = true;
+              }
+
+              if (typeof window.setDesktopSelectedLayers === 'function') {
+                window.setDesktopSelectedLayers(newSet, hitLayer.id);
+              } else if (typeof window.selectTimelineLayers === 'function') {
+                window.selectTimelineLayers(Array.from(newSet), hitLayer.id);
+              } else if (typeof window.toggleSelectTimelineLayer === 'function') {
+                window.toggleSelectTimelineLayer(hitLayer.id, true);
+              }
+              if (typeof window.renderTimelineLayers === 'function') {
+                window.renderTimelineLayers();
+              }
+
+              window.isTransformInteracting = true;
+              syncLayerWithEffectiveProps(hitLayer);
+
+              activeOp = 'move';
+              activeHandleType = 'move';
+              targetLayer = hitLayer;
+              startPointer = { x: coords.x, y: coords.y };
+              startBounds = { ...(hitLayer._canvasBounds || {}) };
+              hasMoved = false;
+
+              const multiList = [];
+              newSet.forEach(id => {
+                const itemL = (currentProjectState.layers || []).find(l => l.id === id);
+                if (itemL && itemL.type !== 'camera' && itemL.type !== 'audio' && !itemL.locked) {
+                  syncLayerWithEffectiveProps(itemL);
+                  multiList.push({
+                    layer: itemL,
+                    startPosX: itemL.posX !== undefined ? itemL.posX : ((itemL.normX + (itemL.normW || 0.2) / 2) * baseW),
+                    startPosY: itemL.posY !== undefined ? itemL.posY : ((itemL.normY + (itemL.normH || 0.2) / 2) * baseH)
+                  });
+                }
+              });
+
+              startLayerState = {
+                posX: hitLayer.posX !== undefined ? hitLayer.posX : ((hitLayer.normX + (hitLayer.normW || 0.2) / 2) * baseW),
+                posY: hitLayer.posY !== undefined ? hitLayer.posY : ((hitLayer.normY + (hitLayer.normH || 0.2) / 2) * baseH),
+                baseW,
+                baseH,
+                multiLayers: multiList
+              };
+
+              activeCanvasEl.setPointerCapture(e.pointerId);
+              activeCanvasEl.style.cursor = 'move';
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            } else {
+              // Already selected: drag all, or toggle off on click (pointerup)
+              window.isTransformInteracting = true;
+              syncLayerWithEffectiveProps(hitLayer);
+
+              activeOp = 'move';
+              activeHandleType = 'move';
+              targetLayer = hitLayer;
+              startPointer = { x: coords.x, y: coords.y };
+              startBounds = { ...(hitLayer._canvasBounds || {}) };
+              hasMoved = false;
+
+              const curSet = new Set(window.selectedLayerIds || []);
+              if (window.selectedLayerId) curSet.add(window.selectedLayerId);
+
+              const multiList = [];
+              curSet.forEach(id => {
+                const itemL = (currentProjectState.layers || []).find(l => l.id === id);
+                if (itemL && itemL.type !== 'camera' && itemL.type !== 'audio' && !itemL.locked) {
+                  syncLayerWithEffectiveProps(itemL);
+                  multiList.push({
+                    layer: itemL,
+                    startPosX: itemL.posX !== undefined ? itemL.posX : ((itemL.normX + (itemL.normW || 0.2) / 2) * baseW),
+                    startPosY: itemL.posY !== undefined ? itemL.posY : ((itemL.normY + (itemL.normH || 0.2) / 2) * baseH)
+                  });
+                }
+              });
+
+              startLayerState = {
+                posX: hitLayer.posX !== undefined ? hitLayer.posX : ((hitLayer.normX + (hitLayer.normW || 0.2) / 2) * baseW),
+                posY: hitLayer.posY !== undefined ? hitLayer.posY : ((hitLayer.normY + (hitLayer.normH || 0.2) / 2) * baseH),
+                baseW,
+                baseH,
+                multiLayers: multiList,
+                toggleOffOnUp: hitLayer.id
+              };
+
+              activeCanvasEl.setPointerCapture(e.pointerId);
+              activeCanvasEl.style.cursor = 'move';
+              e.preventDefault();
+              e.stopPropagation();
+              return;
             }
-            window.isTransformInteracting = true;
-            syncLayerWithEffectiveProps(l);
+          } else {
+            // Normal click without Shift
+            if (isMultiSelect && isAlreadySelected) {
+              window.isTransformInteracting = true;
+              syncLayerWithEffectiveProps(hitLayer);
 
-            activeOp = 'move';
-            activeHandleType = 'move';
-            targetLayer = l;
-            startPointer = { x: coords.x, y: coords.y };
-            startBounds = { ...b };
-            hasMoved = false;
+              activeOp = 'move';
+              activeHandleType = 'move';
+              targetLayer = hitLayer;
+              startPointer = { x: coords.x, y: coords.y };
+              startBounds = { ...(hitLayer._canvasBounds || {}) };
+              hasMoved = false;
 
-            const aspect = currentProjectState.aspectRatio || '16:9';
-            const res = currentProjectState.resolution || '1080p';
-            const baseDims = window.getProjectDimensions(res, aspect);
-            const baseW = baseDims[0];
-            const baseH = baseDims[1];
+              const curSet = new Set(window.selectedLayerIds || []);
+              if (window.selectedLayerId) curSet.add(window.selectedLayerId);
 
-            const layerPosX = l.posX !== undefined ? l.posX : ((l.normX + (l.normW || 0.2) / 2) * baseW);
-            const layerPosY = l.posY !== undefined ? l.posY : ((l.normY + (l.normH || 0.2) / 2) * baseH);
+              const multiList = [];
+              curSet.forEach(id => {
+                const itemL = (currentProjectState.layers || []).find(l => l.id === id);
+                if (itemL && itemL.type !== 'camera' && itemL.type !== 'audio' && !itemL.locked) {
+                  syncLayerWithEffectiveProps(itemL);
+                  multiList.push({
+                    layer: itemL,
+                    startPosX: itemL.posX !== undefined ? itemL.posX : ((itemL.normX + (itemL.normW || 0.2) / 2) * baseW),
+                    startPosY: itemL.posY !== undefined ? itemL.posY : ((itemL.normY + (itemL.normH || 0.2) / 2) * baseH)
+                  });
+                }
+              });
 
-            startLayerState = {
-              posX: layerPosX,
-              posY: layerPosY,
-              baseW,
-              baseH
-            };
+              startLayerState = {
+                posX: hitLayer.posX !== undefined ? hitLayer.posX : ((hitLayer.normX + (hitLayer.normW || 0.2) / 2) * baseW),
+                posY: hitLayer.posY !== undefined ? hitLayer.posY : ((hitLayer.normY + (hitLayer.normH || 0.2) / 2) * baseH),
+                baseW,
+                baseH,
+                multiLayers: multiList,
+                isolateOnUp: hitLayer.id
+              };
 
-            activeCanvasEl.setPointerCapture(e.pointerId);
-            activeCanvasEl.style.cursor = 'move';
-            e.preventDefault();
-            e.stopPropagation();
-            return;
+              activeCanvasEl.setPointerCapture(e.pointerId);
+              activeCanvasEl.style.cursor = 'move';
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            } else {
+              if (window.selectedLayerId !== hitLayer.id || (window.selectedLayerIds && window.selectedLayerIds.size > 1)) {
+                if (typeof window.setDesktopSelectedLayers === 'function') {
+                  window.setDesktopSelectedLayers(new Set([hitLayer.id]), hitLayer.id);
+                } else if (typeof window.selectTimelineLayers === 'function') {
+                  window.selectTimelineLayers([hitLayer.id], hitLayer.id);
+                } else if (typeof window.selectTimelineLayer === 'function') {
+                  window.selectTimelineLayer(hitLayer.id, false);
+                }
+              }
+
+              if (hitLayer.expressions && (hitLayer.expressions.move || (isAnchorMode && hitLayer.expressions.anchor))) {
+                return;
+              }
+              if (hitLayer.type === 'light' && (hitLayer.lightType === 'sun' || hitLayer.lightType === 'ambient' || isAnchorMode)) {
+                return;
+              }
+
+              window.isTransformInteracting = true;
+              syncLayerWithEffectiveProps(hitLayer);
+
+              const isMoveAnchor = isAnchorMode;
+              activeOp = isMoveAnchor ? 'moveAnchor' : 'move';
+              activeHandleType = isMoveAnchor ? 'anchor' : 'move';
+              targetLayer = hitLayer;
+              startPointer = { x: coords.x, y: coords.y };
+              startBounds = { ...(hitLayer._canvasBounds || {}) };
+              hasMoved = false;
+
+              const layerPosX = hitLayer.posX !== undefined ? hitLayer.posX : ((hitLayer.normX + (hitLayer.normW || 0.2) / 2) * baseW);
+              const layerPosY = hitLayer.posY !== undefined ? hitLayer.posY : ((hitLayer.normY + (hitLayer.normH || 0.2) / 2) * baseH);
+
+              startLayerState = {
+                posX: layerPosX,
+                posY: layerPosY,
+                posZ: hitLayer.posZ || 0,
+                anchorX: hitLayer.anchorX || 0,
+                anchorY: hitLayer.anchorY || 0,
+                anchorZ: hitLayer.anchorZ || 0,
+                baseW,
+                baseH
+              };
+
+              activeCanvasEl.setPointerCapture(e.pointerId);
+              activeCanvasEl.style.cursor = isMoveAnchor ? 'crosshair' : 'move';
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
           }
         }
 
@@ -3685,10 +4214,11 @@
               const boxR = Math.min(cRect.right, Math.max(startLassoClientX, clampedX));
               const boxB = Math.min(cRect.bottom, Math.max(startLassoClientY, clampedY));
 
-              canvasMarqueeBox.style.left = `${boxL}px`;
-              canvasMarqueeBox.style.top = `${boxT}px`;
-              canvasMarqueeBox.style.width = `${Math.max(0, boxR - boxL)}px`;
-              canvasMarqueeBox.style.height = `${Math.max(0, boxB - boxT)}px`;
+              const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || (window.__OFT_ZOOM || 1) || 1;
+              canvasMarqueeBox.style.left = `${boxL / _z}px`;
+              canvasMarqueeBox.style.top = `${boxT / _z}px`;
+              canvasMarqueeBox.style.width = `${Math.max(0, boxR - boxL) / _z}px`;
+              canvasMarqueeBox.style.height = `${Math.max(0, boxB - boxT) / _z}px`;
             }
           }
 
@@ -3720,16 +4250,17 @@
                 bottom: (boxB - cRect.top) * scaleY
               };
 
-              const allLayers = currentProjectState.layers || [];
+              const activeLayers = getActiveLayersAtPlayhead().filter(l => l.type !== 'camera' && l.type !== 'audio' && !l.locked);
               const matchedLayerIds = [];
-              allLayers.forEach(l => {
-                if (l.hidden || l.locked) return;
-                const b = l._canvasBounds;
+              activeLayers.forEach(l => {
+                const b = getLayerInteractionBounds(l);
                 if (!b) return;
+                const layerW = (b.aabbW !== undefined ? b.aabbW : b.w);
+                const layerH = (b.aabbH !== undefined ? b.aabbH : b.h);
                 const intersects = !(
-                  b.x + b.w < bufferRect.left ||
+                  b.x + layerW < bufferRect.left ||
                   b.x > bufferRect.right ||
-                  b.y + b.h < bufferRect.top ||
+                  b.y + layerH < bufferRect.top ||
                   b.y > bufferRect.bottom
                 );
                 if (intersects) {
@@ -3742,12 +4273,16 @@
                 if (isAdditive && window.selectedLayerIds && window.selectedLayerIds.size > 0) {
                   const combined = new Set(window.selectedLayerIds);
                   matchedLayerIds.forEach(id => combined.add(id));
+                  window.isSelectorMode = combined.size > 1;
+                  window._isExplicitSelectionMode = combined.size > 1;
                   if (typeof window.setDesktopSelectedLayers === 'function') {
                     window.setDesktopSelectedLayers(combined, matchedLayerIds[0]);
                   } else if (typeof window.selectTimelineLayers === 'function') {
                     window.selectTimelineLayers(Array.from(combined), matchedLayerIds[0]);
                   }
                 } else {
+                  window.isSelectorMode = matchedLayerIds.length > 1;
+                  window._isExplicitSelectionMode = matchedLayerIds.length > 1;
                   if (typeof window.setDesktopSelectedLayers === 'function') {
                     window.setDesktopSelectedLayers(new Set(matchedLayerIds), matchedLayerIds[0]);
                   } else if (typeof window.selectTimelineLayers === 'function') {
@@ -3755,6 +4290,9 @@
                   } else if (typeof window.selectTimelineLayer === 'function') {
                     window.selectTimelineLayer(matchedLayerIds[0]);
                   }
+                }
+                if (typeof window.renderTimelineLayers === 'function') {
+                  window.renderTimelineLayers();
                 }
               } else if (!isAdditive) {
                 if (typeof window.deselectAllDesktopLayers === 'function') {
@@ -3911,6 +4449,10 @@
             return;
           }
 
+          if (targetLayer.type === 'light' && targetLayer.lightType !== 'point') {
+            return;
+          }
+
           const startX = startLayerState ? startLayerState.posX : (targetLayer.posX || 0);
           const startY = startLayerState ? startLayerState.posY : (targetLayer.posY || 0);
 
@@ -3988,6 +4530,28 @@
           targetLayer.normY = (targetLayer.posY - halfH) / baseH;
 
           if (typeof recordLayerPropertyChange === 'function') recordLayerPropertyChange(targetLayer, 'move');
+
+          if (startLayerState && Array.isArray(startLayerState.multiLayers) && startLayerState.multiLayers.length > 1) {
+            const moveDeltaX = newPosX - startX;
+            const moveDeltaY = newPosY - startY;
+
+            startLayerState.multiLayers.forEach(item => {
+              if (item.layer === targetLayer) return;
+              const ml = item.layer;
+              const mlNewX = item.startPosX + moveDeltaX;
+              const mlNewY = item.startPosY + moveDeltaY;
+              ml.posX = Number(mlNewX.toFixed(2));
+              ml.posY = Number(mlNewY.toFixed(2));
+              const mlScaleW = ml.scaleW !== undefined ? ml.scaleW : ((ml.normW || 0.2) * baseW);
+              const mlScaleH = ml.scaleH !== undefined ? ml.scaleH : ((ml.normH || 0.2) * baseH);
+              const mlHalfW = Math.abs(mlScaleW) / 2;
+              const mlHalfH = Math.abs(mlScaleH) / 2;
+              ml.normX = (ml.posX - mlHalfW) / baseW;
+              ml.normY = (ml.posY - mlHalfH) / baseH;
+              if (typeof recordLayerPropertyChange === 'function') recordLayerPropertyChange(ml, 'move');
+            });
+          }
+
           if (typeof syncTransformControllerValues === 'function') syncTransformControllerValues();
           requestCanvasRedraw();
         } else if (activeOp === 'scale' && startLayerState) {
@@ -4373,6 +4937,50 @@
           window._vectorEditorState.isDraggingPad = false;
         }
 
+        if (!didMove && finishedStartState) {
+          if (finishedStartState.toggleOffOnUp) {
+            const toggleId = finishedStartState.toggleOffOnUp;
+            const newSet = new Set(window.selectedLayerIds || []);
+            newSet.delete(toggleId);
+            if (newSet.size === 0) {
+              window.isSelectorMode = false;
+              window._isExplicitSelectionMode = false;
+              if (typeof window.deselectAllDesktopLayers === 'function') {
+                window.deselectAllDesktopLayers();
+              } else if (typeof window.deselectTimelineLayer === 'function') {
+                window.deselectTimelineLayer();
+              }
+            } else {
+              const rem = Array.from(newSet);
+              const nextActive = (window.selectedLayerId === toggleId) ? rem[rem.length - 1] : window.selectedLayerId;
+              window.isSelectorMode = rem.length > 1;
+              window._isExplicitSelectionMode = rem.length > 1;
+              if (typeof window.setDesktopSelectedLayers === 'function') {
+                window.setDesktopSelectedLayers(newSet, nextActive);
+              } else if (typeof window.selectTimelineLayers === 'function') {
+                window.selectTimelineLayers(rem, nextActive);
+              }
+              if (typeof window.renderTimelineLayers === 'function') {
+                window.renderTimelineLayers();
+              }
+            }
+          } else if (finishedStartState.isolateOnUp) {
+            const isolateId = finishedStartState.isolateOnUp;
+            window.isSelectorMode = false;
+            window._isExplicitSelectionMode = false;
+            if (typeof window.setDesktopSelectedLayers === 'function') {
+              window.setDesktopSelectedLayers(new Set([isolateId]), isolateId);
+            } else if (typeof window.selectTimelineLayers === 'function') {
+              window.selectTimelineLayers([isolateId], isolateId);
+            } else if (typeof window.selectTimelineLayer === 'function') {
+              window.selectTimelineLayer(isolateId, false);
+            }
+            if (typeof window.renderTimelineLayers === 'function') {
+              window.renderTimelineLayers();
+            }
+          }
+        }
+
         if (finishedLayer && finishedOp && finishedOp.startsWith('vector-')) {
           const pts = (finishedLayer.shapeProps && Array.isArray(finishedLayer.shapeProps.points)) ? finishedLayer.shapeProps.points : [];
           const vState = window._vectorEditorState;
@@ -4448,6 +5056,13 @@
 
         if (finishedLayer && didMove) {
           invalidatePreviewCacheForLayer(finishedLayer);
+          if (finishedStartState && Array.isArray(finishedStartState.multiLayers)) {
+            finishedStartState.multiLayers.forEach(item => {
+              if (item.layer && item.layer !== finishedLayer) {
+                invalidatePreviewCacheForLayer(item.layer);
+              }
+            });
+          }
         }
         flushCanvasRedraw();
 
@@ -4694,7 +5309,7 @@
       if (targetLayers.length === 0) return;
 
       targetLayers.forEach(layer => {
-        if (!layer || layer.type === 'camera' || layer.type === 'audio') return;
+        if (!layer || layer.type === 'camera' || layer.type === 'audio' || layer.type === 'light') return;
 
         const isShapeOrFill = (layer.type === 'shape' || layer.type === 'adjustment' || layer.type === 'solid' || layer.fillType === 'color' || layer.fillType === 'gradient');
 

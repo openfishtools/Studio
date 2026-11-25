@@ -2387,6 +2387,38 @@ body.has-active-drawer .timeline-layers-viewport {
     transparent 16px
   ) !important;
 }
+
+/* Partial Reversed Zone (Time Remapping / Speed Keyframes) */
+.timeline-clip-reverse-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 1;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(0, 0, 0, 0.32) 0,
+    rgba(0, 0, 0, 0.32) 8px,
+    rgba(255, 255, 255, 0.15) 8px,
+    rgba(255, 255, 255, 0.15) 16px
+  );
+  border-left: 1px dashed rgba(255, 255, 255, 0.3);
+  border-right: 1px dashed rgba(255, 255, 255, 0.3);
+  box-sizing: border-box;
+}
+
+.timeline-clip-block.is-selected .timeline-clip-reverse-zone {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.2) 0,
+    rgba(255, 255, 255, 0.2) 8px,
+    rgba(0, 0, 0, 0.28) 8px,
+    rgba(0, 0, 0, 0.28) 16px
+  );
+  border-left: 1px solid var(--clip-outline, var(--color-primary));
+  border-right: 1px solid var(--clip-outline, var(--color-primary));
+}
+
 .timeline-clip-block.is-selected .timeline-clip-tag {
   background-color: var(--clip-outline);
   color: var(--bg-canvas);
@@ -2534,6 +2566,37 @@ body.has-active-drawer .timeline-layers-viewport {
   font-weight: 700;
 }
 
+.timeline-clip-block.clip-light {
+  background-color: var(--bg-panel-inner);
+  color: var(--text-primary);
+  border: 1px dashed var(--color-primary);
+  outline: none;
+}
+.timeline-clip-block.clip-light .timeline-clip-tag {
+  background-color: var(--badge-prealpha-bg);
+  color: var(--color-primary);
+}
+.timeline-clip-block.clip-light .clip-label {
+  color: var(--text-primary);
+}
+.timeline-clip-block.clip-light.is-selected {
+  --clip-outline: var(--color-primary);
+  background-color: var(--color-primary);
+  color: var(--bg-canvas);
+  border: 1px solid var(--color-primary);
+  --kf-outline-color: var(--bg-canvas);
+  --kf-outline-hover-color: var(--bg-canvas);
+  --kf-outline-hover-bg: var(--bg-canvas);
+}
+.timeline-clip-block.clip-light.is-selected .timeline-clip-tag {
+  background-color: var(--bg-canvas);
+  color: var(--color-primary);
+}
+.timeline-clip-block.clip-light.is-selected .clip-label {
+  color: var(--bg-canvas) !important;
+  font-weight: 700;
+}
+
 .timeline-clip-block:hover {
   filter: brightness(1.04);
 }
@@ -2568,6 +2631,8 @@ body.has-active-drawer .timeline-layers-viewport {
   color: var(--color-primary);
   margin-right: 6px;
   flex-shrink: 0;
+  position: relative;
+  z-index: 2;
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 
@@ -2575,6 +2640,8 @@ body.has-active-drawer .timeline-layers-viewport {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  position: relative;
+  z-index: 2;
 }
 
 /* Linked Hierarchy Tree Connector Lines (Clean vector lines from parent to child on left) */
@@ -3380,6 +3447,29 @@ body.has-active-drawer .timeline-layers-viewport {
   color: var(--color-accent-subtle) !important;
 }
 .timeline-clip-block.clip-null.is-selected.is-hidden .clip-label {
+  color: var(--bg-canvas) !important;
+}
+
+/* Light Layer Hidden */
+.timeline-clip-block.clip-light.is-hidden {
+  background-color: var(--bg-canvas) !important;
+  border-color: var(--text-dim) !important;
+  color: var(--text-muted) !important;
+}
+.timeline-clip-block.clip-light.is-hidden .timeline-clip-tag {
+  background-color: var(--bg-panel-inner) !important;
+  color: var(--text-dim) !important;
+}
+.timeline-clip-block.clip-light.is-selected.is-hidden {
+  background-color: var(--color-accent-subtle) !important;
+  border-color: var(--color-accent-subtle) !important;
+  color: var(--bg-canvas) !important;
+}
+.timeline-clip-block.clip-light.is-selected.is-hidden .timeline-clip-tag {
+  background-color: var(--bg-canvas) !important;
+  color: var(--color-accent-subtle) !important;
+}
+.timeline-clip-block.clip-light.is-selected.is-hidden .clip-label {
   color: var(--bg-canvas) !important;
 }
 

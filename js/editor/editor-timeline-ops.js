@@ -24,6 +24,9 @@ function initTimelineOperations() {
           window.clearSelectedKeyframes();
         }
         if (!isMulti) {
+          isSelectorMode = false;
+          window.isSelectorMode = false;
+          window._isExplicitSelectionMode = false;
           selectedLayerIds.clear();
           selectedLayerIds.add(layerId);
           selectedLayerId = layerId;
@@ -137,25 +140,8 @@ function initTimelineOperations() {
           }
         }
 
-        if (actionGrid) {
-          const allBtns = Array.from(actionGrid.querySelectorAll('.layer-action-btn'));
-          const visibleBtns = allBtns.filter(b => b.style.display !== 'none');
-          const count = visibleBtns.length;
-
-          actionGrid.classList.remove('is-solo-mode', 'is-2-items', 'is-3-items', 'is-4-items', 'is-5-items', 'is-6-items');
-          if (count === 1) {
-            actionGrid.classList.add('is-solo-mode');
-          } else if (count === 2) {
-            actionGrid.classList.add('is-2-items');
-          } else if (count === 3) {
-            actionGrid.classList.add('is-3-items');
-          } else if (count === 4) {
-            actionGrid.classList.add('is-4-items');
-          } else if (count === 5) {
-            actionGrid.classList.add('is-5-items');
-          } else if (count >= 6) {
-            actionGrid.classList.add('is-6-items');
-          }
+        if (typeof window.syncEdit3DInspector === 'function') {
+          window.syncEdit3DInspector(layer);
         }
 
         const overlayContainer = document.getElementById('timeline-lane-heads-overlay');
@@ -266,6 +252,7 @@ function initTimelineOperations() {
         window.lastSelectedLayerId = firstId;
         isSelectorMode = ids.length > 1;
         window.isSelectorMode = isSelectorMode;
+        window._isExplicitSelectionMode = isSelectorMode;
 
         const layer = (currentProjectState.layers || []).find(l => l.id === firstId);
         if (layer) {
@@ -279,11 +266,17 @@ function initTimelineOperations() {
         if (typeof updateEditorHeaderMode === 'function') {
           updateEditorHeaderMode();
         }
+        if (typeof syncSelectionModeButtonUI === 'function') {
+          syncSelectionModeButtonUI();
+        }
         if (typeof updateCutBarRowState === 'function') {
           updateCutBarRowState();
         }
         if (typeof window.updateClipboardButtonsVisibility === 'function') {
           window.updateClipboardButtonsVisibility();
+        }
+        if (typeof renderTimelineLayers === 'function') {
+          renderTimelineLayers();
         }
         redrawComposition();
       }
@@ -298,12 +291,14 @@ function initTimelineOperations() {
           // Never deselect when clicking selected layer; keep active
           selectTimelineLayer(layerId, false);
         } else {
+          if (selectedLayerId && !selectedLayerIds.has(selectedLayerId)) {
+            selectedLayerIds.add(selectedLayerId);
+          }
           if (selectedLayerIds.has(layerId)) {
             selectedLayerIds.delete(layerId);
             if (selectedLayerIds.size === 0) {
               selectedLayerId = null;
               window.selectedLayerId = null;
-              isSelectorMode = false;
             } else {
               selectedLayerId = Array.from(selectedLayerIds)[selectedLayerIds.size - 1];
               window.selectedLayerId = selectedLayerId;
@@ -313,7 +308,13 @@ function initTimelineOperations() {
             selectedLayerId = layerId;
             window.selectedLayerId = selectedLayerId;
           }
+          isSelectorMode = selectedLayerIds.size > 1;
+          window.isSelectorMode = isSelectorMode;
+          window._isExplicitSelectionMode = isSelectorMode;
           renderTimelineLayers();
+          if (typeof syncSelectionModeButtonUI === 'function') {
+            syncSelectionModeButtonUI();
+          }
           redrawComposition();
           updateEditorHeaderMode();
         }
@@ -321,39 +322,44 @@ function initTimelineOperations() {
 
       function deselectTimelineLayer() {
         // Auto-close selected layer drawer
-        if (window.Drawer) {
-          if (window.Drawer.isOpen('timeline-layer-drawer')) {
-            window.Drawer.close('timeline-layer-drawer', false);
+        window._isProgrammaticDrawerClose = true;
+        try {
+          if (window.Drawer) {
+            if (window.Drawer.isOpen('timeline-layer-drawer')) {
+              window.Drawer.close('timeline-layer-drawer', false);
+            }
+            if (window.Drawer.isOpen('timeline-batch-drawer')) {
+              window.Drawer.close('timeline-batch-drawer', false);
+            }
+            const layerDrawer = document.getElementById('timeline-layer-drawer');
+            if (layerDrawer && layerDrawer.classList.contains('is-active')) {
+              layerDrawer.classList.remove('is-active');
+              layerDrawer.setAttribute('aria-hidden', 'true');
+              const card = layerDrawer.querySelector('.drawer-card');
+              if (card) card.style.height = '';
+            }
+            const batchDrawer = document.getElementById('timeline-batch-drawer');
+            if (batchDrawer && batchDrawer.classList.contains('is-active')) {
+              batchDrawer.classList.remove('is-active');
+              batchDrawer.setAttribute('aria-hidden', 'true');
+              const card = batchDrawer.querySelector('.drawer-card');
+              if (card) card.style.height = '';
+            }
+            const fxGal = document.getElementById('drawer-effects-gallery');
+            if (fxGal && fxGal.classList.contains('is-active')) {
+              fxGal.classList.remove('is-active');
+              fxGal.setAttribute('aria-hidden', 'true');
+              const card = fxGal.querySelector('.drawer-card');
+              if (card) card.style.height = '';
+            }
+            const remainingActive = document.querySelectorAll('.drawer-container.is-active');
+            if (remainingActive.length === 0) {
+              document.body.classList.remove('has-active-drawer');
+              document.querySelectorAll('.editor-timeline.has-drawer-open').forEach(t => t.classList.remove('has-drawer-open'));
+            }
           }
-          if (window.Drawer.isOpen('timeline-batch-drawer')) {
-            window.Drawer.close('timeline-batch-drawer', false);
-          }
-          const layerDrawer = document.getElementById('timeline-layer-drawer');
-          if (layerDrawer && layerDrawer.classList.contains('is-active')) {
-            layerDrawer.classList.remove('is-active');
-            layerDrawer.setAttribute('aria-hidden', 'true');
-            const card = layerDrawer.querySelector('.drawer-card');
-            if (card) card.style.height = '';
-          }
-          const batchDrawer = document.getElementById('timeline-batch-drawer');
-          if (batchDrawer && batchDrawer.classList.contains('is-active')) {
-            batchDrawer.classList.remove('is-active');
-            batchDrawer.setAttribute('aria-hidden', 'true');
-            const card = batchDrawer.querySelector('.drawer-card');
-            if (card) card.style.height = '';
-          }
-          const fxGal = document.getElementById('drawer-effects-gallery');
-          if (fxGal && fxGal.classList.contains('is-active')) {
-            fxGal.classList.remove('is-active');
-            fxGal.setAttribute('aria-hidden', 'true');
-            const card = fxGal.querySelector('.drawer-card');
-            if (card) card.style.height = '';
-          }
-          const remainingActive = document.querySelectorAll('.drawer-container.is-active');
-          if (remainingActive.length === 0) {
-            document.body.classList.remove('has-active-drawer');
-            document.querySelectorAll('.editor-timeline.has-drawer-open').forEach(t => t.classList.remove('has-drawer-open'));
-          }
+        } finally {
+          setTimeout(() => { window._isProgrammaticDrawerClose = false; }, 80);
         }
         const fab = document.getElementById('timeline-btn-add');
         if (fab) fab.style.display = '';
@@ -515,11 +521,16 @@ function initTimelineOperations() {
 
             // Open batch drawer & close single layer drawer
             if (window.Drawer) {
-              if (window.Drawer.isOpen('timeline-layer-drawer')) {
-                window.Drawer.close('timeline-layer-drawer', false);
-              }
-              if (!window.Drawer.isOpen('timeline-batch-drawer')) {
-                window.Drawer.open('timeline-batch-drawer');
+              window._isProgrammaticDrawerClose = true;
+              try {
+                if (window.Drawer.isOpen('timeline-layer-drawer')) {
+                  window.Drawer.close('timeline-layer-drawer', false);
+                }
+                if (!window.Drawer.isOpen('timeline-batch-drawer')) {
+                  window.Drawer.open('timeline-batch-drawer');
+                }
+              } finally {
+                setTimeout(() => { window._isProgrammaticDrawerClose = false; }, 80);
               }
             }
             if (typeof updateCutBarRowState === 'function') {
@@ -528,7 +539,12 @@ function initTimelineOperations() {
           } else if (count === 1) {
             // Single select: show layer rename input & link button, hide group buttons & batch drawer
             if (window.Drawer && window.Drawer.isOpen('timeline-batch-drawer')) {
-              window.Drawer.close('timeline-batch-drawer', false);
+              window._isProgrammaticDrawerClose = true;
+              try {
+                window.Drawer.close('timeline-batch-drawer', false);
+              } finally {
+                setTimeout(() => { window._isProgrammaticDrawerClose = false; }, 80);
+              }
             }
             if (fab) fab.style.display = '';
             if (mainTl) mainTl.classList.remove('is-selection-mode');
@@ -571,7 +587,7 @@ function initTimelineOperations() {
           if (btn3D) {
             const targetId = selectedLayerId || (selectedLayerIds ? Array.from(selectedLayerIds)[0] : null);
             const layer = (currentProjectState.layers || []).find(l => l.id === targetId);
-            const canBe3D = layer && layer.type !== 'audio';
+            const canBe3D = layer && layer.type !== 'audio' && layer.type !== 'light';
             btn3D.style.display = canBe3D ? 'inline-flex' : 'none';
             const is3D = !!(layer && layer.is3D);
             btn3D.classList.toggle('is-active', is3D);
@@ -1706,6 +1722,9 @@ function initTimelineOperations() {
         window.selectedLayerIds = selectedLayerIds;
         isSelectorMode = true;
 
+        if (typeof window.syncSelectionClassesInPlace === 'function') {
+          window.syncSelectionClassesInPlace();
+        }
         updateEditorHeaderMode();
         renderTimelineLayers();
         redrawComposition('selectAll');
@@ -3632,6 +3651,7 @@ function initTimelineOperations() {
 
       // Close layer or batch drawer → deselect layer & clear spotlight
       window.addEventListener('drawer-closed', (e) => {
+        if (window._isProgrammaticDrawerClose) return;
         if (e.detail && e.detail.id === 'timeline-layer-drawer') {
           const vp = document.getElementById('timeline-layers-viewport');
           if (vp) vp.classList.remove('has-drawer-open');
@@ -3645,7 +3665,9 @@ function initTimelineOperations() {
             drawerEl.style.removeProperty('--spotlight-top');
             drawerEl.style.removeProperty('--spotlight-bottom');
           }
-          if (typeof deselectTimelineLayer === 'function') deselectTimelineLayer();
+          if (!isSelectorMode && (!selectedLayerIds || selectedLayerIds.size <= 1)) {
+            if (typeof deselectTimelineLayer === 'function') deselectTimelineLayer();
+          }
         } else if (e.detail && e.detail.id === 'timeline-batch-drawer') {
           const vp = document.getElementById('timeline-layers-viewport');
           if (vp) vp.classList.remove('has-drawer-open');
@@ -3654,11 +3676,13 @@ function initTimelineOperations() {
             tl.classList.remove('has-layer-drawer-open');
             tl.style.removeProperty('--timeline-drawer-height');
           }
-          isSelectorMode = false;
-          window.isSelectorMode = false;
-          window._isExplicitSelectionMode = false;
-          if (typeof deselectTimelineLayer === 'function') deselectTimelineLayer();
-          if (typeof syncSelectionModeButtonUI === 'function') syncSelectionModeButtonUI();
+          if (isSelectorMode || (selectedLayerIds && selectedLayerIds.size > 1)) {
+            isSelectorMode = false;
+            window.isSelectorMode = false;
+            window._isExplicitSelectionMode = false;
+            if (typeof deselectTimelineLayer === 'function') deselectTimelineLayer();
+            if (typeof syncSelectionModeButtonUI === 'function') syncSelectionModeButtonUI();
+          }
         }
       });
       window.addEventListener('drawer-opened', (e) => {
@@ -3795,6 +3819,7 @@ function initTimelineOperations() {
           overlay.querySelectorAll('.timeline-lane-pill-slot').forEach(slot => {
             const lid = slot.dataset.layerId;
             const isSel = selectedLayerIds.has(lid) || (lid === selectedLayerId);
+            slot.classList.toggle('is-selected', isSel);
             slot.querySelector('.timeline-layer-ctrl-pill')?.classList.toggle('is-selected', isSel);
             slot.querySelector('.timeline-layer-checkbox')?.classList.toggle('is-selected', isSel);
           });
@@ -3816,6 +3841,77 @@ function initTimelineOperations() {
       window.syncSelectionClassesInPlace = syncSelectionClassesInPlace;
       window.updateTimelineLayerSelectionState = syncSelectionClassesInPlace;
 
+
+      function computeLayerReverseSegments(layer, pps) {
+        if (!layer) return { isFullReverse: false, zones: [] };
+        const clipStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
+        const clipDur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
+        const clipEnd = clipStart + clipDur;
+        const clipWidthPx = layer.widthPx || Math.max(10, Math.round(clipDur * pps));
+
+        if (layer.speedMode === 'time_remap' || (layer.keyframes && Array.isArray(layer.keyframes.timeRemap) && layer.keyframes.timeRemap.length >= 2)) {
+          const kfs = (layer.keyframes && Array.isArray(layer.keyframes.timeRemap)) ? [...layer.keyframes.timeRemap].sort((a, b) => a.time - b.time) : [];
+          if (kfs.length >= 2) {
+            const zones = [];
+            for (let i = 0; i < kfs.length - 1; i++) {
+              const k0 = kfs[i], k1 = kfs[i + 1];
+              const r0 = (k0.value && k0.value.timeRemap !== undefined) ? k0.value.timeRemap : 0;
+              const r1 = (k1.value && k1.value.timeRemap !== undefined) ? k1.value.timeRemap : 0;
+              if (r1 < r0) {
+                const segStart = Math.max(clipStart, k0.time);
+                const segEnd = Math.min(clipEnd, k1.time);
+                if (segEnd > segStart + 0.005) {
+                  const leftPx = Math.max(0, Math.round((segStart - clipStart) * pps));
+                  const widthPx = Math.max(2, Math.round((segEnd - segStart) * pps));
+                  zones.push({ leftPx, widthPx: Math.min(widthPx, clipWidthPx - leftPx), dur: segEnd - segStart });
+                }
+              }
+            }
+            const isFull = zones.length === 1 && zones[0].leftPx <= 1 && zones[0].widthPx >= clipWidthPx - 2;
+            return { isFullReverse: isFull, zones: isFull ? [] : zones };
+          }
+        }
+
+        if (layer.keyframes && Array.isArray(layer.keyframes.speed) && layer.keyframes.speed.length > 0) {
+          const kfs = [...layer.keyframes.speed].sort((a, b) => a.time - b.time);
+          const zones = [];
+          const baseSpd = (layer.speed !== undefined) ? layer.speed : 1.0;
+          const firstSpd = (kfs[0].value && kfs[0].value.speed !== undefined) ? kfs[0].value.speed : baseSpd;
+          if (firstSpd < 0 && kfs[0].time > clipStart) {
+            const segEnd = Math.min(clipEnd, kfs[0].time);
+            if (segEnd > clipStart + 0.005) {
+              zones.push({ leftPx: 0, widthPx: Math.round((segEnd - clipStart) * pps), dur: segEnd - clipStart });
+            }
+          }
+          for (let i = 0; i < kfs.length - 1; i++) {
+            const s0 = (kfs[i].value && kfs[i].value.speed !== undefined) ? kfs[i].value.speed : baseSpd;
+            const s1 = (kfs[i + 1].value && kfs[i + 1].value.speed !== undefined) ? kfs[i + 1].value.speed : baseSpd;
+            if (s0 < 0 || s1 < 0) {
+              const segStart = Math.max(clipStart, kfs[i].time);
+              const segEnd = Math.min(clipEnd, kfs[i + 1].time);
+              if (segEnd > segStart + 0.005) {
+                const leftPx = Math.max(0, Math.round((segStart - clipStart) * pps));
+                const widthPx = Math.max(2, Math.round((segEnd - segStart) * pps));
+                zones.push({ leftPx, widthPx: Math.min(widthPx, clipWidthPx - leftPx), dur: segEnd - segStart });
+              }
+            }
+          }
+          const lastSpd = (kfs[kfs.length - 1].value && kfs[kfs.length - 1].value.speed !== undefined) ? kfs[kfs.length - 1].value.speed : baseSpd;
+          if (lastSpd < 0 && kfs[kfs.length - 1].time < clipEnd) {
+            const segStart = Math.max(clipStart, kfs[kfs.length - 1].time);
+            if (clipEnd > segStart + 0.005) {
+              const leftPx = Math.max(0, Math.round((segStart - clipStart) * pps));
+              zones.push({ leftPx, widthPx: Math.min(Math.round((clipEnd - segStart) * pps), clipWidthPx - leftPx), dur: clipEnd - segStart });
+            }
+          }
+          const isFull = zones.length === 1 && zones[0].leftPx <= 1 && zones[0].widthPx >= clipWidthPx - 2;
+          return { isFullReverse: isFull, zones: isFull ? [] : zones };
+        }
+
+        const isFull = (layer.speed !== undefined && layer.speed < 0);
+        return { isFullReverse: isFull, zones: [] };
+      }
+      window.computeLayerReverseSegments = computeLayerReverseSegments;
 
       function renderTimelineLayers() {
         if (!layersTrack) return;
@@ -3874,8 +3970,8 @@ function initTimelineOperations() {
         }
 
         layers.forEach(layer => {
-          const clipType = layer.type === 'shape' ? 'shape' : (layer.type === 'text' ? 'text' : (layer.type === 'video' ? 'video' : (layer.type === 'audio' ? 'audio' : (layer.type === 'adjustment' ? 'adjustment' : (layer.type === 'camera' ? 'camera' : (layer.type === 'null' ? 'null' : (layer.type === 'precomp' ? 'precomp' : (layer.type === 'color' ? 'color' : 'image'))))))));
-          const typeTag = layer.type === 'shape' ? 'SHP' : (layer.type === 'text' ? 'TXT' : (layer.type === 'video' ? 'VID' : (layer.type === 'audio' ? 'AUD' : (layer.type === 'adjustment' ? 'ADJ' : (layer.type === 'camera' ? (layer.isOverlapCamera ? 'O-CAM' : 'CAM') : (layer.type === 'null' ? (layer.isOverlapNull ? 'O-NULL' : 'NULL') : (layer.type === 'precomp' ? (layer.groupType === 'mask' ? 'MASK' : (layer.groupType === 'exclude' ? 'EXCL' : 'COMP')) : (layer.type === 'color' ? 'CLR' : 'IMG'))))))));
+          const clipType = layer.type === 'shape' ? 'shape' : (layer.type === 'text' ? 'text' : (layer.type === 'video' ? 'video' : (layer.type === 'audio' ? 'audio' : (layer.type === 'adjustment' ? 'adjustment' : (layer.type === 'camera' ? 'camera' : (layer.type === 'null' ? 'null' : (layer.type === 'precomp' ? 'precomp' : (layer.type === 'color' ? 'color' : (layer.type === 'light' ? 'light' : 'image')))))))));
+          const typeTag = layer.type === 'shape' ? 'SHP' : (layer.type === 'text' ? 'TXT' : (layer.type === 'video' ? 'VID' : (layer.type === 'audio' ? 'AUD' : (layer.type === 'adjustment' ? 'ADJ' : (layer.type === 'camera' ? (layer.isOverlapCamera ? 'O-CAM' : 'CAM') : (layer.type === 'null' ? (layer.isOverlapNull ? 'O-NULL' : 'NULL') : (layer.type === 'precomp' ? (layer.groupType === 'mask' ? 'MASK' : (layer.groupType === 'exclude' ? 'EXCL' : 'COMP')) : (layer.type === 'color' ? 'CLR' : (layer.type === 'light' ? 'LGH' : 'IMG')))))))));
           const isSelected = selectedLayerIds.has(layer.id) || layer.id === selectedLayerId;
           const isHidden = !!layer.hidden;
 
@@ -4205,11 +4301,8 @@ function initTimelineOperations() {
                   }
 
                   // Tap / click without drag or hold
-                  if (isSelectorMode) {
-                    toggleSelectTimelineLayer(layer.id, true);
-                  } else {
-                    toggleSelectTimelineLayer(layer.id, false);
-                  }
+                  const isMultiModifier = Boolean(isSelectorMode || (upEvent && (upEvent.shiftKey || upEvent.ctrlKey || upEvent.metaKey)));
+                  toggleSelectTimelineLayer(layer.id, isMultiModifier);
                 }
 
                 window.addEventListener('pointermove', onPillPointerMove, { passive: false });
@@ -4234,7 +4327,9 @@ function initTimelineOperations() {
           }
 
           // 2. Timeline Track Lane in layersTrack
-          const isReverse = (layer.speed !== undefined && layer.speed < 0);
+          const revInfo = computeLayerReverseSegments(layer, pixelsPerSecond);
+          const isReverse = revInfo.isFullReverse;
+          const revZones = revInfo.zones;
           const isConvertingAudio = !!layer._convertingAudio;
           const convertPct = Math.max(0, Math.min(100, Math.round(Number(layer._convertProgress) || 0)));
           const lane = document.createElement('div');
@@ -4244,7 +4339,7 @@ function initTimelineOperations() {
             <div class="track-content-lane">
               <div class="timeline-clip-block clip-${clipType} ${isConvertingAudio ? 'is-converting-audio' : ''} ${isSelected ? 'is-selected' : ''} ${isHidden ? 'is-hidden' : ''} ${isReverse ? 'is-reverse' : ''}" 
                    style="left: ${layer.startPx || 0}px; width: ${layer.widthPx || 320}px;" 
-                   title="${layer.name}${isReverse ? ' (Reverse ' + layer.speed + 'x)' : ''}${isHidden ? ' (Hidden)' : ''}" 
+                   title="${layer.name}${isReverse ? ' (Reverse ' + layer.speed + 'x)' : (revZones.length > 0 ? ' (Partial Reverse)' : '')}${isHidden ? ' (Hidden)' : ''}" 
                    data-layer-id="${layer.id}"
                    ${layer.mediaId ? `data-media-id="${layer.mediaId}"` : ''}>
                 ${isConvertingAudio ? `
@@ -4254,11 +4349,12 @@ function initTimelineOperations() {
                   <button type="button" class="timeline-clip-handle handle-left" aria-label="Trim / Lengthen Start" title="Drag to trim or lengthen start">
                     <span class="fticon fticon-chevron-left" style="width: 13px; height: 13px;" aria-hidden="true"></span>
                   </button>
-                  <span class="timeline-clip-tag">${typeTag}${isReverse ? ' ◀' : ''}</span>
+                  <span class="timeline-clip-tag">${typeTag}${isReverse ? ' ◀' : (revZones.length > 0 ? ' ◀▶' : '')}</span>
                   <span class="clip-label">${layer.name}</span>
                   <button type="button" class="timeline-clip-handle handle-right" aria-label="Trim / Lengthen End" title="Drag to trim or lengthen end">
                     <span class="fticon fticon-chevron-right" style="width: 13px; height: 13px;" aria-hidden="true"></span>
                   </button>
+                  ${revZones.map(z => `<div class="timeline-clip-reverse-zone" style="left: ${z.leftPx}px; width: ${z.widthPx}px;" title="Reverse Zone (${z.dur.toFixed(2)}s)"></div>`).join('')}
                   ${(clipType === 'video' || clipType === 'precomp') ? '<div class="timeline-clip-progress-track"><div class="timeline-clip-progress"></div></div>' : ''}
                   ${(clipType === 'audio') ? '<canvas class="timeline-audio-waveform-canvas"></canvas>' : ''}
                   ${(clipType === 'text') ? (() => {
@@ -4976,13 +5072,14 @@ function initTimelineOperations() {
                 if (vReorderSession) vReorderSession.finish(false);
                 const dist = Math.hypot(upEvent.clientX - startPointerX, upEvent.clientY - startPointerY);
                 if (!hasSlid && dist <= 6) {
-                  if (isSelectedLayer && !isSelectorMode) {
-                    if (!upEvent.shiftKey && typeof window.clearSelectedKeyframes === 'function') {
+                  const isMultiModifier = Boolean(isSelectorMode || (upEvent && (upEvent.shiftKey || upEvent.ctrlKey || upEvent.metaKey)));
+                  if (isSelectedLayer && !isMultiModifier) {
+                    if (typeof window.clearSelectedKeyframes === 'function') {
                       window.clearSelectedKeyframes();
                     }
                   } else {
                     justTappedInPointerUp = true;
-                    toggleSelectTimelineLayer(layer.id, isSelectorMode);
+                    toggleSelectTimelineLayer(layer.id, isMultiModifier);
                     setTimeout(() => { justTappedInPointerUp = false; }, 400);
                   }
                 }
@@ -5011,7 +5108,8 @@ function initTimelineOperations() {
                 return;
               }
               e.stopPropagation();
-              toggleSelectTimelineLayer(layer.id, isSelectorMode);
+              const isMultiModifier = Boolean(isSelectorMode || (e && (e.shiftKey || e.ctrlKey || e.metaKey)));
+              toggleSelectTimelineLayer(layer.id, isMultiModifier);
             });
 
             // Double click precomp clip to enter precompose (After Effects behavior)
@@ -5538,8 +5636,8 @@ function initTimelineOperations() {
               child._parentPrecomp = layer;
               child._parentPrecompId = layer.id;
 
-              const childClipType = child.type === 'shape' ? 'shape' : (child.type === 'text' ? 'text' : (child.type === 'video' ? 'video' : (child.type === 'audio' ? 'audio' : (child.type === 'adjustment' ? 'adjustment' : (child.type === 'camera' ? 'camera' : (child.type === 'null' ? 'null' : (child.type === 'precomp' ? 'precomp' : (child.type === 'color' ? 'color' : 'image'))))))));
-              const childTypeTag = child.type === 'shape' ? 'SHP' : (child.type === 'text' ? 'TXT' : (child.type === 'video' ? 'VID' : (child.type === 'audio' ? 'AUD' : (child.type === 'adjustment' ? 'ADJ' : (child.type === 'camera' ? (child.isOverlapCamera ? 'O-CAM' : 'CAM') : (child.type === 'null' ? (child.isOverlapNull ? 'O-NULL' : 'NULL') : (child.type === 'precomp' ? (child.groupType === 'mask' ? 'MASK' : (child.groupType === 'exclude' ? 'EXCL' : 'COMP')) : (child.type === 'color' ? 'CLR' : 'IMG'))))))));
+              const childClipType = child.type === 'shape' ? 'shape' : (child.type === 'text' ? 'text' : (child.type === 'video' ? 'video' : (child.type === 'audio' ? 'audio' : (child.type === 'adjustment' ? 'adjustment' : (child.type === 'camera' ? 'camera' : (child.type === 'null' ? 'null' : (child.type === 'precomp' ? 'precomp' : (child.type === 'color' ? 'color' : (child.type === 'light' ? 'light' : 'image')))))))));
+              const childTypeTag = child.type === 'shape' ? 'SHP' : (child.type === 'text' ? 'TXT' : (child.type === 'video' ? 'VID' : (child.type === 'audio' ? 'AUD' : (child.type === 'adjustment' ? 'ADJ' : (child.type === 'camera' ? (child.isOverlapCamera ? 'O-CAM' : 'CAM') : (child.type === 'null' ? (child.isOverlapNull ? 'O-NULL' : 'NULL') : (child.type === 'precomp' ? (child.groupType === 'mask' ? 'MASK' : (child.groupType === 'exclude' ? 'EXCL' : 'COMP')) : (child.type === 'color' ? 'CLR' : (child.type === 'light' ? 'LGH' : 'IMG')))))))));
               const isChildSelected = selectedLayerIds.has(child.id) || child.id === selectedLayerId;
               const isChildHidden = !!child.hidden;
 
@@ -5591,11 +5689,8 @@ function initTimelineOperations() {
                     childPillEl.addEventListener('click', (e) => {
                       if (e.target.closest('.timeline-layer-eye-btn')) return;
                       e.stopPropagation();
-                      if (isSelectorMode) {
-                        toggleSelectTimelineLayer(child.id, true);
-                      } else {
-                        toggleSelectTimelineLayer(child.id, false);
-                      }
+                      const isMultiModifier = Boolean(isSelectorMode || (e && (e.shiftKey || e.ctrlKey || e.metaKey)));
+                      toggleSelectTimelineLayer(child.id, isMultiModifier);
                     });
                     childPillEl.addEventListener('contextmenu', (e) => {
                       e.preventDefault();
@@ -5619,7 +5714,9 @@ function initTimelineOperations() {
               }
 
               // 2. Child Track Lane in layersTrack
-              const isChildReverse = (child.speed !== undefined && child.speed < 0);
+              const childRevInfo = computeLayerReverseSegments(child, pixelsPerSecond);
+              const isChildReverse = childRevInfo.isFullReverse;
+              const childRevZones = childRevInfo.zones;
               const childLane = document.createElement('div');
               childLane.className = 'timeline-track-lane is-precomp-child';
               childLane.dataset.layerId = child.id;
@@ -5628,16 +5725,17 @@ function initTimelineOperations() {
                 <div class="track-content-lane">
                   <div class="timeline-clip-block clip-${childClipType} is-precomp-child ${isChildSelected ? 'is-selected' : ''} ${isChildHidden ? 'is-hidden' : ''} ${isChildReverse ? 'is-reverse' : ''}" 
                        style="left: ${childGlobalStartPx}px; width: ${childWidthPx}px;" 
-                       title="${child.name}${isChildReverse ? ' (Reverse ' + child.speed + 'x)' : ''}${isChildHidden ? ' (Hidden)' : ''} [${layer.name}]" 
+                       title="${child.name}${isChildReverse ? ' (Reverse ' + child.speed + 'x)' : (childRevZones.length > 0 ? ' (Partial Reverse)' : '')}${isChildHidden ? ' (Hidden)' : ''} [${layer.name}]" 
                        data-layer-id="${child.id}">
                     <button type="button" class="timeline-clip-handle handle-left" aria-label="Trim / Lengthen Start" title="Drag to trim start">
                       <span class="fticon fticon-chevron-left" style="width: 10px; height: 10px;" aria-hidden="true"></span>
                     </button>
-                    <span class="timeline-clip-tag">${childTypeTag}${isChildReverse ? ' ◀' : ''}</span>
+                    <span class="timeline-clip-tag">${childTypeTag}${isChildReverse ? ' ◀' : (childRevZones.length > 0 ? ' ◀▶' : '')}</span>
                     <span class="clip-label">${child.name}</span>
                     <button type="button" class="timeline-clip-handle handle-right" aria-label="Trim / Lengthen End" title="Drag to trim end">
                       <span class="fticon fticon-chevron-right" style="width: 10px; height: 10px;" aria-hidden="true"></span>
                     </button>
+                    ${childRevZones.map(z => `<div class="timeline-clip-reverse-zone" style="left: ${z.leftPx}px; width: ${z.widthPx}px;" title="Reverse Zone (${z.dur.toFixed(2)}s)"></div>`).join('')}
                     ${(childClipType === 'video' || childClipType === 'precomp') ? '<div class="timeline-clip-progress-track"><div class="timeline-clip-progress"></div></div>' : ''}
                     ${(childClipType === 'audio') ? '<canvas class="timeline-audio-waveform-canvas"></canvas>' : ''}
                     <div class="timeline-clip-keyframes"></div>
@@ -5658,11 +5756,8 @@ function initTimelineOperations() {
                 childClipEl.addEventListener('click', (e) => {
                   if (e.target.closest('.timeline-clip-handle')) return;
                   e.stopPropagation();
-                  if (isSelectorMode) {
-                    toggleSelectTimelineLayer(child.id, true);
-                  } else {
-                    toggleSelectTimelineLayer(child.id, false);
-                  }
+                  const isMultiModifier = Boolean(isSelectorMode || (e && (e.shiftKey || e.ctrlKey || e.metaKey)));
+                  toggleSelectTimelineLayer(child.id, isMultiModifier);
                 });
 
                 childClipEl.addEventListener('contextmenu', (e) => {
@@ -6520,12 +6615,8 @@ function initTimelineOperations() {
             }
           }
         }
-        // Auto-expand default timeline duration if media is longer than default
-        if (dur > (currentProjectState.defaultDuration || 5)) {
-          currentProjectState.defaultDuration = Math.ceil(dur);
-          if (typeof window.updateTimelineDuration === 'function') {
-            window.updateTimelineDuration(true);
-          }
+        if (typeof window.updateTimelineDuration === 'function') {
+          window.updateTimelineDuration(true);
         }
         const widthPx = Math.max(10, Math.round(dur * pixelsPerSecond));
         const startPx = Math.round(currentSec * pixelsPerSecond);
@@ -6545,7 +6636,8 @@ function initTimelineOperations() {
           mediaFps: item.fps || null,
           mediaWidth: item.width || null,
           mediaHeight: item.height || null,
-          isDurationExplicit: true,
+          isDurationExplicit: isVerifiedMediaDur || (item.type !== 'video' && item.type !== 'audio'),
+          _pendingMediaDuration: ((item.type === 'video' || item.type === 'audio') && !isVerifiedMediaDur),
           _userResized: false,
           _userTrimmed: false
         };

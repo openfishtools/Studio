@@ -55,7 +55,7 @@
         <h1 class="brand-title">FishTools</h1>
         <div class="brand-subtitle-row">
           <span class="brand-subtitle">Studio</span>
-          <span class="badge-pre-alpha" id="studio-version-badge">0.6.13</span>
+          <span class="badge-pre-alpha" id="studio-version-badge">0.7.0</span>
         </div>
 
         <!-- Desktop Folders Shelf in Photo 2 area -->
@@ -783,7 +783,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">FishTools Studio</h3>
-          <span class="welcome-badge">v0.6.13</span>
+          <span class="welcome-badge">v0.7.0</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
@@ -819,11 +819,96 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.7.0 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.7.0</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Nov 25, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Advance 3D Rendering Engine (`js/core/fishtool-engine.js`, `js/core/fish3d.js`, `js/editor/editor-state.js`, `editor.html`, `desktop.html`)</span>
+                  <span class="changelog-item-desc">Added a new **3D Engine** category in Project Settings with `Classic 3D` (default, pixel-identical) and `Advance 3D` modes, plus controls for **Ambient Occlusion** (`Disabled`, `Low`, `Medium`, `High`), **Shadow Quality** (`Disabled`, `512px`, `1024px`, `2048px`), **Environment** map selection, and **Enable Reflection**.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">3D Light Layers &amp; Live Viewport Gizmos (`js/core/canvas-overlay.js`, `js/editor/editor-inspector.js`, `js/editor/editor-canvas.js`)</span>
+                  <span class="changelog-item-desc">Introduced `Point Light`, `Sun Light`, and `Ambient Light` control layers (up to 4 simultaneous lights per composition level with keyframeable position, rotation, color, intensity 0–500%, and radius), Blinn-Phong diffuse/specular shading, and theme-aware editor-only overlays excluded from export.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Real-Time SSAO, Shadow Mapping &amp; Screen-Space Reflections (`js/core/fishtool-engine.js`)</span>
+                  <span class="changelog-item-desc">Added WebGL2 Screen-Space Ambient Occlusion (SSAO) with bilateral depth-aware blur, real-time 3×3 PCF depth shadow mapping for Sun and Point lights (supporting 3D shapes, imported 3D models, and alpha-cutout layers), and 2-pass WebGL2 Screen-Space Reflections (SSR) so glossy and metallic surfaces reflect neighboring 3D objects in real time.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Zero-Dependency 3D Model Importer &amp; FBX Skeletal Animation (`js/core/fish3d-loader.js`, `js/editor/editor-3d-materials.js`, `js/editor/editor-media.js`)</span>
+                  <span class="changelog-item-desc">Added native `.OBJ` + `.MTL`, Binary/ASCII `.FBX` (node hierarchy, `Skin`/`Cluster` skeletal rigs, multi-clip animation with Quaternion SLERP), and `.ZIP` bundle import with automatic diffuse texture matching. Imported models appear in the Media Pool under a dedicated `3D` filter with 3D thumbnails, long-press delete, and `Replace Selected 3D`.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Per-Slot 3D Material Editor &amp; Built-In Environment Gallery (`js/editor/editor-3d-materials.js`, `assets/environments/`, `css/components/popover.css`)</span>
+                  <span class="changelog-item-desc">Added multi-slot **Texture** inspector (`Fill`, `Color`, `Image`, `Accepts Lights`, `Glossy`, `Metallic`, `Roughness`, `Diffuse`, `Specular`, `Env Reflection`) with live shaded material preview spheres, plus a built-in gallery of 15 `Basic 2K` environment maps alongside custom Media Pool environments.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Tight 3D Model Wireframe &amp; Unified Panel Spacing (`js/core/fish3d-loader.js`, `js/core/canvas-overlay.js`, `js/editor/editor-inspector.js`, `css/components/drawer.css`, `css/layout/desktop.css`)</span>
+                  <span class="changelog-item-desc">Imported 3D models use tight local-bounds wireframes with near-plane clipping protection and disabled on-canvas resize handles; hid inapplicable `Edit Shape` on 3D shapes and models; standardized desktop Project Assets panel padding and `8px` spacing across all tabs; made Camera Settings scrollable and balanced the Inspector action grid.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Direct Timeline Scrubbing &amp; Preview Cache Gating (`js/editor/editor-timeline-core.js`, `js/editor/editor-state.js`, `js/editor/editor-canvas.js`)</span>
+                  <span class="changelog-item-desc">Removed timeline scroll momentum/inertia glide for crisp scrubbing, persisted the Play popup Cache toggle across sessions, and deferred RAM preview caching until 3D models, material slot textures, and environment maps finish loading.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">FBX Animation Gimbal Flip Spikes &amp; IndexedDB Reload Playback (`js/core/fish3d-loader.js`)</span>
+                  <span class="changelog-item-desc">Replaced linear Euler interpolation on FBX rotation tracks with zero-GC Quaternion SLERP (preserving single-axis multi-turn spins) to eliminate brief 1–2 frame bone-whip glitches on baked animations, and hardened scratch buffer initialization when reloading saved 3D rigs from IndexedDB.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">3D Motion Blur Depth, Opacity &amp; SSAO Preservation (`js/core/fishtool-engine.js`, `js/core/motion-blur-engine.js`)</span>
+                  <span class="changelog-item-desc">Fixed translucent artifacts on 3D meshes with motion blur via opaque offscreen FBO rendering, per-sample camera evaluation, and strided SSAO preservation.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Particle Engine &amp; Shatter Camera Zoom Scaling (`effects/loader.js`, `js/editor/editor-animation.js`)</span>
+                  <span class="changelog-item-desc">Bridged inverse camera scale to `cameraZoom` so particle and shatter effects scale accurately with 3D camera zoom.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">3D Material Texture Readiness Race Condition (`js/editor/editor-canvas.js`, `js/editor/editor-3d-materials.js`)</span>
+                  <span class="changelog-item-desc">Fixed readiness detection for `slot.surfaceMode === 'media'` and invalidated RAM preview cache once model `mtex_*` textures decode so reloaded 3D models always render with textures.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.6.13 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.6.13</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Nov 5, 2026</span>
               </div>
               <div class="welcome-changelog-item">

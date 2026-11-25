@@ -122,7 +122,8 @@
         openEffectsGalleryDrawer();
         return;
       }
-      const validSubviews = ['main', 'transform', 'graph', 'blend', 'effects', 'effects-gallery', 'camera', 'fill', 'volume', 'speed', 'shape', 'vector', 'text', 'beatmark'];
+      if (subviewName === 'edit-3d') subviewName = 'texture';
+      const validSubviews = ['main', 'transform', 'graph', 'blend', 'effects', 'effects-gallery', 'camera', 'edit-light', 'texture', 'fill', 'volume', 'speed', 'shape', 'vector', 'text', 'beatmark'];
       if (!validSubviews.includes(subviewName)) subviewName = 'main';
 
       // If drawer-effects-gallery is open when navigating to other subviews, close it
@@ -162,6 +163,8 @@
         'effects': document.getElementById('layer-drawer-effects-view'),
         'effects-gallery': inlineGallery,
         'camera': document.getElementById('layer-drawer-camera-view'),
+        'edit-light': document.getElementById('layer-drawer-edit-light-view'),
+        'texture': document.getElementById('layer-drawer-texture-view'),
         'fill': document.getElementById('layer-drawer-fill-view'),
         'volume': document.getElementById('layer-drawer-volume-view'),
         'speed': document.getElementById('layer-drawer-speed-view'),
@@ -246,6 +249,16 @@
         if (typeof syncFillControllerUI === 'function') {
           syncFillControllerUI();
         }
+      } else if (subviewName === 'edit-light') {
+        const curL = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+        if (typeof window.syncEditLightUI === 'function') {
+          window.syncEditLightUI(curL);
+        }
+      } else if (subviewName === 'texture' || subviewName === 'edit-3d') {
+        const curL = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+        if (typeof window.syncTexture3DUI === 'function') {
+          window.syncTexture3DUI(curL);
+        }
       } else if (subviewName === 'volume') {
         window.activeKeyframeProperty = 'volume';
         if (typeof syncVolumeControllerValues === 'function') {
@@ -313,6 +326,181 @@
     }
     window.switchLayerDrawerSubview = switchLayerDrawerSubview;
 
+    function syncLightLayerInspector(layer) {
+      const isLight = Boolean(layer && layer.type === 'light');
+      const lightType = isLight ? (layer.lightType || 'point') : null;
+      const btnEditLight = document.getElementById('btn-layer-edit-light');
+      const btnCameraSettings = document.getElementById('btn-layer-camera-settings');
+      const btnFill = document.getElementById('btn-layer-fill');
+      const btnBlend = document.getElementById('btn-layer-blend');
+      const btnEffects = document.getElementById('btn-layer-effects');
+      const btnBeatmark = document.getElementById('btn-layer-beatmark');
+      const btnTransform = document.getElementById('btn-layer-transform');
+      const btnEditGroup = document.getElementById('btn-layer-edit-group');
+      const btnEditShape = document.getElementById('btn-layer-edit-shape');
+      const btnEditVector = document.getElementById('btn-layer-edit-vector');
+      const btnEditText = document.getElementById('btn-layer-edit-text');
+
+      const isAdvance = Boolean(currentProjectState && currentProjectState.threeDEngine === 'advance');
+      if (btnEditLight) {
+        const showLight = Boolean(isLight && isAdvance);
+        btnEditLight.classList.toggle('is-hidden', !showLight);
+        btnEditLight.style.display = showLight ? 'inline-flex' : 'none';
+      }
+
+      if (isLight) {
+        if (btnFill) btnFill.style.display = 'inline-flex';
+        if (btnEffects) btnEffects.style.display = 'none';
+        if (btnCameraSettings) btnCameraSettings.style.display = 'none';
+        if (btnBeatmark) btnBeatmark.style.display = 'none';
+        if (btnBlend) btnBlend.style.display = 'none';
+        if (btnEditGroup) btnEditGroup.style.display = 'none';
+        if (btnEditShape) btnEditShape.style.display = 'none';
+        if (btnEditVector) btnEditVector.style.display = 'none';
+        if (btnEditText) btnEditText.style.display = 'none';
+
+        if (btnTransform) {
+          const isAmbient = (lightType === 'ambient');
+          btnTransform.disabled = isAmbient;
+          btnTransform.classList.toggle('is-disabled', isAmbient);
+          btnTransform.style.display = 'inline-flex';
+        }
+
+        const curSubview = window.currentDrawerSubview || currentDrawerSubview || 'main';
+        if (curSubview === 'edit-light' && typeof window.syncEditLightUI === 'function') {
+          window.syncEditLightUI(layer);
+        }
+        if (curSubview === 'effects' || curSubview === 'camera' || curSubview === 'beatmark' || curSubview === 'shape' || curSubview === 'vector' || curSubview === 'text' || (curSubview === 'transform' && lightType === 'ambient')) {
+          if (typeof window.switchLayerDrawerSubview === 'function') {
+            window.switchLayerDrawerSubview('main');
+          }
+        }
+      } else {
+        if (btnTransform) {
+          btnTransform.disabled = false;
+          btnTransform.classList.remove('is-disabled');
+        }
+      }
+    }
+    window.syncLightLayerInspector = syncLightLayerInspector;
+
+    function is3DMeshLayer(layer) {
+      if (!layer) return false;
+      const meshShapeTypes = ['3d_box', '3d_cone', '3d_cylinder', '3d_torus', '3d_pyramid', '3d_sphere', '3d_triangle', '3d_model'];
+      if (layer.type === 'shape' && meshShapeTypes.includes(layer.shapeType)) return true;
+      if (Array.isArray(layer.effects)) {
+        return layer.effects.some(f => f && !f.disabled && (
+          f.type === 'box_3d' || f.type === '3d_box' ||
+          f.type === 'cone_3d' || f.type === '3d_cone' ||
+          f.type === 'cylinder_3d' || f.type === '3d_cylinder' ||
+          f.type === 'torus_3d' || f.type === '3d_torus' ||
+          f.type === 'pyramid_3d' || f.type === '3d_pyramid' ||
+          f.type === 'sphere_3d' || f.type === '3d_sphere'
+        ));
+      }
+      return false;
+    }
+    window.is3DMeshLayer = is3DMeshLayer;
+
+    function syncEdit3DInspector(layer) {
+      const isAdvance = Boolean(window.currentProjectState && window.currentProjectState.threeDEngine === 'advance');
+      const isMesh = Boolean(layer && is3DMeshLayer(layer));
+      const showTexture3D = Boolean(isAdvance && isMesh);
+
+      const btnEdit3D = document.getElementById('btn-layer-edit-3d');
+      if (btnEdit3D) {
+        btnEdit3D.classList.add('is-hidden');
+        btnEdit3D.style.display = 'none';
+      }
+
+      const btnTexture = document.getElementById('btn-layer-texture');
+      if (btnTexture) {
+        btnTexture.classList.toggle('is-hidden', !showTexture3D);
+        btnTexture.style.display = showTexture3D ? 'inline-flex' : 'none';
+      }
+
+      const btnFill = document.getElementById('btn-layer-fill');
+
+      // 3D shapes & imported 3D models have no editable 2D shape parameters: hide "Edit Shape" for them
+      const is3DShapeLayer = Boolean(layer && layer.type === 'shape' && typeof layer.shapeType === 'string' && layer.shapeType.startsWith('3d_'));
+      const btnEditShape3D = document.getElementById('btn-layer-edit-shape');
+      if (btnEditShape3D && is3DShapeLayer) {
+        btnEditShape3D.classList.add('is-hidden');
+        btnEditShape3D.style.display = 'none';
+      } else if (btnEditShape3D && btnEditShape3D.classList.contains('is-hidden')) {
+        btnEditShape3D.classList.remove('is-hidden');
+        const isVector = Boolean(layer && layer.type === 'shape' && layer.shapeType === 'vector');
+        const canEditShape = Boolean(layer && !isVector && !is3DShapeLayer && (
+          layer.type === 'shape' ||
+          layer.type === 'image' ||
+          layer.type === 'video' ||
+          (layer.type === 'precomp' && !layer.collapseTransformations)
+        ));
+        if (canEditShape && btnEditShape3D.style.display === 'none') {
+          btnEditShape3D.style.display = 'inline-flex';
+        }
+      }
+      if (btnFill) {
+        if (showTexture3D) {
+          btnFill.classList.add('is-hidden');
+          btnFill.style.display = 'none';
+        } else if (layer && layer.type !== 'camera' && layer.type !== 'null' && layer.type !== 'audio') {
+          btnFill.classList.remove('is-hidden');
+          if (btnFill.style.display === 'none') btnFill.style.display = '';
+        }
+      }
+
+      const actionGrid = document.getElementById('layer-action-btn-grid');
+      if (actionGrid) {
+        const allBtns = Array.from(actionGrid.querySelectorAll('.layer-action-btn'));
+        allBtns.forEach(b => b.classList.remove('is-span-2', 'is-span-3', 'is-span-6'));
+        const visibleBtns = allBtns.filter(b => !b.classList.contains('is-hidden') && b.style.display !== 'none');
+        const count = visibleBtns.length;
+        actionGrid.classList.remove('is-solo-mode', 'is-2-items', 'is-3-items', 'is-4-items', 'is-5-items', 'is-6-items', 'is-7-items', 'is-8-items');
+        if (count === 1) {
+          actionGrid.classList.add('is-solo-mode');
+        } else if (count === 2) {
+          actionGrid.classList.add('is-2-items');
+        } else if (count === 3) {
+          actionGrid.classList.add('is-3-items');
+        } else if (count === 4) {
+          actionGrid.classList.add('is-4-items');
+          visibleBtns.forEach((b, i) => b.classList.add(i < 3 ? 'is-span-2' : 'is-span-6'));
+        } else if (count === 5) {
+          actionGrid.classList.add('is-5-items');
+          visibleBtns.forEach((b, i) => b.classList.add(i < 3 ? 'is-span-2' : 'is-span-3'));
+        } else if (count === 6) {
+          actionGrid.classList.add('is-6-items');
+        } else if (count === 7) {
+          actionGrid.classList.add('is-7-items');
+          visibleBtns.forEach((b, i) => b.classList.add(i < 6 ? 'is-span-2' : 'is-span-6'));
+        } else if (count >= 8) {
+          actionGrid.classList.add('is-8-items');
+          visibleBtns.forEach((b, i) => b.classList.add(i < 6 ? 'is-span-2' : 'is-span-3'));
+        }
+      }
+
+      const curSubview = window.currentDrawerSubview || currentDrawerSubview || 'main';
+      if (curSubview === 'texture' || curSubview === 'edit-3d') {
+        if (!showTexture3D) {
+          if (typeof window.switchLayerDrawerSubview === 'function') {
+            window.switchLayerDrawerSubview('main');
+          }
+        } else if (typeof window.syncTexture3DUI === 'function') {
+          window.syncTexture3DUI(layer);
+        }
+      } else if (curSubview === 'fill' && showTexture3D) {
+        if (typeof window.switchLayerDrawerSubview === 'function') {
+          window.switchLayerDrawerSubview('texture');
+        }
+      } else if (curSubview === 'shape' && is3DShapeLayer) {
+        if (typeof window.switchLayerDrawerSubview === 'function') {
+          window.switchLayerDrawerSubview('main');
+        }
+      }
+    }
+    window.syncEdit3DInspector = syncEdit3DInspector;
+
     function syncInspectorState() {
       if (typeof window._desktopSyncInspectorState === 'function') {
         return window._desktopSyncInspectorState();
@@ -327,10 +515,12 @@
       if (typeof window.updateCutBarRowState === 'function') {
         window.updateCutBarRowState();
       }
+      const currentLayer = window.selectedLayerId
+        ? ((window.currentProjectState && window.currentProjectState.layers) || []).find(l => l.id === window.selectedLayerId)
+        : null;
+      syncLightLayerInspector(hasActiveLayer ? currentLayer : null);
+      syncEdit3DInspector(hasActiveLayer ? currentLayer : null);
       if (hasActiveLayer) {
-        const currentLayer = window.selectedLayerId
-          ? ((window.currentProjectState && window.currentProjectState.layers) || []).find(l => l.id === window.selectedLayerId)
-          : null;
         if (typeof window.updateVolumeAndSpeedBtnState === 'function') {
           window.updateVolumeAndSpeedBtnState(currentLayer);
         }
@@ -526,8 +716,8 @@
       return { boxW, boxH, totalLen: dial._totalLen, cx, top };
     }
 
-    function updateRotateKnob(deg) {
-      updateDesktopRotateDials();
+    function updateRotateKnob(deg, effOverride = null) {
+      updateDesktopRotateDials(effOverride);
       const dial = document.getElementById('dial-transform-rotate');
       const knob = document.getElementById('knob-transform-rotate');
       const valRot = document.getElementById('val-rotate-deg');
@@ -612,15 +802,21 @@
       return l.rotZ !== undefined ? l.rotZ : (l.rotation || 0);
     }
 
-    function updateDesktopRotateDials() {
+    function updateDesktopRotateDials(effOverride = null) {
       if (!document.getElementById('dial-transform-rotate-z')
         && !document.getElementById('jog-rotate-z')
         && !document.getElementById('jog-rotate-x')
         && !document.getElementById('jog-rotate-y')) return;
       const info = (typeof getSelectedLayerAndBaseDims === 'function') ? getSelectedLayerAndBaseDims() : null;
       const l = info ? info.layer : null;
-      const is3D = !!(l && l.is3D && l.type !== 'adjustment');
-      updateRotateSliders(l, is3D);
+      const is3D = !!(l && (l.is3D || l.type === 'light') && l.type !== 'adjustment');
+      let src = effOverride || l;
+      if (!effOverride && l && !window.isTransformInteracting && typeof getLayerEffectivePropsAtTime === 'function') {
+        const pps = window.currentPixelsPerSecond || 80;
+        const curSec = (typeof window.currentSec === 'number') ? window.currentSec : (Math.max(0, -(window.timelinePanX || 0)) / pps);
+        src = getLayerEffectivePropsAtTime(l, curSec, null, null, !!(l.parentId)) || l;
+      }
+      updateRotateSliders(src, is3D);
       ['x', 'y', 'z'].forEach((axis) => {
         const dial = document.getElementById(`dial-transform-rotate-${axis}`);
         if (!dial) return;
@@ -628,7 +824,7 @@
         const valRot = document.getElementById(`val-rotate-deg-${axis}`);
         const valTurns = document.getElementById(`val-rotate-turns-${axis}`);
         const trailEl = document.getElementById(`rotate-trail-arc-${axis}`);
-        const deg = rotAxisVal(l, axis);
+        const deg = rotAxisVal(src, axis);
         dial.classList.toggle('is-disabled', !is3D && axis !== 'z');
         dial.setAttribute('aria-valuenow', String(Math.round(deg)));
 
@@ -742,6 +938,7 @@
         let targetL = null;
         let dialCenter = { x: 0, y: 0 };
         dial.addEventListener('pointerdown', (e) => {
+          if (e.target && e.target.closest('.rotate-center-badge')) return;
           if (e.button !== 0) return;
           if (dial.classList.contains('is-disabled')) return;
           const info = getSelectedLayerAndBaseDims();
@@ -768,9 +965,8 @@
           currentRot += delta;
           lastAngle = curAngle;
           let val = Math.round(currentRot);
-          const gridBtn = document.getElementById('editor-icon-grid');
-          const isGridOn = gridBtn && gridBtn.classList.contains('is-active');
-          if (isGridOn) {
+          const isSnapOn = window.isTimelineSnapEnabled !== false;
+          if (isSnapOn) {
             const snapAngles = [];
             for (let a = -720; a <= 720; a += 45) snapAngles.push(a);
             const sAngle = (window.findSnapTarget || findSnapTarget)(currentRot, snapAngles, 5);
@@ -934,7 +1130,9 @@
         layer.rotY = 0;
         layer.anchorZ = 0;
       }
-      const is3D = !!(layer && layer.is3D);
+      const isLight = Boolean(layer && layer.type === 'light');
+      const lightType = isLight ? (layer.lightType || 'point') : null;
+      const is3D = !!(layer && (layer.is3D || isLight));
       const pps = window.currentPixelsPerSecond || 80;
       const isParented = !!(layer && layer.parentId);
       const curSec = (typeof window.currentSec === 'number') ? window.currentSec : (Math.max(0, -(window.timelinePanX || 0)) / pps);
@@ -1034,7 +1232,7 @@
         }
         return false;
       });
-      const is3DScale = has3DFx;
+      const is3DScale = has3DFx || !!(layer && (layer.shapeType === '3d_box' || (layer.is3D && layer.type === 'shape')));
       const defaultZ = Math.round(Math.min(Math.abs(curScaleW), Math.abs(curScaleH)));
       if (is3DScale && layer.scaleZ === undefined) {
         layer.scaleZ = defaultZ;
@@ -1080,7 +1278,7 @@
       } else {
         curRot = eff.rotZ !== undefined ? eff.rotZ : (layer.rotZ !== undefined ? layer.rotZ : (layer.rotation !== undefined ? layer.rotation : 0));
       }
-      updateRotateKnob(curRot);
+      updateRotateKnob(curRot, eff);
 
       // Sync axis switch UI button states
       const rotateAxisSwitch = document.getElementById('rotate-axis-switch');
@@ -1181,6 +1379,63 @@
           exprTextarea.value = (exprs[activeTool] || '');
         }
       }
+
+      // Enforce tool restrictions for light layers
+      const toolBtns = document.querySelectorAll('.transform-tools-col .transform-tool-btn');
+      let disableMove = false;
+      let disableRotate = false;
+      let disableScale = false;
+      let disableSkew = false;
+
+      if (isLight) {
+        if (lightType === 'point') {
+          disableMove = false;
+          disableRotate = false;
+          disableScale = true;
+          disableSkew = true;
+        } else if (lightType === 'sun') {
+          disableMove = true;
+          disableRotate = false;
+          disableScale = true;
+          disableSkew = true;
+        } else if (lightType === 'ambient') {
+          disableMove = true;
+          disableRotate = true;
+          disableScale = true;
+          disableSkew = true;
+        }
+      }
+
+      toolBtns.forEach(btn => {
+        const tool = btn.dataset.tool;
+        let isDis = false;
+        if (tool === 'move') isDis = disableMove;
+        else if (tool === 'rotate') isDis = disableRotate;
+        else if (tool === 'scale') isDis = disableScale;
+        else if (tool === 'skew') isDis = disableSkew;
+        btn.disabled = isDis;
+        btn.classList.toggle('is-disabled', isDis);
+      });
+
+      let currentTool = window.activeTransformTool || 'move';
+      let isCurrentToolDisabled = false;
+      if (currentTool === 'move' && disableMove) isCurrentToolDisabled = true;
+      else if (currentTool === 'rotate' && disableRotate) isCurrentToolDisabled = true;
+      else if (currentTool === 'scale' && disableScale) isCurrentToolDisabled = true;
+      else if (currentTool === 'skew' && disableSkew) isCurrentToolDisabled = true;
+
+      if (isCurrentToolDisabled) {
+        let fallbackTool = null;
+        if (!disableRotate) fallbackTool = 'rotate';
+        else if (!disableMove) fallbackTool = 'move';
+        if (fallbackTool) {
+          window.activeTransformTool = fallbackTool;
+          toolBtns.forEach(b => b.classList.toggle('is-active', b.dataset.tool === fallbackTool));
+          document.querySelectorAll('.transform-pane').forEach(pane => {
+            pane.classList.toggle('is-active', pane.id === `pane-transform-${fallbackTool}`);
+          });
+        }
+      }
     }
     window.syncTransformControllerValues = syncTransformControllerValues;
 
@@ -1209,7 +1464,7 @@
 
       el.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
-        if (e.target && e.target.closest('.effects-param-pill-val, .shape-param-pill-val, input, select')) return;
+        if (e.target && e.target.closest('.effects-param-pill-val, .shape-param-pill-val, .rotate-readout, input, select')) return;
         if (callbacks.onStart && callbacks.onStart(e) === false) return;
         isDragging = true;
         window.isTransformInteracting = true;
@@ -1272,7 +1527,7 @@
       let isWheeling = false;
       let wheelTotalDelta = 0;
       el.addEventListener('wheel', (e) => {
-        if (e.target && e.target.closest('.effects-param-pill-val, .shape-param-pill-val, input, select')) return;
+        if (e.target && e.target.closest('.effects-param-pill-val, .shape-param-pill-val, .rotate-readout, input, select')) return;
         e.preventDefault();
         
         if (!isWheeling) {
@@ -1339,6 +1594,7 @@
       if (btnTransform) {
         btnTransform.addEventListener('click', (e) => {
           e.stopPropagation();
+          if (btnTransform.disabled || btnTransform.classList.contains('is-disabled')) return;
           switchLayerDrawerSubview('transform');
         });
       }
@@ -1608,6 +1864,7 @@
       toolBtns.forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
+          if (btn.disabled || btn.classList.contains('is-disabled')) return;
           const tool = btn.dataset.tool;
           if (!tool) return;
 
@@ -1778,13 +2035,12 @@
             let newAx = initAnchor.x + locX;
             let newAy = initAnchor.y + locY;
 
-            // Snap to Grid when Grid Overlay is active
-            const gridBtn = document.getElementById('editor-icon-grid');
-            const isGridOn = gridBtn && gridBtn.classList.contains('is-active');
+            // Snap when Snapping is active
+            const isSnapOn = window.isTimelineSnapEnabled !== false;
             let snapGuideX = null;
             let snapGuideY = null;
 
-            if (isGridOn) {
+            if (isSnapOn) {
               const targetsX = [0, bW * 0.25, bW * 0.5, bW * 0.75, bW];
               const targetsY = [0, bH * 0.25, bH * 0.5, bH * 0.75, bH];
               const tolX = 16;
@@ -1845,13 +2101,12 @@
           const halfW = Math.abs(curScaleW) / 2;
           const halfH = Math.abs(curScaleH) / 2;
 
-          // Snap to Grid when Grid Overlay is active
-          const gridBtn = document.getElementById('editor-icon-grid');
-          const isGridOn = gridBtn && gridBtn.classList.contains('is-active');
+          // Snap when Snapping is active
+          const isSnapOn = window.isTimelineSnapEnabled !== false;
           let snapGuideX = null;
           let snapGuideY = null;
 
-          if (isGridOn) {
+          if (isSnapOn) {
             const targetsX = [0, bW * 0.25, bW * 0.5, bW * 0.75, bW];
             const targetsY = [0, bH * 0.25, bH * 0.5, bH * 0.75, bH];
             const tolX = 16;
@@ -2048,10 +2303,9 @@
 
           let val = Math.round(currentRot);
 
-          // Snap to standard angles (multiples of 45 deg) when grid is on
-          const gridBtn = document.getElementById('editor-icon-grid');
-          const isGridOn = gridBtn && gridBtn.classList.contains('is-active');
-          if (isGridOn) {
+          // Snap to standard angles (multiples of 45 deg) when snapping is active
+          const isSnapOn = window.isTimelineSnapEnabled !== false;
+          if (isSnapOn) {
             const snapAngles = [];
             for (let a = -720; a <= 720; a += 45) snapAngles.push(a);
             const sAngle = (window.findSnapTarget || findSnapTarget)(currentRot, snapAngles, 5);
@@ -2143,10 +2397,9 @@
           if (!targetL || targetL.type === 'adjustment' || !targetL.is3D) return;
           let newZ = z + deltaY * 2;
 
-          // Snap to Grid when Grid Overlay is active
-          const gridBtn = document.getElementById('editor-icon-grid');
-          const isGridOn = gridBtn && gridBtn.classList.contains('is-active');
-          if (isGridOn) {
+          // Snap when Snapping is active
+          const isSnapOn = window.isTimelineSnapEnabled !== false;
+          if (isSnapOn) {
             const snapTargets = [-1000, -750, -500, -250, 0, 250, 500, 750, 980];
             const sVal = (window.findSnapTarget || findSnapTarget)(newZ, snapTargets, 18);
             if (sVal !== null) newZ = sVal;
@@ -2202,13 +2455,12 @@
           let newW = Math.max(1, w - deltaX * 2);
           let newH = ratio !== 0 ? newW / ratio : newW;
 
-          // Snap to Grid when Grid Overlay is active
-          const gridBtn = document.getElementById('editor-icon-grid');
-          const isGridOn = gridBtn && gridBtn.classList.contains('is-active');
+          // Snap when Snapping is active
+          const isSnapOn = window.isTimelineSnapEnabled !== false;
           let snapGuideX = null;
           let snapGuideY = null;
 
-          if (isGridOn) {
+          if (isSnapOn) {
             const curPosX = targetL.posX !== undefined ? targetL.posX : baseW / 2;
             const curPosY = targetL.posY !== undefined ? targetL.posY : baseH / 2;
             const targetsX = [0, baseW * 0.25, baseW * 0.5, baseW * 0.75, baseW];
@@ -2311,12 +2563,11 @@
           if (!targetL) return;
           let newW = Math.max(1, w - deltaX * 2);
 
-          // Snap to Grid when Grid Overlay is active
-          const gridBtn = document.getElementById('editor-icon-grid');
-          const isGridOn = gridBtn && gridBtn.classList.contains('is-active');
+          // Snap when Snapping is active
+          const isSnapOn = window.isTimelineSnapEnabled !== false;
           let snapGuideX = null;
 
-          if (isGridOn) {
+          if (isSnapOn) {
             const curPosX = targetL.posX !== undefined ? targetL.posX : baseW / 2;
             const targetsX = [0, baseW * 0.25, baseW * 0.5, baseW * 0.75, baseW];
             const tol = 16;
@@ -2386,12 +2637,11 @@
           if (!targetL) return;
           let newH = Math.max(1, h - deltaX * 2);
 
-          // Snap to Grid when Grid Overlay is active
-          const gridBtn = document.getElementById('editor-icon-grid');
-          const isGridOn = gridBtn && gridBtn.classList.contains('is-active');
+          // Snap when Snapping is active
+          const isSnapOn = window.isTimelineSnapEnabled !== false;
           let snapGuideY = null;
 
-          if (isGridOn) {
+          if (isSnapOn) {
             const curPosY = targetL.posY !== undefined ? targetL.posY : baseH / 2;
             const targetsY = [0, baseH * 0.25, baseH * 0.5, baseH * 0.75, baseH];
             const tol = 16;
@@ -2516,8 +2766,8 @@
           if (l && l.expressions && l.expressions.skew) return;
           syncLayerWithEffectiveProps(l);
           invalidatePreviewCacheForLayer(l);
-          const gridBtnX = document.getElementById('editor-icon-grid');
-          skewXInit = { skewX: l.skewX || 0, targetL: l, valEl: document.getElementById('val-skew-x'), gridOn: !!(gridBtnX && gridBtnX.classList.contains('is-active')), pendingDelta: 0, rafId: 0 };
+          const isSnapOnX = window.isTimelineSnapEnabled !== false;
+          skewXInit = { skewX: l.skewX || 0, targetL: l, valEl: document.getElementById('val-skew-x'), gridOn: isSnapOnX, pendingDelta: 0, rafId: 0 };
         },
         onMove: (deltaX) => {
           if (!skewXInit.targetL) return;
@@ -2574,8 +2824,8 @@
           if (l && l.expressions && l.expressions.skew) return;
           syncLayerWithEffectiveProps(l);
           invalidatePreviewCacheForLayer(l);
-          const gridBtnY = document.getElementById('editor-icon-grid');
-          skewYInit = { skewY: l.skewY || 0, targetL: l, valEl: document.getElementById('val-skew-y'), gridOn: !!(gridBtnY && gridBtnY.classList.contains('is-active')), pendingDelta: 0, rafId: 0 };
+          const isSnapOnY = window.isTimelineSnapEnabled !== false;
+          skewYInit = { skewY: l.skewY || 0, targetL: l, valEl: document.getElementById('val-skew-y'), gridOn: isSnapOnY, pendingDelta: 0, rafId: 0 };
         },
         onMove: (deltaX) => {
           if (!skewYInit.targetL) return;

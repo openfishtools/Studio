@@ -129,7 +129,7 @@ textarea,
   --shadow-panel: none;
   --shadow-button-glow: none;
   --shadow-active: none;
-  --shadow-popover: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.35)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2));
+  --shadow-popover: none;
 
   /* --- Dedicated Keyframe Theme Tokens (100% Theme-Native & High-Contrast) --- */
   --kf-default-bg: #151a0f;            /* Dark surface core */

@@ -563,7 +563,13 @@ i.fticon.effects-card-caret::before {
 }
 
 .effects-card:not(.is-expanded) .effects-card-controls {
-  display: none !important;
+  max-height: 0 !important;
+  opacity: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
+  border-top: none !important;
 }
 
 .effects-card-eye-btn,
@@ -705,6 +711,11 @@ i.fticon.effects-card-caret::before {
   flex-direction: column;
   gap: 6px;
   padding: 8px 10px;
+  max-height: 2500px;
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease, padding 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
 .effects-control-row {

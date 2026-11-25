@@ -381,10 +381,12 @@
           const cdrZ = Math.abs((c0.rotZ !== undefined ? c0.rotZ : (c0.rotation || 0)) - (c1.rotZ !== undefined ? c1.rotZ : (c1.rotation || 0)));
           const cdLens = Math.abs((c0.cameraLens || 50) - (c1.cameraLens || 50));
           const cdZoom = Math.abs((c0.cameraZoom || 100) - (c1.cameraZoom || 100));
+          const cdScaleW = (c0.scaleW !== undefined && c1.scaleW !== undefined) ? Math.abs(c0.scaleW - c1.scaleW) : 0;
+          const cdScaleH = (c0.scaleH !== undefined && c1.scaleH !== undefined) ? Math.abs(c0.scaleH - c1.scaleH) : 0;
           const cdTgtX = Math.abs((c0.cameraTargetX !== undefined ? c0.cameraTargetX : (c0.targetX || 0)) - (c1.cameraTargetX !== undefined ? c1.cameraTargetX : (c1.targetX || 0)));
           const cdTgtY = Math.abs((c0.cameraTargetY !== undefined ? c0.cameraTargetY : (c0.targetY || 0)) - (c1.cameraTargetY !== undefined ? c1.cameraTargetY : (c1.targetY || 0)));
           const cdTgtZ = Math.abs((c0.cameraTargetZ !== undefined ? c0.cameraTargetZ : (c0.targetZ || 0)) - (c1.cameraTargetZ !== undefined ? c1.cameraTargetZ : (c1.targetZ || 0)));
-          if (cdx > 0.04 || cdy > 0.04 || cdz > 0.04 || cdrX > 0.02 || cdrY > 0.02 || cdrZ > 0.02 || cdLens > 0.05 || cdZoom > 0.05 || cdTgtX > 0.04 || cdTgtY > 0.04 || cdTgtZ > 0.04) {
+          if (cdx > 0.04 || cdy > 0.04 || cdz > 0.04 || cdrX > 0.02 || cdrY > 0.02 || cdrZ > 0.02 || cdLens > 0.05 || cdZoom > 0.05 || cdScaleW > 0.05 || cdScaleH > 0.05 || cdTgtX > 0.04 || cdTgtY > 0.04 || cdTgtZ > 0.04) {
             return true; // Camera motion directly induces motion blur on 3D layer!
           }
         }
@@ -678,8 +680,12 @@
       const pos = Math.hypot((c1.posX || 0) - (c0.posX || 0), (c1.posY || 0) - (c0.posY || 0)) * bufferScale;
       const dz = Math.abs((c1.posZ || 0) - (c0.posZ || 0)) * bufferScale * 0.5;
       const rad = (Math.abs((c1.rotX || 0) - (c0.rotX || 0)) + Math.abs((c1.rotY || 0) - (c0.rotY || 0)) + Math.abs(rz(c1) - rz(c0))) * Math.PI / 180;
+      const camScaleDiff = (c0.scaleW && c1.scaleW)
+        ? Math.max(Math.abs(1 - (c0.scaleW / Math.max(1, Math.abs(c1.scaleW)))), Math.abs(1 - ((c0.scaleH || c0.scaleW) / Math.max(1, Math.abs(c1.scaleH || c1.scaleW))))) * sizePx * 0.5
+        : 0;
       const zoom = Math.abs(((c1.cameraZoom || 100) - (c0.cameraZoom || 100)) / 100) * sizePx * 0.5
-                 + Math.abs(((c1.cameraLens || 50) - (c0.cameraLens || 50)) / 50) * sizePx * 0.5;
+                 + Math.abs(((c1.cameraLens || 50) - (c0.cameraLens || 50)) / 50) * sizePx * 0.5
+                 + camScaleDiff;
       return (pos + dz + rad * sizePx * 0.8 + zoom) * 1.5;
     }
 

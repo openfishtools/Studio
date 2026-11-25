@@ -528,6 +528,89 @@
     window.addSolidLayer = addSolidLayer;
 
     // ======================================================================
+    // LIGHT LAYER CONTROLLER (POINT, SUN, AMBIENT)
+    // ======================================================================
+    function addLightLayer(lightType = 'point', options = {}) {
+      currentProjectState.layers = currentProjectState.layers || [];
+      const pps = window.currentPixelsPerSecond || 80;
+      const timing = getSelectedLayerTiming();
+      const isTargetSec = options && typeof options.targetSec === 'number' && isFinite(options.targetSec);
+      let currentSec = isTargetSec ? Math.max(0, options.targetSec) : (Math.abs(window.timelinePanX || 0) / pps);
+      if (options && typeof options.startSec === 'number' && isFinite(options.startSec)) {
+        currentSec = Math.max(0, options.startSec);
+      } else if (!isTargetSec && timing.startSec !== null && timing.startSec !== undefined) {
+        currentSec = Math.max(0, timing.startSec);
+      }
+      let defaultDur = currentProjectState.defaultDuration || 5;
+      if (options && typeof options.durationSec === 'number' && isFinite(options.durationSec)) {
+        defaultDur = Math.max(0.1, options.durationSec);
+      } else if (timing.durationSec !== null && timing.durationSec !== undefined) {
+        defaultDur = Math.max(0.1, timing.durationSec);
+      }
+      const widthPx = Math.max(80, Math.round(defaultDur * pps));
+      const startPx = Math.round(currentSec * pps);
+
+      const aspect = currentProjectState.aspectRatio || '16:9';
+      const res = currentProjectState.resolution || '1080p';
+      const baseDims = window.getProjectDimensions(res, aspect);
+      const baseW = (currentProjectState.width && currentProjectState.width > 0) ? currentProjectState.width : baseDims[0];
+      const baseH = (currentProjectState.height && currentProjectState.height > 0) ? currentProjectState.height : baseDims[1];
+
+      const validTypes = ['point', 'sun', 'ambient'];
+      const lType = validTypes.includes(lightType) ? lightType : 'point';
+
+      const typeLabels = {
+        point: 'Point Light',
+        sun: 'Sun Light',
+        ambient: 'Ambient Light'
+      };
+      const count = currentProjectState.layers.filter(l => l && l.type === 'light' && l.lightType === lType).length + 1;
+      const layerName = `${typeLabels[lType]} ${count}`;
+
+      const newLayer = {
+        id: 'layer_light_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
+        name: layerName,
+        type: 'light',
+        lightType: lType,
+        color: '#ffffff',
+        fillColor: '#ffffff',
+        fillType: 'color',
+        intensity: 100,
+        radius: 600,
+        acceptsLights: false,
+        startPx: startPx,
+        startSec: currentSec,
+        durationSec: defaultDur,
+        widthPx: widthPx,
+        scaleW: 120,
+        scaleH: 120,
+        opacity: 1.0,
+        is3D: true,
+        rotX: lType === 'sun' ? -30 : 0,
+        rotY: lType === 'sun' ? 45 : 0,
+        rotZ: 0,
+        rotation: 0,
+        posX: Math.round(baseW / 2),
+        posY: Math.round(baseH / 2),
+        posZ: lType === 'point' ? 300 : 0
+      };
+
+      insertLayerIntoCurrentProject(newLayer);
+      if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(newLayer);
+      saveCurrentProjectLayers();
+      renderTimelineLayers();
+      redrawComposition();
+
+      if (window.Drawer && window.Drawer.isOpen('timeline-add-drawer')) {
+        window.Drawer.close(false);
+      }
+
+      selectTimelineLayer(newLayer.id, false);
+      return newLayer;
+    }
+    window.addLightLayer = addLightLayer;
+
+    // ======================================================================
     // TEXT LAYER CONTROLLER & FISHTOOL TEXT ENGINE INTEGRATION
     // ======================================================================
     function addTextLayer(presetId = 'default', options = {}) {
@@ -1394,6 +1477,41 @@
         defaultName = 'Hati';
         shapeProps.sizeX = 300;
         shapeProps.sizeY = 300;
+      } else if (shapeType === '3d_box') {
+        defaultName = '3D Box';
+        shapeProps.sizeX = 300;
+        shapeProps.sizeY = 300;
+        shapeProps.depth = 300;
+      } else if (shapeType === '3d_sphere') {
+        defaultName = '3D Sphere';
+        shapeProps.sizeX = 300;
+        shapeProps.sizeY = 300;
+        shapeProps.depth = 300;
+      } else if (shapeType === '3d_pyramid') {
+        defaultName = '3D Pyramid';
+        shapeProps.sizeX = 300;
+        shapeProps.sizeY = 300;
+        shapeProps.depth = 300;
+      } else if (shapeType === '3d_cone') {
+        defaultName = '3D Cone';
+        shapeProps.sizeX = 300;
+        shapeProps.sizeY = 300;
+        shapeProps.depth = 300;
+      } else if (shapeType === '3d_cylinder') {
+        defaultName = '3D Cylinder';
+        shapeProps.sizeX = 300;
+        shapeProps.sizeY = 300;
+        shapeProps.depth = 300;
+      } else if (shapeType === '3d_torus') {
+        defaultName = '3D Torus';
+        shapeProps.sizeX = 300;
+        shapeProps.sizeY = 300;
+        shapeProps.depth = 150;
+      } else if (shapeType === '3d_model') {
+        defaultName = (options && options.name) ? String(options.name) : '3D Model';
+        shapeProps.sizeX = 480;
+        shapeProps.sizeY = 480;
+        shapeProps.depth = 480;
       }
 
       if (shapeType === 'vector') {
@@ -1407,6 +1525,7 @@
         if (!Array.isArray(shapeProps.points)) shapeProps.points = [];
       }
 
+      const is3DNativeShape = (typeof shapeType === 'string' && (shapeType === '3d_box' || shapeType.startsWith('3d_')));
       const shapeCount = currentProjectState.layers.filter(l => l.type === 'shape' && l.shapeType === shapeType).length + 1;
       const newLayer = {
         id: 'layer_shape_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
@@ -1428,6 +1547,12 @@
         posZ: 0,
         scaleW: shapeProps.sizeX,
         scaleH: shapeProps.sizeY,
+        scaleZ: is3DNativeShape ? (shapeProps.depth || 300) : undefined,
+        depth: is3DNativeShape ? (shapeProps.depth || 300) : undefined,
+        is3D: is3DNativeShape,
+        anchorX: 0,
+        anchorY: 0,
+        anchorZ: 0,
         normW: Number((shapeProps.sizeX / baseW).toFixed(4)),
         normH: Number((shapeProps.sizeY / baseH).toFixed(4)),
         normX: Number(((Math.round(baseW / 2) - shapeProps.sizeX / 2) / baseW).toFixed(4)),
@@ -1443,7 +1568,9 @@
         rotation: 0,
         opacity: 1.0,
         blendMode: 'normal',
-        effects: []
+        effects: [],
+        modelMediaId: (options && options.modelMediaId) ? options.modelMediaId : undefined,
+        materialSlots: (options && Array.isArray(options.materialSlots)) ? options.materialSlots : undefined
       };
 
       if (shapeType === 'vector' && typeof window.syncVectorLayerBounds === 'function') {
@@ -4167,6 +4294,43 @@
         });
       }
 
+      // 5c3. Add Light Layer Buttons in Add Layer Drawer
+      const btnAddPointLight = document.getElementById('btn-add-point-light');
+      if (btnAddPointLight) {
+        if (typeof makeDraggableAsset === 'function') {
+          makeDraggableAsset(btnAddPointLight, { type: 'control', controlType: 'point-light', name: 'Point Light' });
+        }
+        btnAddPointLight.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          addLightLayer('point');
+        });
+      }
+
+      const btnAddSunLight = document.getElementById('btn-add-sun-light');
+      if (btnAddSunLight) {
+        if (typeof makeDraggableAsset === 'function') {
+          makeDraggableAsset(btnAddSunLight, { type: 'control', controlType: 'sun-light', name: 'Sun Light' });
+        }
+        btnAddSunLight.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          addLightLayer('sun');
+        });
+      }
+
+      const btnAddAmbientLight = document.getElementById('btn-add-ambient-light');
+      if (btnAddAmbientLight) {
+        if (typeof makeDraggableAsset === 'function') {
+          makeDraggableAsset(btnAddAmbientLight, { type: 'control', controlType: 'ambient-light', name: 'Ambient Light' });
+        }
+        btnAddAmbientLight.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          addLightLayer('ambient');
+        });
+      }
+
       // 5d. Add Shape Layer Buttons in Add Layer Drawer
       function syncShapeButtonsUI() {
         if (typeof window === 'undefined') return;
@@ -4200,11 +4364,85 @@
           }
         });
 
+        // Sub-category switch: 2D Shape vs 3D Shape
+        const shapeSubcatSwitch = document.getElementById('shape-subcategories-switch');
+        if (shapeSubcatSwitch && !shapeSubcatSwitch._wired) {
+          shapeSubcatSwitch._wired = true;
+          shapeSubcatSwitch.addEventListener('click', (e) => {
+            const item = e.target.closest('.segmented-switch-item');
+            if (!item) return;
+            const cat = item.dataset.shapeCat || '2d';
+            shapeSubcatSwitch.querySelectorAll('.segmented-switch-item').forEach(btn => {
+              const isActive = (btn === item);
+              btn.classList.toggle('is-active', isActive);
+              btn.setAttribute('aria-selected', String(isActive));
+            });
+            const grid2D = document.getElementById('add-layer-shape-grid');
+            const grid3D = document.getElementById('shape-grid-3d');
+            if (grid2D) grid2D.style.display = (cat === '2d') ? '' : 'none';
+            if (grid3D) grid3D.style.display = (cat === '3d') ? '' : 'none';
+            // Always reveal the first row: reset the panel scroll when switching 2D/3D
+            const shapePanelEl = document.getElementById('add-layer-shape-panel');
+            if (shapePanelEl) shapePanelEl.scrollTop = 0;
+            if (cat === '3d') {
+              const shapes3DIds = ['3d_box', '3d_sphere', '3d_pyramid', '3d_cone', '3d_cylinder', '3d_torus'];
+              shapes3DIds.forEach(id => {
+                const b = document.getElementById('btn-add-shape-' + id.replace(/_/g, '-')) || document.getElementById('btn-add-shape-' + id);
+                const c = b ? b.querySelector('.shape-3d-thumb-canvas') : null;
+                if (c && window.Fish3DEngine && typeof window.Fish3DEngine.renderShapeThumbnail === 'function') {
+                  window.Fish3DEngine.renderShapeThumbnail(c, id);
+                }
+              });
+            }
+          });
+        }
+
+        // 3D Shape Buttons in 3D Shape Grid (hardware canvas rendered thumbnails with turntable hover)
+        const shapes3DList = [
+          { id: '3d_box', name: '3D Box' },
+          { id: '3d_sphere', name: '3D Sphere' },
+          { id: '3d_pyramid', name: '3D Pyramid' },
+          { id: '3d_cone', name: '3D Cone' },
+          { id: '3d_cylinder', name: '3D Cylinder' },
+          { id: '3d_torus', name: '3D Torus' }
+        ];
+
+        shapes3DList.forEach(s3 => {
+          const btn = document.getElementById('btn-add-shape-' + s3.id.replace(/_/g, '-')) ||
+                      document.getElementById('btn-add-shape-' + s3.id);
+          if (!btn) return;
+          const thumbCanvas = btn.querySelector('.shape-3d-thumb-canvas');
+          if (thumbCanvas && window.Fish3DEngine) {
+            if (typeof window.Fish3DEngine.renderShapeThumbnail === 'function') {
+              window.Fish3DEngine.renderShapeThumbnail(thumbCanvas, s3.id);
+            }
+            if (!btn._turntableWired && typeof window.Fish3DEngine.bindTurntableHover === 'function') {
+              btn._turntableWired = true;
+              window.Fish3DEngine.bindTurntableHover(btn, thumbCanvas, s3.id);
+            }
+          }
+          if (!btn._shapeWired) {
+            btn._shapeWired = true;
+            makeDraggableAsset(btn, { type: 'shape', shapeType: s3.id, name: s3.name });
+            btn.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              addShapeLayer(s3.id);
+            });
+          }
+        });
+
         if (registry && typeof registry.getAll === 'function') {
           const allShapes = registry.getAll();
           allShapes.forEach(s => {
+            if (s.id.startsWith('3d_') || s.category === '3d') return; // Handled explicitly above with canvas thumbnails
             const alias = (s.aliases && s.aliases[0]) ? s.aliases[0] : s.id;
-            const btn = document.getElementById('btn-add-shape-' + alias) || document.getElementById('btn-add-shape-' + s.id);
+            const hyphenId = s.id.replace(/_/g, '-');
+            const aliasHyphen = alias.replace(/_/g, '-');
+            const btn = document.getElementById('btn-add-shape-' + alias) ||
+                        document.getElementById('btn-add-shape-' + s.id) ||
+                        document.getElementById('btn-add-shape-' + hyphenId) ||
+                        document.getElementById('btn-add-shape-' + aliasHyphen);
             if (btn) {
               btn.innerHTML = registry.renderSvg(s.id);
               if (!btn._shapeWired) {
@@ -5564,4 +5802,211 @@
         });
       }
     })();
-})();
+
+    // ======================================================================
+    // 8. EDIT LIGHT CONTROLLER & SUBVIEW UI
+    // ======================================================================
+    function syncEditLightUI(layer) {
+      if (!layer || layer.type !== 'light') return;
+      const isAdvance = Boolean(currentProjectState && currentProjectState.threeDEngine === 'advance');
+      const classicNotice = document.getElementById('light-classic-notice');
+      const controlsContainer = document.getElementById('light-controls-container');
+      if (classicNotice) classicNotice.classList.toggle('is-hidden', isAdvance);
+      if (controlsContainer) controlsContainer.classList.toggle('is-hidden', !isAdvance);
+      if (!isAdvance) return;
+
+      const intensity = typeof layer.intensity === 'number' ? layer.intensity : 100;
+      const radius = typeof layer.radius === 'number' ? layer.radius : 600;
+
+      const valIntensity = document.getElementById('val-light-intensity');
+      if (valIntensity) valIntensity.textContent = `${Math.round(intensity)}%`;
+      const jogIntensity = document.getElementById('jog-light-intensity');
+      if (jogIntensity && typeof updateJogScrubberVisuals === 'function') {
+        updateJogScrubberVisuals(jogIntensity, intensity, 0, 500);
+      }
+
+      const rowRadius = document.getElementById('row-light-radius');
+      if (rowRadius) {
+        rowRadius.style.display = (layer.lightType === 'point') ? '' : 'none';
+      }
+      const valRadius = document.getElementById('val-light-radius');
+      if (valRadius) valRadius.textContent = `${Math.round(radius)} px`;
+      const jogRadius = document.getElementById('jog-light-radius');
+      if (jogRadius && typeof updateJogScrubberVisuals === 'function') {
+        updateJogScrubberVisuals(jogRadius, radius, 10, 5000);
+      }
+    }
+    window.syncEditLightUI = syncEditLightUI;
+
+    function syncAddLightButtons() {
+      const isAdvance = Boolean(currentProjectState && currentProjectState.threeDEngine === 'advance');
+      ['btn-add-point-light', 'btn-add-sun-light', 'btn-add-ambient-light'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+          btn.classList.toggle('is-hidden', !isAdvance);
+        }
+      });
+      const controlGrid = document.getElementById('add-layer-control-grid');
+      if (controlGrid) {
+        controlGrid.classList.toggle('has-lights', isAdvance);
+      }
+    }
+    window.syncAddLightButtons = syncAddLightButtons;
+
+    (function initEditLightController() {
+      // 1. Open Edit Light view from Layer Action Button
+      const btnLayerEditLight = document.getElementById('btn-layer-edit-light');
+      if (btnLayerEditLight) {
+        btnLayerEditLight.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (layer && layer.type === 'light') {
+            syncEditLightUI(layer);
+            if (typeof switchLayerDrawerSubview === 'function') {
+              switchLayerDrawerSubview('edit-light');
+            }
+          }
+        });
+      }
+
+      // 2. Back button: Edit Light -> Main Layer Actions
+      const btnEditLightBack = document.getElementById('btn-edit-light-back');
+      if (btnEditLightBack) {
+        btnEditLightBack.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (typeof switchLayerDrawerSubview === 'function') {
+            switchLayerDrawerSubview('main');
+          }
+        });
+      }
+
+      // 3. Intensity Scrubber (0% - 500%)
+      let initIntensityVal = 100;
+      const jogIntensity = document.getElementById('jog-light-intensity');
+      if (jogIntensity && typeof bindJogWheel === 'function') {
+        bindJogWheel(jogIntensity, {
+          onStart: () => {
+            const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+            if (!layer || layer.type !== 'light') return;
+            initIntensityVal = typeof layer.intensity === 'number' ? layer.intensity : 100;
+          },
+          onMove: (delta) => {
+            const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+            if (!layer || layer.type !== 'light') return;
+            const newIntensity = Math.max(0, Math.min(500, Math.round(initIntensityVal - delta * 0.5)));
+            layer.intensity = newIntensity;
+            const valEl = document.getElementById('val-light-intensity');
+            if (valEl) valEl.textContent = `${newIntensity}%`;
+            if (typeof updateJogScrubberVisuals === 'function') {
+              updateJogScrubberVisuals(jogIntensity, newIntensity, 0, 500);
+            }
+            if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
+            redrawComposition();
+          },
+          onEnd: () => {
+            const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+            if (layer && layer.type === 'light') {
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+              if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+              if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
+              redrawComposition();
+            }
+          }
+        });
+      }
+
+      // Badge click for Intensity
+      const valIntensity = document.getElementById('val-light-intensity');
+      if (valIntensity) {
+        valIntensity.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'light') return;
+          if (typeof window.openValueInputPopover === 'function') {
+            window.openValueInputPopover(valIntensity, {
+              initialValue: typeof layer.intensity === 'number' ? layer.intensity : 100,
+              min: 0,
+              max: 500,
+              step: 1,
+              unit: '%',
+              title: 'Intensity',
+              onApply: (newVal) => {
+                layer.intensity = Math.max(0, Math.min(500, Number(newVal) || 0));
+                syncEditLightUI(layer);
+                if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+                if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+                if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
+                redrawComposition();
+              }
+            });
+          }
+        });
+      }
+
+      // 4. Radius Scrubber (10px - 5000px, Point Light only)
+      let initRadiusVal = 600;
+      const jogRadius = document.getElementById('jog-light-radius');
+      if (jogRadius && typeof bindJogWheel === 'function') {
+        bindJogWheel(jogRadius, {
+          onStart: () => {
+            const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+            if (!layer || layer.type !== 'light') return;
+            initRadiusVal = typeof layer.radius === 'number' ? layer.radius : 600;
+          },
+          onMove: (delta) => {
+            const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+            if (!layer || layer.type !== 'light') return;
+            const newRadius = Math.max(10, Math.min(5000, Math.round(initRadiusVal - delta * 2)));
+            layer.radius = newRadius;
+            const valEl = document.getElementById('val-light-radius');
+            if (valEl) valEl.textContent = `${newRadius} px`;
+            if (typeof updateJogScrubberVisuals === 'function') {
+              updateJogScrubberVisuals(jogRadius, newRadius, 10, 5000);
+            }
+            if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
+            redrawComposition();
+          },
+          onEnd: () => {
+            const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+            if (layer && layer.type === 'light') {
+              if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+              if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+              if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
+              redrawComposition();
+            }
+          }
+        });
+      }
+
+      // Badge click for Radius
+      const valRadius = document.getElementById('val-light-radius');
+      if (valRadius) {
+        valRadius.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const layer = (currentProjectState.layers || []).find(l => l.id === window.selectedLayerId);
+          if (!layer || layer.type !== 'light') return;
+          if (typeof window.openValueInputPopover === 'function') {
+            window.openValueInputPopover(valRadius, {
+              initialValue: typeof layer.radius === 'number' ? layer.radius : 600,
+              min: 10,
+              max: 5000,
+              step: 10,
+              unit: 'px',
+              title: 'Radius',
+              onApply: (newVal) => {
+                layer.radius = Math.max(10, Math.min(5000, Number(newVal) || 600));
+                syncEditLightUI(layer);
+                if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
+                if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+                if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
+                redrawComposition();
+              }
+            });
+          }
+        });
+      }
+
+      syncAddLightButtons();
+    })();
+  })();
+

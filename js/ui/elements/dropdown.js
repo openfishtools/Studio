@@ -72,6 +72,8 @@
     function close() {
       dropdownEl.classList.remove('is-open');
       if (trigger) trigger.setAttribute('aria-expanded', 'false');
+      const cat = dropdownEl.closest('.settings-category, .effects-card');
+      if (cat) cat.classList.remove('has-dropdown-open');
     }
 
     function open() {
@@ -81,13 +83,15 @@
           other.classList.remove('is-open');
           const otherTrigger = other.querySelector('.custom-dropdown-trigger');
           if (otherTrigger) otherTrigger.setAttribute('aria-expanded', 'false');
+          const otherCat = other.closest('.settings-category, .effects-card');
+          if (otherCat) otherCat.classList.remove('has-dropdown-open');
         }
       });
 
       // Auto-detect dropup positioning when near viewport or container bottom
       try {
         const rect = dropdownEl.getBoundingClientRect();
-        const scrollParent = dropdownEl.closest('.effects-rack-content, .drawer-body') || document.body;
+        const scrollParent = dropdownEl.closest('.effects-rack-content, .drawer-body, .modal-body, .modal-card, .modal-scroll') || document.body;
         const parentRect = scrollParent.getBoundingClientRect();
         const spaceBelow = parentRect.bottom - rect.bottom;
         const spaceAbove = rect.top - parentRect.top;
@@ -100,6 +104,8 @@
 
       dropdownEl.classList.add('is-open');
       if (trigger) trigger.setAttribute('aria-expanded', 'true');
+      const cat = dropdownEl.closest('.settings-category, .effects-card');
+      if (cat) cat.classList.add('has-dropdown-open');
     }
 
     function setValue(newVal, notify = true) {

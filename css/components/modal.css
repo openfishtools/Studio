@@ -372,6 +372,17 @@
   transform: translateY(0);
 }
 
+.custom-dropdown.is-dropup .custom-dropdown-menu {
+  top: auto;
+  bottom: calc(100% + 6px);
+  transform: translateY(4px);
+}
+
+.custom-dropdown.is-dropup.is-open .custom-dropdown-menu {
+  transform: translateY(0);
+}
+
+
 .custom-dropdown-item {
   display: flex;
   align-items: center;
@@ -540,21 +551,21 @@
 }
 
 .custom-res-link-btn .res-link-icon-linked {
-  display: none;
+  display: none !important;
 }
 
 .custom-res-link-btn .res-link-icon-unlinked {
-  display: block;
+  display: inline-flex !important;
 }
 
 .custom-res-liquid-wrap.is-locked .res-link-icon-linked,
 .custom-res-link-btn.is-locked .res-link-icon-linked {
-  display: block;
+  display: inline-flex !important;
 }
 
 .custom-res-liquid-wrap.is-locked .res-link-icon-unlinked,
 .custom-res-link-btn.is-locked .res-link-icon-unlinked {
-  display: none;
+  display: none !important;
 }
 
 /* FPS Pill Control */
@@ -796,10 +807,20 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: 1500px;
+  opacity: 1;
+  overflow: hidden;
+  transition: max-height 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease, padding 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
 }
 
 .settings-category.is-collapsed .settings-category-body {
-  display: none !important;
+  max-height: 0 !important;
+  opacity: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  overflow: hidden !important;
+  pointer-events: none !important;
 }
 
 /* Category Sub-items: Contrast surfaces within category card */
@@ -832,6 +853,100 @@
 
 .settings-category .aspect-ratio-frame.is-selected {
   background-color: var(--bg-panel-hover);
+}
+
+/* Elevate settings-category and disable overflow clip when a dropdown is open */
+.settings-category.has-dropdown-open,
+.settings-category:has(.custom-dropdown.is-open) {
+  z-index: 100 !important;
+}
+
+.settings-category.has-dropdown-open .settings-category-body,
+.settings-category:has(.custom-dropdown.is-open) .settings-category-body {
+  overflow: visible !important;
+}
+
+.settings-category .modal-form-row:has(.custom-dropdown.is-open),
+.settings-category .modal-form-row.has-dropdown-open {
+  position: relative;
+  z-index: 101 !important;
+  overflow: visible !important;
+}
+
+.settings-category .custom-dropdown.is-open {
+  position: relative;
+  z-index: 1020 !important;
+}
+
+.settings-category .custom-dropdown.is-open .custom-dropdown-menu {
+  z-index: 1025 !important;
+}
+
+/* Advance 3D Settings Options Container */
+.settings-advance-3d-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-advance-3d-options.is-hidden {
+  display: none !important;
+}
+
+/* Environment Picker Trigger (Project Settings -> 3D Engine) */
+.env-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 150px;
+  max-width: 210px;
+  height: 36px;
+  padding: 4px 10px 4px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background-color: var(--bg-panel-inner);
+  color: var(--text-primary);
+  font-family: var(--font-brand);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+}
+
+.env-picker-trigger:hover {
+  background-color: var(--bg-panel-hover);
+  border-color: var(--color-primary);
+}
+
+.env-picker-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background-color: var(--bg-panel);
+  flex-shrink: 0;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.env-picker-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.env-picker-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Modal Footer & Action Button */

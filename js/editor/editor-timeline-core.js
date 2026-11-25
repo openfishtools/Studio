@@ -901,16 +901,9 @@
           updateReorderHandlesContrast();
         }
 
-        // Live refresh canvas preview to show/hide layers matching playhead timecode.
-        // Defer full-canvas redraw while the user is actively dragging / inertia-gliding
-        // the timeline to avoid per-frame redraw spam that makes the "licin" glide laggy.
-        // Canvas is redrawn once when the interaction ends (onPanEnd / end of inertia).
-        const isTimelineInteracting = !!(
-          window.isTimelineScrubbing ||
-          window.isTimelinePanning ||
-          window._timelineInertiaRaf
-        );
-        if (!isActivelyPlaying && !isTimelineInteracting) {
+        // Live refresh canvas preview to match playhead timecode during scrub, pan, and inertia glide.
+        // Coalesced per-frame by redrawComposition's rAF guard so dragging stays smooth.
+        if (!isActivelyPlaying) {
           redrawComposition('renderTimeline');
         }
       }
@@ -1368,7 +1361,14 @@
       // MODULAR TIMELINE SNAPPING SYSTEM
       // Snaps to: Beatmarks, Start/End of adjacent layers (depan / belakang), and Playhead
       // ======================================================================
-      window.isTimelineSnapEnabled = true;
+      if (window.isTimelineSnapEnabled === undefined) {
+        try {
+          const savedSnap = localStorage.getItem('oft_timeline_snap_enabled');
+          window.isTimelineSnapEnabled = savedSnap !== null ? (savedSnap === 'true') : true;
+        } catch (_) {
+          window.isTimelineSnapEnabled = true;
+        }
+      }
 
       function getTimelineSnapTargets(excludeLayerId = null, includePlayhead = false) {
         const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
@@ -1700,9 +1700,11 @@
             seekTimelineToTime(curSecAtPause, true);
           }
         }
+        const draftBtn = document.getElementById('editor-icon-low-quality');
+        const isDraftOn = !window.isExporting && !window._isExportingVideo && !window._isExportingSequence && !!(draftBtn && draftBtn.classList.contains('is-active'));
         if (window._adaptiveDraftState) {
-          window._adaptiveDraftState.scale = 1.0;
-          window._currentAdaptiveDraftScale = 1.0;
+          window._adaptiveDraftState.scale = isDraftOn ? 0.25 : 1.0;
+          window._currentAdaptiveDraftScale = isDraftOn ? 0.25 : 1.0;
         }
 
         if (!window.isExporting) {
@@ -2121,7 +2123,8 @@
       }
       window.schedulePlaybackRecenter = schedulePlaybackRecenter;
 
-      function startTimelineInertia(initialVx) {
+      function startTimelineInertia() {
+        // Momentum inertia glide disabled for crisp, predictable scrubbing.
         if (window._timelineInertiaRaf) {
           cancelAnimationFrame(window._timelineInertiaRaf);
           window._timelineInertiaRaf = null;
@@ -2130,48 +2133,6 @@
           clearTimeout(window._playbackRecenterTimer);
           window._playbackRecenterTimer = null;
         }
-        let inertiaVx = Math.max(-3600, Math.min(3600, initialVx));
-        let lastInertiaT = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-
-        const stepInertia = () => {
-          if (isPanning || window.isTimelinePanning) {
-            window._timelineInertiaRaf = null;
-            return;
-          }
-          const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-          const dt = Math.min(0.04, (now - lastInertiaT) / 1000);
-          lastInertiaT = now;
-
-          panX += inertiaVx * dt;
-          const bounds = getTimelineBounds();
-          if (panX < bounds.min) {
-            panX = bounds.min;
-            inertiaVx = 0;
-          } else if (panX > bounds.max) {
-            panX = bounds.max;
-            inertiaVx = 0;
-          }
-
-          updateTimelinePosition(panX, true);
-          inertiaVx *= 0.945; // slick low-friction momentum glide ("licin")
-
-          if (Math.abs(inertiaVx) > 16) {
-            window._timelineInertiaRaf = requestAnimationFrame(stepInertia);
-          } else {
-            window._timelineInertiaRaf = null;
-            if (isPlaying || window.isTimelinePlaying) {
-              startSmoothRecenter();
-            } else {
-              const rawSec = getCurrentPlayheadTime();
-              const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
-              const finalSnappedSec = Math.round(rawSec * safeFps) / safeFps;
-              const pps = window.currentPixelsPerSecond || (typeof pixelsPerSecond !== 'undefined' ? pixelsPerSecond : 80);
-              updateTimelinePosition(-finalSnappedSec * pps, true);
-            }
-          }
-        };
-
-        window._timelineInertiaRaf = requestAnimationFrame(stepInertia);
       }
       window.startTimelineInertia = startTimelineInertia;
 
@@ -2327,15 +2288,27 @@
           const clampedSec = Math.min(totalDur, targetSec);
           // Snap playhead to exact frame boundary when scrubbing on ruler
           const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
-          const snappedSec = Math.round(clampedSec * safeFps) / safeFps;
+          let snappedSec = Math.round(clampedSec * safeFps) / safeFps;
+          let isSnapped = false;
+          if (window.isTimelineSnapEnabled !== false) {
+            const beatmarks = (window.currentProjectState && window.currentProjectState.beatmarks) || [];
+            for (let i = 0; i < beatmarks.length; i++) {
+              const bm = beatmarks[i];
+              if (Math.abs(snappedSec - bm) * activePps <= 8) {
+                snappedSec = Math.round(bm * safeFps) / safeFps;
+                isSnapped = true;
+                break;
+              }
+            }
+          }
           const targetPanX = -snappedSec * activePps;
 
           const bounds = getTimelineBounds();
           const finalPanX = Math.max(bounds.min, Math.min(bounds.max, targetPanX));
 
           const needle = document.getElementById('timeline-center-needle');
-          if (needle) needle.classList.remove('is-snapped');
-          window._lastScrubSnapPx = null;
+          if (needle) needle.classList.toggle('is-snapped', isSnapped);
+          window._lastScrubSnapPx = isSnapped ? finalPanX : null;
 
           updateTimelinePosition(finalPanX);
           if (window._activeTimelineItemDrag && typeof window._activeTimelineItemDrag.onViewportChanged === 'function') {
@@ -2359,14 +2332,30 @@
           const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
           const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
           const rawSec = Math.max(0, -targetPanX / activePps);
-          const snappedSec = Math.round(rawSec * safeFps) / safeFps;
-          targetPanX = -snappedSec * activePps;
-        }
+          let snappedSec = Math.round(rawSec * safeFps) / safeFps;
 
-        // Pure smooth playhead scrubbing without snapping to beatmarks or layer start/end
-        const needle = document.getElementById('timeline-center-needle');
-        if (needle) needle.classList.remove('is-snapped');
-        window._lastScrubSnapPx = null;
+          let isSnapped = false;
+          if (window.isTimelineSnapEnabled !== false) {
+            const beatmarks = (window.currentProjectState && window.currentProjectState.beatmarks) || [];
+            for (let i = 0; i < beatmarks.length; i++) {
+              const bm = beatmarks[i];
+              if (Math.abs(snappedSec - bm) * activePps <= 8) {
+                snappedSec = Math.round(bm * safeFps) / safeFps;
+                isSnapped = true;
+                break;
+              }
+            }
+          }
+
+          targetPanX = -snappedSec * activePps;
+          const needle = document.getElementById('timeline-center-needle');
+          if (needle) needle.classList.toggle('is-snapped', isSnapped);
+          window._lastScrubSnapPx = isSnapped ? targetPanX : null;
+        } else {
+          const needle = document.getElementById('timeline-center-needle');
+          if (needle) needle.classList.remove('is-snapped');
+          window._lastScrubSnapPx = null;
+        }
 
         // Scrub / pan timeline horizontally
         updateTimelinePosition(targetPanX);
@@ -2432,26 +2421,17 @@
 
         // 1. IF PLAYBACK IS RUNNING: immediately start smooth recenter with zero delay!
         if (isPlaying || window.isTimelinePlaying) {
-          if (Math.abs(_panVx) > 120) {
-            startTimelineInertia(_panVx);
-          } else {
-            startSmoothRecenter();
-          }
+          startSmoothRecenter();
           isRulerDrag = false;
           return;
         }
 
-        // 2. IF PLAYBACK IS NOT RUNNING: apply slick momentum inertia glide ("licin")
-        if (Math.abs(_panVx) > 40) {
-          startTimelineInertia(_panVx);
-        } else {
-          // Align exactly to nearest project FPS frame when parking
-          const rawSec = getCurrentPlayheadTime();
-          const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
-          const finalSnappedSec = Math.round(rawSec * safeFps) / safeFps;
-          const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
-          updateTimelinePosition(-finalSnappedSec * pps, true);
-        }
+        // 2. IF PLAYBACK IS NOT RUNNING: stop immediately and snap cleanly to nearest FPS frame
+        const rawSec = getCurrentPlayheadTime();
+        const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || currentFps || 60);
+        const finalSnappedSec = Math.round(rawSec * safeFps) / safeFps;
+        const pps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
+        updateTimelinePosition(-finalSnappedSec * pps, true);
 
         isRulerDrag = false;
 
@@ -3174,11 +3154,32 @@
         });
 
         // Cache buttons
+        if (typeof window.isPreviewCacheEnabled !== 'boolean') {
+          try {
+            const storedCache = localStorage.getItem('oft_preview_cache_enabled');
+            if (storedCache === 'true' || storedCache === 'false') {
+              window.isPreviewCacheEnabled = (storedCache === 'true');
+            }
+          } catch (_) {}
+        }
         const cacheBtns = playSettingsPop.querySelectorAll('#play-settings-cache-group .effects-segmented-btn');
         cacheBtns.forEach(btn => {
           btn.addEventListener('click', () => {
             const enabled = (btn.dataset.val === 'on');
             window.isPreviewCacheEnabled = enabled;
+            try {
+              localStorage.setItem('oft_preview_cache_enabled', enabled ? 'true' : 'false');
+              localStorage.setItem('oft_idle_cache', enabled ? 'true' : 'false');
+            } catch (_) {}
+            if (window.currentProjectState) {
+              window.currentProjectState.previewCacheEnabled = enabled;
+              window.currentProjectState.idleCache = enabled;
+            }
+            if (typeof window.saveCurrentProject === 'function') {
+              window.saveCurrentProject();
+            } else if (typeof window.triggerAutoSave === 'function') {
+              window.triggerAutoSave();
+            }
             syncPlaySettingsUI();
             if (window.PreviewCacheManager) {
               window.PreviewCacheManager.setIdleCacheEnabled(enabled);
@@ -3194,6 +3195,8 @@
             }
           });
         });
+
+        window.syncPlaySettingsUI = syncPlaySettingsUI;
 
         // Play From buttons
         const playFromBtns = playSettingsPop.querySelectorAll('#play-settings-playfrom-group .effects-segmented-btn');
@@ -4834,8 +4837,8 @@
           const isMiddleBtn = e.button === 1;
           const isCanvasTarget = e.target.id === 'editor-active-canvas';
 
-          // Allow panning if middle-click, or zoomed and clicking canvas background / container (or Shift held)
-          if (isMiddleBtn || (isZoomed && (!isCanvasTarget || e.shiftKey))) {
+          // Allow panning if middle-click, or zoomed and clicking container background (outside canvas)
+          if (isMiddleBtn || (isZoomed && !isCanvasTarget)) {
             isPanning = true;
             startX = e.clientX;
             startY = e.clientY;

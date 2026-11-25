@@ -32,19 +32,26 @@
     };
   }
 
-  // 1. Minimal Vertex & Fragment Shaders (Supports 2D Quads and 3D Volumetric Meshes)
+  // 1. Minimal Vertex & Fragment Shaders (Supports 2D Quads, 3D Volumetric Meshes & Advance 3D Lighting)
   const VS_SOURCE = `
     attribute vec3 a_position;
+    attribute vec3 a_normal;
     attribute vec2 a_texCoord;
     attribute vec4 a_color;
     uniform mat4 u_matrix;
+    uniform mat4 u_modelMatrix;
+    uniform mat3 u_normalMatrix;
     uniform float u_lensDistort;
     varying vec2 v_texCoord;
     varying vec4 v_color;
+    varying vec3 v_worldPos;
+    varying vec3 v_normal;
 
     void main() {
       v_texCoord = a_texCoord;
       v_color = a_color;
+      v_worldPos = (u_modelMatrix * vec4(a_position, 1.0)).xyz;
+      v_normal = normalize(u_normalMatrix * a_normal);
       vec4 pos = u_matrix * vec4(a_position, 1.0);
       if (abs(u_lensDistort) > 0.001 && pos.w > 0.001) {
         vec2 ndc = pos.xy / pos.w;
@@ -60,24 +67,224 @@
     precision mediump float;
     varying vec2 v_texCoord;
     varying vec4 v_color;
+    varying vec3 v_worldPos;
+    varying vec3 v_normal;
+
     uniform sampler2D u_texture;
     uniform float u_opacity;
     uniform float u_noDiscard;
     uniform int u_mode;
 
+    // Advance 3D Lighting Uniforms
+    uniform int u_numLights;
+    uniform int u_lightTypes[4];
+    uniform vec3 u_lightColors[4];
+    uniform float u_lightIntensities[4];
+    uniform vec3 u_lightPositions[4];
+    uniform vec3 u_lightDirections[4];
+    uniform float u_lightRadii[4];
+    uniform vec4 u_materialParams;
+    uniform vec4 u_matExtra;
+    uniform sampler2D u_envMap;
+    uniform vec3 u_viewPos;
+
+    // Advance 3D Shadow Mapping & Screen-Space Reflections
+    uniform sampler2D u_shadowMap;
+    uniform mat4 u_lightViewProj;
+    uniform vec4 u_shadowParams; // x: enabled(0/1), y: lightIndex, z: texelSize, w: strength
+    uniform sampler2D u_sceneColorTex;
+    uniform sampler2D u_sceneDepthTex;
+    uniform mat4 u_cameraVP;
+    uniform vec4 u_reflParams; // x: enabled(0/1), y: maxDist, z: stepDist, w: thickness
+
+    float sampleShadowFactor(vec3 worldPos, vec3 N, vec3 L) {
+      if (u_shadowParams.x < 0.5) return 1.0;
+      float nDotL = max(dot(N, L), 0.0);
+      float biasWorld = mix(6.0, 1.5, nDotL);
+      vec4 lsPos = u_lightViewProj * vec4(worldPos + N * biasWorld, 1.0);
+      if (lsPos.w <= 0.0001) return 1.0;
+      vec3 proj = (lsPos.xyz / lsPos.w) * 0.5 + 0.5;
+      if (proj.x < 0.0 || proj.x > 1.0 || proj.y < 0.0 || proj.y > 1.0 || proj.z < 0.0 || proj.z > 1.0) {
+        return 1.0;
+      }
+      float depthBias = max(0.0035 * (1.0 - nDotL), 0.0012);
+      float texel = u_shadowParams.z;
+      float lit = 0.0;
+      for (int ox = -1; ox <= 1; ox++) {
+        for (int oy = -1; oy <= 1; oy++) {
+          vec2 suv = proj.xy + vec2(float(ox), float(oy)) * texel;
+          float closest = texture2D(u_shadowMap, suv).r;
+          lit += (proj.z - depthBias > closest) ? 0.0 : 1.0;
+        }
+      }
+      lit /= 9.0;
+      return mix(1.0 - u_shadowParams.w, 1.0, lit);
+    }
+
+    vec4 traceSceneReflection(vec3 worldPos, vec3 N, vec3 R) {
+      if (u_reflParams.x < 0.5) return vec4(0.0);
+      float maxDist = max(u_reflParams.y, 100.0);
+      float stepSize = maxDist / 24.0;
+      float thickness = max(u_reflParams.w, 0.015);
+      vec3 origin = worldPos + N * 4.0;
+      float prevT = 0.0;
+      for (int s = 1; s <= 24; s++) {
+        float t = float(s) * stepSize;
+        vec3 p = origin + R * t;
+        vec4 cp = u_cameraVP * vec4(p, 1.0);
+        if (cp.w <= 0.001) break;
+        vec3 ndc = cp.xyz / cp.w;
+        vec2 uv = ndc.xy * 0.5 + 0.5;
+        float rayZ = ndc.z * 0.5 + 0.5;
+        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || rayZ < 0.0 || rayZ > 1.0) {
+          break;
+        }
+        float sceneZ = texture2D(u_sceneDepthTex, uv).r;
+        float diff = rayZ - sceneZ;
+        if (sceneZ < 0.9999 && diff > 0.0004 && diff < thickness) {
+          // 4-step binary refinement for crisp reflection edge
+          float lo = prevT;
+          float hi = t;
+          vec2 hitUv = uv;
+          for (int b = 0; b < 4; b++) {
+            float mid = 0.5 * (lo + hi);
+            vec4 mp = u_cameraVP * vec4(origin + R * mid, 1.0);
+            vec3 mndc = mp.xyz / max(mp.w, 0.001);
+            vec2 muv = mndc.xy * 0.5 + 0.5;
+            float mz = mndc.z * 0.5 + 0.5;
+            float msz = texture2D(u_sceneDepthTex, muv).r;
+            if (mz - msz > 0.0002) {
+              hi = mid;
+              hitUv = muv;
+            } else {
+              lo = mid;
+            }
+          }
+          vec4 hitCol = texture2D(u_sceneColorTex, hitUv);
+          if (hitCol.a > 0.05) {
+            vec2 edgeDist = min(hitUv, 1.0 - hitUv);
+            float edgeFade = smoothstep(0.0, 0.08, min(edgeDist.x, edgeDist.y));
+            float distFade = 1.0 - smoothstep(maxDist * 0.65, maxDist, hi);
+            vec3 rgb = hitCol.rgb / max(hitCol.a, 0.001);
+            return vec4(rgb, clamp(hitCol.a * edgeFade * distFade, 0.0, 1.0));
+          }
+        }
+        prevT = t;
+      }
+      return vec4(0.0);
+    }
+
     void main() {
+      vec4 baseColor;
       if (u_mode == 1) {
         if (u_noDiscard < 0.5 && v_color.a <= 0.015) discard;
-        gl_FragColor = v_color * u_opacity;
+        baseColor = v_color;
       } else {
         vec4 col = texture2D(u_texture, v_texCoord);
-        // During motion-blur accumulation transparent texels must emit (0,0,0,0)
-        // instead of discard, so the running-mean blend dilutes the mean and
-        // trails stay symmetric (discard would freeze early-sample coverage).
         if (u_noDiscard < 0.5 && col.a <= 0.015) discard;
         vec4 tint = (v_color.a > 0.001 && (v_color.r > 0.001 || v_color.g > 0.001 || v_color.b > 0.001)) ? v_color : vec4(1.0, 1.0, 1.0, 1.0);
-        gl_FragColor = col * tint * u_opacity;
+        baseColor = col * tint;
       }
+
+      float glossy = clamp(u_matExtra.x, 0.0, 1.0);
+      float metallic = clamp(u_matExtra.y, 0.0, 1.0);
+      float envStrength = clamp(u_matExtra.z, 0.0, 2.0);
+      bool hasEnvMap = (u_matExtra.w > 0.5);
+      bool hasSceneRefl = (u_reflParams.x > 0.5);
+      bool hasEnvGloss = ((hasEnvMap || hasSceneRefl) && (glossy > 0.005 || metallic > 0.005) && envStrength > 0.005);
+
+      // Unlit path: Classic 3D, acceptsLights false (without env/refl), or 0 lights & no reflection -> identical to baseline
+      if (u_materialParams.x < 0.5 || (u_numLights <= 0 && !hasEnvGloss)) {
+        gl_FragColor = baseColor * u_opacity;
+        return;
+      }
+
+      vec3 N = normalize(v_normal);
+      vec3 V = normalize(u_viewPos - v_worldPos);
+      float nDotV = max(dot(N, V), 0.0);
+
+      vec3 totalDiffuseLight = vec3(0.0);
+      vec3 totalSpecularLight = vec3(0.0);
+      float diffCoeff = u_materialParams.y;
+      float specCoeff = u_materialParams.z;
+      float roughness = clamp(u_materialParams.w, 0.02, 1.0);
+      float effRough = clamp(roughness * (1.0 - glossy * 0.55), 0.02, 1.0);
+      float shininess = mix(256.0, 4.0, effRough);
+      int shadowLightIdx = int(u_shadowParams.y + 0.5);
+
+      for (int i = 0; i < 4; i++) {
+        if (i >= u_numLights) break;
+        int type = u_lightTypes[i];
+        vec3 lCol = u_lightColors[i];
+        float lInt = u_lightIntensities[i];
+
+        if (type == 0) {
+          totalDiffuseLight += lCol * lInt;
+        } else if (type == 1) {
+          vec3 L = -normalize(u_lightDirections[i]);
+          float nDotL = max(0.0, dot(N, L));
+          float sh = (u_shadowParams.x > 0.5 && i == shadowLightIdx && nDotL > 0.0) ? sampleShadowFactor(v_worldPos, N, L) : 1.0;
+          totalDiffuseLight += lCol * (lInt * nDotL * sh);
+          if (nDotL > 0.0) {
+            vec3 H = normalize(L + V);
+            float nDotH = max(0.0, dot(N, H));
+            totalSpecularLight += lCol * (lInt * pow(nDotH, shininess) * sh);
+          }
+        } else if (type == 2) {
+          vec3 toLight = u_lightPositions[i] - v_worldPos;
+          float d = length(toLight);
+          vec3 L = toLight / max(d, 0.001);
+          float nDotL = max(0.0, dot(N, L));
+          float rad = max(u_lightRadii[i], 1.0);
+          float atten = 1.0 / (1.0 + (d / rad) * (d / rad));
+          float sh = (u_shadowParams.x > 0.5 && i == shadowLightIdx && nDotL > 0.0) ? sampleShadowFactor(v_worldPos, N, L) : 1.0;
+          totalDiffuseLight += lCol * (lInt * nDotL * atten * sh);
+          if (nDotL > 0.0) {
+            vec3 H = normalize(L + V);
+            float nDotH = max(0.0, dot(N, H));
+            totalSpecularLight += lCol * (lInt * pow(nDotH, shininess) * atten * sh);
+          }
+        }
+      }
+
+      vec3 specTint = mix(vec3(1.0), baseColor.rgb, metallic);
+      float specBoost = specCoeff + glossy * 0.85;
+      vec3 litRgb;
+      if (u_numLights > 0) {
+        litRgb = baseColor.rgb * totalDiffuseLight * diffCoeff * (1.0 - metallic * 0.85) + totalSpecularLight * specTint * specBoost;
+      } else {
+        litRgb = baseColor.rgb * (1.0 - metallic * 0.7);
+      }
+
+      if (hasEnvGloss) {
+        vec3 R = reflect(-V, N);
+        vec3 envCol = vec3(0.0);
+        float envWeight = 0.0;
+        if (hasEnvMap) {
+          vec2 envUv = vec2(
+            atan(R.x, -R.z) / 6.2831853 + 0.5,
+            acos(clamp(-R.y, -1.0, 1.0)) / 3.1415926
+          );
+          envCol = texture2D(u_envMap, envUv, effRough * 5.0).rgb;
+          envWeight = 1.0;
+        }
+        if (hasSceneRefl) {
+          vec4 ssr = traceSceneReflection(v_worldPos, N, R);
+          float ssrVis = ssr.a * (1.0 - effRough * 0.65);
+          if (ssrVis > 0.001) {
+            envCol = (envWeight > 0.5) ? mix(envCol, ssr.rgb, ssrVis) : ssr.rgb;
+            envWeight = max(envWeight, ssrVis);
+          }
+        }
+        if (envWeight > 0.001) {
+          float fresnel = mix(0.04, 1.0, pow(1.0 - nDotV, 5.0));
+          float coatAmt = mix(fresnel, 1.0, glossy * 0.55) * glossy * envStrength * envWeight;
+          vec3 metalEnv = envCol * mix(baseColor.rgb, vec3(1.0), fresnel * 0.35) * (metallic * envStrength * envWeight);
+          litRgb = mix(litRgb, envCol, clamp(coatAmt * 0.85, 0.0, 0.92)) + metalEnv;
+        }
+      }
+
+      gl_FragColor = vec4(litRgb, baseColor.a) * u_opacity;
     }
   `;
 
@@ -120,6 +327,181 @@
       vec4 c0 = texture2D(u_tex0, v_uv);
       vec4 c1 = texture2D(u_tex1, v_uv);
       gl_FragColor = mix(c0, c1, u_alpha);
+    }
+  `;
+
+  // WebGL2 Half-Resolution Depth SSAO Shaders (Zero-extension, Zero-halo normal diff)
+  const AO_QUAD_VS = `#version 300 es
+    precision highp float;
+    const vec2 POS[3] = vec2[3](vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+    out vec2 v_uv;
+    void main() {
+      vec2 p = POS[gl_VertexID];
+      v_uv = p * 0.5 + 0.5;
+      gl_Position = vec4(p, 0.0, 1.0);
+    }
+  `;
+
+  const AO_PASS_FS = `#version 300 es
+    precision highp float;
+    in vec2 v_uv;
+    out float outAO;
+    uniform sampler2D u_depth;
+    uniform float u_near;
+    uniform float u_far;
+    uniform vec2 u_projScale;
+    uniform float u_radius;
+    uniform float u_strength;
+    uniform float u_power;
+    uniform int u_samples;
+
+    float getLinearDepth(float d01) {
+      float ndcZ = d01 * 2.0 - 1.0;
+      return (2.0 * u_near * u_far) / max(0.0001, (u_far + u_near) - ndcZ * (u_far - u_near));
+    }
+
+    vec3 getViewPos(vec2 uv, float linZ) {
+      vec2 ndc = uv * 2.0 - 1.0;
+      return vec3(ndc.x * linZ * u_projScale.x, ndc.y * linZ * u_projScale.y, -linZ);
+    }
+
+    void main() {
+      ivec2 dSize = textureSize(u_depth, 0);
+      vec2 fDSize = vec2(dSize);
+      vec2 invDSize = 1.0 / fDSize;
+      ivec2 fc = clamp(ivec2(v_uv * fDSize), ivec2(0), dSize - 1);
+
+      float cD01 = texelFetch(u_depth, fc, 0).r;
+      if (cD01 >= 0.9999) {
+        outAO = 1.0;
+        return;
+      }
+      vec2 cUv = (vec2(fc) + 0.5) * invDSize;
+      float cZ = getLinearDepth(cD01);
+      vec3 P = getViewPos(cUv, cZ);
+
+      ivec2 fcL = ivec2(max(fc.x - 1, 0), fc.y);
+      ivec2 fcR = ivec2(min(fc.x + 1, dSize.x - 1), fc.y);
+      ivec2 fcD = ivec2(fc.x, max(fc.y - 1, 0));
+      ivec2 fcU = ivec2(fc.x, min(fc.y + 1, dSize.y - 1));
+
+      float dL = getLinearDepth(texelFetch(u_depth, fcL, 0).r);
+      float dR = getLinearDepth(texelFetch(u_depth, fcR, 0).r);
+      float dD = getLinearDepth(texelFetch(u_depth, fcD, 0).r);
+      float dU = getLinearDepth(texelFetch(u_depth, fcU, 0).r);
+
+      vec3 pL = getViewPos((vec2(fcL) + 0.5) * invDSize, dL);
+      vec3 pR = getViewPos((vec2(fcR) + 0.5) * invDSize, dR);
+      vec3 pD = getViewPos((vec2(fcD) + 0.5) * invDSize, dD);
+      vec3 pU = getViewPos((vec2(fcU) + 0.5) * invDSize, dU);
+
+      vec3 dPdx = (abs(dR - cZ) < abs(cZ - dL)) ? (pR - P) : (P - pL);
+      vec3 dPdy = (abs(dU - cZ) < abs(cZ - dD)) ? (pU - P) : (P - pD);
+      vec3 crossN = cross(dPdx, dPdy);
+      float nLen = length(crossN);
+      if (nLen < 1e-6) {
+        outAO = 1.0;
+        return;
+      }
+      vec3 N = crossN / nLen;
+
+      float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+      float baseAngle = ign * 6.2831853;
+      float screenRadX = u_radius / max(1.0, cZ * u_projScale.x * 2.0);
+      float screenRadY = u_radius / max(1.0, cZ * u_projScale.y * 2.0);
+      vec2 screenRad = min(vec2(screenRadX, screenRadY), vec2(0.15));
+
+      float occ = 0.0;
+      float fSamples = float(u_samples);
+      for (int i = 0; i < 16; i++) {
+        if (i >= u_samples) break;
+        float frac = (float(i) + 0.5) / fSamples;
+        float r = frac;
+        float theta = baseAngle + float(i) * 2.3999632;
+        vec2 offset = vec2(cos(theta), sin(theta)) * (r * screenRad);
+        vec2 sUv = cUv + offset;
+        if (sUv.x < 0.0 || sUv.x >= 1.0 || sUv.y < 0.0 || sUv.y >= 1.0) continue;
+
+        ivec2 sFc = ivec2(sUv * fDSize);
+        if (sFc == fc) continue;
+        float sD01 = texelFetch(u_depth, sFc, 0).r;
+        if (sD01 >= 0.9999) continue;
+
+        vec2 sUvExact = (vec2(sFc) + 0.5) * invDSize;
+        float sZ = getLinearDepth(sD01);
+        vec3 sP = getViewPos(sUvExact, sZ);
+        vec3 v = sP - P;
+        float dist = length(v);
+        if (dist > 0.001 && dist < u_radius) {
+          float t = 1.0 - (dist / u_radius);
+          float falloff = t * sqrt(t);
+          occ += max(0.0, dot(N, v) / dist - 0.12) * falloff;
+        }
+      }
+      float rawAO = clamp(1.0 - (occ / fSamples) * u_strength, 0.0, 1.0);
+      outAO = pow(rawAO, u_power);
+    }
+  `;
+
+  const AO_BLUR_FS = `#version 300 es
+    precision highp float;
+    in vec2 v_uv;
+    out float outBlurred;
+    uniform sampler2D u_aoTex;
+    uniform sampler2D u_depth;
+    uniform float u_near;
+    uniform float u_far;
+    uniform float u_radius;
+    uniform vec2 u_dir;
+
+    float getLinearDepth(float d01) {
+      float ndcZ = d01 * 2.0 - 1.0;
+      return (2.0 * u_near * u_far) / max(0.0001, (u_far + u_near) - ndcZ * (u_far - u_near));
+    }
+
+    void main() {
+      ivec2 dSize = textureSize(u_depth, 0);
+      vec2 fDSize = vec2(dSize);
+      ivec2 cFc = clamp(ivec2(v_uv * fDSize), ivec2(0), dSize - 1);
+      float cD01 = texelFetch(u_depth, cFc, 0).r;
+      if (cD01 >= 0.9999) {
+        outBlurred = 1.0;
+        return;
+      }
+      float cZ = getLinearDepth(cD01);
+      vec2 texel = (1.0 / vec2(textureSize(u_aoTex, 0))) * u_dir;
+      float sum = 0.0;
+      float wSum = 0.0;
+      float invTol = 1.0 / max(1.0, u_radius * 0.45);
+
+      for (int k = -3; k <= 3; k++) {
+        vec2 sUv = clamp(v_uv + float(k) * texel, vec2(0.0), vec2(0.9999));
+        ivec2 sFc = clamp(ivec2(sUv * fDSize), ivec2(0), dSize - 1);
+        float sD01 = texelFetch(u_depth, sFc, 0).r;
+        if (sD01 >= 0.9999) continue;
+        float sZ = getLinearDepth(sD01);
+        float w = exp(-float(k * k) * 0.18) * exp(-abs(sZ - cZ) * invTol);
+        sum += texture(u_aoTex, sUv).r * w;
+        wSum += w;
+      }
+      outBlurred = (wSum > 0.0001) ? (sum / wSum) : 1.0;
+    }
+  `;
+
+  const AO_COMP_FS = `#version 300 es
+    precision highp float;
+    in vec2 v_uv;
+    out vec4 fragColor;
+    uniform sampler2D u_colorTex;
+    uniform sampler2D u_aoTex;
+    void main() {
+      vec4 col = texture(u_colorTex, v_uv);
+      if (col.a <= 0.001) {
+        fragColor = vec4(0.0);
+        return;
+      }
+      float ao = texture(u_aoTex, v_uv).r;
+      fragColor = vec4(col.rgb * ao, col.a);
     }
   `;
 
@@ -181,6 +563,21 @@
         }
 
         const gl = this.gl;
+        this.isWebGL2 = Boolean(typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext);
+
+        // Pre-allocated scratch buffers/pools for zero-GC 3D rendering
+        this._mvpScratchBounds = new Float32Array(16);
+        this._mvpScratchDraw = new Float32Array(16);
+        this._mvpScratchPad = new Float32Array(16);
+        this._meshScratchMvp = new Float32Array(16);
+        this._meshScratchModel = new Float32Array(16);
+        this._zRangeScratch = new Float32Array(2);
+        this._camScaleScratch = { x: 1, y: 1 };
+        this._sceneBoundsScratch = [];
+        this._sceneBatchScratch = [];
+        this._batchPool = [];
+        this._batchOpaqueScratch = [];
+        this._batchTransScratch = [];
 
         // Compile Shaders
         const vs = this._compileShader(gl.VERTEX_SHADER, VS_SOURCE);
@@ -207,14 +604,35 @@
         // Attribute & Uniform Locations
         this.locations = {
           position: gl.getAttribLocation(prog, 'a_position'),
+          normal: gl.getAttribLocation(prog, 'a_normal'),
           texCoord: gl.getAttribLocation(prog, 'a_texCoord'),
           color: gl.getAttribLocation(prog, 'a_color'),
           matrix: gl.getUniformLocation(prog, 'u_matrix'),
+          modelMatrix: gl.getUniformLocation(prog, 'u_modelMatrix'),
+          normalMatrix: gl.getUniformLocation(prog, 'u_normalMatrix'),
           texture: gl.getUniformLocation(prog, 'u_texture'),
           opacity: gl.getUniformLocation(prog, 'u_opacity'),
           noDiscard: gl.getUniformLocation(prog, 'u_noDiscard'),
           mode: gl.getUniformLocation(prog, 'u_mode'),
-          lensDistort: gl.getUniformLocation(prog, 'u_lensDistort')
+          lensDistort: gl.getUniformLocation(prog, 'u_lensDistort'),
+          numLights: gl.getUniformLocation(prog, 'u_numLights'),
+          lightTypes: gl.getUniformLocation(prog, 'u_lightTypes'),
+          lightColors: gl.getUniformLocation(prog, 'u_lightColors'),
+          lightIntensities: gl.getUniformLocation(prog, 'u_lightIntensities'),
+          lightPositions: gl.getUniformLocation(prog, 'u_lightPositions'),
+          lightDirections: gl.getUniformLocation(prog, 'u_lightDirections'),
+          lightRadii: gl.getUniformLocation(prog, 'u_lightRadii'),
+          materialParams: gl.getUniformLocation(prog, 'u_materialParams'),
+          matExtra: gl.getUniformLocation(prog, 'u_matExtra'),
+          envMap: gl.getUniformLocation(prog, 'u_envMap'),
+          viewPos: gl.getUniformLocation(prog, 'u_viewPos'),
+          shadowMap: gl.getUniformLocation(prog, 'u_shadowMap'),
+          lightViewProj: gl.getUniformLocation(prog, 'u_lightViewProj'),
+          shadowParams: gl.getUniformLocation(prog, 'u_shadowParams'),
+          sceneColorTex: gl.getUniformLocation(prog, 'u_sceneColorTex'),
+          sceneDepthTex: gl.getUniformLocation(prog, 'u_sceneDepthTex'),
+          cameraVP: gl.getUniformLocation(prog, 'u_cameraVP'),
+          reflParams: gl.getUniformLocation(prog, 'u_reflParams')
         };
 
         // Compile Dedicated Hardware RGB Split & Frame Blend Shaders
@@ -304,6 +722,7 @@
         // Dedicated dynamic buffers for 3D volumetric meshes (Box, Extrude, Pyramid, Sphere)
         this.meshBuffers = {
           position: gl.createBuffer(),
+          normal: gl.createBuffer(),
           texCoord: gl.createBuffer(),
           color: gl.createBuffer(),
           index: gl.createBuffer()
@@ -314,13 +733,301 @@
         if (this.locations.noDiscard) gl.uniform1f(this.locations.noDiscard, 0);
         gl.disableVertexAttribArray(this.locations.color);
         gl.vertexAttrib4f(this.locations.color, 1.0, 1.0, 1.0, 1.0);
+        if (this.locations.normal !== -1) {
+          gl.disableVertexAttribArray(this.locations.normal);
+          gl.vertexAttrib3f(this.locations.normal, 0.0, 0.0, 1.0);
+        }
+        if (this.locations.modelMatrix) {
+          gl.uniformMatrix4fv(this.locations.modelMatrix, false, new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]));
+        }
+        if (this.locations.normalMatrix) {
+          gl.uniformMatrix3fv(this.locations.normalMatrix, false, new Float32Array([1,0,0, 0,1,0, 0,0,1]));
+        }
+        if (this.locations.numLights) gl.uniform1i(this.locations.numLights, 0);
+        if (this.locations.materialParams) gl.uniform4f(this.locations.materialParams, 0.0, 1.0, 0.5, 0.5);
+        if (this.locations.matExtra) gl.uniform4f(this.locations.matExtra, 0.0, 0.0, 1.0, 0.0);
+
+        // 1x1 neutral fallback texture for u_envMap (TEXTURE1)
+        this._envFallbackTex = gl.createTexture();
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this._envFallbackTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([128, 128, 128, 255]));
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        if (this.locations.envMap) gl.uniform1i(this.locations.envMap, 1);
+
+        // 1x1 fallback textures for Shadow Map (TEXTURE2) and Reflection Scene Color/Depth (TEXTURE3/4)
+        this._whiteFallbackTex = gl.createTexture();
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, this._whiteFallbackTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        if (this.locations.shadowMap) gl.uniform1i(this.locations.shadowMap, 2);
+        if (this.locations.shadowParams) gl.uniform4f(this.locations.shadowParams, 0.0, 0.0, 1.0 / 1024.0, 0.85);
+        const idMat4 = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
+        if (this.locations.lightViewProj) gl.uniformMatrix4fv(this.locations.lightViewProj, false, idMat4);
+
+        gl.activeTexture(gl.TEXTURE3);
+        gl.bindTexture(gl.TEXTURE_2D, this._envFallbackTex);
+        if (this.locations.sceneColorTex) gl.uniform1i(this.locations.sceneColorTex, 3);
+        gl.activeTexture(gl.TEXTURE4);
+        gl.bindTexture(gl.TEXTURE_2D, this._whiteFallbackTex);
+        if (this.locations.sceneDepthTex) gl.uniform1i(this.locations.sceneDepthTex, 4);
+        if (this.locations.cameraVP) gl.uniformMatrix4fv(this.locations.cameraVP, false, idMat4);
+        if (this.locations.reflParams) gl.uniform4f(this.locations.reflParams, 0.0, 1200.0, 50.0, 0.025);
+
+        gl.activeTexture(gl.TEXTURE0);
+        this._hasEnvMap = false;
+        this._envTexture = null;
+        this._envSourceRef = null;
 
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
         this.isReady = true;
+        if (this._pendingEnvImg) {
+          const pImg = this._pendingEnvImg;
+          this._pendingEnvImg = null;
+          this.setEnvironmentImage(pImg);
+        }
       } catch (err) {
         console.error('FishToolEngine Init Failed:', err);
+      }
+    }
+
+    setLightingData(data) {
+      this._lightingData = data || null;
+    }
+
+    setEnvironmentImage(imgEl) {
+      const gl = this.gl;
+      if (!gl || !this.isReady) {
+        this._pendingEnvImg = imgEl || null;
+        return;
+      }
+      if (!imgEl || !this._hasValidDimensions(imgEl)) {
+        this._hasEnvMap = false;
+        this._envSourceRef = null;
+        return;
+      }
+      if (this._envSourceRef === imgEl && this._hasEnvMap) return;
+      try {
+        if (!this._envScratchCanvas) {
+          this._envScratchCanvas = document.createElement('canvas');
+          this._envScratchCanvas.width = 512;
+          this._envScratchCanvas.height = 256;
+          this._envScratchCtx = this._envScratchCanvas.getContext('2d');
+        }
+        const ectx = this._envScratchCtx;
+        if (!ectx) return;
+        ectx.clearRect(0, 0, 512, 256);
+        ectx.drawImage(imgEl, 0, 0, 512, 256);
+
+        if (!this._envTexture) {
+          this._envTexture = gl.createTexture();
+        }
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, this._envTexture);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this._envScratchCanvas);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.activeTexture(gl.TEXTURE0);
+        this._hasEnvMap = true;
+        this._envSourceRef = imgEl;
+      } catch (err) {
+        console.warn('FishToolEngine setEnvironmentImage failed:', err);
+        this._hasEnvMap = false;
+        this._envSourceRef = null;
+      }
+    }
+
+    _getSlotMaterial(layer, slotOverride) {
+      if (slotOverride) return slotOverride;
+      if (layer && Array.isArray(layer.materialSlots) && layer.materialSlots.length > 0) {
+        return layer.materialSlots[0];
+      }
+      return (layer && layer.materialOptions) || {};
+    }
+
+    applyMaterialSlot(gl, layer, slot, fallbackEl, finalOpacity, baseColorRgb, baseHasTex) {
+      const loc = this.locations;
+      if (!gl || !loc) return false;
+      if (this._inShadowPass) {
+        gl.uniform1i(loc.mode, 1);
+        gl.vertexAttrib4f(loc.color, 1.0, 1.0, 1.0, 1.0);
+        return false;
+      }
+      const ps = (typeof window !== 'undefined' && window.currentProjectState) ? window.currentProjectState : null;
+      const isAdvance = Boolean(ps && ps.threeDEngine === 'advance');
+      const mat = slot || this._getSlotMaterial(layer, null);
+
+      if (isAdvance) {
+        const acceptsLights = mat.acceptsLights !== false;
+        const diffuse = (mat.diffuse !== undefined ? Number(mat.diffuse) : 100) / 100;
+        const specular = (mat.specular !== undefined ? Number(mat.specular) : 50) / 100;
+        const roughness = (mat.roughness !== undefined ? Number(mat.roughness) : 50) / 100;
+        const glossy = (mat.glossy !== undefined ? Number(mat.glossy) : 0) / 100;
+        const metallic = (mat.metallic !== undefined ? Number(mat.metallic) : 0) / 100;
+        const envRefl = (mat.envReflection !== undefined ? Number(mat.envReflection) : 100) / 100;
+        const hasEnv = this._hasEnvMap ? 1.0 : 0.0;
+        const hasReflOrEnv = (hasEnv > 0.5 || this._activeReflPass);
+        const activeFlag = (acceptsLights || (hasReflOrEnv && (glossy > 0.005 || metallic > 0.005))) ? 1.0 : 0.0;
+        if (loc.materialParams) {
+          gl.uniform4f(loc.materialParams, activeFlag, diffuse, specular, roughness);
+        }
+        if (loc.matExtra) {
+          gl.uniform4f(loc.matExtra, glossy, metallic, envRefl, hasEnv);
+        }
+      }
+
+      const mode = (slot && slot.surfaceMode) || 'inherit';
+      if (mode === 'media' && slot && slot.mediaId && typeof window !== 'undefined' && typeof window.getMaterialMediaImage === 'function') {
+        const slotImg = window.getMaterialMediaImage(slot.mediaId);
+        if (slotImg && this._hasValidDimensions(slotImg)) {
+          const tex = this._getOrCreateTexture(slotImg);
+          if (tex) {
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.uniform1i(loc.texture, 0);
+            gl.uniform1i(loc.mode, 0);
+            gl.vertexAttrib4f(loc.color, 1.0, 1.0, 1.0, finalOpacity);
+            return true;
+          }
+        }
+      }
+      if (mode === 'solid' && slot && slot.color) {
+        const sc = hexToRgb(slot.color);
+        gl.uniform1i(loc.mode, 1);
+        gl.vertexAttrib4f(loc.color, sc.r / 255, sc.g / 255, sc.b / 255, finalOpacity);
+        return false;
+      }
+      if (baseHasTex && fallbackEl) {
+        const baseTex = this._getOrCreateTexture(fallbackEl);
+        if (baseTex) {
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, baseTex);
+          gl.uniform1i(loc.texture, 0);
+        }
+        gl.uniform1i(loc.mode, 0);
+        gl.vertexAttrib4f(loc.color, 1.0, 1.0, 1.0, finalOpacity);
+        return true;
+      }
+      gl.uniform1i(loc.mode, 1);
+      gl.vertexAttrib4f(loc.color, baseColorRgb.r / 255, baseColorRgb.g / 255, baseColorRgb.b / 255, finalOpacity);
+      return false;
+    }
+
+    _applyLightingUniforms(gl, layer, camera, bounds, vw, vh, slotOverride = null) {
+      const loc = this.locations;
+      if (!loc) return;
+      if (this._inShadowPass) {
+        if (loc.numLights) gl.uniform1i(loc.numLights, 0);
+        if (loc.materialParams) gl.uniform4f(loc.materialParams, 0.0, 1.0, 0.5, 0.5);
+        return;
+      }
+      const ps = (typeof window !== 'undefined' && window.currentProjectState) ? window.currentProjectState : null;
+      const isAdvance = Boolean(ps && ps.threeDEngine === 'advance');
+      const mat = this._getSlotMaterial(layer, slotOverride);
+      const acceptsLights = mat.acceptsLights !== false;
+      const glossy = (mat.glossy !== undefined ? Number(mat.glossy) : 0) / 100;
+      const metallic = (mat.metallic !== undefined ? Number(mat.metallic) : 0) / 100;
+      const envRefl = (mat.envReflection !== undefined ? Number(mat.envReflection) : 100) / 100;
+      const hasEnv = (isAdvance && this._hasEnvMap) ? 1.0 : 0.0;
+
+      const lighting = this._lightingData;
+      const numLights = (isAdvance && acceptsLights && lighting && lighting.numLights > 0) ? lighting.numLights : 0;
+      const hasReflOrEnv = (hasEnv > 0.5 || Boolean(this._activeReflPass));
+      const needShading = isAdvance && (numLights > 0 || (hasReflOrEnv && (glossy > 0.005 || metallic > 0.005) && envRefl > 0.005));
+
+      if (loc.numLights) {
+        gl.uniform1i(loc.numLights, numLights);
+      }
+
+      if (loc.envMap) {
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, (hasEnv > 0.5 && this._envTexture) ? this._envTexture : this._envFallbackTex);
+        gl.uniform1i(loc.envMap, 1);
+        gl.activeTexture(gl.TEXTURE0);
+      }
+
+      if (needShading) {
+        const bScale = (bounds && bounds.bufferScale) || 1;
+        if (numLights > 0) {
+          if (!this._scaledLightPositions) {
+            this._scaledLightPositions = new Float32Array(12);
+            this._scaledLightRadii = new Float32Array(4);
+          }
+
+          if (loc.lightTypes) gl.uniform1iv(loc.lightTypes, lighting.types || lighting.lightTypes);
+          if (loc.lightColors) gl.uniform3fv(loc.lightColors, lighting.colors || lighting.lightColors);
+          if (loc.lightIntensities) gl.uniform1fv(loc.lightIntensities, lighting.intensities || lighting.lightIntensities);
+
+          const rawPos = lighting.positions || lighting.lightPositions;
+          if (rawPos) {
+            for (let p = 0; p < 12; p++) {
+              this._scaledLightPositions[p] = rawPos[p] * bScale;
+            }
+            if (loc.lightPositions) gl.uniform3fv(loc.lightPositions, this._scaledLightPositions);
+          }
+
+          if (loc.lightDirections) gl.uniform3fv(loc.lightDirections, lighting.directions || lighting.lightDirections);
+
+          const rawRadii = lighting.radii || lighting.lightRadii;
+          if (rawRadii) {
+            for (let r = 0; r < 4; r++) {
+              this._scaledLightRadii[r] = rawRadii[r] * bScale;
+            }
+            if (loc.lightRadii) gl.uniform1fv(loc.lightRadii, this._scaledLightRadii);
+          }
+        }
+
+        const diffuse = (mat.diffuse !== undefined ? Number(mat.diffuse) : 100) / 100;
+        const specular = (mat.specular !== undefined ? Number(mat.specular) : 50) / 100;
+        const roughness = (mat.roughness !== undefined ? Number(mat.roughness) : 50) / 100;
+
+        if (loc.materialParams) {
+          gl.uniform4f(loc.materialParams, 1.0, diffuse, specular, roughness);
+        }
+        if (loc.matExtra) {
+          gl.uniform4f(loc.matExtra, glossy, metallic, envRefl, hasEnv);
+        }
+
+        if (loc.viewPos) {
+          const activeCam = camera || this._activeCamera || null;
+          const activeVw = this._activeVw || vw || (bounds && bounds.w) || 0;
+          const activeVh = this._activeVh || vh || (bounds && bounds.h) || 0;
+          const camLens = Math.max(1, activeCam && activeCam.cameraLens !== undefined ? activeCam.cameraLens : 50);
+          const lensFactor = Math.max(0.01, camLens / 50);
+          const D = CAMERA_DISTANCE * lensFactor * bScale;
+          const camX = (activeVw / 2) + (activeCam ? (activeCam.posX || 0) * bScale : 0);
+          const camY = (activeVh / 2) + (activeCam ? (activeCam.posY || 0) * bScale : 0);
+          const camZ = (activeCam ? (activeCam.posZ || 0) * bScale : 0) + D;
+          gl.uniform3f(loc.viewPos, camX, camY, camZ);
+        }
+      } else {
+        if (loc.materialParams) {
+          gl.uniform4f(loc.materialParams, 0.0, 1.0, 0.5, 0.5);
+        }
+        if (loc.matExtra) {
+          gl.uniform4f(loc.matExtra, 0.0, 0.0, 1.0, 0.0);
+        }
+      }
+
+      if (this._currentModelMatrix && loc.modelMatrix) {
+        gl.uniformMatrix4fv(loc.modelMatrix, false, this._currentModelMatrix);
+      }
+      if (this._currentNormalMatrix && loc.normalMatrix) {
+        gl.uniformMatrix3fv(loc.normalMatrix, false, this._currentNormalMatrix);
       }
     }
 
@@ -934,9 +1641,12 @@
 
         const dist = -relZ;
         const isBehind = dist <= pNear;
-        const projScale = (D * totalZoom) / Math.max(pNear, dist);
-        let px = vw / 2 + relX * projScale;
-        let py = vh / 2 + relY * projScale;
+        const camInv = this._getCameraInverseScale(camera, vw, vh, bScale, this._camScaleScratch);
+        const projScaleX = (D * totalZoom * camInv.x) / Math.max(pNear, dist);
+        const projScaleY = (D * totalZoom * camInv.y) / Math.max(pNear, dist);
+        const projScale = (Math.abs(projScaleX) + Math.abs(projScaleY)) * 0.5;
+        let px = vw / 2 + relX * projScaleX;
+        let py = vh / 2 + relY * projScaleY;
 
         const lensDistort = this._getLensDistort(camera);
         if (Math.abs(lensDistort) > 0.001) {
@@ -1171,9 +1881,10 @@
       const anchorZ = (layer.anchorZ || 0) * bufferScale;
 
       const hasParticleEngine = Array.isArray(layer.effects) && layer.effects.some(f => f && !f.disabled && f.type === 'particle-engine');
-      const has3DFx = Array.isArray(layer.effects) && layer.effects.some(f => f && !f.disabled && (f.type === 'box_3d' || f.type === 'extrude_3d' || f.type === 'pyramid_3d' || f.type === 'sphere_3d'));
+      const is3DNativeShape = (typeof layer.shapeType === 'string' && (layer.shapeType === '3d_box' || layer.shapeType.startsWith('3d_')));
+      const has3DFx = (Array.isArray(layer.effects) && layer.effects.some(f => f && !f.disabled && (f.type === 'box_3d' || f.type === '3d_box' || f.type === 'extrude_3d' || f.type === 'pyramid_3d' || f.type === 'sphere_3d' || f.type === 'cone_3d' || f.type === 'cylinder_3d' || f.type === 'torus_3d'))) || is3DNativeShape;
       const is3D = !hasParticleEngine && (!!layer.is3D || has3DFx || (layer.type === 'precomp' && !!layer.collapseTransformations) || layer.type === 'camera');
-      const boxFx = Array.isArray(layer.effects) ? layer.effects.find(f => f && !f.disabled && f.type === 'box_3d') : null;
+      const boxFx = (Array.isArray(layer.effects) ? layer.effects.find(f => f && !f.disabled && (f.type === 'box_3d' || f.type === '3d_box')) : null) || (layer.shapeType === '3d_box' ? { type: '3d_box' } : null);
       const boxAngleX = (boxFx && boxFx.angleX !== undefined) ? Number(boxFx.angleX) : 0;
       const boxAngleY = (boxFx && boxFx.angleY !== undefined) ? Number(boxFx.angleY) : 0;
       const effectiveRotX = is3D ? (rotX + boxAngleX) : 0;
@@ -1217,7 +1928,7 @@
 
       let mvp = null;
       if (is3D) {
-        mvp = this._computeMVP(boundsForMVP, vw, vh, 0, effectiveCamera);
+        mvp = this._computeMVP(boundsForMVP, vw, vh, 0, effectiveCamera, this._mvpScratchBounds);
       }
 
       let pTL, pTR, pBR, pBL, pN, pE, pS, pW, pAnchor;
@@ -1250,13 +1961,11 @@
           const clipZ = mvp[2] * u + mvp[6] * v + mvp[10] * zCoord + mvp[14];
           const clipW = mvp[3] * u + mvp[7] * v + mvp[11] * zCoord + mvp[15];
 
-          if (clipW <= 0.001) {
-            return { x: 0, y: 0, z: clipZ, scale: 0, isBehind: true };
-          }
-          const invW = 1.0 / clipW;
+          const behind = clipW <= 0.001;
+          const invW = 1.0 / Math.max(0.02, clipW);
           let ndcX = clipX * invW;
           let ndcY = clipY * invW;
-          if (Math.abs(lensDistort) > 0.001) {
+          if (!behind && Math.abs(lensDistort) > 0.001) {
             const r2 = ndcX * ndcX + ndcY * ndcY;
             const warp = 1.0 + lensDistort * r2;
             ndcX *= warp;
@@ -1266,8 +1975,8 @@
             x: (ndcX * 0.5 + 0.5) * vw,
             y: (-ndcY * 0.5 + 0.5) * vh,
             z: clipZ,
-            scale: invW * totalZoom,
-            isBehind: false
+            scale: behind ? 0 : (invW * totalZoom),
+            isBehind: behind
           };
         };
 
@@ -1356,27 +2065,76 @@
       const all3DCorners = [pTL, pTR, pBR, pBL];
 
       if (mvp) {
+        const isNative3DShape = (typeof layer.shapeType === 'string' && (layer.shapeType === '3d_box' || layer.shapeType.startsWith('3d_')));
         const active3DFx = Array.isArray(layer.effects)
-          ? layer.effects.find(f => f && !f.disabled && (f.type === 'box_3d' || f.type === 'extrude_3d' || f.type === 'pyramid_3d'))
-          : null;
+          ? layer.effects.find(f => f && !f.disabled && (f.type === 'box_3d' || f.type === '3d_box' || f.type === 'extrude_3d' || f.type === 'pyramid_3d' || f.type === 'sphere_3d' || f.type === 'cone_3d' || f.type === 'cylinder_3d' || f.type === 'torus_3d'))
+          : (isNative3DShape ? { type: layer.shapeType } : null);
         let meshD = 0;
-        if (active3DFx) {
+        if (active3DFx || isNative3DShape) {
           const lDepth = (layer && layer.scaleZ !== undefined) ? layer.scaleZ : (layer && layer.depth !== undefined ? layer.depth : undefined);
-          if (active3DFx.type === 'box_3d') {
-            const defaultD = Math.round(Math.min(absW || 300, absH || 300));
-            meshD = Math.max(1, lDepth !== undefined ? lDepth : (active3DFx.depth !== undefined ? active3DFx.depth : defaultD));
-          } else if (active3DFx.type === 'extrude_3d') {
-            meshD = Math.max(1, lDepth !== undefined ? lDepth : (active3DFx.extrudeDepth !== undefined ? active3DFx.extrudeDepth : 35));
-          } else if (active3DFx.type === 'pyramid_3d') {
-            meshD = Math.max(1, lDepth !== undefined ? lDepth : (active3DFx.height !== undefined ? active3DFx.height : 80));
+          if (isNative3DShape || (active3DFx && (active3DFx.type === 'box_3d' || active3DFx.type === '3d_box' || active3DFx.type === 'sphere_3d' || active3DFx.type === 'cone_3d' || active3DFx.type === 'cylinder_3d' || active3DFx.type === 'torus_3d'))) {
+            const defaultD = Math.round(Math.min(absW || (300 * bufferScale), absH || (300 * bufferScale)));
+            meshD = Math.max(1, lDepth !== undefined ? (lDepth * bufferScale) : ((active3DFx && active3DFx.depth !== undefined) ? (active3DFx.depth * bufferScale) : defaultD));
+          } else if (active3DFx && active3DFx.type === 'extrude_3d') {
+            meshD = Math.max(1, (lDepth !== undefined ? lDepth : (active3DFx.extrudeDepth !== undefined ? active3DFx.extrudeDepth : 35)) * bufferScale);
+          } else if (active3DFx && (active3DFx.type === 'pyramid_3d' || active3DFx.type === '3d_pyramid')) {
+            meshD = Math.max(1, (lDepth !== undefined ? lDepth : (active3DFx.height !== undefined ? active3DFx.height : 80)) * bufferScale);
           }
         }
         if (meshD > 0 && typeof projectQuad === 'function') {
-          if (active3DFx && active3DFx.type === 'pyramid_3d') {
+          if (active3DFx && (active3DFx.type === 'pyramid_3d' || active3DFx.type === '3d_pyramid')) {
             const apexX = ((active3DFx.apexX !== undefined ? active3DFx.apexX : 50) / 100 - 0.5);
             const apexY = ((active3DFx.apexY !== undefined ? active3DFx.apexY : 0) / 100 - 0.5);
             apexPoint = projectQuad(apexX, apexY, meshD);
             if (apexPoint && !apexPoint.isBehind) all3DCorners.push(apexPoint);
+          } else if (layer.shapeType === '3d_model' && layer.modelMediaId) {
+            const loader = (typeof window !== 'undefined') ? window.Fish3DLoader : null;
+            const bundle = (loader && typeof loader.getModel === 'function') ? loader.getModel(layer.modelMediaId) : null;
+            const lb = (bundle && bundle.localBounds)
+              ? bundle.localBounds
+              : { minX: -0.5, maxX: 0.5, minY: -0.5, maxY: 0.5, minZ: -0.5, maxZ: 0.5 };
+            const zF = lb.maxZ * meshD;
+            const zB = lb.minZ * meshD;
+            pTL = projectQuad(lb.minX, lb.minY, zF);
+            pTR = projectQuad(lb.maxX, lb.minY, zF);
+            pBR = projectQuad(lb.maxX, lb.maxY, zF);
+            pBL = projectQuad(lb.minX, lb.maxY, zF);
+            corners[0] = pTL; corners[1] = pTR; corners[2] = pBR; corners[3] = pBL;
+            backCorners = [
+              projectQuad(lb.minX, lb.minY, zB),
+              projectQuad(lb.maxX, lb.minY, zB),
+              projectQuad(lb.maxX, lb.maxY, zB),
+              projectQuad(lb.minX, lb.maxY, zB)
+            ];
+            all3DCorners.length = 0;
+            corners.forEach(p => { if (p && !p.isBehind) all3DCorners.push(p); });
+            backCorners.forEach(p => { if (p && !p.isBehind) all3DCorners.push(p); });
+          } else if (isNative3DShape || (active3DFx && (active3DFx.type === '3d_box' || active3DFx.type === 'box_3d' || active3DFx.type === 'sphere_3d' || active3DFx.type === 'cone_3d' || active3DFx.type === 'cylinder_3d' || active3DFx.type === 'torus_3d'))) {
+            const f3d = typeof window !== 'undefined' ? window.Fish3DEngine : null;
+            const res3d = (f3d && typeof f3d.compute3DBoxCorners === 'function')
+              ? f3d.compute3DBoxCorners(projectQuad, meshD)
+              : null;
+            if (res3d && res3d.corners && res3d.backCorners) {
+              pTL = res3d.corners[0]; pTR = res3d.corners[1]; pBR = res3d.corners[2]; pBL = res3d.corners[3];
+              corners[0] = pTL; corners[1] = pTR; corners[2] = pBR; corners[3] = pBL;
+              backCorners = res3d.backCorners;
+            } else {
+              const halfD = meshD / 2;
+              pTL = projectQuad(-0.5, -0.5,  halfD);
+              pTR = projectQuad( 0.5, -0.5,  halfD);
+              pBR = projectQuad( 0.5,  0.5,  halfD);
+              pBL = projectQuad(-0.5,  0.5,  halfD);
+              corners[0] = pTL; corners[1] = pTR; corners[2] = pBR; corners[3] = pBL;
+              backCorners = [
+                projectQuad(-0.5, -0.5, -halfD),
+                projectQuad( 0.5, -0.5, -halfD),
+                projectQuad( 0.5,  0.5, -halfD),
+                projectQuad(-0.5,  0.5, -halfD)
+              ];
+            }
+            all3DCorners.length = 0;
+            corners.forEach(p => { if (p && !p.isBehind) all3DCorners.push(p); });
+            backCorners.forEach(p => { if (p && !p.isBehind) all3DCorners.push(p); });
           } else {
             const pTL_b = projectQuad(-0.5, -0.5, -meshD);
             const pTR_b = projectQuad( 0.5, -0.5, -meshD);
@@ -1401,7 +2159,7 @@
 
       let shapeContour = null;
       let shapeContourLocal = null;
-      if (layer.type === 'shape') {
+      if (layer.type === 'shape' && !(typeof layer.shapeType === 'string' && (layer.shapeType === '3d_box' || layer.shapeType.startsWith('3d_')))) {
         shapeContourLocal = this.getShapeLocalContour(layer.shapeType || 'rectangle', layer.shapeProps || {}, absW, absH);
         if (Array.isArray(shapeContourLocal) && typeof projectLocalPoint === 'function') {
           shapeContour = shapeContourLocal.map(pt => projectLocalPoint(pt.x, pt.y, 0));
@@ -1436,7 +2194,15 @@
         shapeType: layer.shapeType || null,
         shapeProps: layer.shapeProps || null,
         bufferScale,
-        handles: [
+        handles: (layer.shapeType === '3d_model' ? [
+          { type: 'anchor', x: pAnchor.x, y: pAnchor.y, cursor: 'move' }
+        ] : (backCorners ? [
+          { type: 'nw', x: pTL.x, y: pTL.y, cursor: this.getHandleCursor(pTL.x, pTL.y, screenCenterX, screenCenterY) },
+          { type: 'ne', x: pTR.x, y: pTR.y, cursor: this.getHandleCursor(pTR.x, pTR.y, screenCenterX, screenCenterY) },
+          { type: 'se', x: pBR.x, y: pBR.y, cursor: this.getHandleCursor(pBR.x, pBR.y, screenCenterX, screenCenterY) },
+          { type: 'sw', x: pBL.x, y: pBL.y, cursor: this.getHandleCursor(pBL.x, pBL.y, screenCenterX, screenCenterY) },
+          { type: 'anchor', x: pAnchor.x, y: pAnchor.y, cursor: 'move' }
+        ] : [
           { type: 'nw', x: pTL.x, y: pTL.y, cursor: this.getHandleCursor(pTL.x, pTL.y, screenCenterX, screenCenterY) },
           { type: 'n',  x: pN.x,  y: pN.y,  cursor: this.getHandleCursor(pN.x,  pN.y,  screenCenterX, screenCenterY) },
           { type: 'ne', x: pTR.x, y: pTR.y, cursor: this.getHandleCursor(pTR.x, pTR.y, screenCenterX, screenCenterY) },
@@ -1446,7 +2212,7 @@
           { type: 'sw', x: pBL.x, y: pBL.y, cursor: this.getHandleCursor(pBL.x, pBL.y, screenCenterX, screenCenterY) },
           { type: 'w',  x: pW.x,  y: pW.y,  cursor: this.getHandleCursor(pW.x,  pW.y,  screenCenterX, screenCenterY) },
           { type: 'anchor', x: pAnchor.x, y: pAnchor.y, cursor: 'move' }
-        ],
+        ])),
         anchor: pAnchor,
         transformParams
       };
@@ -1460,6 +2226,9 @@
       if (px < bounds.x || px > bounds.x + bounds.aabbW ||
           py < bounds.y || py > bounds.y + bounds.aabbH) {
         return false;
+      }
+      if (bounds.is3DBox || bounds.backCorners || (bounds.all3DCorners && bounds.all3DCorners.length > 4)) {
+        return true;
       }
       const poly = bounds.corners;
       if (!poly || poly.length < 3) return false;
@@ -1525,9 +2294,12 @@
           const nearPlane = NEAR_PLANE * bufferScale;
           const maxZ = camDist - nearPlane;
           const zScale = posZ ? (camDist / Math.max(nearPlane, camDist - Math.min(posZ, maxZ))) : 1;
-          const finalScale = zScale * totalZoom;
-          if (finalScale !== 1) {
-            ctx.scale(finalScale, finalScale);
+          const vp2d = this._getProjectViewport(bufferScale, layer);
+          const camInv2d = this._getCameraInverseScale(camera, vp2d.vw, vp2d.vh, bufferScale, this._camScaleScratch);
+          const finalScaleX = zScale * totalZoom * camInv2d.x;
+          const finalScaleY = zScale * totalZoom * camInv2d.y;
+          if (finalScaleX !== 1 || finalScaleY !== 1) {
+            ctx.scale(finalScaleX, finalScaleY);
           }
           if (bounds.rotX || bounds.rotY) {
             const cosX = Math.cos(((bounds.rotX || 0) * Math.PI) / 180);
@@ -1610,13 +2382,14 @@
       const sourceEl = processed.el;
 
       // Calculate Full 4x4 MVP Matrix
-      let mvp = this._computeMVP(bounds, vw, vh, 0, camera);
+      let mvp = this._computeMVP(bounds, vw, vh, 0, camera, this._mvpScratchDraw);
       if (!mvp) return;
 
       if (processed.padX > 0 || processed.padY > 0) {
         const sX = (processed.origW + processed.padX * 2) / processed.origW;
         const sY = (processed.origH + processed.padY * 2) / processed.origH;
-        const scaledMVP = new Float32Array(mvp);
+        const scaledMVP = this._mvpScratchPad;
+        for (let i = 0; i < 16; i++) scaledMVP[i] = mvp[i];
         scaledMVP[0] *= sX;
         scaledMVP[1] *= sX;
         scaledMVP[2] *= sX;
@@ -1670,27 +2443,51 @@
         ? layer.effects.find(f => f.type === 'tile' && !f.disabled)
         : null;
 
-      const boxFx = Array.isArray(layer.effects)
-        ? layer.effects.find(f => f && !f.disabled && f.type === 'box_3d')
-        : null;
+      const boxFx = (Array.isArray(layer.effects)
+        ? layer.effects.find(f => f && !f.disabled && (f.type === 'box_3d' || f.type === '3d_box'))
+        : null) || (layer.shapeType === '3d_box' ? { type: '3d_box' } : null);
       const extrudeFx = Array.isArray(layer.effects)
         ? layer.effects.find(f => f && !f.disabled && f.type === 'extrude_3d')
         : null;
-      const pyramidFx = Array.isArray(layer.effects)
-        ? layer.effects.find(f => f && !f.disabled && f.type === 'pyramid_3d')
-        : null;
-      const sphereFx = Array.isArray(layer.effects)
-        ? layer.effects.find(f => f && !f.disabled && f.type === 'sphere_3d')
-        : null;
+      const pyramidFx = (Array.isArray(layer.effects)
+        ? layer.effects.find(f => f && !f.disabled && (f.type === 'pyramid_3d' || f.type === '3d_pyramid'))
+        : null) || (layer.shapeType === '3d_pyramid' || layer.shapeType === '3d_triangle' ? { type: '3d_pyramid', sideMode: 'solid color' } : null);
+      const sphereFx = (Array.isArray(layer.effects)
+        ? layer.effects.find(f => f && !f.disabled && (f.type === 'sphere_3d' || f.type === '3d_sphere'))
+        : null) || (layer.shapeType === '3d_sphere' ? { type: '3d_sphere', sideMode: 'solid color' } : null);
+      const coneFx = (Array.isArray(layer.effects)
+        ? layer.effects.find(f => f && !f.disabled && (f.type === 'cone_3d' || f.type === '3d_cone'))
+        : null) || (layer.shapeType === '3d_cone' ? { type: '3d_cone', sideMode: 'solid color' } : null);
+      const cylinderFx = (Array.isArray(layer.effects)
+        ? layer.effects.find(f => f && !f.disabled && (f.type === 'cylinder_3d' || f.type === '3d_cylinder'))
+        : null) || (layer.shapeType === '3d_cylinder' ? { type: '3d_cylinder', sideMode: 'solid color' } : null);
+      const torusFx = (Array.isArray(layer.effects)
+        ? layer.effects.find(f => f && !f.disabled && (f.type === 'torus_3d' || f.type === '3d_torus'))
+        : null) || (layer.shapeType === '3d_torus' ? { type: '3d_torus', sideMode: 'solid color' } : null);
+      const modelFx = (layer.shapeType === '3d_model' && layer.modelMediaId) ? { type: '3d_model' } : null;
 
-      if (boxFx || extrudeFx || pyramidFx || sphereFx) {
+      if (!tileFx && !layer._dofBlur) {
+        const hasSpillFx = Array.isArray(layer.effects) && layer.effects.some(f => f && !f.disabled && (f.type === 'drop-shadow' || f.type === 'deep-glow' || f.type === 'rgb-split' || f.type === 'blur'));
+        if (!hasSpillFx) {
+          const zRange = this._getLayerMeshZRange(layer, bounds, boxFx, extrudeFx, pyramidFx, sphereFx, coneFx, cylinderFx, torusFx, modelFx);
+          if (this._isOutsideFrustum(mvp, zRange[0], zRange[1], this._getLensDistort(camera))) {
+            return;
+          }
+        }
+      }
+
+      if (boxFx || extrudeFx || pyramidFx || sphereFx || coneFx || cylinderFx || torusFx || modelFx) {
         gl.enable(gl.DEPTH_TEST);
         gl.depthFunc(gl.LEQUAL);
         gl.depthMask(true);
-        if (boxFx) this._draw3DBoxMesh(gl, mvp, boxFx, bounds, normLayerOp, layer);
+        if (modelFx) this._draw3DModelMesh(gl, mvp, bounds, normLayerOp, layer, sourceEl);
+        else if (boxFx) this._draw3DBoxMesh(gl, mvp, boxFx, bounds, normLayerOp, layer, sourceEl);
         else if (extrudeFx) this._draw3DExtrudeMesh(gl, mvp, extrudeFx, bounds, normLayerOp, layer, sourceEl);
         else if (pyramidFx) this._draw3DPyramidMesh(gl, mvp, pyramidFx, bounds, normLayerOp, layer);
         else if (sphereFx) this._draw3DSphereMesh(gl, mvp, sphereFx, bounds, normLayerOp, layer);
+        else if (coneFx) this._draw3DConeMesh(gl, mvp, coneFx, bounds, normLayerOp, layer, sourceEl);
+        else if (cylinderFx) this._draw3DCylinderMesh(gl, mvp, cylinderFx, bounds, normLayerOp, layer, sourceEl);
+        else if (torusFx) this._draw3DTorusMesh(gl, mvp, torusFx, bounds, normLayerOp, layer, sourceEl);
         gl.disable(gl.DEPTH_TEST);
       } else {
         gl.disable(gl.DEPTH_TEST);
@@ -1776,11 +2573,106 @@
       }
     }
 
-    _draw3DBoxMesh(gl, mvp, boxFx, bounds, layerOpacity, layer = null) {
+    _setSolidCullFace(gl, enable, bounds) {
+      if (enable) {
+        gl.enable(gl.CULL_FACE);
+        gl.cullFace(gl.BACK);
+        const flipped = bounds && ((bounds.signX || 1) * (bounds.signY || 1) < 0);
+        gl.frontFace(flipped ? gl.CW : gl.CCW);
+      } else {
+        gl.disable(gl.CULL_FACE);
+        gl.frontFace(gl.CCW);
+      }
+    }
+
+    _scaleMatrixZ(out, src, zScale) {
+      for (let i = 0; i < 16; i++) out[i] = src[i];
+      out[8] *= zScale;
+      out[9] *= zScale;
+      out[10] *= zScale;
+      out[11] *= zScale;
+      return out;
+    }
+
+    _isOutsideFrustum(mvp, zMin = 0, zMax = 0, lensDistort = 0) {
+      if (!mvp || Math.abs(lensDistort) > 0.001) return false;
+      let allOut = 63;
+      const zCount = (zMax !== zMin) ? 2 : 1;
+      for (let zi = 0; zi < zCount; zi++) {
+        const z = (zi === 0) ? zMin : zMax;
+        for (let yi = 0; yi < 2; yi++) {
+          const y = (yi === 0) ? -0.5 : 0.5;
+          for (let xi = 0; xi < 2; xi++) {
+            const x = (xi === 0) ? -0.5 : 0.5;
+            const cx = mvp[0] * x + mvp[4] * y + mvp[8] * z + mvp[12];
+            const cy = mvp[1] * x + mvp[5] * y + mvp[9] * z + mvp[13];
+            const cz = mvp[2] * x + mvp[6] * y + mvp[10] * z + mvp[14];
+            const cw = mvp[3] * x + mvp[7] * y + mvp[11] * z + mvp[15];
+            const code =
+              (cx + cw < 0 ? 1 : 0) |
+              (cw - cx < 0 ? 2 : 0) |
+              (cy + cw < 0 ? 4 : 0) |
+              (cw - cy < 0 ? 8 : 0) |
+              (cz + cw < 0 ? 16 : 0) |
+              (cw - cz < 0 ? 32 : 0);
+            allOut &= code;
+            if (allOut === 0) return false;
+          }
+        }
+      }
+      return allOut !== 0;
+    }
+
+    _getLayerMeshZRange(layer, bounds, bFx, eFx, pFx, sFx, cFx, cylFx, tFx, mFx) {
+      const out = this._zRangeScratch || (this._zRangeScratch = new Float32Array(2));
+      const bScale = (bounds && bounds.bufferScale) ? bounds.bufferScale : 1;
+      const w = (bounds && bounds.w) ? bounds.w : (300 * bScale);
+      const h = (bounds && bounds.h) ? bounds.h : (300 * bScale);
+      const lDepth = (layer && layer.scaleZ !== undefined)
+        ? (layer.scaleZ * bScale)
+        : ((layer && layer.depth !== undefined) ? (layer.depth * bScale) : null);
+
+      if (bFx || cFx || cylFx || mFx) {
+        const d = Math.max(1, lDepth !== null ? lDepth : ((bFx && bFx.depth !== undefined) ? bFx.depth * bScale : Math.round(Math.min(w, h))));
+        out[0] = -d * 0.5;
+        out[1] = d * 0.5;
+      } else if (tFx) {
+        const d = Math.max(1, lDepth !== null ? lDepth : (150 * bScale));
+        const rMax = 0.12 * d * 2;
+        out[0] = -rMax;
+        out[1] = rMax;
+      } else if (sFx) {
+        const defD = Math.round(Math.min(w, h)) * 0.5;
+        const d = Math.max(0.1, lDepth !== null ? lDepth : defD);
+        out[0] = -d;
+        out[1] = d;
+      } else if (pFx) {
+        const d = Math.max(0, lDepth !== null ? lDepth : ((pFx.height !== undefined) ? pFx.height * bScale : Math.round(Math.min(w, h))));
+        out[0] = 0;
+        out[1] = d;
+      } else if (eFx) {
+        const d = Math.max(1, lDepth !== null ? lDepth : ((eFx.extrudeDepth !== undefined) ? eFx.extrudeDepth * bScale : Math.round(Math.min(w, h))));
+        out[0] = -d;
+        out[1] = 0;
+      } else {
+        out[0] = 0;
+        out[1] = 0;
+      }
+      return out;
+    }
+
+    _draw3DBoxMesh(gl, mvp, boxFx, bounds, layerOpacity, layer = null, el = null) {
+      if (typeof window !== 'undefined' && window.Fish3DEngine && typeof window.Fish3DEngine.draw3DBoxMesh === 'function') {
+        this._applyLightingUniforms(gl, layer, null, bounds, bounds && bounds.w, bounds && bounds.h);
+        window.Fish3DEngine.draw3DBoxMesh(gl, this.locations, this.buffers, mvp, bounds, layerOpacity, layer, el, this._currentModelMatrix, this);
+        this._restoreMeshQuadState(gl);
+        return;
+      }
+      const bScale = (bounds && bounds.bufferScale) ? bounds.bufferScale : 1;
       const defaultDepth = bounds && (bounds.w || bounds.h)
-        ? Math.round(Math.min(bounds.w || 300, bounds.h || 300))
-        : 300;
-      const lDepth = (layer && layer.scaleZ !== undefined) ? layer.scaleZ : ((layer && layer.depth !== undefined) ? layer.depth : ((boxFx && boxFx.depth !== undefined) ? boxFx.depth : null));
+        ? Math.round(Math.min(bounds.w || (300 * bScale), bounds.h || (300 * bScale)))
+        : (300 * bScale);
+      const lDepth = (layer && layer.scaleZ !== undefined) ? (layer.scaleZ * bScale) : ((layer && layer.depth !== undefined) ? (layer.depth * bScale) : ((boxFx && boxFx.depth !== undefined) ? (boxFx.depth * bScale) : null));
       const depth = Math.max(1, lDepth !== null ? lDepth : defaultDepth);
       const isSolidMode = boxFx && boxFx.sideMode === 'solid color';
       const defaultWhite = '#ffffff';
@@ -1977,15 +2869,7 @@
       }
 
       // Restore standard 2D quad state for subsequent renders
-      gl.uniform1i(this.locations.mode, 0);
-      gl.disableVertexAttribArray(this.locations.color);
-      gl.vertexAttrib4f(this.locations.color, 1.0, 1.0, 1.0, 1.0);
-      gl.enableVertexAttribArray(this.locations.texCoord);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
-      gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
-      gl.vertexAttribPointer(this.locations.position, 2, gl.FLOAT, false, 0, 0);
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffers.index);
+      this._restoreMeshQuadState(gl);
     }
 
     /* ── True-shape silhouette extrusion (text / triangle / image cutouts) ────
@@ -2243,9 +3127,21 @@
 
     /* Restore standard 2D quad attrib state after a mesh draw. */
     _restoreMeshQuadState(gl) {
+      if (this.isWebGL2 && typeof gl.bindVertexArray === 'function') {
+        gl.bindVertexArray(null);
+      }
+      gl.disable(gl.CULL_FACE);
+      gl.frontFace(gl.CCW);
       gl.uniform1i(this.locations.mode, 0);
       gl.disableVertexAttribArray(this.locations.color);
       gl.vertexAttrib4f(this.locations.color, 1.0, 1.0, 1.0, 1.0);
+      if (this.locations.normal !== -1 && this.locations.normal !== undefined) {
+        gl.disableVertexAttribArray(this.locations.normal);
+        gl.vertexAttrib3f(this.locations.normal, 0.0, 0.0, 1.0);
+      }
+      if (this.locations.numLights) gl.uniform1i(this.locations.numLights, 0);
+      if (this.locations.materialParams) gl.uniform4f(this.locations.materialParams, 0.0, 1.0, 0.5, 0.5);
+      if (this.locations.matExtra) gl.uniform4f(this.locations.matExtra, 0.0, 0.0, 1.0, 0.0);
       gl.enableVertexAttribArray(this.locations.texCoord);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
       gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
@@ -2254,11 +3150,44 @@
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffers.index);
     }
 
+    _draw3DConeMesh(gl, mvp, coneFx, bounds, layerOpacity, layer = null, el = null) {
+      if (typeof window !== 'undefined' && window.Fish3DEngine && typeof window.Fish3DEngine.draw3DConeMesh === 'function') {
+        this._applyLightingUniforms(gl, layer, null, bounds, bounds && bounds.w, bounds && bounds.h);
+        window.Fish3DEngine.draw3DConeMesh(gl, this.locations, this.buffers, mvp, bounds, layerOpacity, layer, el, this._currentModelMatrix, this);
+      }
+      this._restoreMeshQuadState(gl);
+    }
+
+    _draw3DCylinderMesh(gl, mvp, cylinderFx, bounds, layerOpacity, layer = null, el = null) {
+      if (typeof window !== 'undefined' && window.Fish3DEngine && typeof window.Fish3DEngine.draw3DCylinderMesh === 'function') {
+        this._applyLightingUniforms(gl, layer, null, bounds, bounds && bounds.w, bounds && bounds.h);
+        window.Fish3DEngine.draw3DCylinderMesh(gl, this.locations, this.buffers, mvp, bounds, layerOpacity, layer, el, this._currentModelMatrix, this);
+      }
+      this._restoreMeshQuadState(gl);
+    }
+
+    _draw3DTorusMesh(gl, mvp, torusFx, bounds, layerOpacity, layer = null, el = null) {
+      if (typeof window !== 'undefined' && window.Fish3DEngine && typeof window.Fish3DEngine.draw3DTorusMesh === 'function') {
+        this._applyLightingUniforms(gl, layer, null, bounds, bounds && bounds.w, bounds && bounds.h);
+        window.Fish3DEngine.draw3DTorusMesh(gl, this.locations, this.buffers, mvp, bounds, layerOpacity, layer, el, this._currentModelMatrix, this);
+      }
+      this._restoreMeshQuadState(gl);
+    }
+
+    _draw3DModelMesh(gl, mvp, bounds, layerOpacity, layer = null, el = null) {
+      if (typeof window !== 'undefined' && window.Fish3DLoader && typeof window.Fish3DLoader.draw3DModelMesh === 'function') {
+        this._applyLightingUniforms(gl, layer, null, bounds, bounds && bounds.w, bounds && bounds.h);
+        window.Fish3DLoader.draw3DModelMesh(gl, this.locations, mvp, bounds, layerOpacity, layer, el, this._currentModelMatrix, this);
+      }
+      this._restoreMeshQuadState(gl);
+    }
+
     _draw3DExtrudeMesh(gl, mvp, extrudeFx, bounds, layerOpacity, layer = null, srcEl = null) {
+      const bScale = (bounds && bounds.bufferScale) ? bounds.bufferScale : 1;
       const defaultDepth = bounds && (bounds.w || bounds.h)
-        ? Math.round(Math.min(bounds.w || 300, bounds.h || 300))
-        : 300;
-      const lDepth = (layer && layer.scaleZ !== undefined) ? layer.scaleZ : ((layer && layer.depth !== undefined) ? layer.depth : ((extrudeFx && extrudeFx.extrudeDepth !== undefined) ? extrudeFx.extrudeDepth : null));
+        ? Math.round(Math.min(bounds.w || (300 * bScale), bounds.h || (300 * bScale)))
+        : (300 * bScale);
+      const lDepth = (layer && layer.scaleZ !== undefined) ? (layer.scaleZ * bScale) : ((layer && layer.depth !== undefined) ? (layer.depth * bScale) : ((extrudeFx && extrudeFx.extrudeDepth !== undefined) ? (extrudeFx.extrudeDepth * bScale) : null));
       const depth = Math.max(1, lDepth !== null ? lDepth : defaultDepth);
       const isSolidMode = extrudeFx && extrudeFx.sideMode === 'solid color';
       const defaultWhite = '#ffffff';
@@ -2455,10 +3384,11 @@
     }
 
     _draw3DPyramidMesh(gl, mvp, pyramidFx, bounds, layerOpacity, layer = null) {
+      const bScale = (bounds && bounds.bufferScale) ? bounds.bufferScale : 1;
       const defaultDepth = bounds && (bounds.w || bounds.h)
-        ? Math.round(Math.min(bounds.w || 300, bounds.h || 300))
-        : 300;
-      const lDepth = (layer && layer.scaleZ !== undefined) ? layer.scaleZ : ((layer && layer.depth !== undefined) ? layer.depth : ((pyramidFx && pyramidFx.height !== undefined) ? pyramidFx.height : null));
+        ? Math.round(Math.min(bounds.w || (300 * bScale), bounds.h || (300 * bScale)))
+        : (300 * bScale);
+      const lDepth = (layer && layer.scaleZ !== undefined) ? (layer.scaleZ * bScale) : ((layer && layer.depth !== undefined) ? (layer.depth * bScale) : ((pyramidFx && pyramidFx.height !== undefined) ? (pyramidFx.height * bScale) : null));
       const height = Math.max(0, lDepth !== null ? lDepth : defaultDepth);
       const apexX = ((pyramidFx && pyramidFx.apexX !== undefined ? pyramidFx.apexX : 50) / 100 - 0.5);
       const apexY = ((pyramidFx && pyramidFx.apexY !== undefined ? pyramidFx.apexY : 25) / 100 - 0.5);
@@ -2476,140 +3406,196 @@
       const shading = Math.max(0, Math.min(1, (pyramidFx && pyramidFx.shading !== undefined ? pyramidFx.shading : 0) / 100));
 
       gl.uniformMatrix4fv(this.locations.matrix, false, mvp);
+      this._applyLightingUniforms(gl, layer, null, bounds, bounds && bounds.w, bounds && bounds.h);
 
-      // Base at z = 0, Apex at z = height
-      const positions = new Float32Array([
-        // Face 1 (Front/Bottom): BL -> BR -> Apex
-        -0.5, 0.5, 0,    0.5, 0.5, 0,    apexX, apexY, height,
-        // Face 2 (Right): BR -> TR -> Apex
-         0.5, 0.5, 0,    0.5, -0.5, 0,   apexX, apexY, height,
-        // Face 3 (Back/Top): TR -> TL -> Apex
-         0.5, -0.5, 0,  -0.5, -0.5, 0,   apexX, apexY, height,
-        // Face 4 (Left): TL -> BL -> Apex
-        -0.5, -0.5, 0,  -0.5, 0.5, 0,    apexX, apexY, height,
-        // Base Face: TL -> TR -> BR -> BL
-        -0.5, -0.5, 0,   0.5, -0.5, 0,   0.5, 0.5, 0,   -0.5, 0.5, 0
-      ]);
+      if (!this._pyramidPositions) this._pyramidPositions = new Float32Array(16 * 3);
+      if (!this._pyramidNormals) this._pyramidNormals = new Float32Array(16 * 3);
+      if (!this._pyramidColors) this._pyramidColors = new Float32Array(16 * 4);
+      if (!this._pyramidEdgePos) this._pyramidEdgePos = new Float32Array(16 * 3);
 
-      const texCoords = new Float32Array([
-        // Face 1: BL -> BR -> Apex
-        0.0, 1.0,   1.0, 1.0,   0.5, 0.5,
-        // Face 2: BR -> TR -> Apex
-        1.0, 1.0,   1.0, 0.0,   0.5, 0.5,
-        // Face 3: TR -> TL -> Apex
-        1.0, 0.0,   0.0, 0.0,   0.5, 0.5,
-        // Face 4: TL -> BL -> Apex
-        0.0, 0.0,   0.0, 1.0,   0.5, 0.5,
-        // Base Face: TL -> TR -> BR -> BL
-        0.0, 0.0,   1.0, 0.0,   1.0, 1.0,   0.0, 1.0
-      ]);
+      if (!this._pyramidPosBuffer) this._pyramidPosBuffer = gl.createBuffer();
+      if (!this._pyramidNormBuffer) this._pyramidNormBuffer = gl.createBuffer();
+      if (!this._pyramidColBuffer) this._pyramidColBuffer = gl.createBuffer();
+      if (!this._pyramidUvBuffer) {
+        this._pyramidUvBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._pyramidUvBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+          0.0, 1.0, 1.0, 1.0, 0.5, 0.5,
+          1.0, 1.0, 1.0, 0.0, 0.5, 0.5,
+          1.0, 0.0, 0.0, 0.0, 0.5, 0.5,
+          0.0, 0.0, 0.0, 1.0, 0.5, 0.5,
+          0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0
+        ]), gl.STATIC_DRAW);
+      }
+      if (!this._pyramidIdxBuffer) {
+        this._pyramidIdxBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this._pyramidIdxBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([
+          0, 1, 2,
+          3, 4, 5,
+          6, 7, 8,
+          9, 10, 11,
+          12, 13, 14, 12, 14, 15
+        ]), gl.STATIC_DRAW);
+      }
+
+      const positions = this._pyramidPositions;
+      const pn = this._pyramidNormals;
+      const geomKey = `${height.toFixed(2)}_${apexX.toFixed(4)}_${apexY.toFixed(4)}`;
+      if (this._pyramidGeomKey !== geomKey) {
+        this._pyramidGeomKey = geomKey;
+        positions.set([
+          -0.5,  0.5, 0,   0.5,  0.5, 0,  apexX, apexY, height,
+           0.5,  0.5, 0,   0.5, -0.5, 0,  apexX, apexY, height,
+           0.5, -0.5, 0,  -0.5, -0.5, 0,  apexX, apexY, height,
+          -0.5, -0.5, 0,  -0.5,  0.5, 0,  apexX, apexY, height,
+          -0.5, -0.5, 0,   0.5, -0.5, 0,  0.5, 0.5, 0,  -0.5, 0.5, 0
+        ]);
+        const l1 = Math.hypot(height, 0.5 - apexY) || 1;
+        const n1y = height / l1, n1z = (0.5 - apexY) / l1;
+        const l2 = Math.hypot(height, 0.5 - apexX) || 1;
+        const n2x = height / l2, n2z = (0.5 - apexX) / l2;
+        const l3 = Math.hypot(height, apexY + 0.5) || 1;
+        const n3y = -height / l3, n3z = (apexY + 0.5) / l3;
+        const l4 = Math.hypot(height, apexX + 0.5) || 1;
+        const n4x = -height / l4, n4z = (apexX + 0.5) / l4;
+
+        let pno = 0;
+        pn[pno++] = 0;   pn[pno++] = n1y; pn[pno++] = n1z;
+        pn[pno++] = 0;   pn[pno++] = n1y; pn[pno++] = n1z;
+        pn[pno++] = 0;   pn[pno++] = n1y; pn[pno++] = n1z;
+        pn[pno++] = n2x; pn[pno++] = 0;   pn[pno++] = n2z;
+        pn[pno++] = n2x; pn[pno++] = 0;   pn[pno++] = n2z;
+        pn[pno++] = n2x; pn[pno++] = 0;   pn[pno++] = n2z;
+        pn[pno++] = 0;   pn[pno++] = n3y; pn[pno++] = n3z;
+        pn[pno++] = 0;   pn[pno++] = n3y; pn[pno++] = n3z;
+        pn[pno++] = 0;   pn[pno++] = n3y; pn[pno++] = n3z;
+        pn[pno++] = n4x; pn[pno++] = 0;   pn[pno++] = n4z;
+        pn[pno++] = n4x; pn[pno++] = 0;   pn[pno++] = n4z;
+        pn[pno++] = n4x; pn[pno++] = 0;   pn[pno++] = n4z;
+        pn[pno++] = 0;   pn[pno++] = 0;   pn[pno++] = -1;
+        pn[pno++] = 0;   pn[pno++] = 0;   pn[pno++] = -1;
+        pn[pno++] = 0;   pn[pno++] = 0;   pn[pno++] = -1;
+        pn[pno++] = 0;   pn[pno++] = 0;   pn[pno++] = -1;
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._pyramidPosBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._pyramidNormBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, pn, gl.DYNAMIC_DRAW);
+      }
 
       const cBase = hexToRgb(faceColor);
       const tintR = isSolidMode ? (cBase.r / 255) : 1.0;
       const tintG = isSolidMode ? (cBase.g / 255) : 1.0;
       const tintB = isSolidMode ? (cBase.b / 255) : 1.0;
 
-      const makeCol = (m) => [
-        Math.min(1.0, tintR * m),
-        Math.min(1.0, tintG * m),
-        Math.min(1.0, tintB * m),
-        faceOpacity
-      ];
-
-      const mulFront = 1.0 + shading * 0.2;
-      const mulRight = Math.max(0.15, 1.0 - shading * 0.25);
-      const mulBack  = Math.max(0.1, 1.0 - shading * 0.45);
-      const mulLeft  = Math.max(0.15, 1.0 - shading * 0.35);
-      const mulBase  = Math.max(0.1, 1.0 - shading * 0.5);
-
-      const col1 = makeCol(mulFront);
-      const col2 = makeCol(mulRight);
-      const col3 = makeCol(mulBack);
-      const col4 = makeCol(mulLeft);
-      const colBase = makeCol(mulBase);
-
-      const colors = new Float32Array([
-        ...col1, ...col1, ...col1,
-        ...col2, ...col2, ...col2,
-        ...col3, ...col3, ...col3,
-        ...col4, ...col4, ...col4,
-        ...colBase, ...colBase, ...colBase, ...colBase
-      ]);
-
-      const indices = new Uint16Array([
-        0, 1, 2,
-        3, 4, 5,
-        6, 7, 8,
-        9, 10, 11,
-        12, 13, 14,  12, 14, 15
-      ]);
-
+      this._setSolidCullFace(gl, isSolidMode && faceOpacity >= 0.999, bounds);
       gl.uniform1i(this.locations.mode, isSolidMode ? 1 : 0);
 
       gl.enableVertexAttribArray(this.locations.position);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.meshBuffers.position);
-      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this._pyramidPosBuffer);
       gl.vertexAttribPointer(this.locations.position, 3, gl.FLOAT, false, 0, 0);
 
+      if (this.locations.normal !== -1 && this.locations.normal !== undefined) {
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._pyramidNormBuffer);
+        gl.enableVertexAttribArray(this.locations.normal);
+        gl.vertexAttribPointer(this.locations.normal, 3, gl.FLOAT, false, 0, 0);
+      }
+
       gl.enableVertexAttribArray(this.locations.texCoord);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.meshBuffers.texCoord);
-      gl.bufferData(gl.ARRAY_BUFFER, texCoords, gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this._pyramidUvBuffer);
       gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
 
-      gl.enableVertexAttribArray(this.locations.color);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.meshBuffers.color);
-      gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
-      gl.vertexAttribPointer(this.locations.color, 4, gl.FLOAT, false, 0, 0);
+      if (shading <= 0.001) {
+        gl.disableVertexAttribArray(this.locations.color);
+        const sSlot = (layer && Array.isArray(layer.materialSlots) && layer.materialSlots[0]) ? layer.materialSlots[0] : null;
+        if (sSlot && sSlot.surfaceMode && sSlot.surfaceMode !== 'inherit') {
+          this.applyMaterialSlot(gl, layer, sSlot, null, faceOpacity, cBase, !isSolidMode);
+        } else {
+          gl.vertexAttrib4f(this.locations.color, tintR, tintG, tintB, faceOpacity);
+        }
+      } else {
+        const colKey = `${tintR.toFixed(3)}_${tintG.toFixed(3)}_${tintB.toFixed(3)}_${faceOpacity.toFixed(3)}_${shading.toFixed(3)}`;
+        if (this._pyramidColKey !== colKey) {
+          this._pyramidColKey = colKey;
+          const colors = this._pyramidColors;
+          const muls = [
+            1.0 + shading * 0.2, 1.0 + shading * 0.2, 1.0 + shading * 0.2,
+            Math.max(0.15, 1.0 - shading * 0.25), Math.max(0.15, 1.0 - shading * 0.25), Math.max(0.15, 1.0 - shading * 0.25),
+            Math.max(0.1, 1.0 - shading * 0.45), Math.max(0.1, 1.0 - shading * 0.45), Math.max(0.1, 1.0 - shading * 0.45),
+            Math.max(0.15, 1.0 - shading * 0.35), Math.max(0.15, 1.0 - shading * 0.35), Math.max(0.15, 1.0 - shading * 0.35),
+            Math.max(0.1, 1.0 - shading * 0.5), Math.max(0.1, 1.0 - shading * 0.5), Math.max(0.1, 1.0 - shading * 0.5), Math.max(0.1, 1.0 - shading * 0.5)
+          ];
+          for (let i = 0; i < 16; i++) {
+            const m = muls[i];
+            const ci = i * 4;
+            colors[ci] = Math.min(1.0, tintR * m);
+            colors[ci + 1] = Math.min(1.0, tintG * m);
+            colors[ci + 2] = Math.min(1.0, tintB * m);
+            colors[ci + 3] = faceOpacity;
+          }
+          gl.bindBuffer(gl.ARRAY_BUFFER, this._pyramidColBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+        }
+        gl.enableVertexAttribArray(this.locations.color);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._pyramidColBuffer);
+        gl.vertexAttribPointer(this.locations.color, 4, gl.FLOAT, false, 0, 0);
+      }
 
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.meshBuffers.index);
-      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.DYNAMIC_DRAW);
-      gl.drawElements(gl.TRIANGLES, 18, gl.UNSIGNED_SHORT, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this._pyramidIdxBuffer);
+      const pSlots = (layer && Array.isArray(layer.materialSlots) && layer.materialSlots.length > 0) ? layer.materialSlots : null;
+      if (pSlots && pSlots.length >= 2 && shading <= 0.001) {
+        this.applyMaterialSlot(gl, layer, pSlots[0], null, faceOpacity, cBase, !isSolidMode);
+        gl.drawElements(gl.TRIANGLES, 12, gl.UNSIGNED_SHORT, 0);
+        this.applyMaterialSlot(gl, layer, pSlots[1], null, faceOpacity, cBase, !isSolidMode);
+        gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 12 * 2);
+      } else {
+        if (pSlots && pSlots[0] && shading <= 0.001) {
+          this.applyMaterialSlot(gl, layer, pSlots[0], null, faceOpacity, cBase, !isSolidMode);
+        }
+        gl.drawElements(gl.TRIANGLES, 18, gl.UNSIGNED_SHORT, 0);
+      }
+      this._setSolidCullFace(gl, false, null);
 
       if (edgeOpacity > 0.01) {
-        const edgePositions = new Float32Array([
-          // Base 4 edges
-          -0.5, -0.5, 0,   0.5, -0.5, 0,
-           0.5, -0.5, 0,   0.5,  0.5, 0,
-           0.5,  0.5, 0,  -0.5,  0.5, 0,
-          -0.5,  0.5, 0,  -0.5, -0.5, 0,
-          // 4 Ridge edges to apex
-          -0.5, -0.5, 0,   apexX, apexY, height,
-           0.5, -0.5, 0,   apexX, apexY, height,
-           0.5,  0.5, 0,   apexX, apexY, height,
-          -0.5,  0.5, 0,   apexX, apexY, height
+        this._pyramidEdgePos.set([
+          -0.5, -0.5, 0,  0.5, -0.5, 0,
+           0.5, -0.5, 0,  0.5,  0.5, 0,
+           0.5,  0.5, 0, -0.5,  0.5, 0,
+          -0.5,  0.5, 0, -0.5, -0.5, 0,
+          -0.5, -0.5, 0,  apexX, apexY, height,
+           0.5, -0.5, 0,  apexX, apexY, height,
+           0.5,  0.5, 0,  apexX, apexY, height,
+          -0.5,  0.5, 0,  apexX, apexY, height
         ]);
 
         const cEdge = hexToRgb(edgeColor);
         gl.uniform1i(this.locations.mode, 1);
         gl.disableVertexAttribArray(this.locations.color);
         gl.disableVertexAttribArray(this.locations.texCoord);
+        if (this.locations.normal !== -1 && this.locations.normal !== undefined) {
+          gl.disableVertexAttribArray(this.locations.normal);
+        }
         gl.vertexAttrib4f(this.locations.color, cEdge.r / 255, cEdge.g / 255, cEdge.b / 255, edgeOpacity);
         gl.vertexAttrib2f(this.locations.texCoord, 0.0, 0.0);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.meshBuffers.position);
-        gl.bufferData(gl.ARRAY_BUFFER, edgePositions, gl.DYNAMIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, this._pyramidEdgePos, gl.DYNAMIC_DRAW);
         gl.vertexAttribPointer(this.locations.position, 3, gl.FLOAT, false, 0, 0);
 
         gl.drawArrays(gl.LINES, 0, 16);
       }
 
       // Restore standard 2D quad state for subsequent renders
-      gl.uniform1i(this.locations.mode, 0);
-      gl.disableVertexAttribArray(this.locations.color);
-      gl.vertexAttrib4f(this.locations.color, 1.0, 1.0, 1.0, 1.0);
-      gl.enableVertexAttribArray(this.locations.texCoord);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
-      gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
-      gl.vertexAttribPointer(this.locations.position, 2, gl.FLOAT, false, 0, 0);
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffers.index);
+      this._restoreMeshQuadState(gl);
     }
 
     _draw3DSphereMesh(gl, mvp, sphereFx, bounds, layerOpacity, layer = null) {
+      const bScale = (bounds && bounds.bufferScale) ? bounds.bufferScale : 1;
       const defaultDepth = bounds && (bounds.w || bounds.h)
-        ? Math.round(Math.min(bounds.w || 300, bounds.h || 300)) * 0.5
-        : 150;
-      const lDepth = (layer && layer.scaleZ !== undefined) ? layer.scaleZ : ((layer && layer.depth !== undefined) ? layer.depth : null);
+        ? Math.round(Math.min(bounds.w || (300 * bScale), bounds.h || (300 * bScale))) * 0.5
+        : (150 * bScale);
+      const lDepth = (layer && layer.scaleZ !== undefined) ? (layer.scaleZ * bScale) : ((layer && layer.depth !== undefined) ? (layer.depth * bScale) : null);
       const depthZ = Math.max(0.1, lDepth !== null ? lDepth : defaultDepth);
 
       const isSolidMode = sphereFx && (sphereFx.sideMode === 'solid color' || sphereFx.fillMode === 'solid color');
@@ -2624,12 +3610,19 @@
       const edgeColor = (sphereFx && sphereFx.edgeColor) || '#ffffff';
       const edgeOpacity = Math.max(0, Math.min(1, (sphereFx && sphereFx.edgeOpacity !== undefined ? sphereFx.edgeOpacity : 0) / 100));
 
-      gl.uniformMatrix4fv(this.locations.matrix, false, mvp);
+      this._scaleMatrixZ(this._meshScratchMvp, mvp, depthZ);
+      gl.uniformMatrix4fv(this.locations.matrix, false, this._meshScratchMvp);
+      this._applyLightingUniforms(gl, layer, null, bounds, bounds && bounds.w, bounds && bounds.h);
+      if (this._currentModelMatrix && this.locations.modelMatrix) {
+        this._scaleMatrixZ(this._meshScratchModel, this._currentModelMatrix, depthZ);
+        gl.uniformMatrix4fv(this.locations.modelMatrix, false, this._meshScratchModel);
+      }
 
       if (!this._sphereMeshBase) {
         const rings = 16;
         const sectors = 24;
         const basePos = [];
+        const normals = [];
         const texCoords = [];
         const indices = [];
 
@@ -2644,6 +3637,7 @@
             const zNorm = Math.sin(phi) * Math.sin(theta);
             basePos.push(x, y, zNorm);
             texCoords.push(u, v);
+            normals.push(-Math.sin(phi) * Math.cos(theta), -Math.cos(phi), Math.sin(phi) * Math.sin(theta));
           }
         }
 
@@ -2658,6 +3652,7 @@
 
         this._sphereMeshBase = {
           basePos: new Float32Array(basePos),
+          normals: new Float32Array(normals),
           texCoords: new Float32Array(texCoords),
           indices: new Uint16Array(indices),
           count: indices.length,
@@ -2667,12 +3662,46 @@
 
       const base = this._sphereMeshBase;
       const vCount = base.vertexCount;
-      const positions = new Float32Array(base.basePos.length);
-      for (let i = 0; i < vCount; i++) {
-        const idx = i * 3;
-        positions[idx] = base.basePos[idx];
-        positions[idx + 1] = base.basePos[idx + 1];
-        positions[idx + 2] = base.basePos[idx + 2] * depthZ;
+
+      if (!this._spherePosBuffer) {
+        this._spherePosBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._spherePosBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, base.basePos, gl.STATIC_DRAW);
+      }
+      if (!this._sphereNormBuffer) {
+        this._sphereNormBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._sphereNormBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, base.normals, gl.STATIC_DRAW);
+      }
+      if (!this._sphereUvBuffer) {
+        this._sphereUvBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._sphereUvBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, base.texCoords, gl.STATIC_DRAW);
+      }
+      if (!this._sphereIdxBuffer) {
+        this._sphereIdxBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this._sphereIdxBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, base.indices, gl.STATIC_DRAW);
+      }
+      if (this.isWebGL2 && !this._sphereVao && typeof gl.createVertexArray === 'function') {
+        this._sphereVao = gl.createVertexArray();
+        gl.bindVertexArray(this._sphereVao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._spherePosBuffer);
+        gl.enableVertexAttribArray(this.locations.position);
+        gl.vertexAttribPointer(this.locations.position, 3, gl.FLOAT, false, 0, 0);
+        if (this.locations.normal !== -1 && this.locations.normal !== undefined) {
+          gl.bindBuffer(gl.ARRAY_BUFFER, this._sphereNormBuffer);
+          gl.enableVertexAttribArray(this.locations.normal);
+          gl.vertexAttribPointer(this.locations.normal, 3, gl.FLOAT, false, 0, 0);
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._sphereUvBuffer);
+        gl.enableVertexAttribArray(this.locations.texCoord);
+        gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
+        if (this.locations.color !== -1 && this.locations.color !== undefined) {
+          gl.disableVertexAttribArray(this.locations.color);
+        }
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this._sphereIdxBuffer);
+        gl.bindVertexArray(null);
       }
 
       const cBase = hexToRgb(faceColor);
@@ -2680,77 +3709,108 @@
       const tintG = isSolidMode ? (cBase.g / 255) : 1.0;
       const tintB = isSolidMode ? (cBase.b / 255) : 1.0;
 
-      const colors = new Float32Array(vCount * 4);
-      for (let i = 0; i < vCount; i++) {
-        const cIdx = i * 4;
-        let shadeFactor = 1.0;
-        if (shading > 0.001) {
-          const nz = Math.max(0, base.basePos[i * 3 + 2]);
-          shadeFactor = Math.max(0.15, 1.0 - (1.0 - nz) * shading * 0.7);
-        }
-        colors[cIdx] = Math.min(1.0, tintR * shadeFactor);
-        colors[cIdx + 1] = Math.min(1.0, tintG * shadeFactor);
-        colors[cIdx + 2] = Math.min(1.0, tintB * shadeFactor);
-        colors[cIdx + 3] = faceOpacity;
-      }
-
+      this._setSolidCullFace(gl, isSolidMode && faceOpacity >= 0.999, bounds);
       gl.uniform1i(this.locations.mode, isSolidMode ? 1 : 0);
 
-      gl.enableVertexAttribArray(this.locations.position);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.meshBuffers.position);
-      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
-      gl.vertexAttribPointer(this.locations.position, 3, gl.FLOAT, false, 0, 0);
+      if (shading <= 0.001) {
+        gl.disableVertexAttribArray(this.locations.color);
+        const sSlot = (layer && Array.isArray(layer.materialSlots) && layer.materialSlots[0]) ? layer.materialSlots[0] : null;
+        if (sSlot && sSlot.surfaceMode && sSlot.surfaceMode !== 'inherit') {
+          this.applyMaterialSlot(gl, layer, sSlot, null, faceOpacity, cBase, !isSolidMode);
+        } else {
+          gl.vertexAttrib4f(this.locations.color, tintR, tintG, tintB, faceOpacity);
+        }
+        if (this._sphereVao && typeof gl.bindVertexArray === 'function') {
+          gl.bindVertexArray(this._sphereVao);
+          gl.drawElements(gl.TRIANGLES, base.count, gl.UNSIGNED_SHORT, 0);
+          gl.bindVertexArray(null);
+        } else {
+          gl.enableVertexAttribArray(this.locations.position);
+          gl.bindBuffer(gl.ARRAY_BUFFER, this._spherePosBuffer);
+          gl.vertexAttribPointer(this.locations.position, 3, gl.FLOAT, false, 0, 0);
+          if (this.locations.normal !== -1 && this.locations.normal !== undefined) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, this._sphereNormBuffer);
+            gl.enableVertexAttribArray(this.locations.normal);
+            gl.vertexAttribPointer(this.locations.normal, 3, gl.FLOAT, false, 0, 0);
+          }
+          gl.enableVertexAttribArray(this.locations.texCoord);
+          gl.bindBuffer(gl.ARRAY_BUFFER, this._sphereUvBuffer);
+          gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
+          gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this._sphereIdxBuffer);
+          gl.drawElements(gl.TRIANGLES, base.count, gl.UNSIGNED_SHORT, 0);
+        }
+      } else {
+        if (!this._sphereScratchColors) this._sphereScratchColors = new Float32Array(vCount * 4);
+        if (!this._sphereColBuffer) this._sphereColBuffer = gl.createBuffer();
+        const colKey = `${tintR.toFixed(3)}_${tintG.toFixed(3)}_${tintB.toFixed(3)}_${faceOpacity.toFixed(3)}_${shading.toFixed(3)}`;
+        if (this._sphereColKey !== colKey) {
+          this._sphereColKey = colKey;
+          const colors = this._sphereScratchColors;
+          for (let i = 0; i < vCount; i++) {
+            const cIdx = i * 4;
+            const nz = Math.max(0, base.basePos[i * 3 + 2]);
+            const shadeFactor = Math.max(0.15, 1.0 - (1.0 - nz) * shading * 0.7);
+            colors[cIdx] = Math.min(1.0, tintR * shadeFactor);
+            colors[cIdx + 1] = Math.min(1.0, tintG * shadeFactor);
+            colors[cIdx + 2] = Math.min(1.0, tintB * shadeFactor);
+            colors[cIdx + 3] = faceOpacity;
+          }
+          gl.bindBuffer(gl.ARRAY_BUFFER, this._sphereColBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+        }
 
-      gl.enableVertexAttribArray(this.locations.texCoord);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.meshBuffers.texCoord);
-      gl.bufferData(gl.ARRAY_BUFFER, base.texCoords, gl.DYNAMIC_DRAW);
-      gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.locations.position);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._spherePosBuffer);
+        gl.vertexAttribPointer(this.locations.position, 3, gl.FLOAT, false, 0, 0);
+        if (this.locations.normal !== -1 && this.locations.normal !== undefined) {
+          gl.bindBuffer(gl.ARRAY_BUFFER, this._sphereNormBuffer);
+          gl.enableVertexAttribArray(this.locations.normal);
+          gl.vertexAttribPointer(this.locations.normal, 3, gl.FLOAT, false, 0, 0);
+        }
+        gl.enableVertexAttribArray(this.locations.texCoord);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._sphereUvBuffer);
+        gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.locations.color);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this._sphereColBuffer);
+        gl.vertexAttribPointer(this.locations.color, 4, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this._sphereIdxBuffer);
+        gl.drawElements(gl.TRIANGLES, base.count, gl.UNSIGNED_SHORT, 0);
+      }
 
-      gl.enableVertexAttribArray(this.locations.color);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.meshBuffers.color);
-      gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
-      gl.vertexAttribPointer(this.locations.color, 4, gl.FLOAT, false, 0, 0);
-
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.meshBuffers.index);
-      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, base.indices, gl.DYNAMIC_DRAW);
-      gl.drawElements(gl.TRIANGLES, base.count, gl.UNSIGNED_SHORT, 0);
+      this._setSolidCullFace(gl, false, null);
 
       if (edgeOpacity > 0.01) {
         const cEdge = hexToRgb(edgeColor);
         gl.uniform1i(this.locations.mode, 1);
         gl.disableVertexAttribArray(this.locations.color);
         gl.disableVertexAttribArray(this.locations.texCoord);
+        if (this.locations.normal !== -1 && this.locations.normal !== undefined) {
+          gl.disableVertexAttribArray(this.locations.normal);
+        }
         gl.vertexAttrib4f(this.locations.color, cEdge.r / 255, cEdge.g / 255, cEdge.b / 255, edgeOpacity);
         gl.vertexAttrib2f(this.locations.texCoord, 0.0, 0.0);
 
-        const edgePositions = [];
         const ringSegments = 32;
+        if (!this._sphereEdgeScratch) this._sphereEdgeScratch = new Float32Array(ringSegments * 4 * 3);
+        const edgePosArr = this._sphereEdgeScratch;
+        let ei = 0;
         for (let i = 0; i < ringSegments; i++) {
           const a1 = (i / ringSegments) * Math.PI * 2;
           const a2 = ((i + 1) / ringSegments) * Math.PI * 2;
-          edgePositions.push(0.5 * Math.cos(a1), 0.5 * Math.sin(a1), 0);
-          edgePositions.push(0.5 * Math.cos(a2), 0.5 * Math.sin(a2), 0);
-          edgePositions.push(0.5 * Math.cos(a1), 0, depthZ * Math.sin(a1));
-          edgePositions.push(0.5 * Math.cos(a2), 0, depthZ * Math.sin(a2));
+          edgePosArr[ei++] = 0.5 * Math.cos(a1); edgePosArr[ei++] = 0.5 * Math.sin(a1); edgePosArr[ei++] = 0;
+          edgePosArr[ei++] = 0.5 * Math.cos(a2); edgePosArr[ei++] = 0.5 * Math.sin(a2); edgePosArr[ei++] = 0;
+          edgePosArr[ei++] = 0.5 * Math.cos(a1); edgePosArr[ei++] = 0; edgePosArr[ei++] = Math.sin(a1);
+          edgePosArr[ei++] = 0.5 * Math.cos(a2); edgePosArr[ei++] = 0; edgePosArr[ei++] = Math.sin(a2);
         }
 
-        const edgePosArr = new Float32Array(edgePositions);
         gl.bindBuffer(gl.ARRAY_BUFFER, this.meshBuffers.position);
         gl.bufferData(gl.ARRAY_BUFFER, edgePosArr, gl.DYNAMIC_DRAW);
         gl.vertexAttribPointer(this.locations.position, 3, gl.FLOAT, false, 0, 0);
-        gl.drawArrays(gl.LINES, 0, edgePositions.length / 3);
+        gl.drawArrays(gl.LINES, 0, ringSegments * 4);
       }
 
       // Restore standard 2D quad state for subsequent renders
-      gl.uniform1i(this.locations.mode, 0);
-      gl.disableVertexAttribArray(this.locations.color);
-      gl.vertexAttrib4f(this.locations.color, 1.0, 1.0, 1.0, 1.0);
-      gl.enableVertexAttribArray(this.locations.texCoord);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.texCoord);
-      gl.vertexAttribPointer(this.locations.texCoord, 2, gl.FLOAT, false, 0, 0);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.position);
-      gl.vertexAttribPointer(this.locations.position, 2, gl.FLOAT, false, 0, 0);
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffers.index);
+      this._restoreMeshQuadState(gl);
     }
 
     _blitGLToContext(ctx, layer, bounds, vw, vh, bufferScale, cropRect = null) {
@@ -2965,23 +4025,48 @@
         ? layer.effects.find(f => f.type === 'tile' && !f.disabled)
         : null;
 
-      const boxFx = Array.isArray(layer.effects)
-        ? layer.effects.find(f => f && !f.disabled && f.type === 'box_3d')
-        : null;
+      const boxFx = (Array.isArray(layer.effects)
+        ? layer.effects.find(f => f && !f.disabled && (f.type === 'box_3d' || f.type === '3d_box'))
+        : null) || (layer.shapeType === '3d_box' ? { type: '3d_box' } : null);
       const extrudeFx = Array.isArray(layer.effects)
         ? layer.effects.find(f => f && !f.disabled && f.type === 'extrude_3d')
         : null;
-      const pyramidFx = Array.isArray(layer.effects)
-        ? layer.effects.find(f => f && !f.disabled && f.type === 'pyramid_3d')
-        : null;
-      const sphereFx = Array.isArray(layer.effects)
-        ? layer.effects.find(f => f && !f.disabled && f.type === 'sphere_3d')
-        : null;
+      const pyramidFx = (Array.isArray(layer.effects)
+        ? layer.effects.find(f => f && !f.disabled && (f.type === 'pyramid_3d' || f.type === '3d_pyramid'))
+        : null) || (layer.shapeType === '3d_pyramid' || layer.shapeType === '3d_triangle' ? { type: '3d_pyramid', sideMode: 'solid color' } : null);
+      const sphereFx = (Array.isArray(layer.effects)
+        ? layer.effects.find(f => f && !f.disabled && (f.type === 'sphere_3d' || f.type === '3d_sphere'))
+        : null) || (layer.shapeType === '3d_sphere' ? { type: '3d_sphere', sideMode: 'solid color' } : null);
+      const coneFx = (Array.isArray(layer.effects)
+        ? layer.effects.find(f => f && !f.disabled && (f.type === 'cone_3d' || f.type === '3d_cone'))
+        : null) || (layer.shapeType === '3d_cone' ? { type: '3d_cone', sideMode: 'solid color' } : null);
+      const cylinderFx = (Array.isArray(layer.effects)
+        ? layer.effects.find(f => f && !f.disabled && (f.type === 'cylinder_3d' || f.type === '3d_cylinder'))
+        : null) || (layer.shapeType === '3d_cylinder' ? { type: '3d_cylinder', sideMode: 'solid color' } : null);
+      const torusFx = (Array.isArray(layer.effects)
+        ? layer.effects.find(f => f && !f.disabled && (f.type === 'torus_3d' || f.type === '3d_torus'))
+        : null) || (layer.shapeType === '3d_torus' ? { type: '3d_torus', sideMode: 'solid color' } : null);
+      const modelFx = (layer.shapeType === '3d_model' && layer.modelMediaId) ? { type: '3d_model' } : null;
 
       const camLayer = (camera && camera._rawCamera)
         || (camera && camera.type === 'camera' ? camera : null)
         || (pool && pool.find(l => l && l.type === 'camera' && !l.hidden))
         || null;
+
+      const is3DMesh = !!(boxFx || extrudeFx || pyramidFx || sphereFx || coneFx || cylinderFx || torusFx || modelFx);
+      const psMb = (typeof window !== 'undefined' && window.currentProjectState) ? window.currentProjectState : null;
+      const aoModeMb = (psMb && psMb.threeDEngine === 'advance' && (psMb.ambientOcclusion === 'low' || psMb.ambientOcclusion === 'medium' || psMb.ambientOcclusion === 'high'))
+        ? psMb.ambientOcclusion
+        : 'disabled';
+      const useAOMb = Boolean(is3DMesh && aoModeMb !== 'disabled' && this.isWebGL2 && this._ensureAOGl(vw, vh));
+      const aoStrideMb = Math.max(1, Math.ceil(samples / 4));
+      const useMeshFbo = is3DMesh && (useAOMb || this._ensureSceneBlurGL(vw, vh));
+
+      const prevActiveCam = this._activeCamera;
+      const prevActiveVw = this._activeVw;
+      const prevActiveVh = this._activeVh;
+      this._activeVw = vw;
+      this._activeVh = vh;
 
       let drawnSamples = 0;
       for (let s = 0; s < samples; s++) {
@@ -2991,6 +4076,7 @@
         const subCamera = (camLayer && typeof window.getLayerEffectivePropsAtTime === 'function')
           ? window.getLayerEffectivePropsAtTime(camLayer, subSec, null, pool)
           : camera;
+        this._activeCamera = subCamera;
 
         const srcLayer = layer._rawLayer || layer;
         const subEff = (typeof window.getLayerEffectivePropsAtTime === 'function')
@@ -3007,17 +4093,11 @@
         const subBounds = this.getBounds(subAnimLayer, bufferScale, subCamera, vw, vh);
         if (subBounds.isBehindCamera) continue;
 
-        // Fresh depth for every sample: self-occlusion inside the sample,
-        // no occlusion leaking across samples of the blur average.
-        gl.clear(gl.DEPTH_BUFFER_BIT);
-
         // The scene camera only transforms 3D layers. A 2D layer must keep identical placement with
         // blur on/off (effects like shatter/particles apply the camera inside their own texture).
         const mvpCamera = (subBounds.is3D || bounds.is3D) ? subCamera : null;
         let mvp = this._computeMVP(subBounds, vw, vh, 0, mvpCamera);
         if (!mvp) continue;
-
-        if (this.locations.lensDistort) gl.uniform1f(this.locations.lensDistort, this._getLensDistort(mvpCamera));
 
         if (processed.padX > 0 || processed.padY > 0) {
           const sX = (processed.origW + processed.padX * 2) / processed.origW;
@@ -3030,6 +4110,69 @@
 
         const rawOp = (subAnimLayer.opacity !== undefined && subAnimLayer.opacity !== null) ? Number(subAnimLayer.opacity) : 1.0;
         const normOp = (rawOp > 1.0) ? Math.max(0, Math.min(1, rawOp / 100)) : Math.max(0, Math.min(1, rawOp));
+
+        if (useMeshFbo) {
+          // Render 3D mesh sample cleanly into offscreen FBO with normal opaque depth-testing
+          // so overlapping triangles/material groups never self-blend with CONSTANT_ALPHA.
+          gl.bindFramebuffer(gl.FRAMEBUFFER, useAOMb ? this._aoSceneFbo : this._sceneFbo);
+          gl.viewport(0, 0, vw, vh);
+          gl.clearColor(0, 0, 0, 0);
+          gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+          gl.enable(gl.DEPTH_TEST);
+          gl.depthFunc(gl.LEQUAL);
+          gl.depthMask(normOp >= 0.999);
+          gl.enable(gl.BLEND);
+          gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+          gl.useProgram(this.program);
+          if (this.locations.noDiscard) gl.uniform1f(this.locations.noDiscard, 0);
+          if (this.locations.lensDistort) gl.uniform1f(this.locations.lensDistort, this._getLensDistort(mvpCamera));
+          gl.uniform1f(this.locations.opacity, normOp);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.uniform1i(this.locations.texture, 0);
+
+          if (modelFx) this._draw3DModelMesh(gl, mvp, subBounds, normOp, subAnimLayer, sourceEl);
+          else if (boxFx) this._draw3DBoxMesh(gl, mvp, boxFx, subBounds, normOp, subAnimLayer);
+          else if (extrudeFx) this._draw3DExtrudeMesh(gl, mvp, extrudeFx, subBounds, normOp, subAnimLayer, sourceEl);
+          else if (pyramidFx) this._draw3DPyramidMesh(gl, mvp, pyramidFx, subBounds, normOp, subAnimLayer);
+          else if (sphereFx) this._draw3DSphereMesh(gl, mvp, sphereFx, subBounds, normOp, subAnimLayer);
+          else if (coneFx) this._draw3DConeMesh(gl, mvp, coneFx, subBounds, normOp, subAnimLayer, sourceEl);
+          else if (cylinderFx) this._draw3DCylinderMesh(gl, mvp, cylinderFx, subBounds, normOp, subAnimLayer, sourceEl);
+          else if (torusFx) this._draw3DTorusMesh(gl, mvp, torusFx, subBounds, normOp, subAnimLayer, sourceEl);
+
+          // Blend finished 3D sample (with SSAO when enabled) into default framebuffer accumulation buffer
+          gl.depthMask(true);
+          if (useAOMb) {
+            const blendW = (drawnSamples === 0) ? 1.0 : (1 / (drawnSamples + 1));
+            this._runAOPostPass(gl, vw, vh, bufferScale, subCamera, aoModeMb, blendW, (drawnSamples % aoStrideMb) !== 0);
+          } else {
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            gl.viewport(0, 0, vw, vh);
+            gl.disable(gl.DEPTH_TEST);
+            gl.useProgram(this._sceneBlitProg);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this._sceneBlitQuad);
+            gl.enableVertexAttribArray(this._sceneBlitPosLoc);
+            gl.vertexAttribPointer(this._sceneBlitPosLoc, 2, gl.FLOAT, false, 0, 0);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, this._sceneFboTex);
+            gl.uniform1i(this._sceneBlitTexLoc, 0);
+            if (drawnSamples === 0) {
+              gl.blendFunc(gl.ONE, gl.ZERO);
+            } else {
+              gl.blendColor(0, 0, 0, 1 / (drawnSamples + 1));
+              gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+            }
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+          }
+          drawnSamples++;
+          continue;
+        }
+
+        // Fresh depth for every sample: self-occlusion inside the sample,
+        // no occlusion leaking across samples of the blur average.
+        gl.clear(gl.DEPTH_BUFFER_BIT);
+        if (this.locations.lensDistort) gl.uniform1f(this.locations.lensDistort, this._getLensDistort(mvpCamera));
+
         gl.depthMask(normOp >= 0.999);
         if (drawnSamples === 0) {
           gl.blendFunc(gl.ONE, gl.ZERO);
@@ -3041,15 +4184,28 @@
           gl.uniform1f(this.locations.opacity, normOp);
         }
 
-        if (boxFx || extrudeFx || pyramidFx || sphereFx) {
-          if (boxFx) this._draw3DBoxMesh(gl, mvp, boxFx, subBounds, normOp, subAnimLayer);
+        if (is3DMesh) {
+          if (modelFx) this._draw3DModelMesh(gl, mvp, subBounds, normOp, subAnimLayer, sourceEl);
+          else if (boxFx) this._draw3DBoxMesh(gl, mvp, boxFx, subBounds, normOp, subAnimLayer);
           else if (extrudeFx) this._draw3DExtrudeMesh(gl, mvp, extrudeFx, subBounds, normOp, subAnimLayer, sourceEl);
           else if (pyramidFx) this._draw3DPyramidMesh(gl, mvp, pyramidFx, subBounds, normOp, subAnimLayer);
           else if (sphereFx) this._draw3DSphereMesh(gl, mvp, sphereFx, subBounds, normOp, subAnimLayer);
+          else if (coneFx) this._draw3DConeMesh(gl, mvp, coneFx, subBounds, normOp, subAnimLayer, sourceEl);
+          else if (cylinderFx) this._draw3DCylinderMesh(gl, mvp, cylinderFx, subBounds, normOp, subAnimLayer, sourceEl);
+          else if (torusFx) this._draw3DTorusMesh(gl, mvp, torusFx, subBounds, normOp, subAnimLayer, sourceEl);
         } else {
           this._drawQuadOrTile(gl, mvp, tileFx, vw, vh, subBounds);
         }
         drawnSamples++;
+      }
+
+      this._activeCamera = prevActiveCam;
+      this._activeVw = prevActiveVw;
+      this._activeVh = prevActiveVh;
+      if (useMeshFbo) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.useProgram(this.program);
+        gl.depthMask(true);
       }
 
       // Restore normal premultiplied compositing for single-pass draws
@@ -3209,15 +4365,30 @@
         gl.uniform1f(this.locations.noDiscard, 0);
       }
 
+      const prevSceneCam = this._activeCamera;
+      const prevSceneVw = this._activeVw;
+      const prevSceneVh = this._activeVh;
+      this._activeVw = vw;
+      this._activeVh = vh;
+
+      const psSceneMb = (typeof window !== 'undefined' && window.currentProjectState) ? window.currentProjectState : null;
+      const aoModeSceneMb = (psSceneMb && psSceneMb.threeDEngine === 'advance' && (psSceneMb.ambientOcclusion === 'low' || psSceneMb.ambientOcclusion === 'medium' || psSceneMb.ambientOcclusion === 'high'))
+        ? psSceneMb.ambientOcclusion
+        : 'disabled';
+      const useAOSceneMb = Boolean(aoModeSceneMb !== 'disabled' && this.isWebGL2 && this._ensureAOGl(vw, vh));
+      // Recompute SSAO at most ~4 times per motion-blur frame; intermediate samples reuse the AO texture.
+      const aoStrideScene = Math.max(1, Math.ceil(samples / 4));
+
       let completed = 0;
       for (let s = 0; s < samples; s++) {
         const subSec = tStart + ((s + 0.5) / samples) * exposureTime;
         const subCamera = (camLayer && typeof getEff === 'function')
           ? getEff(camLayer, subSec, null, pool)
           : camera;
+        this._activeCamera = subCamera;
 
         // One full scene sample into the FBO: normal blend + shared depth.
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this._sceneFbo);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, useAOSceneMb ? this._aoSceneFbo : this._sceneFbo);
         gl.viewport(0, 0, vw, vh);
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -3270,15 +4441,18 @@
           if (this.locations.lensDistort) gl.uniform1f(this.locations.lensDistort, this._getLensDistort(mvpCamera));
           gl.uniformMatrix4fv(this.locations.matrix, false, mvp);
 
-          const bFx = Array.isArray(subAnimLayer.effects) ? subAnimLayer.effects.find(f => f && !f.disabled && f.type === 'box_3d') : null;
-          const eFx = Array.isArray(subAnimLayer.effects) ? subAnimLayer.effects.find(f => f && !f.disabled && f.type === 'extrude_3d') : null;
-          const pFx = Array.isArray(subAnimLayer.effects) ? subAnimLayer.effects.find(f => f && !f.disabled && f.type === 'pyramid_3d') : null;
-          const sFx = Array.isArray(subAnimLayer.effects) ? subAnimLayer.effects.find(f => f && !f.disabled && f.type === 'sphere_3d') : null;
+          const mfxSub = this._resolveMeshFx(subAnimLayer, this._meshFxScratch || (this._meshFxScratch = {}));
+          const bFx = mfxSub.b, eFx = mfxSub.e, pFx = mfxSub.p, sFx = mfxSub.s;
+          const cFx = mfxSub.c, cylFx = mfxSub.cyl, tFx = mfxSub.t, mFx = mfxSub.m;
 
-          if (bFx) this._draw3DBoxMesh(gl, mvp, bFx, subBounds, normOp, subAnimLayer);
+          if (mFx) this._draw3DModelMesh(gl, mvp, subBounds, normOp, subAnimLayer, srcEl);
+          else if (bFx) this._draw3DBoxMesh(gl, mvp, bFx, subBounds, normOp, subAnimLayer, srcEl);
           else if (eFx) this._draw3DExtrudeMesh(gl, mvp, eFx, subBounds, normOp, subAnimLayer, srcEl);
           else if (pFx) this._draw3DPyramidMesh(gl, mvp, pFx, subBounds, normOp, subAnimLayer);
           else if (sFx) this._draw3DSphereMesh(gl, mvp, sFx, subBounds, normOp, subAnimLayer);
+          else if (cFx) this._draw3DConeMesh(gl, mvp, cFx, subBounds, normOp, subAnimLayer, srcEl);
+          else if (cylFx) this._draw3DCylinderMesh(gl, mvp, cylFx, subBounds, normOp, subAnimLayer, srcEl);
+          else if (tFx) this._draw3DTorusMesh(gl, mvp, tFx, subBounds, normOp, subAnimLayer, srcEl);
           else {
             gl.uniform1i(this.locations.mode, 0);
             gl.disableVertexAttribArray(this.locations.color);
@@ -3297,28 +4471,36 @@
         gl.depthMask(true);
         if (!drawn) continue;
 
-        // Blend this sample over the running mean in the default framebuffer.
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.viewport(0, 0, vw, vh);
-        gl.disable(gl.DEPTH_TEST);
-        gl.useProgram(this._sceneBlitProg);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this._sceneBlitQuad);
-        gl.enableVertexAttribArray(this._sceneBlitPosLoc);
-        gl.vertexAttribPointer(this._sceneBlitPosLoc, 2, gl.FLOAT, false, 0, 0);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, this._sceneFboTex);
-        gl.uniform1i(this._sceneBlitTexLoc, 0);
-        if (completed === 0) {
-          gl.blendFunc(gl.ONE, gl.ZERO);
+        // Blend this sample (with SSAO when enabled) over the running mean in the default framebuffer.
+        if (useAOSceneMb) {
+          const blendW = (completed === 0) ? 1.0 : (1 / (completed + 1));
+          this._runAOPostPass(gl, vw, vh, bufferScale, subCamera, aoModeSceneMb, blendW, (completed % aoStrideScene) !== 0);
         } else {
-          gl.blendColor(0, 0, 0, 1 / (completed + 1));
-          gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          gl.viewport(0, 0, vw, vh);
+          gl.disable(gl.DEPTH_TEST);
+          gl.useProgram(this._sceneBlitProg);
+          gl.bindBuffer(gl.ARRAY_BUFFER, this._sceneBlitQuad);
+          gl.enableVertexAttribArray(this._sceneBlitPosLoc);
+          gl.vertexAttribPointer(this._sceneBlitPosLoc, 2, gl.FLOAT, false, 0, 0);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, this._sceneFboTex);
+          gl.uniform1i(this._sceneBlitTexLoc, 0);
+          if (completed === 0) {
+            gl.blendFunc(gl.ONE, gl.ZERO);
+          } else {
+            gl.blendColor(0, 0, 0, 1 / (completed + 1));
+            gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+          }
+          gl.drawArrays(gl.TRIANGLES, 0, 6);
         }
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
         completed++;
       }
 
       // Restore standard state for subsequent draws
+      this._activeCamera = prevSceneCam;
+      this._activeVw = prevSceneVw;
+      this._activeVh = prevSceneVh;
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.useProgram(this.program);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -3334,6 +4516,250 @@
       return false;
     }
 
+    _ensureAOGl(vw, vh) {
+      const gl = this.gl;
+      if (!gl || !this.isWebGL2 || vw <= 0 || vh <= 0 || (this._aoFailCount && this._aoFailCount > 2)) return false;
+      try {
+        if (!this._aoProg) {
+          const vs = this._compileShader(gl.VERTEX_SHADER, AO_QUAD_VS);
+          const mkProg = (fsSrc) => {
+            const fs = this._compileShader(gl.FRAGMENT_SHADER, fsSrc);
+            const p = gl.createProgram();
+            gl.attachShader(p, vs);
+            gl.attachShader(p, fs);
+            gl.linkProgram(p);
+            gl.deleteShader(fs);
+            if (!gl.getProgramParameter(p, gl.LINK_STATUS)) return null;
+            return p;
+          };
+          this._aoProg = mkProg(AO_PASS_FS);
+          this._aoBlurProg = mkProg(AO_BLUR_FS);
+          this._aoCompProg = mkProg(AO_COMP_FS);
+          gl.deleteShader(vs);
+          if (!this._aoProg || !this._aoBlurProg || !this._aoCompProg) {
+            this._aoFailCount = (this._aoFailCount || 0) + 1;
+            return false;
+          }
+          this._aoLocs = {
+            depth: gl.getUniformLocation(this._aoProg, 'u_depth'),
+            near: gl.getUniformLocation(this._aoProg, 'u_near'),
+            far: gl.getUniformLocation(this._aoProg, 'u_far'),
+            projScale: gl.getUniformLocation(this._aoProg, 'u_projScale'),
+            radius: gl.getUniformLocation(this._aoProg, 'u_radius'),
+            strength: gl.getUniformLocation(this._aoProg, 'u_strength'),
+            power: gl.getUniformLocation(this._aoProg, 'u_power'),
+            samples: gl.getUniformLocation(this._aoProg, 'u_samples')
+          };
+          this._aoBlurLocs = {
+            aoTex: gl.getUniformLocation(this._aoBlurProg, 'u_aoTex'),
+            depth: gl.getUniformLocation(this._aoBlurProg, 'u_depth'),
+            near: gl.getUniformLocation(this._aoBlurProg, 'u_near'),
+            far: gl.getUniformLocation(this._aoBlurProg, 'u_far'),
+            radius: gl.getUniformLocation(this._aoBlurProg, 'u_radius'),
+            dir: gl.getUniformLocation(this._aoBlurProg, 'u_dir')
+          };
+          this._aoCompLocs = {
+            colorTex: gl.getUniformLocation(this._aoCompProg, 'u_colorTex'),
+            aoTex: gl.getUniformLocation(this._aoCompProg, 'u_aoTex')
+          };
+          this._aoEmptyVao = gl.createVertexArray();
+          this._aoSceneFbo = gl.createFramebuffer();
+          this._aoColorTex = gl.createTexture();
+          this._aoDepthTex = gl.createTexture();
+          this._aoRawFbo = gl.createFramebuffer();
+          this._aoRawTex = gl.createTexture();
+          this._aoBlurFbo = gl.createFramebuffer();
+          this._aoBlurTex = gl.createTexture();
+        }
+
+        if (this._aoFboW !== vw || this._aoFboH !== vh) {
+          const useFullResAO = (vw <= 960 && vh <= 960);
+          const aoW = useFullResAO ? vw : Math.max(1, vw >> 1);
+          const aoH = useFullResAO ? vh : Math.max(1, vh >> 1);
+          const initTex = (tex, intFmt, fmt, type, w, h, filter) => {
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, intFmt, w, h, 0, fmt, type, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          };
+          initTex(this._aoColorTex, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, vw, vh, gl.NEAREST);
+          initTex(this._aoDepthTex, gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, vw, vh, gl.NEAREST);
+          initTex(this._aoRawTex, gl.R8, gl.RED, gl.UNSIGNED_BYTE, aoW, aoH, gl.LINEAR);
+          initTex(this._aoBlurTex, gl.R8, gl.RED, gl.UNSIGNED_BYTE, aoW, aoH, gl.LINEAR);
+
+          gl.bindFramebuffer(gl.FRAMEBUFFER, this._aoSceneFbo);
+          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this._aoColorTex, 0);
+          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this._aoDepthTex, 0);
+          const okScene = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+
+          gl.bindFramebuffer(gl.FRAMEBUFFER, this._aoRawFbo);
+          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this._aoRawTex, 0);
+          const okRaw = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+
+          gl.bindFramebuffer(gl.FRAMEBUFFER, this._aoBlurFbo);
+          gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this._aoBlurTex, 0);
+          const okBlur = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+
+          gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+          if (!okScene || !okRaw || !okBlur) {
+            this._aoFailCount = (this._aoFailCount || 0) + 1;
+            return false;
+          }
+          this._aoFboW = vw;
+          this._aoFboH = vh;
+          this._aoHalfW = aoW;
+          this._aoHalfH = aoH;
+        }
+        this._aoFailCount = 0;
+        return true;
+      } catch (_) {
+        this._aoFailCount = (this._aoFailCount || 0) + 1;
+        return false;
+      }
+    }
+
+    /**
+     * Single-pass, allocation-free resolver for volumetric 3D mesh effects of a layer.
+     * Mirrors the previous per-type `effects.find(...)` lookups (first enabled match wins,
+     * shapeType fallbacks use shared constant descriptors). Fills and returns `out`.
+     */
+    _resolveMeshFx(layer, out) {
+      const K = this._meshFxConsts || (this._meshFxConsts = {
+        box: { type: '3d_box' },
+        pyr: { type: '3d_pyramid', sideMode: 'solid color' },
+        sph: { type: '3d_sphere', sideMode: 'solid color' },
+        cone: { type: '3d_cone', sideMode: 'solid color' },
+        cyl: { type: '3d_cylinder', sideMode: 'solid color' },
+        tor: { type: '3d_torus', sideMode: 'solid color' },
+        mdl: { type: '3d_model' }
+      });
+      out.b = out.e = out.p = out.s = out.c = out.cyl = out.t = out.m = null;
+      const fxs = layer.effects;
+      if (Array.isArray(fxs)) {
+        for (let i = 0; i < fxs.length; i++) {
+          const f = fxs[i];
+          if (!f || f.disabled) continue;
+          const t = f.type;
+          if (!out.b && (t === 'box_3d' || t === '3d_box')) out.b = f;
+          else if (!out.e && t === 'extrude_3d') out.e = f;
+          else if (!out.p && (t === 'pyramid_3d' || t === '3d_pyramid')) out.p = f;
+          else if (!out.s && (t === 'sphere_3d' || t === '3d_sphere')) out.s = f;
+          else if (!out.c && (t === 'cone_3d' || t === '3d_cone')) out.c = f;
+          else if (!out.cyl && (t === 'cylinder_3d' || t === '3d_cylinder')) out.cyl = f;
+          else if (!out.t && (t === 'torus_3d' || t === '3d_torus')) out.t = f;
+        }
+      }
+      const st = layer.shapeType;
+      if (!out.b && st === '3d_box') out.b = K.box;
+      if (!out.p && (st === '3d_pyramid' || st === '3d_triangle')) out.p = K.pyr;
+      if (!out.s && st === '3d_sphere') out.s = K.sph;
+      if (!out.c && st === '3d_cone') out.c = K.cone;
+      if (!out.cyl && st === '3d_cylinder') out.cyl = K.cyl;
+      if (!out.t && st === '3d_torus') out.t = K.tor;
+      out.m = (st === '3d_model' && layer.modelMediaId) ? K.mdl : null;
+      return out;
+    }
+
+    _runAOPostPass(gl, vw, vh, bufferScale, camera, aoMode, blendWeight = -1, skipCompute = false) {
+      const aoW = this._aoHalfW || Math.max(1, vw >> 1);
+      const aoH = this._aoHalfH || Math.max(1, vh >> 1);
+      const isHigh = aoMode === 'high';
+      const isMed = aoMode === 'medium';
+      const samples = isHigh ? 16 : (isMed ? 12 : 8);
+      const radius = (isHigh ? 96 : (isMed ? 72 : 50)) * (bufferScale || 1);
+      const strength = isHigh ? 6.5 : (isMed ? 4.5 : 2.8);
+      const power = isHigh ? 2.0 : (isMed ? 1.45 : 1.0);
+
+      const camLens = Math.max(1, camera && camera.cameraLens !== undefined ? camera.cameraLens : 50);
+      const camZoom = camera && camera.cameraZoom !== undefined ? camera.cameraZoom : 100;
+      const lensFactor = Math.max(0.01, camLens / 50);
+      const totalZoom = lensFactor * Math.max(0.01, camZoom / 100);
+      const D = CAMERA_DISTANCE * lensFactor * (bufferScale || 1);
+      const NEAR = NEAR_PLANE * (bufferScale || 1);
+      const FAR = 10000.0 * (bufferScale || 1);
+      const camInv = this._getCameraInverseScale(camera, vw, vh, bufferScale, this._camScaleScratch);
+      const projScaleX = vw / (2.0 * totalZoom * Math.abs(camInv.x) * D);
+      const projScaleY = vh / (2.0 * totalZoom * Math.abs(camInv.y) * D);
+
+      gl.disable(gl.DEPTH_TEST);
+      gl.disable(gl.CULL_FACE);
+      gl.disable(gl.BLEND);
+      gl.bindVertexArray(this._aoEmptyVao);
+
+      // Pass 2: Half-res Depth SSAO (+ passes 3a/3b blur) — skipped when reusing AO from a previous
+      // motion-blur sample (skipCompute), saving 3 full-screen passes per sample.
+      if (!skipCompute) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this._aoRawFbo);
+      gl.viewport(0, 0, aoW, aoH);
+      gl.useProgram(this._aoProg);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this._aoDepthTex);
+      gl.uniform1i(this._aoLocs.depth, 0);
+      gl.uniform1f(this._aoLocs.near, NEAR);
+      gl.uniform1f(this._aoLocs.far, FAR);
+      gl.uniform2f(this._aoLocs.projScale, projScaleX, projScaleY);
+      gl.uniform1f(this._aoLocs.radius, radius);
+      gl.uniform1f(this._aoLocs.strength, strength);
+      gl.uniform1f(this._aoLocs.power, power);
+      gl.uniform1i(this._aoLocs.samples, samples);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+      // Pass 3a: Horizontal 7-tap depth-aware bilateral blur (_aoRawTex -> _aoBlurFbo)
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this._aoBlurFbo);
+      gl.viewport(0, 0, aoW, aoH);
+      gl.useProgram(this._aoBlurProg);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this._aoRawTex);
+      gl.uniform1i(this._aoBlurLocs.aoTex, 0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this._aoDepthTex);
+      gl.uniform1i(this._aoBlurLocs.depth, 1);
+      gl.uniform1f(this._aoBlurLocs.near, NEAR);
+      gl.uniform1f(this._aoBlurLocs.far, FAR);
+      gl.uniform1f(this._aoBlurLocs.radius, radius);
+      gl.uniform2f(this._aoBlurLocs.dir, 1.0, 0.0);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+      // Pass 3b: Vertical 7-tap depth-aware bilateral blur (_aoBlurTex -> _aoRawFbo)
+      gl.bindFramebuffer(gl.FRAMEBUFFER, this._aoRawFbo);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this._aoBlurTex);
+      gl.uniform2f(this._aoBlurLocs.dir, 0.0, 1.0);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      }
+
+      // Pass 4: Composite AO onto default framebuffer (supports running-mean blendWeight for motion blur)
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, vw, vh);
+      if (blendWeight >= 0) {
+        gl.enable(gl.BLEND);
+        if (blendWeight >= 0.999) {
+          gl.blendFunc(gl.ONE, gl.ZERO);
+        } else {
+          gl.blendColor(0, 0, 0, blendWeight);
+          gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+        }
+      }
+      gl.useProgram(this._aoCompProg);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this._aoColorTex);
+      gl.uniform1i(this._aoCompLocs.colorTex, 0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this._aoRawTex);
+      gl.uniform1i(this._aoCompLocs.aoTex, 1);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindVertexArray(null);
+      gl.useProgram(this.program);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    }
+
     /**
      * Batch membership rule for the shared 3D depth pass (single source of truth).
      * A layer joins a depth-shared run iff it is 3D with normal blending, no
@@ -3345,7 +4771,7 @@
     isBatchable3D(layer, bounds) {
       if (!layer || !bounds || !bounds.is3D) return false;
       if (layer.blendMode && layer.blendMode !== 'normal') return false;
-      if (Array.isArray(layer.effects) && layer.effects.some(f => f && !f.disabled && f.type !== 'box_3d' && f.type !== 'extrude_3d' && f.type !== 'pyramid_3d' && f.type !== 'sphere_3d')) return false;
+      if (Array.isArray(layer.effects) && layer.effects.some(f => f && !f.disabled && f.type !== 'box_3d' && f.type !== '3d_box' && f.type !== 'extrude_3d' && f.type !== 'pyramid_3d' && f.type !== 'sphere_3d' && f.type !== 'cone_3d' && f.type !== 'cylinder_3d' && f.type !== 'torus_3d')) return false;
       if (window.FishEffects && typeof window.FishEffects.buildFilter === 'function' && window.FishEffects.buildFilter(layer) !== '') return false;
       if (layer._dofBlur && layer._dofBlur > 0.5) return false;
       const isPrecompCollapsed = (layer.type === 'precomp' && !!layer.collapseTransformations);
@@ -3370,31 +4796,39 @@
       const vw = targetCanvas ? targetCanvas.width : vp.vw;
       const vh = targetCanvas ? targetCanvas.height : vp.vh;
 
-      const has3D = renderList.some(item => {
+      const boundsArr = this._sceneBoundsScratch || (this._sceneBoundsScratch = []);
+      boundsArr.length = renderList.length;
+      let has3D = false;
+      for (let i = 0; i < renderList.length; i++) {
+        const item = renderList[i];
         const b = this.getBounds(item.animLayer || item.layer, bufferScale, camera, vw, vh);
-        return b.is3D;
-      });
+        boundsArr[i] = b;
+        if (b.is3D) has3D = true;
+      }
 
       // Pure 2D fast path: If no 3D layers exist and no camera exists, render directly with native 2D canvas drawImage
       if (!has3D || !this.isReady) {
-        renderList.forEach(item => {
+        for (let i = 0; i < renderList.length; i++) {
+          const item = renderList[i];
           const lSec = (typeof currentSec === 'number' && !isNaN(currentSec)) ? currentSec : ((item.animLayer && item.animLayer._currentSec) || (item.layer && item.layer._currentSec));
           this.renderLayer(ctx, item.el, item.animLayer || item.layer, bufferScale, null, lSec);
-        });
+        }
         return;
       }
 
-      let currentBatch = [];
+      const currentBatch = this._sceneBatchScratch || (this._sceneBatchScratch = []);
+      currentBatch.length = 0;
 
       const flushBatch = () => {
         if (currentBatch.length === 0) return;
         this._renderBatch(ctx, currentBatch, vw, vh, bufferScale, camera);
-        currentBatch = [];
+        currentBatch.length = 0;
       };
 
-      renderList.forEach((item, idx) => {
+      for (let idx = 0; idx < renderList.length; idx++) {
+        const item = renderList[idx];
         const layer = item.animLayer || item.layer;
-        const b = this.getBounds(layer, bufferScale, camera, vw, vh);
+        const b = boundsArr[idx];
 
         // In After Effects, 2D layers break 3D space:
         // Flush any preceding 3D layers in the depth buffer, composite the 2D layer, then resume 3D batching
@@ -3403,11 +4837,250 @@
           const lSec = (typeof currentSec === 'number' && !isNaN(currentSec)) ? currentSec : ((layer && layer._currentSec !== undefined) ? layer._currentSec : null);
           this.renderLayer(ctx, item.el, layer, bufferScale, b.is3D ? camera : null, lSec);
         } else {
-          currentBatch.push({ ...item, batchIndex: idx });
+          currentBatch.push({ item, bounds: b, batchIndex: idx });
         }
-      });
+      }
 
       flushBatch();
+    }
+
+    _mat4Mul(out, a, b) {
+      const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+      const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+      const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+      const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+      for (let c = 0; c < 4; c++) {
+        const o = c * 4;
+        const b0 = b[o], b1 = b[o + 1], b2 = b[o + 2], b3 = b[o + 3];
+        out[o]     = a00 * b0 + a10 * b1 + a20 * b2 + a30 * b3;
+        out[o + 1] = a01 * b0 + a11 * b1 + a21 * b2 + a31 * b3;
+        out[o + 2] = a02 * b0 + a12 * b1 + a22 * b2 + a32 * b3;
+        out[o + 3] = a03 * b0 + a13 * b1 + a23 * b2 + a33 * b3;
+      }
+      return out;
+    }
+
+    _ensureShadowGl(size) {
+      const gl = this.gl;
+      if (!gl || !this.isWebGL2 || size <= 0) return false;
+      if (this._shadowFbo && this._shadowSize === size) return true;
+      try {
+        if (!this._shadowFbo) {
+          this._shadowFbo = gl.createFramebuffer();
+          this._shadowDepthTex = gl.createTexture();
+        }
+        gl.bindTexture(gl.TEXTURE_2D, this._shadowDepthTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, size, size, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._shadowFbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this._shadowDepthTex, 0);
+        if (typeof gl.drawBuffers === 'function') gl.drawBuffers([gl.NONE]);
+        if (typeof gl.readBuffer === 'function') gl.readBuffer(gl.NONE);
+        const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        if (status !== gl.FRAMEBUFFER_COMPLETE) return false;
+        this._shadowSize = size;
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    _ensureReflGl(vw, vh) {
+      const gl = this.gl;
+      if (!gl || !this.isWebGL2 || vw <= 0 || vh <= 0) return false;
+      if (this._reflFbo && this._reflW === vw && this._reflH === vh) return true;
+      try {
+        if (!this._reflFbo) {
+          this._reflFbo = gl.createFramebuffer();
+          this._reflColorTex = gl.createTexture();
+          this._reflDepthTex = gl.createTexture();
+        }
+        gl.bindTexture(gl.TEXTURE_2D, this._reflColorTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, vw, vh, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        gl.bindTexture(gl.TEXTURE_2D, this._reflDepthTex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT24, vw, vh, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._reflFbo);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this._reflColorTex, 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this._reflDepthTex, 0);
+        const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        if (status !== gl.FRAMEBUFFER_COMPLETE) return false;
+        this._reflW = vw;
+        this._reflH = vh;
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    _computeCameraVP(out, vw, vh, bScale, camera) {
+      const camX = camera ? (camera.posX || 0) * bScale : 0;
+      const camY = camera ? (camera.posY || 0) * bScale : 0;
+      const camPosZ = camera ? (camera.posZ || 0) * bScale : 0;
+      const camRotX = camera ? (camera.rotX || 0) : 0;
+      const camRotY = camera ? (camera.rotY || 0) : 0;
+      const camRotZ = camera ? (camera.rotZ !== undefined ? camera.rotZ : (camera.rotation || 0)) : 0;
+      const camLens = Math.max(1, camera ? (camera.cameraLens !== undefined ? camera.cameraLens : 50) : 50);
+      const camZoom = camera ? (camera.cameraZoom !== undefined ? camera.cameraZoom : 100) : 100;
+      const lensFactor = Math.max(0.01, camLens / 50);
+      const zoomFactor = Math.max(0.01, camZoom / 100);
+      const totalZoom = lensFactor * zoomFactor;
+      const camInv = this._getCameraInverseScale(camera, vw, vh, bScale, this._camScaleScratch);
+      const totalZoomX = totalZoom * camInv.x;
+      const totalZoomY = totalZoom * camInv.y;
+      const D = CAMERA_DISTANCE * lensFactor * bScale;
+      const NEAR = NEAR_PLANE * bScale;
+      const FAR = 10000.0 * bScale;
+      const a = (FAR + NEAR) / (FAR - NEAR);
+      const b = (-2.0 * FAR * NEAR) / (D * (FAR - NEAR));
+
+      let m00 = 1, m01 = 0, m02 = 0;
+      let m10 = 0, m11 = 1, m12 = 0;
+      let m20 = 0, m21 = 0, m22 = 1;
+      let rx = -(vw * 0.5 + camX);
+      let ry = -(vh * 0.5 + camY);
+      let rz = -camPosZ - D;
+
+      if (camRotZ) {
+        const radZ = (-camRotZ * Math.PI) / 180;
+        const cZ = Math.cos(radZ), sZ = Math.sin(radZ);
+        let nx, ny;
+        nx = rx * cZ - ry * sZ; ny = rx * sZ + ry * cZ; rx = nx; ry = ny;
+        nx = m00 * cZ - m01 * sZ; ny = m00 * sZ + m01 * cZ; m00 = nx; m01 = ny;
+        nx = m10 * cZ - m11 * sZ; ny = m10 * sZ + m11 * cZ; m10 = nx; m11 = ny;
+        nx = m20 * cZ - m21 * sZ; ny = m20 * sZ + m21 * cZ; m20 = nx; m21 = ny;
+      }
+      if (camRotY) {
+        const radY = (camRotY * Math.PI) / 180;
+        const cY = Math.cos(radY), sY = Math.sin(radY);
+        let nx, nz;
+        nx = rx * cY + rz * sY; nz = -rx * sY + rz * cY; rx = nx; rz = nz;
+        nx = m00 * cY + m02 * sY; nz = -m00 * sY + m02 * cY; m00 = nx; m02 = nz;
+        nx = m10 * cY + m12 * sY; nz = -m10 * sY + m12 * cY; m10 = nx; m12 = nz;
+        nx = m20 * cY + m22 * sY; nz = -m20 * sY + m22 * cY; m20 = nx; m22 = nz;
+      }
+      if (camRotX) {
+        const radX = (camRotX * Math.PI) / 180;
+        const cX = Math.cos(radX), sX = Math.sin(radX);
+        let ny, nz;
+        ny = ry * cX - rz * sX; nz = ry * sX + rz * cX; ry = ny; rz = nz;
+        ny = m01 * cX - m02 * sX; nz = m01 * sX + m02 * cX; m01 = ny; m02 = nz;
+        ny = m11 * cX - m12 * sX; nz = m11 * sX + m12 * cX; m11 = ny; m12 = nz;
+        ny = m21 * cX - m22 * sX; nz = m21 * sX + m22 * cX; m21 = ny; m22 = nz;
+      }
+
+      const sxP = (2.0 / vw) * totalZoomX;
+      const syP = -(2.0 / vh) * totalZoomY;
+      out[0] = m00 * sxP; out[1] = m01 * syP; out[2] = a * (-m02 / D); out[3] = -m02 / D;
+      out[4] = m10 * sxP; out[5] = m11 * syP; out[6] = a * (-m12 / D); out[7] = -m12 / D;
+      out[8] = m20 * sxP; out[9] = m21 * syP; out[10] = a * (-m22 / D); out[11] = -m22 / D;
+      out[12] = rx * sxP; out[13] = ry * syP; out[14] = a * (-rz / D) + b; out[15] = -rz / D;
+      return out;
+    }
+
+    _computeLightVP(out, lightIdx, lightType, lighting, bScale, scx, scy, scz, sceneR) {
+      const view = this._shadowViewScratch || (this._shadowViewScratch = new Float32Array(16));
+      const proj = this._shadowProjScratch || (this._shadowProjScratch = new Float32Array(16));
+      let ex, ey, ez, tx = scx, ty = scy, tz = scz;
+      if (lightType === 1) {
+        const dirs = lighting.directions || lighting.lightDirections;
+        const o3 = lightIdx * 3;
+        let dx = dirs ? dirs[o3] : 0, dy = dirs ? dirs[o3 + 1] : 0.7, dz = dirs ? dirs[o3 + 2] : -0.7;
+        const dLen = Math.hypot(dx, dy, dz) || 1;
+        dx /= dLen; dy /= dLen; dz /= dLen;
+        const dist = sceneR * 2.4;
+        ex = scx - dx * dist;
+        ey = scy - dy * dist;
+        ez = scz - dz * dist;
+      } else {
+        const pos = lighting.positions || lighting.lightPositions;
+        const o3 = lightIdx * 3;
+        ex = (pos ? pos[o3] : 0) * bScale;
+        ey = (pos ? pos[o3 + 1] : 0) * bScale;
+        ez = (pos ? pos[o3 + 2] : 300) * bScale;
+      }
+
+      let fx = tx - ex, fy = ty - ey, fz = tz - ez;
+      let fLen = Math.hypot(fx, fy, fz);
+      if (fLen < 1e-3) { fx = 0; fy = 0; fz = -1; fLen = 1; }
+      fx /= fLen; fy /= fLen; fz /= fLen;
+
+      let ux = 0, uy = 1, uz = 0;
+      if (Math.abs(fy) > 0.96) { ux = 0; uy = 0; uz = 1; }
+      let sx = fy * uz - fz * uy;
+      let sy = fz * ux - fx * uz;
+      let sz = fx * uy - fy * ux;
+      const sLen = Math.hypot(sx, sy, sz) || 1;
+      sx /= sLen; sy /= sLen; sz /= sLen;
+      ux = sy * fz - sz * fy;
+      uy = sz * fx - sx * fz;
+      uz = sx * fy - sy * fx;
+
+      view[0] = sx;  view[1] = ux;  view[2] = -fx; view[3] = 0;
+      view[4] = sy;  view[5] = uy;  view[6] = -fy; view[7] = 0;
+      view[8] = sz;  view[9] = uz;  view[10] = -fz; view[11] = 0;
+      view[12] = -(sx * ex + sy * ey + sz * ez);
+      view[13] = -(ux * ex + uy * ey + uz * ez);
+      view[14] = (fx * ex + fy * ey + fz * ez);
+      view[15] = 1;
+
+      proj.fill(0);
+      if (lightType === 1) {
+        const half = sceneR * 1.35;
+        const near = Math.max(10 * bScale, sceneR * 0.1);
+        const far = sceneR * 5.0;
+        const invR = 1 / half;
+        const invNF = 1 / (far - near);
+        proj[0] = invR;
+        proj[5] = invR;
+        proj[10] = -2 * invNF;
+        proj[14] = -(far + near) * invNF;
+        proj[15] = 1;
+      } else {
+        const dist = Math.max(fLen, 10 * bScale);
+        const near = Math.max(12 * bScale, dist - sceneR * 1.45);
+        const far = dist + sceneR * 1.8;
+        const halfAngle = Math.min(1.18, Math.max(0.38, Math.atan((sceneR * 1.35) / Math.max(dist, sceneR * 0.5)) * 1.15));
+        const f = 1 / Math.tan(halfAngle);
+        const invNF = 1 / (near - far);
+        proj[0] = f;
+        proj[5] = f;
+        proj[10] = (far + near) * invNF;
+        proj[11] = -1;
+        proj[14] = 2 * far * near * invNF;
+      }
+
+      return this._mat4Mul(out, proj, view);
+    }
+
+    _entryHasReflection(entry) {
+      const layer = entry && entry.layer;
+      if (!layer) return false;
+      if (Array.isArray(layer.materialSlots) && layer.materialSlots.length > 0) {
+        for (let i = 0; i < layer.materialSlots.length; i++) {
+          const s = layer.materialSlots[i];
+          if (s && ((Number(s.glossy) || 0) > 0.5 || (Number(s.metallic) || 0) > 0.5)) return true;
+        }
+      }
+      const mo = layer.materialOptions;
+      if (mo && ((Number(mo.glossy) || 0) > 0.5 || (Number(mo.metallic) || 0) > 0.5)) return true;
+      return false;
     }
 
     _renderBatch(ctx, batch, vw, vh, bufferScale, camera = null) {
@@ -3430,7 +5103,19 @@
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
+      this._activeCamera = camera;
+      this._activeVw = vw;
+      this._activeVh = vh;
+
       // Single buffer clear for all layers in 3D batch
+      const ps = (typeof window !== 'undefined' && window.currentProjectState) ? window.currentProjectState : null;
+      const aoMode = (ps && ps.threeDEngine === 'advance' && (ps.ambientOcclusion === 'low' || ps.ambientOcclusion === 'medium' || ps.ambientOcclusion === 'high'))
+        ? ps.ambientOcclusion
+        : 'disabled';
+      const useAO = Boolean(aoMode !== 'disabled' && this.isWebGL2 && this._ensureAOGl(vw, vh));
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, useAO ? this._aoSceneFbo : null);
+      gl.viewport(0, 0, vw, vh);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
@@ -3450,44 +5135,117 @@
 
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffers.index);
 
-      batch.forEach((item, i) => {
+      const pool = this._batchPool || (this._batchPool = []);
+      const opaqueList = this._batchOpaqueScratch || (this._batchOpaqueScratch = []);
+      const transList = this._batchTransScratch || (this._batchTransScratch = []);
+      opaqueList.length = 0;
+      transList.length = 0;
+
+      const lensDistort = this._getLensDistort(camera);
+      let poolUsed = 0;
+
+      for (let i = 0; i < batch.length; i++) {
+        const bEntry = batch[i];
+        const item = bEntry.item || bEntry;
         const layer = item.animLayer || item.layer;
         const el = item.el;
-        if (!el || !this._hasValidDimensions(el)) return;
+        if (!el || !this._hasValidDimensions(el)) continue;
 
-        const bounds = this.getBounds(layer, bufferScale, camera, vw, vh);
+        const bounds = bEntry.bounds || this.getBounds(layer, bufferScale, camera, vw, vh);
         if (bounds.isBehindCamera || ((bounds.aabbW < 1.0 && bounds.w < 1.0) || (bounds.aabbH < 1.0 && bounds.h < 1.0))) {
-          return;
+          continue;
         }
 
-        const layerBias = (item.batchIndex !== undefined ? item.batchIndex : i) * 0.00002;
-        const mvp = this._computeMVP(bounds, vw, vh, layerBias, camera);
-        if (!mvp) return;
+        let entry = pool[poolUsed];
+        if (!entry) {
+          entry = {
+            mvp: new Float32Array(16),
+            model: new Float32Array(16),
+            normal: new Float32Array(9),
+            layer: null,
+            el: null,
+            bounds: null,
+            layerOpacity: 1.0,
+            bFx: null, eFx: null, pFx: null, sFx: null, cFx: null, cylFx: null, tFx: null, mFx: null,
+            ndcZ: 0
+          };
+          pool[poolUsed] = entry;
+        }
 
-        const tex = this._getOrCreateTexture(el);
-        if (!tex) return;
+        const layerBias = (bEntry.batchIndex !== undefined ? bEntry.batchIndex : i) * 0.00002;
+        const mvp = this._computeMVP(bounds, vw, vh, layerBias, camera, entry.mvp);
+        if (!mvp) continue;
 
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, tex);
+        const mfxB = this._resolveMeshFx(layer, this._meshFxScratch || (this._meshFxScratch = {}));
+        const bFx = mfxB.b, eFx = mfxB.e, pFx = mfxB.p, sFx = mfxB.s;
+        const cFx = mfxB.c, cylFx = mfxB.cyl, tFx = mfxB.t, mFx = mfxB.m;
+
+        const zRange = this._getLayerMeshZRange(layer, bounds, bFx, eFx, pFx, sFx, cFx, cylFx, tFx, mFx);
+        if (this._isOutsideFrustum(mvp, zRange[0], zRange[1], lensDistort)) {
+          continue;
+        }
+
+        if (this._currentModelMatrix) entry.model.set(this._currentModelMatrix);
+        if (this._currentNormalMatrix) entry.normal.set(this._currentNormalMatrix);
+
         const rawBatchOp = (layer.opacity !== undefined && layer.opacity !== null) ? Number(layer.opacity) : 1.0;
         const layerOpacity = (rawBatchOp > 1.0) ? Math.max(0, Math.min(1, rawBatchOp / 100)) : Math.max(0, Math.min(1, rawBatchOp));
-        gl.uniform1f(this.locations.opacity, layerOpacity);
+
+        entry.layer = layer;
+        entry.el = el;
+        entry.bounds = bounds;
+        entry.layerOpacity = layerOpacity;
+        entry.bFx = bFx; entry.eFx = eFx; entry.pFx = pFx; entry.sFx = sFx; entry.cFx = cFx; entry.cylFx = cylFx; entry.tFx = tFx; entry.mFx = mFx;
+        entry.ndcZ = mvp[14] / Math.max(0.001, mvp[15]);
+        poolUsed++;
+
+        const hasClosedMesh = !!(bFx || pFx || sFx || cFx || cylFx || tFx || mFx);
+        const isTextured = !!(el !== gl.canvas && (
+          layer.type === 'video' || layer.type === 'image' || layer.type === 'precomp' ||
+          layer.fillType === 'gradient' || layer.fillType === 'media' ||
+          (layer.type === 'shape' && (layer.fillType === 'gradient' || layer.fillType === 'media' || (layer.strokeWidth && layer.strokeWidth > 0)))
+        ));
+        if (hasClosedMesh && layerOpacity >= 0.999 && !isTextured) {
+          opaqueList.push(entry);
+        } else {
+          transList.push(entry);
+        }
+      }
+
+      if (opaqueList.length > 1) {
+        opaqueList.sort((a, b) => a.ndcZ - b.ndcZ);
+      }
+
+      const drawBatchEntry = (entry, mvpOverride = null) => {
+        const { layer, el, bounds, mvp, layerOpacity, bFx, eFx, pFx, sFx, cFx, cylFx, tFx, mFx } = entry;
+        const useMvp = mvpOverride || mvp;
         const isCutoutQuad = (layer.type === 'image' || layer.type === 'text');
-        gl.depthMask(!isCutoutQuad && layerOpacity >= 0.999);
-        if (this.locations.lensDistort) gl.uniform1f(this.locations.lensDistort, this._getLensDistort(camera));
-        gl.uniformMatrix4fv(this.locations.matrix, false, mvp);
+        if (!this._inShadowPass || isCutoutQuad) {
+          const tex = this._getOrCreateTexture(el);
+          if (!tex) return;
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.uniform1i(this.locations.texture, 0);
+        }
 
-        const bFx = Array.isArray(layer.effects) ? layer.effects.find(f => f && !f.disabled && f.type === 'box_3d') : null;
-        const eFx = Array.isArray(layer.effects) ? layer.effects.find(f => f && !f.disabled && f.type === 'extrude_3d') : null;
-        const pFx = Array.isArray(layer.effects) ? layer.effects.find(f => f && !f.disabled && f.type === 'pyramid_3d') : null;
-        const sFx = Array.isArray(layer.effects) ? layer.effects.find(f => f && !f.disabled && f.type === 'sphere_3d') : null;
+        if (this._currentModelMatrix) this._currentModelMatrix.set(entry.model);
+        if (this._currentNormalMatrix) this._currentNormalMatrix.set(entry.normal);
 
-        if (bFx) this._draw3DBoxMesh(gl, mvp, bFx, bounds, layerOpacity, layer);
-        else if (eFx) this._draw3DExtrudeMesh(gl, mvp, eFx, bounds, layerOpacity, layer, el);
-        else if (pFx) this._draw3DPyramidMesh(gl, mvp, pFx, bounds, layerOpacity, layer);
-        else if (sFx) this._draw3DSphereMesh(gl, mvp, sFx, bounds, layerOpacity, layer);
+        gl.uniform1f(this.locations.opacity, this._inShadowPass ? 1.0 : layerOpacity);
+        gl.depthMask(this._inShadowPass ? true : (!isCutoutQuad && layerOpacity >= 0.999));
+        if (this.locations.lensDistort) gl.uniform1f(this.locations.lensDistort, this._inShadowPass ? 0.0 : lensDistort);
+        gl.uniformMatrix4fv(this.locations.matrix, false, useMvp);
+
+        if (mFx) this._draw3DModelMesh(gl, useMvp, bounds, layerOpacity, layer, el);
+        else if (bFx) this._draw3DBoxMesh(gl, useMvp, bFx, bounds, layerOpacity, layer, el);
+        else if (eFx) this._draw3DExtrudeMesh(gl, useMvp, eFx, bounds, layerOpacity, layer, el);
+        else if (pFx) this._draw3DPyramidMesh(gl, useMvp, pFx, bounds, layerOpacity, layer);
+        else if (sFx) this._draw3DSphereMesh(gl, useMvp, sFx, bounds, layerOpacity, layer);
+        else if (cFx) this._draw3DConeMesh(gl, useMvp, cFx, bounds, layerOpacity, layer, el);
+        else if (cylFx) this._draw3DCylinderMesh(gl, useMvp, cylFx, bounds, layerOpacity, layer, el);
+        else if (tFx) this._draw3DTorusMesh(gl, useMvp, tFx, bounds, layerOpacity, layer, el);
         else {
-          gl.uniform1i(this.locations.mode, 0);
+          gl.uniform1i(this.locations.mode, (this._inShadowPass && !isCutoutQuad) ? 1 : 0);
           gl.disableVertexAttribArray(this.locations.color);
           gl.vertexAttrib4f(this.locations.color, 1.0, 1.0, 1.0, 1.0);
           gl.enableVertexAttribArray(this.locations.position);
@@ -3499,8 +5257,165 @@
           gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.buffers.index);
           gl.drawElements(gl.TRIANGLES, this.quadIndexCount, gl.UNSIGNED_SHORT, 0);
         }
-      });
-      gl.depthMask(true);
+      };
+
+      // --- ADVANCE 3D SHADOW MAP PASS ---
+      const isAdvanceScene = Boolean(ps && ps.threeDEngine === 'advance');
+      const shadowSize = isAdvanceScene ? (parseInt(ps.shadowQuality, 10) || 0) : 0;
+      const lighting = this._lightingData;
+      let shadowLightIdx = -1;
+      let shadowLightType = 0;
+      if (shadowSize >= 256 && lighting && lighting.numLights > 0) {
+        const lTypes = lighting.types || lighting.lightTypes;
+        if (lTypes) {
+          for (let li = 0; li < lighting.numLights; li++) {
+            if (lTypes[li] === 1) { shadowLightIdx = li; shadowLightType = 1; break; }
+            if (lTypes[li] === 2 && shadowLightIdx < 0) { shadowLightIdx = li; shadowLightType = 2; }
+          }
+        }
+      }
+      const useShadow = Boolean(
+        shadowLightIdx >= 0 &&
+        (opaqueList.length + transList.length) > 0 &&
+        this.isWebGL2 &&
+        this._ensureShadowGl(shadowSize)
+      );
+
+      if (useShadow) {
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+        const expandEntry = (en) => {
+          const mm = en.model;
+          const b = en.bounds;
+          const r = Math.max(b ? b.w : 200, b ? b.h : 200, (en.layer && en.layer.scaleZ ? en.layer.scaleZ * bufferScale : 200)) * 0.75;
+          const px = mm[12], py = mm[13], pz = mm[14];
+          if (px - r < minX) minX = px - r; if (px + r > maxX) maxX = px + r;
+          if (py - r < minY) minY = py - r; if (py + r > maxY) maxY = py + r;
+          if (pz - r < minZ) minZ = pz - r; if (pz + r > maxZ) maxZ = pz + r;
+        };
+        for (let i = 0; i < opaqueList.length; i++) expandEntry(opaqueList[i]);
+        for (let i = 0; i < transList.length; i++) expandEntry(transList[i]);
+        const scx = (minX + maxX) * 0.5;
+        const scy = (minY + maxY) * 0.5;
+        const scz = (minZ + maxZ) * 0.5;
+        const sceneR = Math.max(300 * bufferScale, Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) * 0.55);
+
+        const lightVP = this._shadowLightVP || (this._shadowLightVP = new Float32Array(16));
+        const lightMvpScratch = this._shadowMvpScratch || (this._shadowMvpScratch = new Float32Array(16));
+        this._computeLightVP(lightVP, shadowLightIdx, shadowLightType, lighting, bufferScale, scx, scy, scz, sceneR);
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._shadowFbo);
+        gl.viewport(0, 0, shadowSize, shadowSize);
+        gl.colorMask(false, false, false, false);
+        gl.clear(gl.DEPTH_BUFFER_BIT);
+        gl.enable(gl.POLYGON_OFFSET_FILL);
+        gl.polygonOffset(2.5, 4.0);
+        if (this.locations.shadowParams) gl.uniform4f(this.locations.shadowParams, 0.0, 0.0, 1.0 / shadowSize, 0.85);
+        if (this.locations.reflParams) gl.uniform4f(this.locations.reflParams, 0.0, 1200.0, 50.0, 0.03);
+
+        this._inShadowPass = true;
+        for (let i = 0; i < opaqueList.length; i++) {
+          this._mat4Mul(lightMvpScratch, lightVP, opaqueList[i].model);
+          drawBatchEntry(opaqueList[i], lightMvpScratch);
+        }
+        for (let i = 0; i < transList.length; i++) {
+          if (transList[i].layerOpacity < 0.25) continue;
+          this._mat4Mul(lightMvpScratch, lightVP, transList[i].model);
+          drawBatchEntry(transList[i], lightMvpScratch);
+        }
+        this._inShadowPass = false;
+
+        gl.disable(gl.POLYGON_OFFSET_FILL);
+        gl.colorMask(true, true, true, true);
+
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, this._shadowDepthTex);
+        if (this.locations.shadowMap) gl.uniform1i(this.locations.shadowMap, 2);
+        if (this.locations.lightViewProj) gl.uniformMatrix4fv(this.locations.lightViewProj, false, lightVP);
+        if (this.locations.shadowParams) gl.uniform4f(this.locations.shadowParams, 1.0, shadowLightIdx, 1.0 / shadowSize, 0.82);
+        gl.activeTexture(gl.TEXTURE0);
+      } else {
+        if (this.locations.shadowParams) gl.uniform4f(this.locations.shadowParams, 0.0, 0.0, 1.0 / 1024.0, 0.82);
+      }
+
+      // --- ADVANCE 3D SCREEN-SPACE OBJECT REFLECTION PASS ---
+      let hasReflectiveEntry = false;
+      if (isAdvanceScene && ps.enableReflection) {
+        for (let i = 0; i < opaqueList.length && !hasReflectiveEntry; i++) {
+          if (this._entryHasReflection(opaqueList[i])) hasReflectiveEntry = true;
+        }
+        for (let i = 0; i < transList.length && !hasReflectiveEntry; i++) {
+          if (this._entryHasReflection(transList[i])) hasReflectiveEntry = true;
+        }
+      }
+      const useRefl = Boolean(
+        hasReflectiveEntry &&
+        (opaqueList.length + transList.length) > 1 &&
+        this.isWebGL2 &&
+        this._ensureReflGl(vw, vh)
+      );
+
+      if (useRefl) {
+        // Pass 1: Render lit+shadowed scene into _reflFbo (color + depth)
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._reflFbo);
+        gl.viewport(0, 0, vw, vh);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        this._activeReflPass = false;
+        if (this.locations.reflParams) gl.uniform4f(this.locations.reflParams, 0.0, 1200.0, 50.0, 0.035);
+        for (let i = 0; i < opaqueList.length; i++) drawBatchEntry(opaqueList[i]);
+        for (let i = 0; i < transList.length; i++) drawBatchEntry(transList[i]);
+        gl.depthMask(true);
+
+        // Pass 2: Render final scene sampling _reflColorTex + _reflDepthTex for glossy/metallic objects
+        const camVP = this._reflCameraVP || (this._reflCameraVP = new Float32Array(16));
+        this._computeCameraVP(camVP, vw, vh, bufferScale, camera);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, useAO ? this._aoSceneFbo : null);
+        gl.viewport(0, 0, vw, vh);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        gl.activeTexture(gl.TEXTURE3);
+        gl.bindTexture(gl.TEXTURE_2D, this._reflColorTex);
+        if (this.locations.sceneColorTex) gl.uniform1i(this.locations.sceneColorTex, 3);
+        gl.activeTexture(gl.TEXTURE4);
+        gl.bindTexture(gl.TEXTURE_2D, this._reflDepthTex);
+        if (this.locations.sceneDepthTex) gl.uniform1i(this.locations.sceneDepthTex, 4);
+        if (this.locations.cameraVP) gl.uniformMatrix4fv(this.locations.cameraVP, false, camVP);
+        const maxReflDist = Math.max(vw, vh) * 1.15;
+        if (this.locations.reflParams) gl.uniform4f(this.locations.reflParams, 1.0, maxReflDist, maxReflDist / 24.0, 0.045);
+        gl.activeTexture(gl.TEXTURE0);
+
+        this._activeReflPass = true;
+        for (let i = 0; i < opaqueList.length; i++) drawBatchEntry(opaqueList[i]);
+        for (let i = 0; i < transList.length; i++) drawBatchEntry(transList[i]);
+        this._activeReflPass = false;
+        gl.depthMask(true);
+      } else {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, useAO ? this._aoSceneFbo : null);
+        gl.viewport(0, 0, vw, vh);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        this._activeReflPass = false;
+        if (this.locations.reflParams) gl.uniform4f(this.locations.reflParams, 0.0, 1200.0, 50.0, 0.035);
+        for (let i = 0; i < opaqueList.length; i++) drawBatchEntry(opaqueList[i]);
+        for (let i = 0; i < transList.length; i++) drawBatchEntry(transList[i]);
+        gl.depthMask(true);
+      }
+
+      // Reset shadow/reflection uniforms so single-layer renders & thumbnails stay clean
+      if (this.locations.shadowParams) gl.uniform4f(this.locations.shadowParams, 0.0, 0.0, 1.0 / 1024.0, 0.82);
+      if (this.locations.reflParams) gl.uniform4f(this.locations.reflParams, 0.0, 1200.0, 50.0, 0.035);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this._whiteFallbackTex);
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, this._envFallbackTex);
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(gl.TEXTURE_2D, this._whiteFallbackTex);
+      gl.activeTexture(gl.TEXTURE0);
+
+      if (useAO) {
+        this._runAOPostPass(gl, vw, vh, bufferScale, camera, aoMode);
+      }
 
       // Single hardware blit onto destination 2D canvas
       try {
@@ -3597,7 +5512,32 @@
     /**
      * Compute 4x4 Model-View-Perspective matrix mapping [-0.5, 0.5] quad to WebGL clip space
      */
-    _computeMVP(bounds, vw, vh, layerBias = 0, camera = null) {
+    /**
+     * Compute inverse camera scale factors (smaller camera => larger projected objects).
+     * Writes into a pre-allocated scratch object for zero per-frame GC allocation.
+     */
+    _getCameraInverseScale(camera, vw, vh, bScale, out) {
+      const res = out || this._camScaleScratch || (this._camScaleScratch = { x: 1, y: 1 });
+      res.x = 1;
+      res.y = 1;
+      if (!camera) return res;
+      const safeScale = (bScale && bScale > 0) ? bScale : 1;
+      const baseW = vw / safeScale;
+      const baseH = vh / safeScale;
+      if (baseW > 0 && typeof camera.scaleW === 'number' && !isNaN(camera.scaleW)) {
+        const signX = camera.scaleW < 0 ? -1 : 1;
+        const ratioX = Math.max(0.01, Math.abs(camera.scaleW) / baseW);
+        res.x = signX / ratioX;
+      }
+      if (baseH > 0 && typeof camera.scaleH === 'number' && !isNaN(camera.scaleH)) {
+        const signY = camera.scaleH < 0 ? -1 : 1;
+        const ratioY = Math.max(0.01, Math.abs(camera.scaleH) / baseH);
+        res.y = signY / ratioY;
+      }
+      return res;
+    }
+
+    _computeMVP(bounds, vw, vh, layerBias = 0, camera = null, outBuf = null) {
       const {
         cx, cy, posZ = 0,
         w, h, signX, signY,
@@ -3619,6 +5559,9 @@
       const lensFactor = Math.max(0.01, camLens / 50);
       const zoomFactor = Math.max(0.01, camZoom / 100);
       const totalZoom = lensFactor * zoomFactor;
+      const camInv = this._getCameraInverseScale(camera, vw, vh, bScale, this._camScaleScratch);
+      const totalZoomX = totalZoom * camInv.x;
+      const totalZoomY = totalZoom * camInv.y;
       const D = CAMERA_DISTANCE * lensFactor * bScale;
       const NEAR = NEAR_PLANE * bScale;
       const FAR = 10000.0 * bScale;
@@ -3656,6 +5599,36 @@
       const anchorWorldX = cx + (bounds.anchorX || 0) * (signX || 1);
       const anchorWorldY = cy + (bounds.anchorY || 0) * (signY || 1);
       const anchorWorldZ = posZ + (bounds.anchorZ || 0);
+
+      // Model matrix & Normal matrix for 3D Shading Pipeline (zero per-frame allocation)
+      if (!this._currentModelMatrix) {
+        this._currentModelMatrix = new Float32Array(16);
+        this._currentNormalMatrix = new Float32Array(9);
+      }
+      const uax0 = -(bounds.anchorX || 0) / (bounds.w || 1);
+      const uay0 = -(bounds.anchorY || 0) / (bounds.h || 1);
+      const aZ0 = bounds.anchorZ || 0;
+
+      const mm = this._currentModelMatrix;
+      mm[0] = m00;  mm[1] = m01;  mm[2] = m02;  mm[3] = 0;
+      mm[4] = m10;  mm[5] = m11;  mm[6] = m12;  mm[7] = 0;
+      mm[8] = m20;  mm[9] = m21;  mm[10] = m22; mm[11] = 0;
+      mm[12] = anchorWorldX + uax0 * m00 + uay0 * m10 - aZ0 * m20;
+      mm[13] = anchorWorldY + uax0 * m01 + uay0 * m11 - aZ0 * m21;
+      mm[14] = anchorWorldZ + uax0 * m02 + uay0 * m12 - aZ0 * m22;
+      mm[15] = 1;
+
+      const nm = this._currentNormalMatrix;
+      const invSx = sx !== 0 ? (1.0 / sx) : 1.0;
+      const invSy = sy !== 0 ? (1.0 / sy) : 1.0;
+      nm[0] = m00 * invSx; nm[1] = m01 * invSx; nm[2] = m02 * invSx;
+      nm[3] = m10 * invSy; nm[4] = m11 * invSy; nm[5] = m12 * invSy;
+      nm[6] = m20;         nm[7] = m21;         nm[8] = m22;
+
+      if (bounds.transformParams) {
+        bounds.transformParams.modelMatrix = mm;
+        bounds.transformParams.normalMatrix = nm;
+      }
 
       // Relative coordinates in camera space (camera eye at distance D in front of canvas)
       let rx = anchorWorldX - (vw / 2 + camX);
@@ -3726,23 +5699,23 @@
       const a = (FAR + NEAR) / (FAR - NEAR);
       const b = (-2.0 * FAR * NEAR) / (D * (FAR - NEAR)) - (layerBias || 0);
 
-      const out = new Float32Array(16);
+      const out = outBuf || new Float32Array(16);
 
       // Column 0 (X vertex [-0.5, 0.5])
-      out[0] = m00 * (2.0 / vw) * totalZoom;
-      out[1] = -m01 * (2.0 / vh) * totalZoom;
+      out[0] = m00 * (2.0 / vw) * totalZoomX;
+      out[1] = -m01 * (2.0 / vh) * totalZoomY;
       out[2] = a * (-m02 / D);
       out[3] = -m02 / D;
 
       // Column 1 (Y vertex [-0.5, 0.5])
-      out[4] = m10 * (2.0 / vw) * totalZoom;
-      out[5] = -m11 * (2.0 / vh) * totalZoom;
+      out[4] = m10 * (2.0 / vw) * totalZoomX;
+      out[5] = -m11 * (2.0 / vh) * totalZoomY;
       out[6] = a * (-m12 / D);
       out[7] = -m12 / D;
 
       // Column 2 (Z unit basis vector)
-      const z0 = m20 * (2.0 / vw) * totalZoom;
-      const z1 = -m21 * (2.0 / vh) * totalZoom;
+      const z0 = m20 * (2.0 / vw) * totalZoomX;
+      const z1 = -m21 * (2.0 / vh) * totalZoomY;
       const z3 = -m22 / D;
       out[8] = z0;
       out[9] = z1;
@@ -3750,8 +5723,8 @@
       out[11] = z3;
 
       // Column 3 (Anchor Translation & W homogeneous component)
-      out[12] = (2.0 * rx) / vw * totalZoom;
-      out[13] = (-2.0 * ry) / vh * totalZoom;
+      out[12] = (2.0 * rx) / vw * totalZoomX;
+      out[13] = (-2.0 * ry) / vh * totalZoomY;
       out[14] = a * safeWTrans + b;
       out[15] = safeWTrans;
 

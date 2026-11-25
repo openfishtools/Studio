@@ -46,11 +46,16 @@
       if (!this._canvas) return;
       const main = document.getElementById('editor-active-canvas');
       if (!main) return;
-      if (this._canvas.width !== main.width || this._canvas.height !== main.height || !this._dprScale) {
-        this._canvas.width = main.width;
-        this._canvas.height = main.height;
-        const rect = this._canvas.getBoundingClientRect ? this._canvas.getBoundingClientRect() : null;
-        this._dprScale = (rect && rect.width > 0) ? (this._canvas.width / rect.width) : (window.devicePixelRatio || 1);
+      this._canvas.style.imageRendering = 'auto';
+      const rect = this._canvas.getBoundingClientRect ? this._canvas.getBoundingClientRect() : null;
+      const isMobileDevice = (typeof window !== 'undefined' && (window.innerWidth <= 600 || ('ontouchstart' in window && window.innerWidth <= 900)));
+      const dpr = isMobileDevice ? 1.0 : Math.min(2, window.devicePixelRatio || 1);
+      const targetW = (rect && rect.width > 0) ? Math.max(1, Math.round(rect.width * dpr)) : (main.width || 1920);
+      const targetH = (rect && rect.height > 0) ? Math.max(1, Math.round(rect.height * dpr)) : (main.height || 1080);
+      if (this._canvas.width !== targetW || this._canvas.height !== targetH || !this._dprScale) {
+        this._canvas.width = targetW;
+        this._canvas.height = targetH;
+        this._dprScale = (rect && rect.width > 0) ? (this._canvas.width / rect.width) : dpr;
       }
     },
 
@@ -86,11 +91,20 @@
 
       ctx.clearRect(0, 0, w, h);
 
+      // UI Guidelines (Grid, Snap Guides, Motion Path):
+      // These are strictly UI overlays, always drawn at physical display resolution (never pixelated/burik).
       this._drawGrid(ctx, w, h);
-      this._drawWireframes(ctx, w, h);
-      this._drawVectorEditorOverlay(ctx, w, h);
-      this._drawMotionPath(ctx, w, h);
       this._drawSnapGuides(ctx, w, h);
+      this._drawMotionPath(ctx, w, h);
+
+      // Layer Wireframes & Vector overlay:
+      // Rendered directly at native 1:1 physical resolution, completely isolated from Speed Draft burik scale
+      const main = document.getElementById('editor-active-canvas');
+      const scaleX = (main && main.width > 0) ? (w / main.width) : 1;
+      const scaleY = (main && main.height > 0) ? (h / main.height) : 1;
+
+      this._drawWireframes(ctx, w, h, scaleX, scaleY);
+      this._drawVectorEditorOverlay(ctx, w, h, scaleX, scaleY);
     },
 
     _drawGrid(ctx, w, h) {
@@ -98,41 +112,27 @@
       if (!gridBtn || !gridBtn.classList.contains('is-active')) return;
 
       ctx.save();
-      const cx = w / 2;
-      const cy = h / 2;
-      const baseLineWidth = Math.max(1, Math.round(w / 1200));
       const themePrimary = this._getThemeColors().primary;
 
-      // Quarter grid lines
-      ctx.lineWidth = baseLineWidth;
+      // Uniform, clean UI grid lines (1px razor-sharp, uniform opacity, no center thickening, no crosshair)
+      ctx.lineWidth = 1;
       ctx.strokeStyle = themePrimary;
-      ctx.globalAlpha = 0.2;
+      ctx.globalAlpha = 0.3;
       ctx.beginPath();
-      ctx.moveTo(w * 0.25, 0); ctx.lineTo(w * 0.25, h);
-      ctx.moveTo(w * 0.75, 0); ctx.lineTo(w * 0.75, h);
-      ctx.moveTo(0, h * 0.25); ctx.lineTo(w, h * 0.25);
-      ctx.moveTo(0, h * 0.75); ctx.lineTo(w, h * 0.75);
-      ctx.stroke();
 
-      // Center axes
-      ctx.lineWidth = Math.max(1.5, baseLineWidth * 1.6);
-      ctx.strokeStyle = themePrimary;
-      ctx.globalAlpha = 0.6;
-      ctx.beginPath();
-      ctx.moveTo(cx, 0); ctx.lineTo(cx, h);
-      ctx.moveTo(0, cy); ctx.lineTo(w, cy);
-      ctx.stroke();
+      const xs = [Math.round(w * 0.25) + 0.5, Math.round(w * 0.5) + 0.5, Math.round(w * 0.75) + 0.5];
+      for (let i = 0; i < xs.length; i++) {
+        ctx.moveTo(xs[i], 0);
+        ctx.lineTo(xs[i], h);
+      }
 
-      // Center crosshair
-      const crossSize = Math.max(12, Math.round(Math.min(w, h) * 0.035));
-      ctx.lineWidth = Math.max(2, baseLineWidth * 2.2);
-      ctx.strokeStyle = themePrimary;
-      ctx.globalAlpha = 0.95;
-      ctx.beginPath();
-      ctx.moveTo(cx - crossSize, cy); ctx.lineTo(cx + crossSize, cy);
-      ctx.moveTo(cx, cy - crossSize); ctx.lineTo(cx, cy + crossSize);
-      ctx.stroke();
+      const ys = [Math.round(h * 0.25) + 0.5, Math.round(h * 0.5) + 0.5, Math.round(h * 0.75) + 0.5];
+      for (let i = 0; i < ys.length; i++) {
+        ctx.moveTo(0, ys[i]);
+        ctx.lineTo(w, ys[i]);
+      }
 
+      ctx.stroke();
       ctx.restore();
     },
 
@@ -209,7 +209,50 @@
       });
     },
 
-    _drawWireframes(ctx, w, h) {
+    _scaleBoundsForOverlay(b, scaleX, scaleY) {
+      if (!b) return null;
+      if (Math.abs(scaleX - 1) < 0.001 && Math.abs(scaleY - 1) < 0.001) return b;
+      const sb = {
+        ...b,
+        x: (b.x || 0) * scaleX,
+        y: (b.y || 0) * scaleY,
+        w: (b.w || 0) * scaleX,
+        h: (b.h || 0) * scaleY,
+        cx: (b.cx !== undefined ? b.cx : ((b.x || 0) + (b.w || 0) / 2)) * scaleX,
+        cy: (b.cy !== undefined ? b.cy : ((b.y || 0) + (b.h || 0) / 2)) * scaleY,
+        scaleW: (b.scaleW !== undefined ? b.scaleW : (b.w || 0)) * scaleX,
+        scaleH: (b.scaleH !== undefined ? b.scaleH : (b.h || 0)) * scaleY
+      };
+      if (typeof b.aabbW === 'number') sb.aabbW = b.aabbW * scaleX;
+      if (typeof b.aabbH === 'number') sb.aabbH = b.aabbH * scaleY;
+      if (typeof b.radius === 'number') sb.radius = b.radius * ((scaleX + scaleY) * 0.5);
+      if (Array.isArray(b.corners)) {
+        sb.corners = b.corners.map(pt => pt ? { x: pt.x * scaleX, y: pt.y * scaleY, isBehind: !!pt.isBehind } : pt);
+      }
+      if (Array.isArray(b.backCorners)) {
+        sb.backCorners = b.backCorners.map(pt => pt ? { x: pt.x * scaleX, y: pt.y * scaleY, isBehind: !!pt.isBehind } : pt);
+      }
+      if (b.anchor) {
+        sb.anchor = { x: b.anchor.x * scaleX, y: b.anchor.y * scaleY };
+      }
+      if (Array.isArray(b.handles)) {
+        sb.handles = b.handles.map(h => h ? { ...h, x: h.x * scaleX, y: h.y * scaleY } : h);
+      }
+      if (b.light3D) {
+        const scalePt = (pt) => pt ? { x: pt.x * scaleX, y: pt.y * scaleY, isBehind: !!pt.isBehind } : pt;
+        const l3 = b.light3D;
+        sb.light3D = {
+          axisX: Array.isArray(l3.axisX) ? l3.axisX.map(scalePt) : null,
+          axisY: Array.isArray(l3.axisY) ? l3.axisY.map(scalePt) : null,
+          axisZ: Array.isArray(l3.axisZ) ? l3.axisZ.map(scalePt) : null,
+          rayTip: l3.rayTip ? scalePt(l3.rayTip) : null,
+          rings: Array.isArray(l3.rings) ? l3.rings.map(r => Array.isArray(r) ? r.map(scalePt) : r) : null
+        };
+      }
+      return sb;
+    },
+
+    _drawWireframes(ctx, w, h, scaleX = 1, scaleY = 1) {
       if (!window.CanvasWireframe) return;
       if (window.currentDrawerSubview === 'vector') return;
 
@@ -227,7 +270,7 @@
         allSelectedIds.forEach(id => {
           const l = (state && state.layers || []).find(layer => layer.id === id);
           if (!l || l.type === 'camera' || l.type === 'audio') return;
-          const b = l._canvasBounds;
+          const b = this._scaleBoundsForOverlay(l._canvasBounds, scaleX, scaleY);
           if (b && (!b.isBehindCamera || (b.posZ || 0) < 950)) {
             window.CanvasWireframe.draw(ctx, b, {
               showAnchor: false,
@@ -245,19 +288,19 @@
         const selId = allSelectedIds[0];
         const selL = (state && state.layers || []).find(l => l.id === selId);
         if (selL && selL.type !== 'camera' && selL.type !== 'audio') {
-          const b = selL._canvasBounds;
+          const b = this._scaleBoundsForOverlay(selL._canvasBounds, scaleX, scaleY);
           if (b && (!b.isBehindCamera || (b.posZ || 0) < 950)) {
             const isAnchor = typeof window.isAnchorMode === 'function' ? window.isAnchorMode() : (window.moveAnchorSubmode === 'anchor');
             window.CanvasWireframe.draw(ctx, b, {
               showAnchor: true,
-              showHandles: true,
+              showHandles: selL.shapeType !== '3d_model',
               isAnchorMode: isAnchor,
               color: colors.primary,
               bgColor: colors.bg,
               dprScale,
               hidden: !!selL.hidden
             });
-            this._drawRoundnessHandle(ctx, selL, w, h);
+            this._drawRoundnessHandle(ctx, selL, w, h, scaleX, scaleY);
           }
         }
       }
@@ -273,7 +316,7 @@
 
       if (isShape) {
         const shapeType = layer.shapeType || 'rectangle';
-        if (shapeType === 'vector') return null;
+        if (shapeType === 'vector' || shapeType === '3d_model') return null;
         const shapeDef = (window.FishShapesRegistry && typeof window.FishShapesRegistry.get === 'function')
           ? window.FishShapesRegistry.get(shapeType)
           : null;
@@ -373,16 +416,20 @@
     },
 
     hitTestRoundnessHandle(layer, canvasX, canvasY, hitTolerance = 14) {
-      const cw = this._canvas ? this._canvas.width : 1920;
-      const ch = this._canvas ? this._canvas.height : 1080;
+      const main = document.getElementById('editor-active-canvas');
+      const cw = main ? main.width : (this._canvas ? this._canvas.width : 1920);
+      const ch = main ? main.height : (this._canvas ? this._canvas.height : 1080);
       const rh = this.getRoundnessHandle(layer, cw, ch);
       if (!rh) return null;
       const dist = Math.hypot(canvasX - rh.x, canvasY - rh.y);
       return dist <= hitTolerance ? rh : null;
     },
 
-    _drawRoundnessHandle(ctx, selL, w, h) {
-      const rh = this.getRoundnessHandle(selL, w, h);
+    _drawRoundnessHandle(ctx, selL, w, h, scaleX = 1, scaleY = 1) {
+      const main = document.getElementById('editor-active-canvas');
+      const cw = main ? main.width : (this._canvas ? this._canvas.width : 1920);
+      const ch = main ? main.height : (this._canvas ? this._canvas.height : 1080);
+      const rh = this.getRoundnessHandle(selL, cw, ch);
       if (!rh) return;
 
       const dprScale = this._dprScale || 1;
@@ -392,13 +439,18 @@
       const rOuter = (isDraggingRound ? 6.5 : 5.2) * dprScale;
       const rInner = (isDraggingRound ? 2.6 : 2.0) * dprScale;
 
+      const hx = rh.x * scaleX;
+      const hy = rh.y * scaleY;
+      const ox = rh.originX * scaleX;
+      const oy = rh.originY * scaleY;
+
       ctx.save();
       // Subtle guide tick from corner toward roundness handle when active or rounded
       if (isDraggingRound || rh.curRound > 0) {
         ctx.beginPath();
         ctx.setLineDash([3 * dprScale, 3 * dprScale]);
-        ctx.moveTo(rh.originX + rh.dirX * (6 * dprScale), rh.originY + rh.dirY * (6 * dprScale));
-        ctx.lineTo(rh.x, rh.y);
+        ctx.moveTo(ox + rh.dirX * (6 * dprScale), oy + rh.dirY * (6 * dprScale));
+        ctx.lineTo(hx, hy);
         ctx.strokeStyle = accentTeal;
         ctx.lineWidth = 1.25 * dprScale;
         ctx.globalAlpha = 0.7;
@@ -408,7 +460,7 @@
       }
 
       ctx.beginPath();
-      ctx.arc(rh.x, rh.y, rOuter, 0, Math.PI * 2);
+      ctx.arc(hx, hy, rOuter, 0, Math.PI * 2);
       ctx.fillStyle = isDraggingRound ? accentTeal : colors.bg;
       ctx.fill();
       ctx.lineWidth = 1.8 * dprScale;
@@ -416,7 +468,7 @@
       ctx.stroke();
 
       ctx.beginPath();
-      ctx.arc(rh.x, rh.y, rInner, 0, Math.PI * 2);
+      ctx.arc(hx, hy, rInner, 0, Math.PI * 2);
       ctx.fillStyle = isDraggingRound ? '#ffffff' : accentTeal;
       ctx.fill();
       ctx.restore();
@@ -477,8 +529,9 @@
     hitTestVectorOverlay(layer, canvasX, canvasY, hitTolerance = 14) {
       if (window.currentDrawerSubview !== 'vector') return null;
       if (!layer || layer.type !== 'shape' || layer.shapeType !== 'vector') return null;
-      const cw = this._canvas ? this._canvas.width : 1920;
-      const ch = this._canvas ? this._canvas.height : 1080;
+      const main = document.getElementById('editor-active-canvas');
+      const cw = main ? main.width : (this._canvas ? this._canvas.width : 1920);
+      const ch = main ? main.height : (this._canvas ? this._canvas.height : 1080);
       const vt = this.getVectorTransform(layer, cw, ch);
       if (!vt) return null;
 
@@ -579,7 +632,7 @@
       return null;
     },
 
-    _drawVectorEditorOverlay(ctx, w, h) {
+    _drawVectorEditorOverlay(ctx, w, h, scaleX = 1, scaleY = 1) {
       if (window.currentDrawerSubview !== 'vector') return;
       const proj = window.currentProjectState;
       if (!proj || !window.selectedLayerId) return;
@@ -597,10 +650,10 @@
       const ph = Math.max(1, vBounds ? vBounds.height : (Number(shapeProps.sizeY) || baseH));
 
       const b = layer._canvasBounds;
-      const cx = b ? b.cx : (w / 2);
-      const cy = b ? b.cy : (h / 2);
-      const drawW = b ? (b.scaleW || b.w || w) : w;
-      const drawH = b ? (b.scaleH || b.h || h) : h;
+      const cx = (b ? b.cx : (w / 2 / scaleX)) * scaleX;
+      const cy = (b ? b.cy : (h / 2 / scaleY)) * scaleY;
+      const drawW = (b ? (b.scaleW || b.w || (w / scaleX)) : (w / scaleX)) * scaleX;
+      const drawH = (b ? (b.scaleH || b.h || (h / scaleY)) : (h / scaleY)) * scaleY;
       const rotRad = ((b ? (b.rotation || 0) : (layer.rotZ || layer.rotation || 0)) * Math.PI) / 180;
 
       const sx = drawW / pw;

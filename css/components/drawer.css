@@ -687,56 +687,6 @@
   line-height: 1.2;
 }
 
-/* Empty State */
-.media-pool-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px 16px;
-  text-align: center;
-  width: 100%;
-  box-sizing: border-box;
-  background-color: rgba(255, 255, 255, 0.02);
-  border: 1px dashed var(--border-subtle);
-  border-radius: 12px;
-  margin: 8px 0;
-}
-
-.media-empty-icon-wrap {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background-color: var(--bg-panel);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  margin-bottom: 8px;
-}
-
-.media-empty-icon {
-  font-size: 20px;
-  width: 20px;
-  height: 20px;
-}
-
-.media-empty-title {
-  font-family: var(--font-brand);
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 4px;
-}
-
-.media-empty-desc {
-  font-family: var(--font-brand);
-  font-size: 11px;
-  color: var(--text-muted);
-  max-width: 260px;
-  line-height: 1.4;
-}
-
 .drawer-media-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
@@ -1218,7 +1168,7 @@
   grid-column: span 2;
 }
 
-/* 1 button: 1 full-width column */
+/* 1 button: 1 full-width, full-height column (fills 2-row drawer height) */
 .layer-action-btn-grid:has(> :only-child),
 .layer-action-btn-grid.is-solo-mode {
   grid-template-columns: 1fr !important;
@@ -1227,9 +1177,11 @@
 .layer-action-btn-grid > :only-child,
 .layer-action-btn.is-solo {
   grid-column: 1 / -1 !important;
+  height: 156px;
+  min-height: 156px;
 }
 
-/* 2 buttons: 2 columns 50/50 */
+/* 2 buttons: 2 columns 50/50, full-height (no empty bottom space) */
 .layer-action-btn-grid:has(> :first-child:nth-last-child(2)),
 .layer-action-btn-grid.is-camera-mode,
 .layer-action-btn-grid.is-2-items {
@@ -1239,9 +1191,11 @@
 .layer-action-btn-grid.is-2-items .layer-action-btn,
 .layer-action-btn-grid.is-camera-mode .layer-action-btn {
   grid-column: span 1 !important;
+  height: 156px;
+  min-height: 156px;
 }
 
-/* 3 buttons: 3 columns 33/33/33 */
+/* 3 buttons: 3 columns 33/33/33, full-height */
 .layer-action-btn-grid:has(> :first-child:nth-last-child(3)),
 .layer-action-btn-grid.is-3-items {
   grid-template-columns: repeat(3, 1fr) !important;
@@ -1249,6 +1203,8 @@
 .layer-action-btn-grid:has(> :first-child:nth-last-child(3)) .layer-action-btn,
 .layer-action-btn-grid.is-3-items .layer-action-btn {
   grid-column: span 1 !important;
+  height: 156px;
+  min-height: 156px;
 }
 
 #add-layer-control-grid,
@@ -1279,37 +1235,30 @@
   }
 }
 
-/* 4 buttons: 2x2 grid (50/50 each row) */
-.layer-action-btn-grid:has(> :first-child:nth-last-child(4)),
-.layer-action-btn-grid.is-4-items {
-  grid-template-columns: repeat(2, 1fr) !important;
-}
-.layer-action-btn-grid:has(> :first-child:nth-last-child(4)) .layer-action-btn,
-.layer-action-btn-grid.is-4-items .layer-action-btn {
-  grid-column: span 1 !important;
-}
-
-/* 5 buttons (Text, Shape, Precomp):
-   Top row: 3 buttons (33.3% each, span 2)
-   Bottom row: 2 buttons (50% each, span 3) - stretched across full width, no empty corner! */
-.layer-action-btn-grid.is-5-items {
+/* 4, 5, 7, 8 buttons: 6-column grid so partial bottom rows span full width
+   - 4 items: 3 top (span 2) + 1 bottom full-width (span 6)
+   - 5 items: 3 top (span 2) + 2 bottom 50/50 (span 3)
+   - 7 items: 3 + 3 top (span 2) + 1 bottom full-width (span 6)
+   - 8 items: 3 + 3 top (span 2) + 2 bottom 50/50 (span 3) */
+.layer-action-btn-grid.is-4-items,
+.layer-action-btn-grid.is-5-items,
+.layer-action-btn-grid.is-7-items,
+.layer-action-btn-grid.is-8-items {
   grid-template-columns: repeat(6, 1fr) !important;
 }
-.layer-action-btn-grid.is-5-items #btn-layer-edit-group,
-.layer-action-btn-grid.is-5-items #btn-layer-edit-shape,
-.layer-action-btn-grid.is-5-items #btn-layer-edit-vector,
-.layer-action-btn-grid.is-5-items #btn-layer-edit-text,
-.layer-action-btn-grid.is-5-items #btn-layer-transform,
-.layer-action-btn-grid.is-5-items #btn-layer-fill,
-.layer-action-btn-grid.is-5-items > :nth-child(-n+3),
-.layer-action-btn-grid.is-5-items .is-span-2 {
+.layer-action-btn-grid.is-4-items .layer-action-btn.is-span-2,
+.layer-action-btn-grid.is-5-items .layer-action-btn.is-span-2,
+.layer-action-btn-grid.is-7-items .layer-action-btn.is-span-2,
+.layer-action-btn-grid.is-8-items .layer-action-btn.is-span-2 {
   grid-column: span 2 !important;
 }
-.layer-action-btn-grid.is-5-items #btn-layer-blend,
-.layer-action-btn-grid.is-5-items #btn-layer-effects,
-.layer-action-btn-grid.is-5-items > :nth-child(n+4),
-.layer-action-btn-grid.is-5-items .is-span-3 {
+.layer-action-btn-grid.is-5-items .layer-action-btn.is-span-3,
+.layer-action-btn-grid.is-8-items .layer-action-btn.is-span-3 {
   grid-column: span 3 !important;
+}
+.layer-action-btn-grid.is-4-items .layer-action-btn.is-span-6,
+.layer-action-btn-grid.is-7-items .layer-action-btn.is-span-6 {
+  grid-column: span 6 !important;
 }
 
 /* 6 buttons: 3x2 grid (33.3% each) */
@@ -1345,6 +1294,71 @@
   -webkit-tap-highlight-color: transparent;
   width: 100%;
   box-sizing: border-box;
+}
+
+.desktop-panel-left #add-layer-control-grid .layer-action-btn.is-hidden,
+#add-layer-control-grid .layer-action-btn.is-hidden,
+.layer-action-btn.is-hidden {
+  display: none !important;
+}
+
+/* Imported 3D Model Library Tile (1-shot PNG thumbnail + Top-right X delete button) */
+.shape-3d-imported-tile {
+  position: relative;
+  overflow: visible;
+}
+
+.shape-3d-imported-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.shape-3d-imported-tile .layer-action-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shape-3d-delete-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: var(--color-danger);
+  color: var(--color-danger-text);
+  font-family: var(--font-brand);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+}
+
+.shape-3d-imported-tile:hover .shape-3d-delete-btn,
+.shape-3d-imported-tile.is-delete-mode .shape-3d-delete-btn {
+  display: inline-flex;
+}
+
+.shape-3d-delete-btn:hover {
+  background-color: var(--color-danger-hover);
+  color: var(--color-danger-text);
+}
+
+.layer-action-btn:disabled,
+.layer-action-btn.is-disabled {
+  opacity: 0.35;
+  pointer-events: none;
+  cursor: not-allowed;
 }
 
 /* Solo / 1 child: proporsional sleek card */
@@ -1426,6 +1440,98 @@
   height: 24px;
   font-size: 24px;
   fill: currentColor;
+}
+
+/* Mobile Shape Subcategories Switch (Pill for touch) */
+.shape-subcategories-switch {
+  display: flex !important;
+  width: 100% !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  background-color: var(--bg-dashboard) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: 999px !important;
+  padding: 2px !important;
+  margin-bottom: 8px !important;
+  box-sizing: border-box !important;
+}
+
+.shape-subcategories-switch .segmented-switch-item {
+  height: 26px !important;
+  min-height: 26px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  padding: 0 10px !important;
+  border-radius: 999px !important;
+  color: var(--text-secondary) !important;
+}
+
+.shape-subcategories-switch .segmented-switch-item .category-label {
+  display: inline-block !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: inherit !important;
+}
+
+.shape-subcategories-switch .segmented-switch-item.is-active {
+  background-color: var(--color-primary) !important;
+  color: var(--bg-canvas) !important;
+}
+
+/* Desktop Panel Shape Subcategories Switch (Crisp squared desktop radius) */
+.desktop-panel-left .shape-subcategories-switch {
+  display: flex !important;
+  width: 100% !important;
+  height: var(--desktop-btn-h, 28px) !important;
+  min-height: var(--desktop-btn-h, 28px) !important;
+  background-color: var(--bg-panel) !important;
+  border: 1px solid var(--border-subtle) !important;
+  border-radius: var(--desktop-radius, 4px) !important;
+  padding: 2px !important;
+  margin-bottom: 8px !important;
+  box-sizing: border-box !important;
+  gap: 2px !important;
+}
+
+.desktop-panel-left .shape-subcategories-switch .segmented-switch-item {
+  height: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 0 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  padding: 0 8px !important;
+  border-radius: var(--desktop-radius-sm, 3px) !important;
+  color: var(--text-secondary) !important;
+}
+
+.desktop-panel-left .shape-subcategories-switch .segmented-switch-item .category-label {
+  display: inline-block !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: inherit !important;
+}
+
+.desktop-panel-left .shape-subcategories-switch .segmented-switch-item:hover {
+  background-color: var(--bg-panel-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.desktop-panel-left .shape-subcategories-switch .segmented-switch-item.is-active {
+  background-color: var(--color-primary) !important;
+  color: var(--bg-canvas) !important;
+}
+
+.layer-action-btn.shape-3d-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.layer-action-btn .shape-3d-thumb-canvas {
+  width: 28px;
+  height: 28px;
+  display: block;
+  pointer-events: none;
 }
 
 /* ==========================================================================
@@ -1676,28 +1782,43 @@
 }
 
 .blend-group-items {
-  display: none;
+  display: flex;
   flex-direction: column;
   background-color: var(--bg-panel-inner);
   border-top: none;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+  pointer-events: none;
 }
 
 .blend-group-card.is-expanded .blend-group-items {
-  display: flex;
+  max-height: 800px;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* Mask Blend Mode Visual Grid & Tiles (Alight Motion Style) */
 .blend-group-items.is-mask-grid {
-  display: none;
+  display: flex;
   flex-direction: row;
   gap: 12px;
-  padding: 12px;
+  padding: 0 12px;
   background-color: var(--bg-panel-inner);
   box-sizing: border-box;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.25s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease, padding 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
 }
 
 .blend-group-card.is-expanded .blend-group-items.is-mask-grid {
-  display: flex;
+  max-height: 500px;
+  opacity: 1;
+  padding: 12px;
+  pointer-events: auto;
 }
 
 .blend-mask-tile {
@@ -2767,24 +2888,35 @@
   height: 36px;
 }
 
+#timeline-add-drawer #add-layer-media-pool,
 .editor-timeline > #timeline-add-drawer #add-layer-media-pool,
+#timeline-add-drawer #add-layer-text-panel,
 .editor-timeline > #timeline-add-drawer #add-layer-text-panel,
-.editor-timeline > #timeline-add-drawer #add-layer-element-panel {
+#timeline-add-drawer #add-layer-element-panel,
+.editor-timeline > #timeline-add-drawer #add-layer-element-panel,
+#timeline-add-drawer #add-layer-shape-panel,
+.editor-timeline > #timeline-add-drawer #add-layer-shape-panel,
+#timeline-add-drawer #add-layer-control-panel,
+.editor-timeline > #timeline-add-drawer #add-layer-control-panel {
   flex: 1;
   min-height: 0;
   height: 100%;
   padding: 0 !important;
   overflow-y: auto;
   overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
 }
 
-.editor-timeline > #timeline-add-drawer #add-layer-shape-panel,
-.editor-timeline > #timeline-add-drawer #add-layer-control-panel {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  padding: 0 !important;
-  overflow: hidden;
+#timeline-add-drawer #shape-subcategories-switch,
+.editor-timeline > #timeline-add-drawer #shape-subcategories-switch {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: var(--bg-panel);
+  padding: 2px 0 6px 0;
+  margin-bottom: 6px !important;
+  flex-shrink: 0;
 }
 
 .editor-timeline > #timeline-add-drawer .drawer-element-preset-grid {
@@ -2793,18 +2925,67 @@
   align-content: start;
 }
 
-/* Shape Tab: 8 shapes (including Vector) laid out cleanly in a symmetrical 4x2 grid */
-.editor-timeline > #timeline-add-drawer #add-layer-shape-grid {
-  grid-template-columns: repeat(12, 1fr) !important;
-  gap: 6px;
+/* Shape Tab: 8 shapes laid out as 3 columns of square tiles (12-col grid, span 4 each) */
+#timeline-add-drawer #add-layer-shape-grid,
+.editor-timeline > #timeline-add-drawer #add-layer-shape-grid,
+#timeline-add-drawer #shape-grid-3d,
+.editor-timeline > #timeline-add-drawer #shape-grid-3d {
+  /* Full-width auto-filling ~90px tiles (zero left/right empty margins, comfortable ~90px size) */
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)) !important;
+  justify-content: stretch;
+  width: 100%;
+  gap: 8px;
   align-content: start;
+  padding-bottom: 8px;
 }
 
-.editor-timeline > #timeline-add-drawer #add-layer-shape-grid > .layer-action-btn {
-  grid-column: span 3 !important;
+#timeline-add-drawer #add-layer-shape-grid > .layer-action-btn,
+.editor-timeline > #timeline-add-drawer #add-layer-shape-grid > .layer-action-btn,
+#timeline-add-drawer #shape-grid-3d > .layer-action-btn,
+.editor-timeline > #timeline-add-drawer #shape-grid-3d > .layer-action-btn {
+  grid-column: span 1 !important;
 }
 
+#timeline-add-drawer #add-layer-shape-grid .layer-action-btn,
 .editor-timeline > #timeline-add-drawer #add-layer-shape-grid .layer-action-btn,
+#timeline-add-drawer #shape-grid-3d .layer-action-btn,
+.editor-timeline > #timeline-add-drawer #shape-grid-3d .layer-action-btn {
+  width: 100%;
+  height: 88px;
+  min-height: 88px;
+  max-height: 88px;
+  padding: 8px 6px;
+  gap: 6px;
+}
+
+.media-item-thumb.is-3d-thumb {
+  object-fit: contain !important;
+  padding: 6px;
+  box-sizing: border-box;
+  background-color: var(--bg-dashboard);
+}
+
+.popover-menu-item.is-hidden-item,
+.popover-menu-divider.is-hidden-item {
+  display: none !important;
+}
+
+#timeline-add-drawer #add-layer-shape-grid .layer-action-btn i.fticon,
+#timeline-add-drawer #add-layer-shape-grid .layer-action-btn svg,
+.editor-timeline > #timeline-add-drawer #add-layer-shape-grid .layer-action-btn i.fticon,
+.editor-timeline > #timeline-add-drawer #add-layer-shape-grid .layer-action-btn svg {
+  width: 32px;
+  height: 32px;
+  font-size: 32px;
+}
+
+#timeline-add-drawer #shape-grid-3d .shape-3d-thumb-canvas,
+.editor-timeline > #timeline-add-drawer #shape-grid-3d .shape-3d-thumb-canvas {
+  width: 48px;
+  height: 48px;
+}
+
+#timeline-add-drawer #add-layer-control-grid .layer-action-btn,
 .editor-timeline > #timeline-add-drawer #add-layer-control-grid .layer-action-btn {
   min-height: 74px;
   height: 74px;
@@ -2813,9 +2994,101 @@
   gap: 4px;
 }
 
+#timeline-add-drawer #shape-grid-3d .shape-3d-imported-thumb,
+.editor-timeline > #timeline-add-drawer #shape-grid-3d .shape-3d-imported-thumb {
+  width: 60px;
+  height: 60px;
+}
+
+#timeline-add-drawer #add-layer-control-grid,
 .editor-timeline > #timeline-add-drawer #add-layer-control-grid {
   gap: 6px;
   align-content: start;
+  padding-bottom: 12px;
+}
+
+.layer-action-btn.is-hidden {
+  display: none !important;
+}
+
+/* Imported 3D Model Library Tile (1-shot PNG thumbnail + Top-right X delete button) */
+.shape-3d-imported-tile {
+  position: relative;
+  overflow: visible;
+}
+
+.shape-3d-imported-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.shape-3d-imported-tile .layer-action-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shape-3d-delete-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background-color: var(--color-danger);
+  color: var(--color-danger-text);
+  font-family: var(--font-brand);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+}
+
+.shape-3d-imported-tile:hover .shape-3d-delete-btn,
+.shape-3d-imported-tile.is-delete-mode .shape-3d-delete-btn {
+  display: inline-flex;
+}
+
+.shape-3d-delete-btn:hover {
+  background-color: var(--color-danger-hover);
+  color: var(--color-danger-text);
+}
+
+#timeline-add-drawer #add-layer-control-grid.has-lights,
+.editor-timeline > #timeline-add-drawer #add-layer-control-grid.has-lights {
+  gap: 5px;
+  padding-bottom: 4px;
+}
+
+#timeline-add-drawer #add-layer-control-grid.has-lights .layer-action-btn,
+.editor-timeline > #timeline-add-drawer #add-layer-control-grid.has-lights .layer-action-btn {
+  min-height: 50px;
+  height: 50px;
+  max-height: 50px;
+  padding: 4px;
+  gap: 2px;
+}
+
+#timeline-add-drawer #add-layer-control-grid.has-lights .layer-action-icon,
+.editor-timeline > #timeline-add-drawer #add-layer-control-grid.has-lights .layer-action-icon {
+  width: 18px;
+  height: 18px;
+  font-size: 18px;
+}
+
+#timeline-add-drawer #add-layer-control-grid.has-lights .layer-action-label,
+.editor-timeline > #timeline-add-drawer #add-layer-control-grid.has-lights .layer-action-label {
+  font-size: 10px;
+  line-height: 1.1;
 }
 
 .drawer-media-grid {
@@ -3507,4 +3780,21 @@
 .vector-tool-delete-btn.is-disabled {
   opacity: 0.35;
   pointer-events: none;
+}
+
+.light-classic-notice {
+  font-family: var(--font-brand);
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 16px 12px;
+  text-align: center;
+  background-color: var(--bg-dashboard);
+  border-radius: 8px;
+  box-sizing: border-box;
+  margin: 12px;
+}
+
+.light-classic-notice.is-hidden,
+#light-controls-container.is-hidden {
+  display: none !important;
 }

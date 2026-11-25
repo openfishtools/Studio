@@ -380,12 +380,12 @@
                   const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
                   const srcOff = l.sourceOffsetSec || 0;
                   const targetDur = Math.max(0.05, (trueDur - srcOff) / spd);
-                  const isTrimmed = !!(l._userTrimmed || l.userTrimmed || l.isDurationExplicit || (l.durationSec && l.durationSec < targetDur - 0.001));
-                  if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; l.isDurationExplicit = true; }
-                  if (!isTrimmed && (!l.durationSec || Math.abs(l.durationSec - targetDur) > 0.01)) {
+                  const isTrimmed = !!(l._userTrimmed || l.userTrimmed);
+                  if (!isTrimmed || l._pendingMediaDuration || (!l.durationSec && !l._userTrimmed)) {
                     l.durationSec = targetDur;
                     l.widthPx = Math.max(10, Math.round(targetDur * pps));
                     l.isDurationExplicit = true;
+                    delete l._pendingMediaDuration;
                     updated = true;
                   } else if (isTrimmed && l.speedMode !== 'time_remap' && l.durationSec > targetDur + 0.01) {
                     l.durationSec = targetDur;
@@ -1628,12 +1628,18 @@
         }
       }
 
-      const fillType = layer.fillType || 'none';
+      const isLight = (layer && layer.type === 'light');
+      const fillType = isLight ? 'color' : (layer.fillType || 'none');
 
       // 1. Switch active category tab in top segmented bar
       const tabBtns = document.querySelectorAll('#fill-category-bar .fill-tab-btn');
       tabBtns.forEach(btn => {
         const t = btn.dataset.fillTab;
+        if (isLight) {
+          btn.style.display = (t === 'color') ? '' : 'none';
+        } else {
+          btn.style.display = '';
+        }
         const isActive = (t === fillType);
         btn.classList.toggle('is-active', isActive);
         btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
@@ -1832,6 +1838,10 @@
         if (!layer) return;
         layer.fillType = 'color';
         layer.fillColor = hex;
+        if (layer.type === 'light') {
+          layer.color = hex;
+          if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
+        }
         if (typeof alpha === 'number') {
           layer.opacity = Number(alpha.toFixed(2));
           if (typeof recordLayerPropertyChange === 'function') {
@@ -2034,6 +2044,24 @@
           window._activeMediaMap.delete(item.id);
         }
 
+        if (item.type === '3d_model') {
+          if (typeof window.forgetImported3DModelMem === 'function') {
+            window.forgetImported3DModelMem(item.id);
+          }
+          if (window.Fish3DLoader && typeof window.Fish3DLoader.removeModel === 'function') {
+            window.Fish3DLoader.removeModel(item.id);
+          }
+          const ps = window.currentProjectState;
+          if (ps && Array.isArray(ps.layers)) {
+            const toRemove = ps.layers.filter(l => l && l.modelMediaId === item.id).map(l => l.id);
+            toRemove.forEach(lid => {
+              if (typeof window.removeTimelineLayer === 'function') {
+                window.removeTimelineLayer(lid);
+              }
+            });
+          }
+        }
+
         // Immediately purge any timeline layers referencing this media
         if (typeof window.removeTimelineLayersForMedia === 'function') {
           window.removeTimelineLayersForMedia(item.id, item.dataUrl, item);
@@ -2079,6 +2107,9 @@
           await renderMediaGrid();
           if (typeof renderFillMediaPool === 'function') {
             renderFillMediaPool();
+          }
+          if (typeof window.renderEnvironmentMediaPool === 'function') {
+            window.renderEnvironmentMediaPool();
           }
         }
       }
@@ -2410,7 +2441,7 @@
             window._activeMediaMap.delete(placeholderId);
             await renderMediaGrid();
             if (typeof renderFillMediaPool === 'function') renderFillMediaPool();
-            alert('Video tidak memiliki track audio.');
+            alert('Video has no audio track.');
             return;
           }
 
@@ -2445,9 +2476,12 @@
           if (typeof renderFillMediaPool === 'function') {
             renderFillMediaPool();
           }
+          if (typeof window.renderEnvironmentMediaPool === 'function') {
+            window.renderEnvironmentMediaPool();
+          }
 
           if (typeof showEffectsRackToast === 'function') {
-            showEffectsRackToast('Audio berhasil dikonversi ke MP3');
+            showEffectsRackToast('Audio converted to MP3');
           }
         } catch (err) {
           console.error('[MediaPool] Failed to convert video to audio:', err);
@@ -2464,6 +2498,18 @@
         popoverMediaMenu._eventsBound = true;
         const btnDelete = popoverMediaMenu.querySelector('#btn-media-delete');
         const btnConvertAudio = popoverMediaMenu.querySelector('#btn-media-convert-audio');
+        const btnReplace3D = popoverMediaMenu.querySelector('#btn-media-replace-3d');
+
+        if (btnReplace3D) {
+          btnReplace3D.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const item = window._activeMediaPoolItem;
+            if (window.Popover) window.Popover.close(false);
+            if (item && item.type === '3d_model' && typeof window.addOrReplace3DModelFromMedia === 'function') {
+              window.addOrReplace3DModelFromMedia(item, true);
+            }
+          });
+        }
 
         if (btnDelete) {
           btnDelete.addEventListener('click', (e) => {
@@ -2517,12 +2563,12 @@
             const cached = window._activeMediaMap.get(item.id);
             if (cached && cached.dataUrl) item.dataUrl = cached.dataUrl;
           }
-          if (item.dataUrl && !window._activeMediaMap.has(item.id)) {
+          if ((item.dataUrl || item.type === '3d_model') && !window._activeMediaMap.has(item.id)) {
             window._activeMediaMap.set(item.id, item);
           }
         });
         window._activeMediaMap.forEach(item => {
-          if (item && item.projectId === projectId && !mediaItems.some(m => m.id === item.id)) {
+          if (item && (!item.projectId || item.projectId === projectId) && !mediaItems.some(m => m.id === item.id)) {
             mediaItems.push(item);
           }
         });
@@ -2533,12 +2579,14 @@
           video: 0,
           image: 0,
           audio: 0,
+          model3d: 0,
           precomp: 0
         };
         mediaItems.forEach(item => {
           if (item.type === 'video') counts.video++;
           else if (item.type === 'image') counts.image++;
           else if (item.type === 'audio') counts.audio++;
+          else if (item.type === '3d_model') counts.model3d++;
           else if (item.type === 'precomp') counts.precomp++;
         });
 
@@ -2547,6 +2595,7 @@
         document.querySelectorAll('#media-count-video').forEach(el => el.textContent = String(counts.video));
         document.querySelectorAll('#media-count-image').forEach(el => el.textContent = String(counts.image));
         document.querySelectorAll('#media-count-audio').forEach(el => el.textContent = String(counts.audio));
+        document.querySelectorAll('#media-count-3d').forEach(el => el.textContent = String(counts.model3d));
         document.querySelectorAll('#media-count-precomp').forEach(el => el.textContent = String(counts.precomp));
 
         // Show/hide precomp pill if there are precomps
@@ -2567,6 +2616,7 @@
             if (_currentMediaFilter === 'video' && item.type !== 'video') return false;
             if (_currentMediaFilter === 'image' && item.type !== 'image') return false;
             if (_currentMediaFilter === 'audio' && item.type !== 'audio') return false;
+            if (_currentMediaFilter === '3d_model' && item.type !== '3d_model') return false;
             if (_currentMediaFilter === 'precomp' && item.type !== 'precomp') return false;
           }
           if (query) {
@@ -2581,29 +2631,33 @@
         if (emptyEls.length > 0) {
           if (filteredItems.length === 0) {
             let emptyIconClass = 'fticon-media-category';
-            let emptyTitle = 'Belum ada media';
-            let emptyDesc = 'Klik tombol + atau seret file ke sini untuk menambahkan media.';
+            let emptyTitle = 'No media yet';
+            let emptyDesc = 'Click the + button or drag files here to add media.';
 
             if (query) {
               emptyIconClass = 'fticon-search';
-              emptyTitle = 'Media tidak ditemukan';
-              emptyDesc = `Tidak ada media yang cocok dengan "${_mediaSearchQuery.trim()}".`;
+              emptyTitle = 'No media found';
+              emptyDesc = `No media matches "${_mediaSearchQuery.trim()}".`;
             } else if (_currentMediaFilter === 'video') {
               emptyIconClass = 'fticon-track-video';
-              emptyTitle = 'Belum ada video';
-              emptyDesc = 'Impor berkas video (MP4) untuk melihatnya di sini.';
+              emptyTitle = 'No videos yet';
+              emptyDesc = 'Import video files (MP4) to see them here.';
             } else if (_currentMediaFilter === 'image') {
               emptyIconClass = 'fticon-media-fill';
-              emptyTitle = 'Belum ada foto/gambar';
-              emptyDesc = 'Impor berkas gambar (PNG, JPG) untuk melihatnya di sini.';
+              emptyTitle = 'No photos or images yet';
+              emptyDesc = 'Import image files (PNG, JPG) to see them here.';
             } else if (_currentMediaFilter === 'audio') {
               emptyIconClass = 'fticon-track-audio';
-              emptyTitle = 'Belum ada audio';
-              emptyDesc = 'Impor berkas audio (MP3) untuk melihatnya di sini.';
+              emptyTitle = 'No audio yet';
+              emptyDesc = 'Import audio files (MP3) to see them here.';
+            } else if (_currentMediaFilter === '3d_model') {
+              emptyIconClass = 'fticon-media-category';
+              emptyTitle = 'No 3D models yet';
+              emptyDesc = 'Click + or drag .obj, .fbx, or .zip files here to add 3D models.';
             } else if (_currentMediaFilter === 'precomp') {
               emptyIconClass = 'fticon-edit-group-enter-precompose';
-              emptyTitle = 'Belum ada prekomposisi';
-              emptyDesc = 'Buat prekomposisi dari timeline untuk melihatnya di sini.';
+              emptyTitle = 'No precompositions yet';
+              emptyDesc = 'Create a precomposition from the timeline to see it here.';
             }
 
             emptyEls.forEach(emptyEl => {
@@ -2700,6 +2754,18 @@
               </div>
               <span class="media-item-type-badge">AUD</span>
             `;
+          } else if (item.type === '3d_model') {
+            const safe3DName = (item.name || '3D Model').replace(/"/g, '&quot;');
+            if (item.thumbUrl) {
+              previewHtml = `<img class="media-item-thumb is-3d-thumb" src="${item.thumbUrl}" alt="${safe3DName}"><span class="media-item-type-badge">3D</span>`;
+            } else {
+              previewHtml = `
+                <div class="media-item-fallback">
+                  <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5zm0 2.18L18.56 7.8 12 11.45 5.44 7.8 12 4.18zM5 9.65l6 3.33v6.84l-6-3.33V9.65zm8 10.17v-6.84l6-3.33v6.84l-6 3.33z"/></svg>
+                </div>
+                <span class="media-item-type-badge">3D</span>
+              `;
+            }
           } else if (item.type === 'precomp') {
             previewHtml = `
               <div class="media-item-fallback media-item-precomp-placeholder">
@@ -2741,6 +2807,17 @@
                 const isVid = (item.type === 'video');
                 btnConvert.style.display = isVid ? 'flex' : 'none';
                 divider.style.display = isVid ? 'block' : 'none';
+              }
+              const btnRep3D = popoverEl.querySelector('#btn-media-replace-3d');
+              const divRep3D = popoverEl.querySelector('#divider-media-replace-3d');
+              if (btnRep3D && divRep3D) {
+                const ps = window.currentProjectState;
+                const selL = (ps && Array.isArray(ps.layers) && window.selectedLayerId)
+                  ? ps.layers.find(l => l && l.id === window.selectedLayerId)
+                  : null;
+                const canReplace3D = Boolean(item.type === '3d_model' && selL && selL.shapeType === '3d_model' && selL.modelMediaId !== item.id);
+                btnRep3D.classList.toggle('is-hidden-item', !canReplace3D);
+                divRep3D.classList.toggle('is-hidden-item', !canReplace3D);
               }
             }
             window.Popover.open(anchor, 'popover-media-item-menu');
@@ -2843,6 +2920,12 @@
             window.selectedMediaId = item.id;
             gridEl.querySelectorAll('.media-item-tile').forEach(t => t.classList.remove('is-selected'));
             tile.classList.add('is-selected');
+            if (item.type === '3d_model') {
+              if (typeof window.addOrReplace3DModelFromMedia === 'function') {
+                window.addOrReplace3DModelFromMedia(item, false);
+              }
+              return;
+            }
             setActivePreviewMedia(item);
             if (typeof window.addOrSelectMediaLayer === 'function') {
               window.addOrSelectMediaLayer(item);
@@ -3037,7 +3120,7 @@
               blob: file,
               buffer: null,
               thumbUrl: (mediaType === 'image' ? blobUrl : ''),
-              duration: defaultDur,
+              duration: (mediaType === 'video' || mediaType === 'audio') ? null : defaultDur,
               _durationVerified: (mediaType === 'image'),
               fps: null,
               width: null,
@@ -3121,21 +3204,18 @@
                           const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
                           const srcOff = l.sourceOffsetSec || 0;
                           const targetDur = Math.max(0.05, (meta.duration - srcOff) / spd);
-                          const isTrimmed = !!(l._userTrimmed || l.userTrimmed || l.isDurationExplicit || (l.durationSec && l.durationSec < targetDur - 0.001));
-                          if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; l.isDurationExplicit = true; }
-                          if (!isTrimmed) {
+                          const isTrimmed = !!(l._userTrimmed || l.userTrimmed);
+                          if (!isTrimmed || l._pendingMediaDuration) {
                             l.durationSec = targetDur;
                             l.widthPx = Math.max(10, Math.round(targetDur * pps));
                             l.isDurationExplicit = true;
+                            delete l._pendingMediaDuration;
                           } else if (l.speedMode !== 'time_remap' && l.durationSec > targetDur + 0.01) {
                             l.durationSec = targetDur;
                             l.widthPx = Math.max(10, Math.round(targetDur * pps));
                           }
                         }
                       });
-                      if (meta.duration > (currentProjectState.defaultDuration || 5)) {
-                        currentProjectState.defaultDuration = Math.ceil(meta.duration);
-                      }
                       if (typeof window.updateTimelineDuration === 'function') {
                         window.updateTimelineDuration(true);
                       }
@@ -3182,21 +3262,18 @@
                         const spd = (l.speed && l.speed > 0) ? l.speed : 1.0;
                         const srcOff = l.sourceOffsetSec || 0;
                         const targetDur = Math.max(0.05, (a.duration - srcOff) / spd);
-                        const isTrimmed = !!(l._userTrimmed || l.userTrimmed || l.isDurationExplicit || (l.durationSec && l.durationSec < targetDur - 0.001));
-                        if (isTrimmed) { l._userTrimmed = true; l.userTrimmed = true; l.isDurationExplicit = true; }
-                        if (!isTrimmed) {
+                        const isTrimmed = !!(l._userTrimmed || l.userTrimmed);
+                        if (!isTrimmed || l._pendingMediaDuration) {
                           l.durationSec = targetDur;
                           l.widthPx = Math.max(10, Math.round(targetDur * pps));
                           l.isDurationExplicit = true;
+                          delete l._pendingMediaDuration;
                         } else if (l.speedMode !== 'time_remap' && l.durationSec > targetDur + 0.01) {
                           l.durationSec = targetDur;
                           l.widthPx = Math.max(10, Math.round(targetDur * pps));
                         }
                       }
                     });
-                    if (a.duration > (currentProjectState.defaultDuration || 5)) {
-                      currentProjectState.defaultDuration = Math.ceil(a.duration);
-                    }
                     if (typeof window.updateTimelineDuration === 'function') {
                       window.updateTimelineDuration(true);
                     }
@@ -3271,7 +3348,7 @@
             await renderMediaGrid();
             if (typeof renderFillMediaPool === 'function') renderFillMediaPool();
             if (typeof showEffectsRackToast === 'function') {
-              showEffectsRackToast('Video tidak memiliki track audio.');
+              showEffectsRackToast('Video has no audio track.');
             }
             return null;
           }
@@ -3303,9 +3380,12 @@
           if (typeof renderFillMediaPool === 'function') {
             renderFillMediaPool();
           }
+          if (typeof window.renderEnvironmentMediaPool === 'function') {
+            window.renderEnvironmentMediaPool();
+          }
 
           if (typeof showEffectsRackToast === 'function') {
-            showEffectsRackToast('Audio berhasil dikonversi ke MP3');
+            showEffectsRackToast('Audio converted to MP3');
           }
           return audioMediaItem;
         } catch (err) {
@@ -3314,15 +3394,118 @@
           await renderMediaGrid();
           if (typeof renderFillMediaPool === 'function') renderFillMediaPool();
           if (typeof showEffectsRackToast === 'function') {
-            showEffectsRackToast('Gagal mengonversi audio.');
+            showEffectsRackToast('Failed to convert audio.');
           }
           return null;
+        }
+      }
+
+      const DROP_IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp', 'avif', 'jfif'];
+      const DROP_VIDEO_EXTS = ['mp4', 'mov', 'webm', 'mkv'];
+      const DROP_AUDIO_EXTS = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'];
+      const DROP_3D_EXTS = ['obj', 'mtl', 'fbx', 'zip'];
+
+      function classifyDroppedFile(file) {
+        if (!file) return 'unsupported';
+        const name = (file.name || '').toLowerCase();
+        const ext = name.includes('.') ? (name.split('.').pop() || '') : '';
+        const mime = (file.type || '').toLowerCase().trim();
+
+        if (ext === 'ofts') return 'ofts';
+        if (DROP_3D_EXTS.includes(ext) || mime === 'application/zip' || mime === 'application/x-zip-compressed' || mime === 'multipart/x-zip') {
+          return '3d';
+        }
+        if (DROP_VIDEO_EXTS.includes(ext) || mime.startsWith('video/')) return 'video';
+        if (DROP_AUDIO_EXTS.includes(ext) || mime.startsWith('audio/') || mime === 'application/ogg') return 'audio';
+        if (DROP_IMAGE_EXTS.includes(ext) || mime.startsWith('image/')) return 'image';
+        return 'unsupported';
+      }
+
+      function classifyDraggedItem(item) {
+        if (!item || item.kind !== 'file') return 'ignore';
+        const mime = (item.type || '').toLowerCase().trim();
+        if (!mime) return 'unknown';
+        if (mime.startsWith('video/')) return 'video';
+        if (mime.startsWith('image/')) return 'image';
+        if (mime.startsWith('audio/') || mime === 'application/ogg' || mime.includes('mpeg') || mime.includes('mp3') || mime.includes('wav')) {
+          return 'audio';
+        }
+        if (mime === 'application/zip' || mime === 'application/x-zip-compressed' || mime === 'multipart/x-zip' || mime === 'model/obj') {
+          return '3d';
+        }
+        return 'unsupported';
+      }
+
+      function notifyUnsupportedDrop(unsupportedFiles) {
+        if (!unsupportedFiles || unsupportedFiles.length === 0) return;
+        const exts = [];
+        for (let i = 0; i < unsupportedFiles.length; i++) {
+          const n = (unsupportedFiles[i].name || '').trim();
+          const dotIdx = n.lastIndexOf('.');
+          const label = dotIdx >= 0 ? n.slice(dotIdx).toLowerCase() : (n || 'file');
+          if (!exts.includes(label)) exts.push(label);
+        }
+        const msg = 'Unsupported file format: ' + exts.slice(0, 3).join(', ');
+        if (typeof window.showEditorToast === 'function') {
+          window.showEditorToast(msg, 2800, 'error');
+        } else if (typeof showEffectsRackToast === 'function') {
+          showEffectsRackToast(msg);
         }
       }
 
       async function handleDropFilesWithAction(filesArr, action, autoAddToTimeline = false) {
         if (!filesArr || filesArr.length === 0) return;
         const projectId = currentProjectState.id || 'default_project';
+
+        const model3dFiles = [];
+        const supportedMediaFiles = [];
+        const unsupportedFiles = [];
+        let hasExplicitMesh = false;
+
+        for (let i = 0; i < filesArr.length; i++) {
+          const f = filesArr[i];
+          const kind = classifyDroppedFile(f);
+          if (kind === '3d') {
+            model3dFiles.push(f);
+            const ext = ((f.name || '').split('.').pop() || '').toLowerCase();
+            if (ext === 'obj' || ext === 'mtl' || ext === 'fbx') hasExplicitMesh = true;
+          } else if (kind === 'video' || kind === 'audio' || kind === 'image' || kind === 'ofts') {
+            supportedMediaFiles.push(f);
+          } else {
+            unsupportedFiles.push(f);
+          }
+        }
+
+        if (unsupportedFiles.length > 0) {
+          notifyUnsupportedDrop(unsupportedFiles);
+        }
+
+        // Route 3D bundles (.obj/.mtl/.fbx/.zip + accompanying texture images) to 3D importer
+        if (model3dFiles.length > 0) {
+          let bundleFiles = model3dFiles;
+          let remainingMedia = supportedMediaFiles;
+          if (hasExplicitMesh && supportedMediaFiles.length > 0) {
+            const texImages = [];
+            const nonTex = [];
+            for (let i = 0; i < supportedMediaFiles.length; i++) {
+              if (classifyDroppedFile(supportedMediaFiles[i]) === 'image') {
+                texImages.push(supportedMediaFiles[i]);
+              } else {
+                nonTex.push(supportedMediaFiles[i]);
+              }
+            }
+            bundleFiles = model3dFiles.concat(texImages);
+            remainingMedia = nonTex;
+          }
+          if (typeof window.import3DModelFiles === 'function') {
+            await window.import3DModelFiles(bundleFiles);
+          }
+          if (remainingMedia.length === 0) return;
+          filesArr = remainingMedia;
+        } else {
+          if (supportedMediaFiles.length === 0) return;
+          filesArr = supportedMediaFiles;
+        }
 
         // When action is convert-mp3, strictly isolate video files for audio extraction
         // Images and pure audio files MUST NEVER be converted to MP3!
@@ -3368,69 +3551,79 @@
         overlayEl._renderOverlayMode = renderOverlayMode;
 
         function detectDraggedMediaType(dataTransfer) {
-          if (!dataTransfer) return 'split';
+          if (!dataTransfer) return 'unsupported';
 
-          if (dataTransfer.items && dataTransfer.items.length > 0) {
-            let hasImage = false;
-            let hasVideo = false;
-            let hasAudio = false;
-            let count = 0;
-
-            for (let i = 0; i < dataTransfer.items.length; i++) {
-              const item = dataTransfer.items[i];
-              if (item.kind === 'file') {
-                const mime = (item.type || '').toLowerCase();
-                if (mime.startsWith('image/')) {
-                  hasImage = true;
-                  count++;
-                } else if (mime.startsWith('video/')) {
-                  hasVideo = true;
-                  count++;
-                } else if (mime.startsWith('audio/') || mime.includes('mpeg') || mime.includes('mp3') || mime.includes('wav')) {
-                  hasAudio = true;
-                  count++;
-                }
-              }
-            }
-
-            if (count > 0) {
-              if (hasImage && !hasVideo && !hasAudio) return 'image';
-              if (hasAudio && !hasVideo && !hasImage) return 'audio';
-              if (hasVideo) return 'video';
-            }
-          }
-
+          // Prefer dataTransfer.files when populated (exact filename + extension available)
           if (dataTransfer.files && dataTransfer.files.length > 0) {
             let hasImage = false;
             let hasVideo = false;
             let hasAudio = false;
+            let has3d = false;
+            let hasOfts = false;
+            let hasUnsupported = false;
 
             for (let i = 0; i < dataTransfer.files.length; i++) {
-              const f = dataTransfer.files[i];
-              const ext = (f.name.split('.').pop() || '').toLowerCase();
-              const mime = (f.type || '').toLowerCase();
-              if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp', 'avif', 'jfif'].includes(ext) || mime.startsWith('image/')) {
-                hasImage = true;
-              } else if (['mp4', 'mov', 'webm', 'mkv'].includes(ext) || mime.startsWith('video/')) {
-                hasVideo = true;
-              } else if (['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].includes(ext) || mime.startsWith('audio/')) {
-                hasAudio = true;
-              }
+              const kind = classifyDroppedFile(dataTransfer.files[i]);
+              if (kind === 'video') hasVideo = true;
+              else if (kind === 'image') hasImage = true;
+              else if (kind === 'audio') hasAudio = true;
+              else if (kind === '3d') has3d = true;
+              else if (kind === 'ofts') hasOfts = true;
+              else hasUnsupported = true;
             }
 
-            if (hasImage && !hasVideo && !hasAudio) return 'image';
-            if (hasAudio && !hasVideo && !hasImage) return 'audio';
             if (hasVideo) return 'video';
+            if (has3d) return '3d';
+            if (hasOfts) return 'ofts';
+            if (hasImage && !hasAudio) return 'image';
+            if (hasAudio && !hasImage) return 'audio';
+            if (hasImage && hasAudio) return 'media';
+            if (hasUnsupported) return 'unsupported';
           }
 
-          return 'split';
+          // During dragenter/dragover, browsers expose MIME via dataTransfer.items
+          if (dataTransfer.items && dataTransfer.items.length > 0) {
+            let hasImage = false;
+            let hasVideo = false;
+            let hasAudio = false;
+            let has3d = false;
+            let hasUnknown = false;
+            let hasUnsupported = false;
+            let fileItemCount = 0;
+
+            for (let i = 0; i < dataTransfer.items.length; i++) {
+              const kind = classifyDraggedItem(dataTransfer.items[i]);
+              if (kind === 'ignore') continue;
+              fileItemCount++;
+              if (kind === 'video') hasVideo = true;
+              else if (kind === 'image') hasImage = true;
+              else if (kind === 'audio') hasAudio = true;
+              else if (kind === '3d') has3d = true;
+              else if (kind === 'unknown') hasUnknown = true;
+              else hasUnsupported = true;
+            }
+
+            if (fileItemCount > 0) {
+              if (hasVideo) return 'video';
+              if (has3d) return '3d';
+              if (hasImage && !hasAudio && !hasUnknown && !hasUnsupported) return 'image';
+              if (hasAudio && !hasImage && !hasUnknown && !hasUnsupported) return 'audio';
+              if (hasImage || hasAudio) return 'media';
+              if (hasUnsupported && !hasUnknown) return 'unsupported';
+              if (hasUnknown) return 'unknown';
+            }
+          }
+
+          return 'unsupported';
         }
 
         function renderOverlayMode(mode) {
           if (currentMode === mode) return;
           currentMode = mode;
 
-          if (mode === 'image') {
+          if (mode === 'video') {
+            overlayEl.innerHTML = initialOverlayHtml;
+          } else if (mode === 'image') {
             overlayEl.innerHTML = `
               <div class="media-dropzone-col media-dropzone-image" data-drop-action="import-image">
                 <div class="media-dropzone-content">
@@ -3456,8 +3649,58 @@
                 </div>
               </div>
             `;
+          } else if (mode === '3d') {
+            overlayEl.innerHTML = `
+              <div class="media-dropzone-col media-dropzone-3d" data-drop-action="import-3d">
+                <div class="media-dropzone-content">
+                  <div class="media-dropzone-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5zm0 2.18L18.56 7.8 12 11.45 5.44 7.8 12 4.18zM5 9.65l6 3.33v6.84l-6-3.33V9.65zm8 10.17v-6.84l6-3.33v6.84l-6 3.33z"/></svg>
+                  </div>
+                  <div class="media-dropzone-title">Import 3D Model</div>
+                  <div class="media-dropzone-desc">Add .obj, .fbx, or .zip 3D bundle</div>
+                  <span class="media-dropzone-badge">3D Model</span>
+                </div>
+              </div>
+            `;
+          } else if (mode === 'ofts') {
+            overlayEl.innerHTML = `
+              <div class="media-dropzone-col media-dropzone-file" data-drop-action="import-media">
+                <div class="media-dropzone-content">
+                  <div class="media-dropzone-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm0 2.5L18.5 9H14V4.5zM6 20V4h6v7h6v9H6z"/></svg>
+                  </div>
+                  <div class="media-dropzone-title">Open Project Package</div>
+                  <div class="media-dropzone-desc">Import .ofts project file</div>
+                  <span class="media-dropzone-badge">OFTS</span>
+                </div>
+              </div>
+            `;
+          } else if (mode === 'media') {
+            overlayEl.innerHTML = `
+              <div class="media-dropzone-col media-dropzone-file" data-drop-action="import-media">
+                <div class="media-dropzone-content">
+                  <div class="media-dropzone-icon">
+                    <i class='fticon fticon-icon-30' style='width:28px;height:28px;font-size:28px;line-height:1;' aria-hidden='true'></i>
+                  </div>
+                  <div class="media-dropzone-title">${autoAddToTimeline ? 'Import Media to Timeline' : 'Import Media to Project'}</div>
+                  <div class="media-dropzone-desc">${autoAddToTimeline ? 'Add media layers to composition' : 'Add media to media pool'}</div>
+                  <span class="media-dropzone-badge">Media</span>
+                </div>
+              </div>
+            `;
+          } else if (mode === 'unknown') {
+            overlayEl.innerHTML = `
+              <div class="media-dropzone-col media-dropzone-file" data-drop-action="import-auto">
+                <div class="media-dropzone-content">
+                  <div class="media-dropzone-icon">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm0 2.5L18.5 9H14V4.5zM11 18v-4H8.5L12 10.5 15.5 14H13v4h-2z"/></svg>
+                  </div>
+                  <div class="media-dropzone-title">Drop to Import</div>
+                </div>
+              </div>
+            `;
           } else {
-            overlayEl.innerHTML = initialOverlayHtml;
+            overlayEl.innerHTML = '';
           }
         }
 
@@ -3490,7 +3733,7 @@
           clearHoverState();
           overlayEl.classList.remove('is-active');
           containerEl.classList.remove('has-dropzone-active');
-          renderOverlayMode('split');
+          currentMode = null;
         }
 
         function isExternalFileDrag(e) {
@@ -3506,6 +3749,12 @@
           e.stopPropagation();
           dragDepth++;
           const detected = detectDraggedMediaType(e.dataTransfer);
+          if (detected === 'unsupported') {
+            overlayEl.classList.remove('is-active');
+            containerEl.classList.remove('has-dropzone-active');
+            clearHoverState();
+            return;
+          }
           renderOverlayMode(detected);
           overlayEl.classList.add('is-active');
           containerEl.classList.add('has-dropzone-active');
@@ -3516,10 +3765,17 @@
           if (!isExternalFileDrag(e)) return;
           e.preventDefault();
           e.stopPropagation();
+          const detected = detectDraggedMediaType(e.dataTransfer);
+          if (detected === 'unsupported') {
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'none';
+            overlayEl.classList.remove('is-active');
+            containerEl.classList.remove('has-dropzone-active');
+            clearHoverState();
+            return;
+          }
           if (e.dataTransfer) {
             e.dataTransfer.dropEffect = 'copy';
           }
-          const detected = detectDraggedMediaType(e.dataTransfer);
           renderOverlayMode(detected);
           overlayEl.classList.add('is-active');
           containerEl.classList.add('has-dropzone-active');
@@ -3642,7 +3898,11 @@
         function instantiateDroppedAsset(asset, opts = {}) {
           if (!asset) return;
           if (asset.type === 'media') {
-            if (typeof window.addOrSelectMediaLayer === 'function') {
+            if (asset.item && asset.item.type === '3d_model') {
+              if (typeof window.addOrReplace3DModelFromMedia === 'function') {
+                window.addOrReplace3DModelFromMedia(asset.item, false, opts);
+              }
+            } else if (typeof window.addOrSelectMediaLayer === 'function') {
               window.addOrSelectMediaLayer(asset.item, opts);
             }
           } else if (asset.type === 'shape') {
@@ -3673,6 +3933,18 @@
             } else if (asset.controlType === 'solid') {
               if (typeof addSolidLayer === 'function') {
                 addSolidLayer(null, opts.targetSec !== undefined ? opts.targetSec : null);
+              }
+            } else if (asset.controlType === 'point-light') {
+              if (typeof addLightLayer === 'function') {
+                addLightLayer('point', opts);
+              }
+            } else if (asset.controlType === 'sun-light') {
+              if (typeof addLightLayer === 'function') {
+                addLightLayer('sun', opts);
+              }
+            } else if (asset.controlType === 'ambient-light') {
+              if (typeof addLightLayer === 'function') {
+                addLightLayer('ambient', opts);
               }
             }
           } else if (asset.type === 'text') {
@@ -3775,6 +4047,7 @@
         if (textPanel) textPanel.style.display = (cat === 'text') ? '' : 'none';
         if (elementPanel) elementPanel.style.display = (cat === 'element') ? '' : 'none';
         if (cat === 'media') renderMediaGrid();
+        if (cat === 'control' && typeof window.syncAddLightButtons === 'function') window.syncAddLightButtons();
         if (cat === 'shape' && typeof syncShapeButtonsUI === 'function') syncShapeButtonsUI();
         if (cat === 'text' && typeof renderTextPresetsGrid === 'function') renderTextPresetsGrid();
         if (cat === 'element' && typeof renderSavedElementsGrid === 'function') renderSavedElementsGrid();
@@ -3866,10 +4139,31 @@
           trigger.addEventListener('click', (e) => {
             e.stopPropagation();
             document.querySelectorAll('.custom-dropdown.is-open').forEach(other => {
-              if (other !== dropdown) other.classList.remove('is-open');
+              if (other !== dropdown) {
+                other.classList.remove('is-open');
+                const otherCat = other.closest('.settings-category, .effects-card');
+                if (otherCat) otherCat.classList.remove('has-dropdown-open');
+              }
             });
-            dropdown.classList.toggle('is-open');
-            trigger.setAttribute('aria-expanded', dropdown.classList.contains('is-open'));
+            const willOpen = !dropdown.classList.contains('is-open');
+            if (willOpen) {
+              try {
+                const rect = dropdown.getBoundingClientRect();
+                const scrollParent = dropdown.closest('.modal-body, .modal-card, .drawer-body') || document.body;
+                const parentRect = scrollParent.getBoundingClientRect();
+                const spaceBelow = parentRect.bottom - rect.bottom;
+                const spaceAbove = rect.top - parentRect.top;
+                if (spaceBelow < 200 && spaceAbove > spaceBelow) {
+                  dropdown.classList.add('is-dropup');
+                } else {
+                  dropdown.classList.remove('is-dropup');
+                }
+              } catch (_) {}
+            }
+            dropdown.classList.toggle('is-open', willOpen);
+            trigger.setAttribute('aria-expanded', String(willOpen));
+            const cat = dropdown.closest('.settings-category, .effects-card');
+            if (cat) cat.classList.toggle('has-dropdown-open', willOpen);
           });
         }
 
@@ -3883,6 +4177,8 @@
             item.classList.add('is-selected');
             dropdown.classList.remove('is-open');
             if (trigger) trigger.setAttribute('aria-expanded', 'false');
+            const cat = dropdown.closest('.settings-category, .effects-card');
+            if (cat) cat.classList.remove('has-dropdown-open');
             if (typeof updateProjectSettingsSummaries === 'function') {
               updateProjectSettingsSummaries();
             }
@@ -3896,7 +4192,7 @@
           dropdown.classList.remove('is-open');
           const trigger = dropdown.querySelector('.custom-dropdown-trigger');
           if (trigger) trigger.setAttribute('aria-expanded', 'false');
-          const c = dropdown.closest('.effects-card');
+          const c = dropdown.closest('.settings-category, .effects-card');
           if (c) c.classList.remove('has-dropdown-open');
         });
       });
@@ -3963,6 +4259,14 @@
         if (!category) return;
         const isCollapsed = category.classList.toggle('is-collapsed');
         header.setAttribute('aria-expanded', String(!isCollapsed));
+        if (isCollapsed) {
+          category.classList.remove('has-dropdown-open');
+          category.querySelectorAll('.custom-dropdown.is-open').forEach(d => {
+            d.classList.remove('is-open');
+            const trig = d.querySelector('.custom-dropdown-trigger');
+            if (trig) trig.setAttribute('aria-expanded', 'false');
+          });
+        }
       }, true);
 
       // 4. Grid overlay button live redraw & persistence
@@ -3974,6 +4278,10 @@
           try {
             localStorage.setItem('oft_more_settings_grid', isActive ? 'true' : 'false');
           } catch (err) {}
+          if (window.CanvasOverlay) {
+            window.CanvasOverlay.syncSize();
+            window.CanvasOverlay.redraw();
+          }
           const canvas = document.getElementById('editor-active-canvas');
           if (canvas) {
             renderCanvasFrame(canvas, currentProjectState.bgColor, canvas.width, canvas.height);
@@ -3981,14 +4289,14 @@
         });
       }
 
-      // 5. Speed Draft Mode button (Adaptive Fast Resolution toggle & persistence)
+      // 5. Speed Draft Mode button (Quarter Resolution 0.25x toggle & persistence)
       const draftBtn = document.getElementById('editor-icon-low-quality');
       if (draftBtn) {
         try {
           if (localStorage.getItem('oft_more_settings_draft') === 'true') {
             draftBtn.classList.add('is-active');
-            window._adaptiveDraftState = { scale: 0.5, emaMs: 8.0, fastStreak: 0 };
-            window._currentAdaptiveDraftScale = 0.5;
+            window._adaptiveDraftState = { scale: 0.25, emaMs: 8.0, fastStreak: 0 };
+            window._currentAdaptiveDraftScale = 0.25;
             if (window.PreviewCacheManager) {
               window.PreviewCacheManager.setDraftMode(true);
             }
@@ -3997,19 +4305,20 @@
         draftBtn.addEventListener('click', () => {
           draftBtn.classList.toggle('is-active');
           const isActive = draftBtn.classList.contains('is-active');
-          window._adaptiveDraftState = { scale: isActive ? 0.5 : 1.0, emaMs: 8.0, fastStreak: 0 };
-          window._currentAdaptiveDraftScale = isActive ? 0.5 : 1.0;
+          window._adaptiveDraftState = { scale: isActive ? 0.25 : 1.0, emaMs: 8.0, fastStreak: 0 };
+          window._currentAdaptiveDraftScale = isActive ? 0.25 : 1.0;
           try {
             localStorage.setItem('oft_more_settings_draft', isActive ? 'true' : 'false');
           } catch (err) {}
           if (window.PreviewCacheManager) {
             window.PreviewCacheManager.setDraftMode(isActive);
+            window.PreviewCacheManager.clearAll('all');
           }
           if (typeof fitPreviewCanvasBox === 'function') {
             fitPreviewCanvasBox();
           }
           updatePreviewCanvas();
-          redrawComposition('draftToggle');
+          redrawComposition('draftToggle', true);
         });
       }
 
@@ -4033,5 +4342,33 @@
           }
         });
       }
+
+      // 7. Magnet Snapping button live toggle & persistence
+      const magnetBtn = document.getElementById('editor-icon-magnet');
+      if (magnetBtn) {
+        if (window.isTimelineSnapEnabled === undefined) {
+          try {
+            const savedSnap = localStorage.getItem('oft_timeline_snap_enabled');
+            window.isTimelineSnapEnabled = savedSnap !== null ? (savedSnap === 'true') : true;
+          } catch (_) {
+            window.isTimelineSnapEnabled = true;
+          }
+        }
+        magnetBtn.classList.toggle('is-active', window.isTimelineSnapEnabled !== false);
+        magnetBtn.addEventListener('click', () => {
+          window.isTimelineSnapEnabled = !window.isTimelineSnapEnabled;
+          try {
+            localStorage.setItem('oft_timeline_snap_enabled', String(window.isTimelineSnapEnabled));
+          } catch (_) {}
+          document.querySelectorAll('#editor-icon-magnet, #editor-btn-magnet').forEach(btn => {
+            btn.classList.toggle('is-active', window.isTimelineSnapEnabled);
+            btn.setAttribute('title', window.isTimelineSnapEnabled ? 'Snapping Enabled' : 'Snapping Disabled');
+          });
+          if (!window.isTimelineSnapEnabled && typeof window.hideTimelineSnapGuide === 'function') {
+            window.hideTimelineSnapGuide();
+          }
+        });
+      }
     });
 })();
+

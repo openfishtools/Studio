@@ -19,6 +19,12 @@
      * @returns {Array<{ type: string, x: number, y: number, cursor: string }>}
      */
     getHandles(bounds, handleSize = 8) {
+      if (bounds && bounds.isLight) {
+        return [
+          { type: 'anchor', x: bounds.cx, y: bounds.cy, cursor: bounds.lightType === 'point' ? 'move' : 'default' }
+        ];
+      }
+
       if (bounds.handles && Array.isArray(bounds.handles)) {
         return bounds.handles;
       }
@@ -147,6 +153,19 @@
         return;
       }
 
+      // Special: Light Layer Wireframe
+      if (bounds.isLight) {
+        this.drawLight(ctx, bounds, {
+          ...options,
+          primaryColor,
+          canvasBg,
+          dprScale,
+          lineWidth
+        });
+        ctx.restore();
+        return;
+      }
+
       const showAnchor = (options.showAnchor !== false) && (!options.hideAnchor);
       const showHandles = (options.showHandles !== false) && (!options.hideHandles);
 
@@ -163,8 +182,10 @@
           const bc = bounds.backCorners;
 
           // 1. Back Quad Face (receding depth face)
-          ctx.save();
-          ctx.globalAlpha = (options.depthAlpha !== undefined ? options.depthAlpha : 0.4);
+          if (options.depthAlpha !== undefined && options.depthAlpha < 1.0) {
+            ctx.save();
+            ctx.globalAlpha = options.depthAlpha;
+          }
           ctx.beginPath();
           ctx.moveTo(bc[0].x, bc[0].y);
           ctx.lineTo(bc[1].x, bc[1].y);
@@ -180,7 +201,9 @@
           ctx.moveTo(fc[2].x, fc[2].y); ctx.lineTo(bc[2].x, bc[2].y);
           ctx.moveTo(fc[3].x, fc[3].y); ctx.lineTo(bc[3].x, bc[3].y);
           ctx.stroke();
-          ctx.restore();
+          if (options.depthAlpha !== undefined && options.depthAlpha < 1.0) {
+            ctx.restore();
+          }
 
           // 3. Front Face Quad
           ctx.beginPath();
@@ -191,8 +214,8 @@
           ctx.closePath();
           ctx.stroke();
 
-          // If shapeContour exists, outline shape contour on front face
-          if (bounds.shapeContour && Array.isArray(bounds.shapeContour) && bounds.shapeContour.length >= 3) {
+          // If shapeContour exists and not a 3D box, outline shape contour on front face
+          if (!bounds.is3DBox && bounds.shapeContour && Array.isArray(bounds.shapeContour) && bounds.shapeContour.length >= 3) {
             ctx.save();
             ctx.globalAlpha = 0.75;
             ctx.beginPath();
@@ -316,24 +339,19 @@
             ctx.fillRect(px - half + handleBorder, py - half + handleBorder, innerSize, innerSize);
           });
 
-          // Draw subtle depth corner nodes at the back 4 corners of a 3D box
+          // Draw corner nodes at the back 4 corners of a 3D box (identical to front handles)
           if (bounds.backCorners && Array.isArray(bounds.backCorners) && bounds.backCorners.length === 4) {
-            const backDotSize = Math.max(3, Math.round(handleSize * 0.65));
-            const backHalf = backDotSize / 2;
-            ctx.save();
-            ctx.globalAlpha = 0.55;
             bounds.backCorners.forEach(bp => {
               if (bp && !bp.isBehind) {
                 const bpx = Math.round(bp.x);
                 const bpy = Math.round(bp.y);
                 ctx.fillStyle = primaryColor;
-                ctx.fillRect(bpx - backHalf, bpy - backHalf, backDotSize, backDotSize);
+                ctx.fillRect(bpx - half, bpy - half, handleSize, handleSize);
                 ctx.fillStyle = canvasBg;
-                const bInner = Math.max(1, backDotSize - handleBorder);
-                ctx.fillRect(bpx - backHalf + Math.floor(handleBorder / 2), bpy - backHalf + Math.floor(handleBorder / 2), bInner, bInner);
+                const innerSize = Math.max(1, handleSize - handleBorder * 2);
+                ctx.fillRect(bpx - half + handleBorder, bpy - half + handleBorder, innerSize, innerSize);
               }
             });
-            ctx.restore();
           }
         }
 
@@ -750,6 +768,10 @@
      */
     hitTest(bounds, x, y) {
       if (!bounds) return false;
+      if (bounds.isLight) {
+        const hitR = Math.max(24, bounds.hitRadius || 24);
+        return Math.hypot(x - bounds.cx, y - bounds.cy) <= hitR;
+      }
       const engine = window.FishToolEngine || window.LayerTransform;
       if (bounds.corners && Array.isArray(bounds.corners)) {
         if (engine) {
@@ -932,6 +954,203 @@
         const innerSize = Math.max(1, handleSize - handleBorder * 2);
         ctx.fillRect(px - half + handleBorder, py - half + handleBorder, innerSize, innerSize);
       });
+    },
+
+    /**
+     * Draw ultra-minimal 3D Light layer wireframe (tiny crosshair + dashed radius / thin ray)
+     */
+    drawLight(ctx, bounds, options = {}) {
+      const cx = bounds.cx !== undefined ? bounds.cx : (bounds.x + bounds.w / 2);
+      const cy = bounds.cy !== undefined ? bounds.cy : (bounds.y + bounds.h / 2);
+
+      const primaryColor = options.primaryColor || options.color || '#98ce7b';
+
+      let dprScale = options.dprScale || 1;
+      if (!options.dprScale && ctx.canvas && typeof ctx.canvas.getBoundingClientRect === 'function') {
+        const rect = ctx.canvas.getBoundingClientRect();
+        if (rect && rect.width > 0) dprScale = ctx.canvas.width / rect.width;
+      }
+
+      const thinLine = Math.max(1, Math.round(1.25 * dprScale));
+      const lType = bounds.lightType || 'point';
+      const crossR = Math.max(4, Math.round(5 * dprScale));
+      const dotR = Math.max(1.5, Math.round(1.8 * dprScale));
+      const crossArm = Math.max(4, Math.round(5.5 * dprScale));
+      const l3 = bounds.light3D || null;
+
+      const strokeProjectedPoly = (pts) => {
+        if (!Array.isArray(pts) || pts.length < 2) return;
+        ctx.beginPath();
+        let penDown = false;
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i];
+          if (!p || p.isBehind) {
+            penDown = false;
+            continue;
+          }
+          if (!penDown) {
+            ctx.moveTo(p.x, p.y);
+            penDown = true;
+          } else {
+            ctx.lineTo(p.x, p.y);
+          }
+        }
+        ctx.stroke();
+      };
+
+      // 1. Point Light: 3D Spherical Dashed Falloff Rings (XY, XZ, YZ)
+      if (lType === 'point') {
+        if (l3 && Array.isArray(l3.rings) && l3.rings.length > 0) {
+          ctx.save();
+          ctx.lineWidth = thinLine;
+          ctx.strokeStyle = primaryColor;
+          ctx.setLineDash([4 * dprScale, 4 * dprScale]);
+          for (let r = 0; r < l3.rings.length; r++) {
+            ctx.globalAlpha = (r === 0) ? 0.6 : 0.38;
+            strokeProjectedPoly(l3.rings[r]);
+          }
+          ctx.restore();
+        } else if (bounds.radius && bounds.radius > crossR + crossArm) {
+          ctx.save();
+          ctx.globalAlpha = 0.65;
+          ctx.lineWidth = thinLine;
+          ctx.strokeStyle = primaryColor;
+          ctx.setLineDash([4 * dprScale, 4 * dprScale]);
+          ctx.beginPath();
+          ctx.arc(cx, cy, bounds.radius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      // 2. Sun Light: 3D Projected Directional Ray with Open V-Chevron Tip
+      if (lType === 'sun') {
+        if (l3 && l3.rayTip) {
+          if (!l3.rayTip.isBehind) {
+            const tx = l3.rayTip.x;
+            const ty = l3.rayTip.y;
+            const dx = tx - cx;
+            const dy = ty - cy;
+            const projLen = Math.hypot(dx, dy);
+            ctx.save();
+            ctx.strokeStyle = primaryColor;
+            ctx.lineWidth = thinLine;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            if (projLen > 10 * dprScale) {
+              ctx.beginPath();
+              ctx.moveTo(cx, cy);
+              ctx.lineTo(tx, ty);
+              const angle = Math.atan2(dy, dx);
+              const headLen = Math.max(6, Math.round(7 * dprScale));
+              ctx.moveTo(tx - headLen * Math.cos(angle - Math.PI / 6), ty - headLen * Math.sin(angle - Math.PI / 6));
+              ctx.lineTo(tx, ty);
+              ctx.lineTo(tx - headLen * Math.cos(angle + Math.PI / 6), ty - headLen * Math.sin(angle + Math.PI / 6));
+              ctx.stroke();
+            } else {
+              ctx.beginPath();
+              ctx.arc(tx, ty, Math.max(2.5, Math.round(3 * dprScale)), 0, Math.PI * 2);
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+        } else {
+          ctx.save();
+          const radY = ((bounds.rotY || 0) * Math.PI) / 180;
+          const radX = ((bounds.rotX || 0) * Math.PI) / 180;
+          const radZ = ((bounds.rotZ !== undefined ? bounds.rotZ : (bounds.rotation || 0)) * Math.PI) / 180;
+          const cX = Math.cos(radX), sX = Math.sin(radX);
+          const cY = Math.cos(radY), sY = Math.sin(radY);
+          const cZ = Math.cos(radZ), sZ = Math.sin(radZ);
+          let dX = cX * sY * cZ + sX * sZ;
+          let dY = cX * sY * sZ - sX * cZ;
+          const dLen = Math.hypot(dX, dY);
+          if (dLen < 0.05) {
+            dX = 0.707;
+            dY = 0.707;
+          } else {
+            dX /= dLen;
+            dY /= dLen;
+          }
+          const startOffset = crossR + crossArm + 2 * dprScale;
+          const arrLen = Math.max(42, Math.round(50 * dprScale));
+          const sx = cx + dX * startOffset;
+          const sy = cy + dY * startOffset;
+          const tx = cx + dX * arrLen;
+          const ty = cy + dY * arrLen;
+
+          ctx.strokeStyle = primaryColor;
+          ctx.lineWidth = thinLine;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(sx, sy);
+          ctx.lineTo(tx, ty);
+          const angle = Math.atan2(ty - cy, tx - cx);
+          const headLen = Math.max(6, Math.round(7 * dprScale));
+          ctx.moveTo(tx - headLen * Math.cos(angle - Math.PI / 6), ty - headLen * Math.sin(angle - Math.PI / 6));
+          ctx.lineTo(tx, ty);
+          ctx.lineTo(tx - headLen * Math.cos(angle + Math.PI / 6), ty - headLen * Math.sin(angle + Math.PI / 6));
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      // 3. Ambient Light: Subtle 3D Dashed Micro-Rings
+      if (lType === 'ambient') {
+        ctx.save();
+        ctx.globalAlpha = 0.4;
+        ctx.lineWidth = thinLine;
+        ctx.strokeStyle = primaryColor;
+        ctx.setLineDash([3 * dprScale, 3 * dprScale]);
+        if (l3 && Array.isArray(l3.rings) && l3.rings.length > 0) {
+          for (let r = 0; r < l3.rings.length; r++) {
+            strokeProjectedPoly(l3.rings[r]);
+          }
+        } else {
+          ctx.beginPath();
+          ctx.arc(cx, cy, crossR + crossArm + 3 * dprScale, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      // 4. Minimal 3D XYZ Crosshair Reticle
+      ctx.save();
+      ctx.strokeStyle = primaryColor;
+      ctx.fillStyle = primaryColor;
+      ctx.lineWidth = thinLine;
+      ctx.lineCap = 'round';
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, crossR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (l3 && l3.axisX && l3.axisY && l3.axisZ) {
+        const axes = [l3.axisX, l3.axisY, l3.axisZ];
+        for (let a = 0; a < 3; a++) {
+          const seg = axes[a];
+          if (seg && seg[0] && seg[1] && !seg[0].isBehind && !seg[1].isBehind) {
+            ctx.beginPath();
+            ctx.moveTo(seg[0].x, seg[0].y);
+            ctx.lineTo(seg[1].x, seg[1].y);
+            ctx.stroke();
+          }
+        }
+      } else {
+        ctx.beginPath();
+        ctx.moveTo(cx - crossR - crossArm, cy); ctx.lineTo(cx - crossR, cy);
+        ctx.moveTo(cx + crossR, cy); ctx.lineTo(cx + crossR + crossArm, cy);
+        ctx.moveTo(cx, cy - crossR - crossArm); ctx.lineTo(cx, cy - crossR);
+        ctx.moveTo(cx, cy + crossR); ctx.lineTo(cx, cy + crossR + crossArm);
+        ctx.stroke();
+      }
+
+      ctx.restore();
     },
 
     /**

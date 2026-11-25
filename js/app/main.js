@@ -1414,10 +1414,31 @@ document.addEventListener('DOMContentLoaded', () => {
       trigger.addEventListener('click', (e) => {
         e.stopPropagation();
         document.querySelectorAll('.custom-dropdown.is-open').forEach(other => {
-          if (other !== dropdown) other.classList.remove('is-open');
+          if (other !== dropdown) {
+            other.classList.remove('is-open');
+            const otherCat = other.closest('.settings-category, .effects-card');
+            if (otherCat) otherCat.classList.remove('has-dropdown-open');
+          }
         });
-        dropdown.classList.toggle('is-open');
-        trigger.setAttribute('aria-expanded', dropdown.classList.contains('is-open'));
+        const willOpen = !dropdown.classList.contains('is-open');
+        if (willOpen) {
+          try {
+            const rect = dropdown.getBoundingClientRect();
+            const scrollParent = dropdown.closest('.modal-body, .modal-card, .drawer-body') || document.body;
+            const parentRect = scrollParent.getBoundingClientRect();
+            const spaceBelow = parentRect.bottom - rect.bottom;
+            const spaceAbove = rect.top - parentRect.top;
+            if (spaceBelow < 200 && spaceAbove > spaceBelow) {
+              dropdown.classList.add('is-dropup');
+            } else {
+              dropdown.classList.remove('is-dropup');
+            }
+          } catch (_) {}
+        }
+        dropdown.classList.toggle('is-open', willOpen);
+        trigger.setAttribute('aria-expanded', String(willOpen));
+        const cat = dropdown.closest('.settings-category, .effects-card');
+        if (cat) cat.classList.toggle('has-dropdown-open', willOpen);
       });
     }
 
@@ -1431,6 +1452,8 @@ document.addEventListener('DOMContentLoaded', () => {
         item.classList.add('is-selected');
         dropdown.classList.remove('is-open');
         if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        const cat = dropdown.closest('.settings-category, .effects-card');
+        if (cat) cat.classList.remove('has-dropdown-open');
       });
     });
   });
@@ -1441,6 +1464,8 @@ document.addEventListener('DOMContentLoaded', () => {
       dropdown.classList.remove('is-open');
       const trigger = dropdown.querySelector('.custom-dropdown-trigger');
       if (trigger) trigger.setAttribute('aria-expanded', 'false');
+      const c = dropdown.closest('.settings-category, .effects-card');
+      if (c) c.classList.remove('has-dropdown-open');
     });
   });
 
@@ -1503,6 +1528,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!category) return;
     const isCollapsed = category.classList.toggle('is-collapsed');
     header.setAttribute('aria-expanded', String(!isCollapsed));
+    if (isCollapsed) {
+      category.classList.remove('has-dropdown-open');
+      category.querySelectorAll('.custom-dropdown.is-open').forEach(d => {
+        d.classList.remove('is-open');
+        const trig = d.querySelector('.custom-dropdown-trigger');
+        if (trig) trig.setAttribute('aria-expanded', 'false');
+      });
+    }
   }, true);
 
   // Modular Drag & Drop Zones
