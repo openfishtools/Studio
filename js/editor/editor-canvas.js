@@ -971,8 +971,8 @@
       }
       if (!Array.isArray(childLayers)) childLayers = [];
 
-      // Frame key strictly bound to playhead time within precomp (at project FPS resolution)
-      const frameKey = `${Math.round(innerSec * fps)}_${pw}_${ph}`;
+      // Frame key strictly bound to playhead time + props/asset version within precomp
+      const frameKey = `${Math.round(innerSec * fps)}_${pw}_${ph}_${window._layerPropsVersion | 0}_${window._assetReadyVersion | 0}`;
       if (!precompLayer._dirty && targetCanvas._lastRenderKey === frameKey && targetCanvas.width === pw && targetCanvas.height === ph) {
         return; // Fast-path: precomp content already rendered for this exact frame!
       }
@@ -998,12 +998,39 @@
       // Engine expects composition-space props plus a uniform buffer scale (matches main comp path).
       const precompRenderScale = pw / (baseW || pw || 1);
 
-      const prevEngineLighting = (window.FishToolEngine && window.FishToolEngine._currentLighting) ? window.FishToolEngine._currentLighting : null;
+      const prevEngineLighting = (window.FishToolEngine && window.FishToolEngine._lightingData) ? window.FishToolEngine._lightingData : null;
+      const prevActivePrecomp = window.currentActivePrecomp;
+      const prevRenderSec = window._currentRenderSec;
+      window.currentActivePrecomp = precompLayer;
+      window._currentRenderSec = innerSec;
       if (window.FishToolEngine && typeof window.FishToolEngine.setLightingData === 'function') {
         const childLighting = getActiveLightsAtPlayhead(innerSec, childLayers);
         window.FishToolEngine.setLightingData(childLighting);
       }
 
+      const precompEngine = window.FishToolEngine || window.LayerTransform;
+      let pendingPrecomp3DRun = [];
+      const flushPrecomp3DRun = () => {
+        if (pendingPrecomp3DRun.length === 0) return;
+        const anyBlur = pendingPrecomp3DRun.some(m => m.blur);
+        let handled = false;
+        if (anyBlur && precompEngine && typeof precompEngine.render3DSceneMotionBlur === 'function') {
+          handled = precompEngine.render3DSceneMotionBlur(pctx, pendingPrecomp3DRun, precompRenderScale, innerCamEff, innerSec, precompLayer);
+        }
+        if (!handled) {
+          if (precompEngine && typeof precompEngine.renderScene === 'function') {
+            const items = pendingPrecomp3DRun.map(m => m.item);
+            precompEngine.renderScene(pctx, items, precompRenderScale, innerCamEff, innerSec);
+          } else if (precompEngine) {
+            pendingPrecomp3DRun.forEach(m => {
+              precompEngine.renderLayer(pctx, m.item.el, m.item.animLayer || m.item.layer, precompRenderScale, innerCamEff, innerSec);
+            });
+          }
+        }
+        pendingPrecomp3DRun = [];
+      };
+
+      try {
       drawList.forEach(child => {
         let childEl = null;
         const childEff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(child, innerSec, null, childLayers) : child;
@@ -1044,6 +1071,7 @@
           child.mediaHeight = childBaseH;
           child._userResized = true;
         } else if (child.type === 'adjustment') {
+          flushPrecomp3DRun();
           if (!child._adjSnapCanvas) {
             child._adjSnapCanvas = document.createElement('canvas');
           }
@@ -1294,6 +1322,49 @@
           targetCtx.restore();
         };
 
+        // Route batchable 3D children through the same shared-depth WebGL pipeline as the main composition
+        // so Z-intersection, SSAO, Shadow Mapping, SSR reflections, and Environment reflections match 1:1.
+        const childIs3D = precompEngine && (
+          Math.abs(rotX) > 0.001 || Math.abs(rotY) > 0.001 ||
+          Math.abs(childEff.posZ || 0) > 0.001 || Math.abs(childEff.anchorZ || 0) > 0.001 ||
+          !!child.is3D
+        );
+        if (childIs3D && typeof precompEngine.isBatchable3D === 'function') {
+          let padW = 1, padH = 1;
+          if (child.type === 'text' && ((child._textPadY && child._textPadY > 0) || (child._textPadX && child._textPadX > 0)) && childEl && childEl.width && childEl.height) {
+            const natW = child._textNaturalW || (childEl.width - 2 * (child._textPadX || 0));
+            const natH = child._textNaturalH || (childEl.height - 2 * (child._textPadY || 0));
+            padW = childEl.width / Math.max(1, natW);
+            padH = childEl.height / Math.max(1, natH);
+          } else if (child.type === 'shape' && child.shapeType === 'vector' && child.shapeProps && typeof window.getVectorLocalBounds === 'function') {
+            const vb = window.getVectorLocalBounds(child.shapeProps);
+            padW = (childEl.width || vb.bufferW || 24) / Math.max(1, vb.width || 24);
+            padH = (childEl.height || vb.bufferH || 24) / Math.max(1, vb.height || 24);
+          }
+          const animChild3D = Object.assign({}, child, childEff, {
+            posX: childEff.posX !== undefined ? childEff.posX : (baseW / 2),
+            posY: childEff.posY !== undefined ? childEff.posY : (baseH / 2),
+            scaleW: (childEff.scaleW !== undefined ? childEff.scaleW : (child.mediaWidth || baseW)) * padW,
+            scaleH: (childEff.scaleH !== undefined ? childEff.scaleH : (child.mediaHeight || baseH)) * padH,
+            _isVectorRenderPass: child.type === 'shape' && child.shapeType === 'vector',
+            _currentSec: innerSec,
+            rotZ: rotZ,
+            rotX: rotX,
+            rotY: rotY,
+            skewX: skewX,
+            skewY: skewY,
+            anchorX: childEff.anchorX || 0,
+            anchorY: childEff.anchorY || 0,
+            opacity: childEff.opacity !== undefined ? childEff.opacity : 1.0
+          });
+          const b3D = precompEngine.getBounds(animChild3D, precompRenderScale, innerCamEff, pw, ph);
+          if (precompEngine.isBatchable3D(animChild3D, b3D)) {
+            pendingPrecomp3DRun.push({ item: { layer: child, animLayer: animChild3D, el: childEl }, bounds: b3D, blur: !!isMbActive });
+            return;
+          }
+        }
+        flushPrecomp3DRun();
+
         if (isMbActive) {
           mbEngine.renderLayerWithMotionBlur(
             pctx,
@@ -1318,8 +1389,13 @@
         }
       });
 
-      if (window.FishToolEngine && typeof window.FishToolEngine.setLightingData === 'function') {
-        window.FishToolEngine.setLightingData(prevEngineLighting);
+      flushPrecomp3DRun();
+      } finally {
+        window.currentActivePrecomp = prevActivePrecomp;
+        window._currentRenderSec = prevRenderSec;
+        if (window.FishToolEngine && typeof window.FishToolEngine.setLightingData === 'function') {
+          window.FishToolEngine.setLightingData(prevEngineLighting);
+        }
       }
 
       targetCanvas._lastRenderKey = frameKey;

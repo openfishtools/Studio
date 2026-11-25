@@ -2412,6 +2412,13 @@
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
+      const prevLayerCam = this._activeCamera;
+      const prevLayerVw = this._activeVw;
+      const prevLayerVh = this._activeVh;
+      this._activeCamera = camera;
+      this._activeVw = vw;
+      this._activeVh = vh;
+
       gl.useProgram(this.program);
       gl.uniform1i(this.locations.mode, 0);
       gl.disableVertexAttribArray(this.locations.color);
@@ -2471,6 +2478,9 @@
         if (!hasSpillFx) {
           const zRange = this._getLayerMeshZRange(layer, bounds, boxFx, extrudeFx, pyramidFx, sphereFx, coneFx, cylinderFx, torusFx, modelFx);
           if (this._isOutsideFrustum(mvp, zRange[0], zRange[1], this._getLensDistort(camera))) {
+            this._activeCamera = prevLayerCam;
+            this._activeVw = prevLayerVw;
+            this._activeVh = prevLayerVh;
             return;
           }
         }
@@ -2494,6 +2504,9 @@
         gl.disable(gl.CULL_FACE);
         this._drawQuadOrTile(gl, mvp, tileFx, vw, vh, bounds);
       }
+      this._activeCamera = prevLayerCam;
+      this._activeVw = prevLayerVw;
+      this._activeVh = prevLayerVh;
 
       // Blit GL framebuffer onto target 2D canvas context
       this._blitGLToContext(ctx, layer, bounds, vw, vh, bufferScale);
