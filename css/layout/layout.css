@@ -379,19 +379,27 @@ html, body {
 }
 
 .oft-logo-base {
-  fill: var(--logo-base, #335300);
+  fill: var(--logo-base, #212a1a);
 }
 
 .oft-logo-surface {
-  fill: var(--logo-surface, #229200);
+  fill: var(--logo-surface, #212a1a);
 }
 
 .oft-logo-shadow {
-  fill: var(--logo-shadow, #6fb400);
+  fill: var(--logo-shadow, #9cb477);
 }
 
 .oft-logo-accent {
-  fill: var(--logo-accent, #97f500);
+  fill: var(--logo-accent, #c7dc9c);
+}
+
+.oft-logo-cutout-stroke {
+  stroke: var(--logo-surface, #212a1a);
+}
+
+.oft-logo-cutout-fill {
+  fill: var(--logo-surface, #212a1a);
 }
 
 /* ==========================================================================

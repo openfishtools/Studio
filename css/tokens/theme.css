@@ -111,10 +111,10 @@ textarea,
   --grid-dot: rgba(174, 243, 128, 0.65);
 
   /* --- App Logo & Hero Vector Accents --- */
-  --logo-base: #385d0b;
-  --logo-surface: #38ab08;
-  --logo-shadow: #76c90e;
-  --logo-accent: #ccff33;
+  --logo-base: #151b10;
+  --logo-surface: #212a1a;
+  --logo-shadow: #9cb477;
+  --logo-accent: #c7dc9c;
 
   /* --- Typography Colors --- */
   --text-primary: #aef380;              /* Main Matcha Brand Header/Accent */
@@ -172,6 +172,7 @@ textarea,
   --grid-line-major: rgba(255, 179, 209, 0.50);
   --grid-crosshair: #ffb3d1;
   --grid-dot: rgba(255, 179, 209, 0.65);
+  --logo-shadow: #ffb3d1;
   --logo-accent: #ffd6e7;
   --text-primary: #ffb3d1;
   --text-secondary: #ffe0ec;
@@ -209,6 +210,7 @@ textarea,
   --grid-line-major: rgba(255, 228, 94, 0.50);
   --grid-crosshair: #ffe45e;
   --grid-dot: rgba(255, 228, 94, 0.65);
+  --logo-shadow: #ffe45e;
   --logo-accent: #fff6c2;
   --text-primary: #ffe45e;
   --text-secondary: #fff3b0;
@@ -246,6 +248,7 @@ textarea,
   --grid-line-major: rgba(142, 230, 255, 0.50);
   --grid-crosshair: #8ee6ff;
   --grid-dot: rgba(142, 230, 255, 0.65);
+  --logo-shadow: #8ee6ff;
   --logo-accent: #d6f4ff;
   --text-primary: #8ee6ff;
   --text-secondary: #d6f4ff;
@@ -283,6 +286,7 @@ textarea,
   --grid-line-major: rgba(125, 252, 200, 0.50);
   --grid-crosshair: #7dfcc8;
   --grid-dot: rgba(125, 252, 200, 0.65);
+  --logo-shadow: #7dfcc8;
   --logo-accent: #d2ffe9;
   --text-primary: #7dfcc8;
   --text-secondary: #d2ffe9;
@@ -320,6 +324,7 @@ textarea,
   --grid-line-major: rgba(255, 196, 155, 0.50);
   --grid-crosshair: #ffc49b;
   --grid-dot: rgba(255, 196, 155, 0.65);
+  --logo-shadow: #ffc49b;
   --logo-accent: #ffe8d6;
   --text-primary: #ffc49b;
   --text-secondary: #ffe8d6;
