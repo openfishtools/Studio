@@ -856,17 +856,14 @@
 }
 
 /* Elevate settings-category and disable overflow clip when a dropdown is open */
-.settings-category.has-dropdown-open,
-.settings-category:has(.custom-dropdown.is-open) {
+.settings-category.has-dropdown-open {
   z-index: 100 !important;
 }
 
-.settings-category.has-dropdown-open .settings-category-body,
-.settings-category:has(.custom-dropdown.is-open) .settings-category-body {
+.settings-category.has-dropdown-open .settings-category-body {
   overflow: visible !important;
 }
 
-.settings-category .modal-form-row:has(.custom-dropdown.is-open),
 .settings-category .modal-form-row.has-dropdown-open {
   position: relative;
   z-index: 101 !important;

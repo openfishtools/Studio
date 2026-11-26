@@ -1683,7 +1683,6 @@
 }
 
 /* Mobile rotate: dial dipusatkan sempurna horizontal & vertikal */
-#pane-transform-rotate:has(#dial-transform-rotate) > .transform-rotate-body,
 #pane-transform-rotate > .transform-rotate-body {
   flex: 1;
   width: 100%;

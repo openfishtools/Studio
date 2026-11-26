@@ -160,14 +160,12 @@
 }
 
 /* Darken handle area and show divider line ONLY when entering parameter subviews (EXCLUDING effects-gallery and fill) */
-#timeline-layer-drawer[data-subview]:not([data-subview="main"]):not([data-subview="effects-gallery"]):not([data-subview="fill"]) .drawer-drag-handle,
-#timeline-layer-drawer:has(.drawer-subview.is-active:not(#layer-drawer-main-view):not(#layer-drawer-effects-gallery-view):not(#layer-drawer-fill-view)) .drawer-drag-handle {
+#timeline-layer-drawer[data-subview]:not([data-subview="main"]):not([data-subview="effects-gallery"]):not([data-subview="fill"]) .drawer-drag-handle {
   background-color: var(--bg-panel-inner);
   border-bottom: 1px solid var(--border-subtle);
 }
 
-#timeline-layer-drawer[data-subview]:not([data-subview="main"]):not([data-subview="effects-gallery"]):not([data-subview="fill"]) .drawer-drag-pill,
-#timeline-layer-drawer:has(.drawer-subview.is-active:not(#layer-drawer-main-view):not(#layer-drawer-effects-gallery-view):not(#layer-drawer-fill-view)) .drawer-drag-pill {
+#timeline-layer-drawer[data-subview]:not([data-subview="main"]):not([data-subview="effects-gallery"]):not([data-subview="fill"]) .drawer-drag-pill {
   background-color: var(--text-dim);
 }
 
@@ -175,7 +173,6 @@
 #drawer-effects-gallery .drawer-drag-handle,
 #timeline-layer-drawer[data-subview="effects-gallery"] .drawer-drag-handle,
 #timeline-layer-drawer[data-subview="fill"] .drawer-drag-handle,
-#timeline-layer-drawer:has(#layer-drawer-fill-view.is-active) .drawer-drag-handle,
 #timeline-layer-drawer .drawer-card.is-effects-gallery .drawer-drag-handle {
   background-color: transparent !important;
   border-bottom: none !important;
@@ -184,7 +181,6 @@
 #drawer-effects-gallery .drawer-drag-pill,
 #timeline-layer-drawer[data-subview="effects-gallery"] .drawer-drag-pill,
 #timeline-layer-drawer[data-subview="fill"] .drawer-drag-pill,
-#timeline-layer-drawer:has(#layer-drawer-fill-view.is-active) .drawer-drag-pill,
 #timeline-layer-drawer .drawer-card.is-effects-gallery .drawer-drag-pill {
   background-color: var(--border-subtle) !important;
 }
@@ -1169,7 +1165,6 @@
 }
 
 /* 1 button: 1 full-width, full-height column (fills 2-row drawer height) */
-.layer-action-btn-grid:has(> :only-child),
 .layer-action-btn-grid.is-solo-mode {
   grid-template-columns: 1fr !important;
 }
@@ -1182,12 +1177,10 @@
 }
 
 /* 2 buttons: 2 columns 50/50, full-height (no empty bottom space) */
-.layer-action-btn-grid:has(> :first-child:nth-last-child(2)),
 .layer-action-btn-grid.is-camera-mode,
 .layer-action-btn-grid.is-2-items {
   grid-template-columns: repeat(2, 1fr) !important;
 }
-.layer-action-btn-grid:has(> :first-child:nth-last-child(2)) .layer-action-btn,
 .layer-action-btn-grid.is-2-items .layer-action-btn,
 .layer-action-btn-grid.is-camera-mode .layer-action-btn {
   grid-column: span 1 !important;
@@ -1196,11 +1189,9 @@
 }
 
 /* 3 buttons: 3 columns 33/33/33, full-height */
-.layer-action-btn-grid:has(> :first-child:nth-last-child(3)),
 .layer-action-btn-grid.is-3-items {
   grid-template-columns: repeat(3, 1fr) !important;
 }
-.layer-action-btn-grid:has(> :first-child:nth-last-child(3)) .layer-action-btn,
 .layer-action-btn-grid.is-3-items .layer-action-btn {
   grid-column: span 1 !important;
   height: 156px;

@@ -912,6 +912,8 @@
       });
     }
 
+    gridEl.dataset.count = String(gridEl.children.length);
+
     // Open popover anchored to trigger button
     if (window.Popover && anchorEl) {
       window.Popover.open(anchorEl, 'popover-layer-attributes');

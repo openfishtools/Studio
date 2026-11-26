@@ -4475,10 +4475,7 @@ body.has-active-drawer .timeline-fab-add {
 
 /* Hide timeline FAB when selection mode or batch drawer is active */
 .editor-timeline.is-selection-mode .timeline-fab-add,
-body.is-selection-mode .timeline-fab-add,
-.editor-timeline:has(#timeline-batch-drawer.is-active) .timeline-fab-add,
-.editor-timeline:has(#timeline-btn-selection-mode.is-active) .timeline-fab-add,
-body:has(#timeline-batch-drawer.is-active) .timeline-fab-add {
+body.is-selection-mode .timeline-fab-add {
   opacity: 0 !important;
   pointer-events: none !important;
   visibility: hidden !important;
