@@ -225,12 +225,23 @@
       };
       if (typeof b.aabbW === 'number') sb.aabbW = b.aabbW * scaleX;
       if (typeof b.aabbH === 'number') sb.aabbH = b.aabbH * scaleY;
+      if (typeof b.anchorX === 'number') sb.anchorX = b.anchorX * scaleX;
+      if (typeof b.anchorY === 'number') sb.anchorY = b.anchorY * scaleY;
       if (typeof b.radius === 'number') sb.radius = b.radius * ((scaleX + scaleY) * 0.5);
       if (Array.isArray(b.corners)) {
         sb.corners = b.corners.map(pt => pt ? { x: pt.x * scaleX, y: pt.y * scaleY, isBehind: !!pt.isBehind } : pt);
       }
       if (Array.isArray(b.backCorners)) {
         sb.backCorners = b.backCorners.map(pt => pt ? { x: pt.x * scaleX, y: pt.y * scaleY, isBehind: !!pt.isBehind } : pt);
+      }
+      if (b.apexPoint) {
+        sb.apexPoint = { x: b.apexPoint.x * scaleX, y: b.apexPoint.y * scaleY, isBehind: !!b.apexPoint.isBehind };
+      }
+      if (Array.isArray(b.shapeContour)) {
+        sb.shapeContour = b.shapeContour.map(pt => pt ? { x: pt.x * scaleX, y: pt.y * scaleY, isBehind: !!pt.isBehind } : pt);
+      }
+      if (Array.isArray(b.shapeContourLocal)) {
+        sb.shapeContourLocal = b.shapeContourLocal.map(pt => pt ? { x: pt.x * scaleX, y: pt.y * scaleY } : pt);
       }
       if (b.anchor) {
         sb.anchor = { x: b.anchor.x * scaleX, y: b.anchor.y * scaleY };
