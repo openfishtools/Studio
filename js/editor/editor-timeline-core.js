@@ -3184,9 +3184,15 @@
             if (window.PreviewCacheManager) {
               window.PreviewCacheManager.setIdleCacheEnabled(enabled);
               if (!enabled) {
-                // Instantly clear ruler display when cache is turned off
+                // Stop background workers and release all cached ImageBitmaps from RAM/VRAM
                 window.PreviewCacheManager.stopIdleWorker();
-                window.PreviewCacheManager.updateRulerUI();
+                if (typeof window.PreviewCacheManager.stopLookaheadWorker === 'function') {
+                  window.PreviewCacheManager.stopLookaheadWorker();
+                }
+                if (typeof window.PreviewCacheManager.clearAll === 'function') {
+                  window.PreviewCacheManager.clearAll('all');
+                }
+                window.PreviewCacheManager.updateRulerUI(true);
               } else {
                 // Re-enable and fill cache in background
                 window.PreviewCacheManager.updateRulerUI();
