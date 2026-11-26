@@ -4770,7 +4770,7 @@ function initTimelineOperations() {
                   slideRedrawRaf = requestAnimationFrame(() => {
                     slideRedrawRaf = null;
                     if (typeof renderTimelineLinkConnectors === 'function') renderTimelineLinkConnectors();
-                    redrawComposition();
+                    redrawComposition('timeline-slide', true);
                   });
                 }
               }

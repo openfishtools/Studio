@@ -21,15 +21,31 @@
       if (!overlayCanvas) return;
       this._canvas = overlayCanvas;
       this._ctx = overlayCanvas.getContext('2d', { alpha: true });
+      this._canvas.style.imageRendering = 'auto';
+      this._sizeDirty = true;
       // Sync size to match main canvas physical size
-      this.syncSize();
-      window.addEventListener('resize', () => this.syncSize(), { passive: true });
+      this.syncSize(true);
+      window.addEventListener('resize', () => {
+        this._sizeDirty = true;
+        this.syncSize(true);
+      }, { passive: true });
+      if (typeof ResizeObserver === 'function') {
+        try {
+          if (this._resizeObserver) this._resizeObserver.disconnect();
+          this._resizeObserver = new ResizeObserver(() => {
+            this._sizeDirty = true;
+          });
+          this._resizeObserver.observe(overlayCanvas);
+        } catch (_) {}
+      }
     },
 
     _lastTheme: null,
     _cachedPrimary: null,
     _cachedBgCanvas: null,
     _dprScale: 1,
+    _sizeDirty: true,
+    _resizeObserver: null,
 
     _getThemeColors() {
       const curTheme = (document.documentElement && document.documentElement.getAttribute('data-theme')) || 'default';
@@ -42,11 +58,13 @@
       return { primary: this._cachedPrimary, bg: this._cachedBgCanvas };
     },
 
-    syncSize() {
+    syncSize(force) {
       if (!this._canvas) return;
+      if (!force && !this._sizeDirty && this._canvas.width > 0 && this._canvas.height > 0 && this._dprScale) {
+        return;
+      }
       const main = document.getElementById('editor-active-canvas');
       if (!main) return;
-      this._canvas.style.imageRendering = 'auto';
       const rect = this._canvas.getBoundingClientRect ? this._canvas.getBoundingClientRect() : null;
       const isMobileDevice = (typeof window !== 'undefined' && (window.innerWidth <= 600 || ('ontouchstart' in window && window.innerWidth <= 900)));
       const dpr = isMobileDevice ? 1.0 : Math.min(2, window.devicePixelRatio || 1);
@@ -56,6 +74,9 @@
         this._canvas.width = targetW;
         this._canvas.height = targetH;
         this._dprScale = (rect && rect.width > 0) ? (this._canvas.width / rect.width) : dpr;
+      }
+      if (rect && rect.width > 0 && rect.height > 0) {
+        this._sizeDirty = false;
       }
     },
 

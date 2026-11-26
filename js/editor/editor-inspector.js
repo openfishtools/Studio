@@ -1960,13 +1960,14 @@
         let targetL = null;
         let bW = 1920;
         let bH = 1080;
+        let cachedCanvasRect = null;
         let movePadRaf = null;
 
         function requestMovePadRedraw() {
           if (movePadRaf) return;
           movePadRaf = requestAnimationFrame(() => {
             movePadRaf = null;
-            redrawComposition();
+            redrawComposition('movePad', true);
           });
         }
 
@@ -1975,7 +1976,7 @@
             cancelAnimationFrame(movePadRaf);
             movePadRaf = null;
           }
-          redrawComposition();
+          redrawComposition('movePad', true);
         }
 
         movePad.addEventListener('pointerdown', (e) => {
@@ -1987,6 +1988,8 @@
           if (targetL && targetL.expressions && (targetL.expressions.move || (typeof moveAnchorSubmode !== 'undefined' && moveAnchorSubmode === 'anchor' && targetL.expressions.anchor))) return;
           bW = info.baseW;
           bH = info.baseH;
+          const activeCanvasEl = document.getElementById('editor-active-canvas');
+          cachedCanvasRect = activeCanvasEl ? activeCanvasEl.getBoundingClientRect() : null;
 
           window.isTransformInteracting = true;
           syncLayerWithEffectiveProps(targetL);
@@ -2013,8 +2016,7 @@
           const rawDeltaX = e.clientX - startPointer.x;
           const rawDeltaY = e.clientY - startPointer.y;
 
-          const activeCanvasEl = document.getElementById('editor-active-canvas');
-          const canvasRect = activeCanvasEl ? activeCanvasEl.getBoundingClientRect() : null;
+          const canvasRect = cachedCanvasRect;
           const scaleRatioX = (canvasRect && canvasRect.width > 0) ? (bW / canvasRect.width) : 1.0;
           const scaleRatioY = (canvasRect && canvasRect.height > 0) ? (bH / canvasRect.height) : 1.0;
           // Calibrated touchpad swipe sensitivity: smooth precision control without jumpiness
@@ -4977,7 +4979,7 @@
             requestAnimationFrame(() => {
               window._speedRedrawRafPending = false;
               if (typeof redrawComposition === 'function') {
-                redrawComposition('layer-speed-scrub');
+                redrawComposition('layer-speed-scrub', true);
               }
             });
           }
@@ -5176,7 +5178,7 @@
             requestAnimationFrame(() => {
               window._timeremapRedrawRafPending = false;
               if (typeof redrawComposition === 'function') {
-                redrawComposition('layer-timeremap-scrub');
+                redrawComposition('layer-timeremap-scrub', true);
               }
             });
           }
