@@ -62,53 +62,53 @@ textarea,
 }
 
 :root {
-  /* --- Brand & Primary Accent Colors (Matcha Tea: Luminous Fresh Matcha) --- */
-  --color-primary: #aef380;             /* Fresh Vibrant Matcha Green (Crisp & High Contrast) */
-  --color-primary-hover: #c4f99b;       /* Bright Matcha Hover */
-  --color-primary-active: #95df64;      /* Solid Leaf Matcha Active */
-  --color-accent: #95df64;              /* Secondary Matcha Accent */
-  --color-accent-subtle: #6d8b57;       /* Soft Herbal Green */
+  /* --- Brand & Primary Accent Colors (Default: Studio Sage — 1:1 Logo Palette) --- */
+  --color-primary: #c7dc9c;             /* Logo Highlight Sage-Lime */
+  --color-primary-hover: #d8e9b5;       /* Soft Bright Sage Hover */
+  --color-primary-active: #9cb477;      /* Logo Secondary Leaf Active */
+  --color-accent: #9cb477;              /* Secondary Sage Accent */
+  --color-accent-subtle: #6e8254;       /* Muted Olive Accent */
   --color-danger: #ef4444;              /* Destructive Red Token */
   --color-danger-hover: #dc2626;        /* Destructive Red Hover */
   --color-danger-bg: rgba(239, 68, 68, 0.15);
   --color-danger-text: #ffffff;         /* Crisp High-Contrast Text on Danger */
 
-  /* --- Surface & Background Colors (Refined Modern Dark Mode) --- */
-  --bg-canvas: #12170e;                 /* Elevated Clean Dark Canvas */
-  --bg-dashboard: #192014;              /* Dark Matcha Surface 1 */
-  --bg-panel: #222b1b;                  /* Elevated Matcha Panel Surface 2 */
-  --bg-panel-hover: #2b3723;            /* Panel Hover Background */
-  --bg-panel-active: #192014;           /* Panel Active Background */
-  --bg-panel-inner: #192014;            /* Inner Item Background */
-  --bg-panel-inner-hover: #2b3723;      /* Inner Item Hover */
-  --bg-timeline: #151b10;               /* Timeline Surface */
-  --bg-preview: #0c1009;                /* Preview Well */
+  /* --- Surface & Background Colors (Logo Surface #212a1a & Base #151b10) --- */
+  --bg-canvas: #151b10;                 /* Logo Base Canvas */
+  --bg-dashboard: #1b2315;              /* Elevated Moss Surface 1 */
+  --bg-panel: #212a1a;                  /* Exact Logo Surface 2 */
+  --bg-panel-hover: #2b3622;            /* Panel Hover Background */
+  --bg-panel-active: #1b2315;           /* Panel Active Background */
+  --bg-panel-inner: #1b2315;            /* Inner Item Background */
+  --bg-panel-inner-hover: #2b3622;      /* Inner Item Hover */
+  --bg-timeline: #181f13;               /* Timeline Surface */
+  --bg-preview: #0f140b;                /* Preview Well */
   
   /* --- Badge & Tag Colors --- */
-  --badge-prealpha-bg: #2e3a24;         /* Matcha Pill */
-  --badge-prealpha-text: #aef380;       /* Bright Matcha Pill Text */
-  --badge-count-bg: #aef380;           /* Solid Matcha Fill Badge */
-  --badge-count-text: #12170e;         /* Dark Text on Matcha Badge */
+  --badge-prealpha-bg: #2b3622;         /* Sage Pill */
+  --badge-prealpha-text: #c7dc9c;       /* Bright Sage Pill Text */
+  --badge-count-bg: #c7dc9c;           /* Solid Sage Fill Badge */
+  --badge-count-text: #212a1a;         /* Dark Text on Sage Badge */
 
   /* --- Timeline Track Accent Tokens --- */
-  --track-video: #aef380;               /* Video Track Bright Matcha */
-  --track-video-dark: #648250;          /* Video Track Hidden Shade */
-  --track-image: #c4f99b;               /* Image Track Light Matcha */
-  --track-image-dark: #648250;          /* Image Track Hidden Shade */
-  --track-audio: #bbf29b;               /* Audio Track Vibrant Luminous Matcha (Bright & Clear) */
-  --track-audio-dark: #648250;          /* Audio Track Hidden Shade */
-  --track-adj: #95df64;                 /* Adjustment Track Leaf Matcha */
-  --track-adj-dark: #465a37;            /* Adjustment Track Hidden Shade */
-  --track-color: #dcfbc0;               /* Color / Solid Track Pale Lime Matcha */
+  --track-video: #c7dc9c;               /* Video Track Logo Highlight */
+  --track-video-dark: #6e8254;          /* Video Track Hidden Shade */
+  --track-image: #d8e9b5;               /* Image Track Light Sage */
+  --track-image-dark: #6e8254;          /* Image Track Hidden Shade */
+  --track-audio: #b3ca89;               /* Audio Track Soft Olive */
+  --track-audio-dark: #6e8254;          /* Audio Track Hidden Shade */
+  --track-adj: #9cb477;                 /* Adjustment Track Logo Shadow */
+  --track-adj-dark: #4c5d39;            /* Adjustment Track Hidden Shade */
+  --track-color: #e4f0ca;               /* Color / Solid Track Pale Sage */
   --track-color-dark: #748c5a;          /* Color Track Hidden Shade */
-  --track-text: #c8ff8c;                /* Text Track Bright Luminous Lime-Matcha */
-  --track-text-dark: #648250;           /* Text Track Hidden Shade */
+  --track-text: #d5e6b1;                /* Text Track Luminous Sage */
+  --track-text-dark: #6e8254;           /* Text Track Hidden Shade */
 
   /* --- Tech Grid Overlay Colors --- */
-  --grid-line-thin: rgba(174, 243, 128, 0.22);
-  --grid-line-major: rgba(174, 243, 128, 0.50);
-  --grid-crosshair: #aef380;
-  --grid-dot: rgba(174, 243, 128, 0.65);
+  --grid-line-thin: rgba(199, 220, 156, 0.22);
+  --grid-line-major: rgba(199, 220, 156, 0.50);
+  --grid-crosshair: #c7dc9c;
+  --grid-dot: rgba(199, 220, 156, 0.65);
 
   /* --- App Logo & Hero Vector Accents --- */
   --logo-base: #151b10;
@@ -117,35 +117,71 @@ textarea,
   --logo-accent: #c7dc9c;
 
   /* --- Typography Colors --- */
-  --text-primary: #aef380;              /* Main Matcha Brand Header/Accent */
-  --text-secondary: #d4f8b6;            /* Crisp High-Contrast Secondary Text */
-  --text-muted: #b9cbb0;                /* Clean Soft Sage Secondary Text */
-  --text-dim: #799168;                  /* Earthy Muted Indicator */
+  --text-primary: #c7dc9c;              /* Main Logo Sage Header/Accent */
+  --text-secondary: #e2eecc;            /* Crisp High-Contrast Secondary Text */
+  --text-muted: #b4c49c;                /* Clean Soft Sage Secondary Text */
+  --text-dim: #7f9463;                  /* Earthy Muted Indicator */
 
   /* --- Flat Styling (No blur, no glow, no drop shadow) --- */
-  --border-panel: #334028;              /* Solid Panel & Divider Border */
-  --border-subtle: rgba(174, 243, 128, 0.26);
-  --border-focus: #aef380;
+  --border-panel: #313d27;              /* Solid Panel & Divider Border */
+  --border-subtle: rgba(199, 220, 156, 0.26);
+  --border-focus: #c7dc9c;
   --shadow-panel: none;
   --shadow-button-glow: none;
   --shadow-active: none;
   --shadow-popover: none;
 
   /* --- Dedicated Keyframe Theme Tokens (100% Theme-Native & High-Contrast) --- */
-  --kf-default-bg: #151a0f;            /* Dark surface core */
+  --kf-default-bg: #151b10;            /* Dark surface core */
   --kf-default-border: #a5b39a;        /* Soft sage outline */
-  --kf-active-bg: #98ce7b;             /* Fresh matcha solid diamond */
-  --kf-active-border: #0d1109;         /* Sharp dark perimeter outline */
+  --kf-active-bg: #9cb477;             /* Logo sage solid diamond */
+  --kf-active-border: #0f140b;         /* Sharp dark perimeter outline */
   --kf-selected-bg: #ffffff;           /* Luminous clean white diamond - 100% pops without foreign colors */
-  --kf-selected-border: #0d1109;       /* Solid dark border for needle-sharp definition */
-  --kf-selected-dot: #98ce7b;          /* Vibrant matcha green center anchor dot */
+  --kf-selected-border: #0f140b;       /* Solid dark border for needle-sharp definition */
+  --kf-selected-dot: #9cb477;          /* Sage green center anchor dot */
 
   /* --- Font Families --- */
   --font-brand: 'Cal Sans', sans-serif;
   --font-mono: 'Cal Sans', sans-serif;
 }
 
-/* Optional Alternate Accents (accent-only: bg stays Matcha dark, only accent hue changes) */
+/* Optional Alternate Accents (accent-only: bg stays dark moss, only accent hue changes) */
+[data-theme="matcha-tea"] {
+  --color-primary: #aef380;
+  --color-primary-hover: #c4f99b;
+  --color-primary-active: #95df64;
+  --color-accent: #95df64;
+  --color-accent-subtle: #6d8b57;
+  --badge-prealpha-text: #aef380;
+  --badge-count-bg: #aef380;
+  --badge-count-text: #12170e;
+  --track-video: #aef380;
+  --track-video-dark: #648250;
+  --track-image: #c4f99b;
+  --track-image-dark: #648250;
+  --track-audio: #bbf29b;
+  --track-audio-dark: #648250;
+  --track-adj: #95df64;
+  --track-adj-dark: #465a37;
+  --track-color: #dcfbc0;
+  --track-color-dark: #748c5a;
+  --track-text: #c8ff8c;
+  --track-text-dark: #648250;
+  --grid-line-thin: rgba(174, 243, 128, 0.22);
+  --grid-line-major: rgba(174, 243, 128, 0.50);
+  --grid-crosshair: #aef380;
+  --grid-dot: rgba(174, 243, 128, 0.65);
+  --logo-shadow: #98ce7b;
+  --logo-accent: #aef380;
+  --text-primary: #aef380;
+  --text-secondary: #d4f8b6;
+  --text-muted: #b9cbb0;
+  --text-dim: #799168;
+  --border-subtle: rgba(174, 243, 128, 0.26);
+  --border-focus: #aef380;
+  --kf-active-bg: #98ce7b;
+  --kf-selected-dot: #98ce7b;
+}
 [data-theme="sakura-milk"] {
   /* Brand & Accents — bright pastel pink, not dark */
   --color-primary: #ffb3d1;

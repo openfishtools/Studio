@@ -94,25 +94,6 @@
           }
         }
       }
-
-      if (global.FishEffectsRegistry && typeof global.FishEffectsRegistry.get === 'function') {
-        ['particle-engine', 'shatter'].forEach(function (fxId) {
-          var def = global.FishEffectsRegistry.get(fxId);
-          if (def && typeof def.render === 'function' && !def.render._hasNativeCamScale && !def.render._camScaleWrapped) {
-            var origRender = def.render;
-            def.render = function () {
-              var prev = global._fishFxApplyCamScaleToZoom;
-              global._fishFxApplyCamScaleToZoom = true;
-              try {
-                return origRender.apply(this, arguments);
-              } finally {
-                global._fishFxApplyCamScaleToZoom = prev;
-              }
-            };
-            def.render._camScaleWrapped = true;
-          }
-        });
-      }
     } catch (unpackErr) {
       console.error('[FishEffectsLoader] Failed to unpack effects from WASM:', unpackErr);
     }

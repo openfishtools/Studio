@@ -15,7 +15,7 @@
   <script>
     try {
       var _t = localStorage.getItem('oft_theme');
-      var _ok = ['default', 'sakura-milk', 'lemon-soda', 'sky-candy', 'mint-pop', 'peach-glow'];
+      var _ok = ['default', 'matcha-tea', 'sakura-milk', 'lemon-soda', 'sky-candy', 'mint-pop', 'peach-glow'];
       if (_t && _t !== 'default') {
         if (_ok.indexOf(_t) !== -1) document.documentElement.setAttribute('data-theme', _t);
         else { try { localStorage.setItem('oft_theme', 'default'); } catch (_) {} }
@@ -4323,7 +4323,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.7.0</span>
+          <span class="welcome-badge">v0.7.1</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -4353,11 +4353,33 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.7.1 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.7.1</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Nov 26, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Standalone Native App Integration (`js/storage/db.js`, `js/media/fish-export-engine.js`, `js/editor/editor-state.js`, `js/app/main.js`, `effects/loader.js`)</span>
+                  <span class="changelog-item-desc">Added native `window.OFTSNative` support for the standalone desktop &amp; Android app, including local disk storage (bypassing browser sandbox quota), streamed direct-to-disk MP4 export, native FFmpeg acceleration, `Ctrl+S` project overwrite, and window title sync.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Studio Sage Default Theme (`css/tokens/theme.css`, `js/app/main.js`)</span>
+                  <span class="changelog-item-desc">Added the `Studio Sage` theme matching the official logo palette (`#212a1a` / `#9cb477` / `#c7dc9c`) as the new default theme, while keeping `Matcha Tea` available in Theme Settings.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.7.0 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.7.0</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Nov 25, 2026</span>
               </div>
               <div class="welcome-changelog-item">

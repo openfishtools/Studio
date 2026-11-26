@@ -151,7 +151,31 @@ window.FishDatabase = (function () {
     usage: 0
   };
 
+  function getNativeStorage() {
+    return (typeof window !== 'undefined' && window.OFTSNative && window.OFTSNative.storage) || null;
+  }
+
   async function checkStoragePersistence() {
+    var ns = getNativeStorage();
+    if (ns && typeof ns.getStats === 'function') {
+      try {
+        var stats = await ns.getStats();
+        var quota = (stats.disk_total_bytes && stats.disk_total_bytes > 0)
+          ? stats.disk_total_bytes
+          : ((stats.disk_free_bytes || 0) + (stats.used_bytes || 0));
+        _storagePersistenceState.checked = true;
+        _storagePersistenceState.persisted = true;
+        _storagePersistenceState.usage = stats.used_bytes || 0;
+        _storagePersistenceState.quota = quota;
+        return Object.assign({}, _storagePersistenceState, {
+          nativeDisk: true,
+          storageDir: stats.storage_dir || '',
+          diskFree: stats.disk_free_bytes || 0
+        });
+      } catch (err) {
+        console.warn('[FishDatabase] Native disk stats error:', err);
+      }
+    }
     if (typeof navigator !== 'undefined' && navigator.storage) {
       try {
         if (typeof navigator.storage.persisted === 'function') {
@@ -171,6 +195,9 @@ window.FishDatabase = (function () {
   }
 
   async function requestPersistentStorage() {
+    if (getNativeStorage()) {
+      return await checkStoragePersistence();
+    }
     if (typeof navigator !== 'undefined' && navigator.storage) {
       try {
         if (typeof navigator.storage.persisted === 'function') {
@@ -416,6 +443,13 @@ window.FishDatabase = (function () {
   }
 
   async function getSettings() {
+    var ns = getNativeStorage();
+    if (ns && typeof ns.getSettings === 'function') {
+      try {
+        var diskSettings = await ns.getSettings();
+        if (diskSettings) return diskSettings;
+      } catch (_) {}
+    }
     var db = await openDB();
     if (db) {
       return new Promise(function (resolve) {
@@ -444,6 +478,17 @@ window.FishDatabase = (function () {
     var rawString = JSON.stringify(settingsObj);
     localStorage.setItem(SETTINGS_KEY, rawString);
     localStorage.setItem(SETTINGS_KEY_ALT, rawString);
+
+    var ns = getNativeStorage();
+    if (ns && typeof ns.saveSettings === 'function') {
+      try {
+        await ns.saveSettings(settingsObj);
+      } catch (e) {
+        console.warn('[DB] Failed to persist settings to native disk:', e);
+      }
+      window.dispatchEvent(new CustomEvent('fish-db-settings-updated', { detail: settingsObj }));
+      return;
+    }
 
     var db = await openDB();
     if (db) {
@@ -504,6 +549,19 @@ window.FishDatabase = (function () {
   }
 
   async function getProjects() {
+    var ns = getNativeStorage();
+    if (ns && typeof ns.listProjects === 'function') {
+      var diskItems = await ns.listProjects();
+      diskItems = (diskItems || []).filter(function (p) {
+        return p && p.id && !p.id.startsWith('prj-00') && !_deletedIds.has(p.id) && !_deletedIds.has(String(p.id).trim());
+      });
+      diskItems.sort(function (a, b) {
+        var tA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+        var tB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+        return tB - tA;
+      });
+      return diskItems.map(_projectToListMeta);
+    }
     var db = await openDB();
     if (db) {
       return new Promise(function (resolve) {
@@ -553,6 +611,12 @@ window.FishDatabase = (function () {
    */
   async function getProject(id) {
     if (!id || _deletedIds.has(id) || _deletedIds.has(String(id).trim())) return null;
+
+    var ns = getNativeStorage();
+    if (ns && typeof ns.getProject === 'function') {
+      var diskProj = await ns.getProject(id);
+      return diskProj ? stripDeadBlobUrls(diskProj) : null;
+    }
 
     function getLocalBackup(targetId) {
       var found = getLocalProjects().find(function (p) { return p.id === targetId; });
@@ -683,6 +747,14 @@ window.FishDatabase = (function () {
         storageProject.size = project.size;
         storageProject.sizeBytes = b;
       } catch (_) {}
+    }
+
+    // Native Disk Storage (Standalone): write directly to user's chosen folder, skip WebView IndexedDB
+    var ns = getNativeStorage();
+    if (ns && typeof ns.saveProject === 'function') {
+      await ns.saveProject(storageProject);
+      window.dispatchEvent(new CustomEvent('fish-db-projects-updated', { detail: { action: 'save', project: project } }));
+      return project;
     }
 
     // 1. Sync to localStorage
@@ -1289,6 +1361,11 @@ window.FishDatabase = (function () {
     if (!mediaItem || !mediaItem.id || !mediaItem.projectId) return null;
     mediaItem.createdAt = mediaItem.createdAt || new Date().toISOString();
 
+    var ns = getNativeStorage();
+    if (ns && typeof ns.saveMedia === 'function') {
+      return await ns.saveMedia(mediaItem);
+    }
+
     var isSafari = typeof navigator !== 'undefined' &&
       /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent || '');
 
@@ -1476,6 +1553,11 @@ window.FishDatabase = (function () {
     if (hydrateBlobs === undefined) hydrateBlobs = true;
     if (!projectId) return [];
 
+    var ns = getNativeStorage();
+    if (ns && typeof ns.listMedia === 'function') {
+      return await ns.listMedia(projectId, hydrateBlobs);
+    }
+
     var cacheKey = projectId + '_' + (hydrateBlobs ? '1' : '0');
     if (_inFlightProjectMedia.has(cacheKey)) {
       return _inFlightProjectMedia.get(cacheKey);
@@ -1576,6 +1658,10 @@ window.FishDatabase = (function () {
   async function getMedia(id, hydrateBlobs) {
     if (hydrateBlobs === undefined) hydrateBlobs = true;
     if (!id) return null;
+    var ns = getNativeStorage();
+    if (ns && typeof ns.getMedia === 'function') {
+      return await ns.getMedia(id, hydrateBlobs);
+    }
     var db = await openDB();
     if (db && db.objectStoreNames.contains('media')) {
       return new Promise(function (resolve) {
@@ -1627,6 +1713,10 @@ window.FishDatabase = (function () {
    * @returns {Promise<Object[]>}
    */
   async function getAllMedia() {
+    var ns = getNativeStorage();
+    if (ns && typeof ns.listMedia === 'function') {
+      return await ns.listMedia(null, true);
+    }
     var db = await openDB();
     if (db && db.objectStoreNames.contains('media')) {
       return new Promise(function (resolve) {
@@ -1675,6 +1765,12 @@ window.FishDatabase = (function () {
     if (!id) return false;
     try { await deleteProjectFrameCaches([id]); } catch (_) {}
 
+    var ns = getNativeStorage();
+    if (ns && typeof ns.deleteMedia === 'function') {
+      await ns.deleteMedia(id);
+      return true;
+    }
+
     // 1. Remove from local copy
     var list = getLocalMedia().filter(function (m) { return m.id !== id; });
     saveLocalMedia(list);
@@ -1709,6 +1805,11 @@ window.FishDatabase = (function () {
    */
   async function deleteProjectMedia(projectId) {
     if (!projectId) return false;
+    var ns = getNativeStorage();
+    if (ns && typeof ns.deleteProjectMedia === 'function') {
+      await ns.deleteProjectMedia(projectId);
+      return true;
+    }
     var medias = getLocalMedia().filter(function (m) { return m.projectId === projectId; });
 
     var mediaIds = medias.map(function (m) { return m.id; }).filter(Boolean);
@@ -1770,6 +1871,11 @@ window.FishDatabase = (function () {
    * @returns {Promise<boolean>}
    */
   async function clearAllMedia() {
+    var ns = getNativeStorage();
+    if (ns && typeof ns.clearAllMedia === 'function') {
+      await ns.clearAllMedia();
+      return true;
+    }
     saveLocalMedia([]);
     var db = await openDB();
     if (db && db.objectStoreNames.contains('media')) {
@@ -1803,6 +1909,18 @@ window.FishDatabase = (function () {
     _deletedIds.add(id);
     _deletedIds.add(targetId);
     _saveDeletedIds();
+
+    var ns = getNativeStorage();
+    if (ns && typeof ns.deleteProject === 'function') {
+      await ns.deleteProject(id);
+      if (typeof ns.deleteProjectMedia === 'function') {
+        await ns.deleteProjectMedia(id);
+      }
+      try {
+        window.dispatchEvent(new CustomEvent('fish-db-projects-updated', { detail: { action: 'delete', id: id } }));
+      } catch (_) {}
+      return true;
+    }
 
     // 1. Immediately remove from localStorage for instant UI response
     var list = getLocalProjects();
@@ -1907,6 +2025,10 @@ window.FishDatabase = (function () {
    */
   async function clearProjects() {
     await clearAllMedia();
+    var ns = getNativeStorage();
+    if (ns && typeof ns.clearProjects === 'function') {
+      await ns.clearProjects();
+    }
     if (typeof indexedDB !== 'undefined') {
       try {
         var req = indexedDB.open('FishFrameCacheDB');
@@ -1976,6 +2098,9 @@ window.FishDatabase = (function () {
    */
   function downloadFile(filename, content, type) {
     var blob = new Blob([content], { type: type || 'application/octet-stream' });
+    if (window.OFTSNative && typeof window.OFTSNative.saveBlobStreamed === 'function') {
+      return window.OFTSNative.saveBlobStreamed(blob, filename);
+    }
     if (typeof window.saveBlobViaNativeBridge === 'function' && window.AndroidBridge) {
       window.saveBlobViaNativeBridge(blob, filename, type || 'application/octet-stream');
       return;
@@ -2176,6 +2301,8 @@ window.FishDatabase = (function () {
             if (!ex.blob && activeItem.blob) ex.blob = activeItem.blob;
             if (!ex.buffer && activeItem.buffer) ex.buffer = activeItem.buffer;
             if (!ex.dataUrl && activeItem.dataUrl) ex.dataUrl = activeItem.dataUrl;
+            if (!ex.modelData && activeItem.modelData) ex.modelData = activeItem.modelData;
+            if (!ex.thumbUrl && activeItem.thumbUrl) ex.thumbUrl = activeItem.thumbUrl;
           } else {
             mediaItems.push(Object.assign({}, activeItem));
           }
@@ -2202,17 +2329,32 @@ window.FishDatabase = (function () {
       collectLayers(project.layers);
     }
 
+    var ensureReferencedMedia = async function (targetMediaId) {
+      if (!targetMediaId || mediaMap.has(targetMediaId)) return;
+      if (String(targetMediaId).startsWith('mtex_') || String(targetMediaId).startsWith('builtin_env:')) return;
+      try {
+        var directMedia = await getMedia(targetMediaId, true);
+        if (directMedia) {
+          mediaItems.push(directMedia);
+          mediaMap.set(targetMediaId, directMedia);
+        }
+      } catch (_) {}
+    };
+
+    if (project && project.environmentMediaId) {
+      await ensureReferencedMedia(project.environmentMediaId);
+    }
+
     for (var i = 0; i < layersToCheck.length; i++) {
       var l = layersToCheck[i];
-      var targetMediaId = l.mediaId || l.fillMediaId;
-      if (targetMediaId && !mediaMap.has(targetMediaId)) {
-        try {
-          var directMedia = await getMedia(targetMediaId, true);
-          if (directMedia) {
-            mediaItems.push(directMedia);
-            mediaMap.set(targetMediaId, directMedia);
-          }
-        } catch (_) {}
+      await ensureReferencedMedia(l.mediaId);
+      await ensureReferencedMedia(l.fillMediaId);
+      await ensureReferencedMedia(l.modelMediaId);
+      if (Array.isArray(l.materialSlots)) {
+        for (var si = 0; si < l.materialSlots.length; si++) {
+          var sl = l.materialSlots[si];
+          if (sl && sl.mediaId) await ensureReferencedMedia(sl.mediaId);
+        }
       }
     }
 
@@ -2223,13 +2365,15 @@ window.FishDatabase = (function () {
     // Assign safe, collision-free filenames for the media archive and manifest
     projectData.media = mediaItems.map(function (m, idx) {
       var safeName = (m.name || ('media_' + (m.id || idx))).replace(/[^a-zA-Z0-9._-]/g, '_');
-      var uniqueFilename = 'media_' + m.id + '_' + safeName;
+      var uniqueFilename = (m.type === '3d_model')
+        ? ('media_' + m.id + '_' + safeName + '.fish3d.json')
+        : ('media_' + m.id + '_' + safeName);
       m.archiveFilename = uniqueFilename;
       return {
         id: m.id,
         name: m.name,
         type: m.type,
-        mimeType: m.mimeType || '',
+        mimeType: m.type === '3d_model' ? 'application/json' : (m.mimeType || ''),
         size: m.size || 0,
         width: m.width || null,
         height: m.height || null,
@@ -2339,6 +2483,141 @@ window.FishDatabase = (function () {
     window.hideOFTSProgressModal = hideOFTSProgressModal;
   }
 
+  function _toPlainArray(v) {
+    if (!v) return null;
+    if (Array.isArray(v)) return v;
+    if (ArrayBuffer.isView(v)) return Array.from(v);
+    return null;
+  }
+
+  function _serialize3DModelPayload(rec) {
+    var md = rec && rec.modelData;
+    if (!md) return null;
+    var rigOut = null;
+    if (md.rig) {
+      rigOut = {
+        nodes: md.rig.nodes || [],
+        boneNodeIdx: _toPlainArray(md.rig.boneNodeIdx) || [],
+        boneOffsets: _toPlainArray(md.rig.boneOffsets) || [],
+        cx: md.rig.cx || 0,
+        cy: md.rig.cy || 0,
+        cz: md.rig.cz || 0,
+        invScale: md.rig.invScale || 1
+      };
+    }
+    var animsOut = [];
+    if (Array.isArray(md.animations)) {
+      for (var ai = 0; ai < md.animations.length; ai++) {
+        var clip = md.animations[ai];
+        if (!clip) continue;
+        var tracksOut = [];
+        if (Array.isArray(clip.tracks)) {
+          for (var ti = 0; ti < clip.tracks.length; ti++) {
+            var tr = clip.tracks[ti];
+            if (!tr) continue;
+            var serializeCurve = function (c) {
+              if (!c || !c.times || !c.values) return null;
+              return { times: _toPlainArray(c.times), values: _toPlainArray(c.values) };
+            };
+            tracksOut.push({
+              nodeIdx: tr.nodeIdx,
+              prop: tr.prop,
+              cx: serializeCurve(tr.cx),
+              cy: serializeCurve(tr.cy),
+              cz: serializeCurve(tr.cz)
+            });
+          }
+        }
+        animsOut.push({ name: clip.name || ('Clip ' + (ai + 1)), duration: clip.duration || 0, tracks: tracksOut });
+      }
+    }
+    return JSON.stringify({
+      format: 'fish3d-v1',
+      name: rec.name || '3D Model',
+      thumbUrl: rec.thumbUrl || '',
+      modelData: {
+        positions: _toPlainArray(md.positions) || [],
+        normals: _toPlainArray(md.normals) || [],
+        uvs: _toPlainArray(md.uvs) || [],
+        groups: md.groups || [],
+        slots: md.slots || [],
+        textures: md.textures || {},
+        vertexCount: md.vertexCount || 0,
+        triangleCount: md.triangleCount || 0,
+        basePositions: _toPlainArray(md.basePositions),
+        baseNormals: _toPlainArray(md.baseNormals),
+        skinIndices: _toPlainArray(md.skinIndices),
+        skinWeights: _toPlainArray(md.skinWeights),
+        rig: rigOut,
+        animations: animsOut
+      }
+    });
+  }
+
+  function _deserialize3DModelPayload(rawText) {
+    var parsed = JSON.parse(rawText);
+    if (!parsed || !parsed.modelData) return null;
+    var md = parsed.modelData;
+    var rig = null;
+    if (md.rig) {
+      rig = {
+        nodes: md.rig.nodes || [],
+        boneNodeIdx: new Int32Array(md.rig.boneNodeIdx || []),
+        boneOffsets: new Float32Array(md.rig.boneOffsets || []),
+        cx: md.rig.cx || 0,
+        cy: md.rig.cy || 0,
+        cz: md.rig.cz || 0,
+        invScale: md.rig.invScale || 1
+      };
+    }
+    var animations = [];
+    if (Array.isArray(md.animations)) {
+      for (var ai = 0; ai < md.animations.length; ai++) {
+        var clip = md.animations[ai];
+        if (!clip) continue;
+        var tracks = [];
+        if (Array.isArray(clip.tracks)) {
+          for (var ti = 0; ti < clip.tracks.length; ti++) {
+            var tr = clip.tracks[ti];
+            if (!tr) continue;
+            var hydrateCurve = function (c) {
+              if (!c || !c.times || !c.values) return null;
+              return { times: new Float32Array(c.times), values: new Float32Array(c.values) };
+            };
+            tracks.push({
+              nodeIdx: tr.nodeIdx,
+              prop: tr.prop,
+              cx: hydrateCurve(tr.cx),
+              cy: hydrateCurve(tr.cy),
+              cz: hydrateCurve(tr.cz)
+            });
+          }
+        }
+        animations.push({ name: clip.name || ('Clip ' + (ai + 1)), duration: clip.duration || 0, tracks: tracks });
+      }
+    }
+    return {
+      name: parsed.name || '3D Model',
+      thumbUrl: parsed.thumbUrl || '',
+      modelData: {
+        positions: new Float32Array(md.positions || []),
+        normals: new Float32Array(md.normals || []),
+        uvs: new Float32Array(md.uvs || []),
+        groups: md.groups || [],
+        slots: md.slots || [],
+        textures: md.textures || {},
+        vertexCount: md.vertexCount || 0,
+        triangleCount: md.triangleCount || 0,
+        basePositions: md.basePositions ? new Float32Array(md.basePositions) : null,
+        baseNormals: md.baseNormals ? new Float32Array(md.baseNormals) : null,
+        skinIndices: md.skinIndices ? new Uint16Array(md.skinIndices) : null,
+        skinWeights: md.skinWeights ? new Float32Array(md.skinWeights) : null,
+        rig: rig,
+        animations: animations
+      }
+    };
+  }
+
   /**
    * Saves project as a compressed .ofts file (project.json + media/)
    * Includes DEFLATE level 9 compression and live progress modal.
@@ -2392,8 +2671,29 @@ window.FishDatabase = (function () {
 
           var binaryData = null;
 
+          // 0. Imported 3D Model JSON bundle (.fish3d.json)
+          if (item.type === '3d_model') {
+            var modelRec = item.modelData ? item : null;
+            if (!modelRec && typeof window !== 'undefined' && window._activeMediaMap && window._activeMediaMap.has(item.id)) {
+              var activeM = window._activeMediaMap.get(item.id);
+              if (activeM && activeM.modelData) modelRec = activeM;
+            }
+            if (!modelRec && item.id) {
+              try {
+                var dbM = await getMedia(item.id, false);
+                if (dbM && dbM.modelData) modelRec = dbM;
+              } catch (_) {}
+            }
+            if (modelRec && modelRec.modelData) {
+              var serialized3d = _serialize3DModelPayload(modelRec);
+              if (serialized3d) {
+                binaryData = new Blob([serialized3d], { type: 'application/json' });
+              }
+            }
+          }
+
           // 1. Direct Blob
-          if (item.blob instanceof Blob && item.blob.size > 0) {
+          if (!binaryData && item.blob instanceof Blob && item.blob.size > 0) {
             binaryData = item.blob;
           }
           // 2. Direct ArrayBuffer / TypedArray
@@ -2483,7 +2783,16 @@ window.FishDatabase = (function () {
       if (!isShareMode) {
         reportProgress(100, 'Complete!');
         if (!options || !options.skipDownload) {
-          downloadFile((pkg.folderName || 'Project') + '.ofts', zipBlob, 'application/octet-stream');
+          var oftsName = (pkg.folderName || 'Project') + '.ofts';
+          if (window.OFTSNative && typeof window.OFTSNative.saveBlobStreamed === 'function') {
+            var targetPath = options && options.targetPath ? options.targetPath : null;
+            var savedPath = await window.OFTSNative.saveBlobStreamed(zipBlob, oftsName, targetPath);
+            if (savedPath && typeof window.OFTSNative.setProjectPath === 'function') {
+              window.OFTSNative.setProjectPath(projectId, savedPath);
+            }
+          } else {
+            downloadFile(oftsName, zipBlob, 'application/octet-stream');
+          }
         }
 
         await new Promise(function (r) { setTimeout(r, 400); });
@@ -2660,6 +2969,7 @@ window.FishDatabase = (function () {
           ''
         );
         var type = matchDesc.type || (
+          rawFileName.endsWith('.fish3d.json') ? '3d_model' :
           ['mp4', 'mov', 'webm', 'mkv'].includes(ext) || (mime && mime.startsWith('video/')) ? 'video' :
           ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].includes(ext) || (mime && mime.startsWith('audio/')) ? 'audio' : 'image'
         );
@@ -2668,6 +2978,37 @@ window.FishDatabase = (function () {
           try {
             onProgress('Extracting asset (' + (i + 1) + '/' + mediaEntries.length + '): ' + displayName);
           } catch (_) {}
+        }
+
+        if (type === '3d_model' || rawFileName.endsWith('.fish3d.json')) {
+          try {
+            var modelJsonText = await zipEntry.async("string");
+            var hydrated3d = _deserialize3DModelPayload(modelJsonText);
+            if (hydrated3d && hydrated3d.modelData) {
+              var modelMediaItem = {
+                id: mediaId,
+                projectId: savedProject.id,
+                name: displayName || hydrated3d.name || '3D Model',
+                type: '3d_model',
+                size: modelJsonText.length,
+                thumbUrl: hydrated3d.thumbUrl || '',
+                modelData: hydrated3d.modelData,
+                createdAt: new Date().toISOString()
+              };
+              if (typeof window !== 'undefined') {
+                window._activeMediaMap = window._activeMediaMap || new Map();
+                window._activeMediaMap.set(mediaId, modelMediaItem);
+                if (window.Fish3DLoader && typeof window.Fish3DLoader.registerBundle === 'function') {
+                  var md3 = hydrated3d.modelData;
+                  window.Fish3DLoader.registerBundle(Object.assign({ id: mediaId, name: modelMediaItem.name }, md3));
+                }
+              }
+              await saveMedia(modelMediaItem);
+            }
+          } catch (e3d) {
+            console.warn('[FishDatabase] Failed to restore 3D model from .ofts:', displayName, e3d);
+          }
+          continue;
         }
 
         // Extract raw binary ArrayBuffer directly from archive

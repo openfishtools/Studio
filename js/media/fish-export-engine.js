@@ -221,6 +221,9 @@
 
   // ── FFmpeg Lazy Loader ─────────────────────────────────────────────────────────
   async function getFFmpeg() {
+    if (window.OFTSNative && window.OFTSNative.ffmpeg) {
+      return window.OFTSNative.ffmpeg;
+    }
     if (ffmpegInstance && ffmpegInstance.isLoaded()) return ffmpegInstance;
     if (!window.FFmpeg || typeof window.FFmpeg.createFFmpeg !== 'function') {
       await new Promise(function(resolve, reject) {
@@ -612,16 +615,16 @@
     }
 
     // 3. Try FFmpeg extraction fallback
-    if (typeof window.FFmpeg !== 'undefined' || !!document.querySelector('script[src*="ffmpeg"]')) {
+    if ((window.OFTSNative && window.OFTSNative.ffmpeg) || typeof window.FFmpeg !== 'undefined' || !!document.querySelector('script[src*="ffmpeg"]')) {
       try {
         var ffmpeg = await getFFmpeg();
         var inName = 'ain_' + Date.now() + '.mp4';
         var outName = 'aout_' + Date.now() + '.wav';
-        ffmpeg.FS('writeFile', inName, new Uint8Array(await blob.arrayBuffer()));
+        await ffmpeg.FS('writeFile', inName, new Uint8Array(await blob.arrayBuffer()));
         await ffmpeg.run('-v', 'error', '-i', inName, '-vn', '-c:a', 'pcm_s16le', '-ar', '44100', '-ac', '2', outName);
-        var wavBytes = ffmpeg.FS('readFile', outName);
-        try { ffmpeg.FS('unlink', inName); } catch (_) {}
-        try { ffmpeg.FS('unlink', outName); } catch (_) {}
+        var wavBytes = await ffmpeg.FS('readFile', outName);
+        try { await ffmpeg.FS('unlink', inName); } catch (_) {}
+        try { await ffmpeg.FS('unlink', outName); } catch (_) {}
         var actx3 = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
         var b4 = await actx3.decodeAudioData(wavBytes.buffer);
         try { actx3.close(); } catch (_) {}
@@ -871,6 +874,10 @@
 
   // ── Download Helper ────────────────────────────────────────────────────────────
   function triggerDownload(blob, filename) {
+    if (window.OFTSNative && typeof window.OFTSNative.saveBlobStreamed === 'function') {
+      window.OFTSNative.saveBlobStreamed(blob, filename);
+      return;
+    }
     if (typeof window.saveBlobViaNativeBridge === 'function' && window.AndroidBridge) {
       window.saveBlobViaNativeBridge(blob, filename, (blob && blob.type) || 'video/mp4');
       return;
@@ -1263,11 +1270,53 @@
         return false;
       }
 
+      var nativeStream = null;
+      var streamWriteChain = Promise.resolve();
+      var streamWriteError = null;
+      var canUseNativeStream = Boolean(
+        window.OFTSNative &&
+        typeof window.OFTSNative.openWriteStream === 'function' &&
+        typeof Mp4Muxer !== 'undefined' &&
+        typeof Mp4Muxer.StreamTarget === 'function' &&
+        (!hasAudio || canWebCodecsAudio)
+      );
+
+      if (window.OFTSNative && typeof window.OFTSNative.keepScreenOn === 'function') {
+        window.OFTSNative.keepScreenOn(true);
+      }
+
+      if (canUseNativeStream) {
+        var suggestedMp4 = sanitizeName(customName || ps.name) + '.mp4';
+        nativeStream = await window.OFTSNative.openWriteStream(suggestedMp4, 'mp4', 'video/mp4');
+        if (!nativeStream) {
+          logExportInfo('WebCodecs', 'Native save dialog cancelled by user');
+          try { if (exportCanvas.parentNode) exportCanvas.parentNode.removeChild(exportCanvas); } catch (_) {}
+          hideProgress();
+          return true;
+        }
+      }
+
       var muxerOptions = {
-        target: new Mp4Muxer.ArrayBufferTarget(),
+        target: nativeStream
+          ? new Mp4Muxer.StreamTarget({
+              onData: function(data, position) {
+                if (streamWriteError || !nativeStream) return;
+                var copy = new Uint8Array(data.byteLength);
+                copy.set(data);
+                streamWriteChain = streamWriteChain.then(function() {
+                  if (streamWriteError || !nativeStream) return;
+                  return nativeStream.write(copy, position);
+                }).catch(function(wErr) {
+                  streamWriteError = wErr;
+                });
+              },
+              chunked: true,
+              chunkSize: 4 * 1024 * 1024
+            })
+          : new Mp4Muxer.ArrayBufferTarget(),
         video: { codec: chosenCodec.muxerCodec, width: baseW, height: baseH },
         firstTimestampBehavior: 'offset',
-        fastStart: 'in-memory'
+        fastStart: nativeStream ? false : 'in-memory'
       };
       if (canWebCodecsAudio && muxerAudioCodec) {
         muxerOptions.audio = {
@@ -1391,12 +1440,14 @@
       if (isCancelled) {
         logExportInfo('WebCodecs', 'Export cancelled by user');
         try { encoder.close(); } catch (_) {}
+        if (nativeStream) { try { await nativeStream.abort(); } catch (_) {} nativeStream = null; }
         hideProgress();
         return true;
       }
       if (encError) {
         logExportError('WebCodecs', 'Encoder failed before finalize: ' + (encError ? (encError.message || encError) : 'unknown') + '. ↳ Aborting Tier 1 and gracefully falling back to Tier 2: GPU MediaRecorder...');
         try { encoder.close(); } catch (_) {}
+        if (nativeStream) { try { await nativeStream.abort(); } catch (_) {} nativeStream = null; }
         return false;
       }
 
@@ -1459,6 +1510,20 @@
 
       logExportInfo('WebCodecs:Muxer', 'Finalizing Mp4Muxer container...');
       muxer.finalize();
+      if (nativeStream) {
+        await streamWriteChain;
+        if (streamWriteError) {
+          throw streamWriteError;
+        }
+        var streamedPath = await nativeStream.close();
+        nativeStream = null;
+        muxer.target = null;
+        audioResult = null;
+        logExport('WebCodecs:Stream', 'Streamed MP4 saved directly to disk: ' + streamedPath);
+        updateProgress(100, 'Complete!', onProgress);
+        setTimeout(hideProgress, 600);
+        return true;
+      }
       var videoBuffer = muxer.target.buffer;
       muxer.target = null;
       logExport('WebCodecs:Muxer', 'Mp4Muxer finalized! Container size: ' + (videoBuffer.byteLength / 1024 / 1024).toFixed(2) + ' MB');
@@ -1467,27 +1532,27 @@
       if (audioEncodedSuccessfully) {
         // Audio already muxed inside videoBuffer via WebCodecs AAC/Opus
         finalBlob = new Blob([videoBuffer], { type: 'video/mp4' });
-      } else if (hasAudio && canFfmpegMerge && audioResult && audioResult.wavBlob && audioResult.wavBlob.size > 100 && videoBuffer.byteLength < 180 * 1024 * 1024) {
+      } else if (hasAudio && canFfmpegMerge && audioResult && audioResult.wavBlob && audioResult.wavBlob.size > 100 && (Boolean(window.OFTSNative && window.OFTSNative.ffmpeg) || videoBuffer.byteLength < 180 * 1024 * 1024)) {
         var ffmpegOk = false;
         try {
           updateProgress(97, 'Merging audio into MP4...', onProgress);
           logExportInfo('WebCodecs:AudioMerge', 'Merging AAC audio via fast FFmpeg remux (-c:v copy -c:a aac)...');
           var ffmpeg = await getFFmpeg();
-          try { ffmpeg.FS('unlink', 'v_temp.mp4'); } catch (_) {}
-          try { ffmpeg.FS('unlink', 'a_temp.wav'); } catch (_) {}
-          try { ffmpeg.FS('unlink', 'out_merged.mp4'); } catch (_) {}
-          ffmpeg.FS('writeFile', 'v_temp.mp4', new Uint8Array(videoBuffer));
-          ffmpeg.FS('writeFile', 'a_temp.wav', new Uint8Array(await audioResult.wavBlob.arrayBuffer()));
+          try { await ffmpeg.FS('unlink', 'v_temp.mp4'); } catch (_) {}
+          try { await ffmpeg.FS('unlink', 'a_temp.wav'); } catch (_) {}
+          try { await ffmpeg.FS('unlink', 'out_merged.mp4'); } catch (_) {}
+          await ffmpeg.FS('writeFile', 'v_temp.mp4', new Uint8Array(videoBuffer));
+          await ffmpeg.FS('writeFile', 'a_temp.wav', new Uint8Array(await audioResult.wavBlob.arrayBuffer()));
           await ffmpeg.run('-v', 'error', '-i', 'v_temp.mp4', '-i', 'a_temp.wav', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-strict', '-2', '-shortest', 'out_merged.mp4');
-          var merged = ffmpeg.FS('readFile', 'out_merged.mp4');
+          var merged = await ffmpeg.FS('readFile', 'out_merged.mp4');
           if (merged && merged.length > 0) {
             finalBlob = new Blob([merged.buffer], { type: 'video/mp4' });
             ffmpegOk = true;
             logExport('WebCodecs:AudioMerge', 'Audio merge complete! Final file size: ' + (finalBlob.size / 1024 / 1024).toFixed(2) + ' MB');
           }
-          try { ffmpeg.FS('unlink', 'v_temp.mp4'); } catch (_) {}
-          try { ffmpeg.FS('unlink', 'a_temp.wav'); } catch (_) {}
-          try { ffmpeg.FS('unlink', 'out_merged.mp4'); } catch (_) {}
+          try { await ffmpeg.FS('unlink', 'v_temp.mp4'); } catch (_) {}
+          try { await ffmpeg.FS('unlink', 'a_temp.wav'); } catch (_) {}
+          try { await ffmpeg.FS('unlink', 'out_merged.mp4'); } catch (_) {}
         } catch (mergeErr) {
           logExportWarn('WebCodecs:AudioMerge', 'Audio merge via FFmpeg failed:', mergeErr);
         }
@@ -1518,6 +1583,13 @@
       return false;
     } finally {
       window.isExporting = false;
+      if (nativeStream) {
+        try { nativeStream.abort(); } catch (_) {}
+        nativeStream = null;
+      }
+      if (window.OFTSNative && typeof window.OFTSNative.keepScreenOn === 'function') {
+        window.OFTSNative.keepScreenOn(false);
+      }
       try { if (exportCanvas && exportCanvas.parentNode) exportCanvas.parentNode.removeChild(exportCanvas); } catch (_) {}
       try {
         if (typeof window.redrawComposition === 'function') window.redrawComposition('exportFinished');
@@ -1581,7 +1653,7 @@
       var hasAudio = false;
       if (wavBlob && wavBlob.size > 100) {
         try {
-          ffmpeg.FS('writeFile', 'audio.wav', new Uint8Array(await wavBlob.arrayBuffer()));
+          await ffmpeg.FS('writeFile', 'audio.wav', new Uint8Array(await wavBlob.arrayBuffer()));
           hasAudio = true;
           logExportInfo('FFmpeg:Audio', 'Audio written to virtual FS: audio.wav (' + (wavBlob.size / 1024).toFixed(1) + ' KB)');
         } catch (_) {}
@@ -1615,7 +1687,7 @@
         var blob  = await new Promise(function(r) { exportCanvas.toBlob(r, 'image/jpeg', 0.90); });
         var bytes = new Uint8Array(await blob.arrayBuffer());
         var name  = 'frame_' + String(i).padStart(5, '0') + '.jpg';
-        ffmpeg.FS('writeFile', name, bytes);
+        await ffmpeg.FS('writeFile', name, bytes);
         created.push(name);
 
         var pct = 10 + Math.round((i / totalFrames) * 60);
@@ -1665,25 +1737,25 @@
       } catch (encErr) {
         var isExit0 = encErr && (encErr.status === 0 || String(encErr).includes('exit(0)'));
         var hasOut  = false;
-        try { var testOut = ffmpeg.FS('readFile', 'output.mp4'); if (testOut && testOut.length > 0) hasOut = true; } catch (_) {}
+        try { var testOut = await ffmpeg.FS('readFile', 'output.mp4'); if (testOut && testOut.length > 0) hasOut = true; } catch (_) {}
         if (!isExit0 && !hasOut) throw encErr;
       }
 
       if (isCancelled) {
-        created.forEach(function(f) { try { ffmpeg.FS('unlink', f); } catch (_) {} });
-        if (hasAudio) try { ffmpeg.FS('unlink', 'audio.wav'); } catch (_) {}
-        try { ffmpeg.FS('unlink', 'output.mp4'); } catch (_) {}
+        for (var ci = 0; ci < created.length; ci++) { try { await ffmpeg.FS('unlink', created[ci]); } catch (_) {} }
+        if (hasAudio) try { await ffmpeg.FS('unlink', 'audio.wav'); } catch (_) {}
+        try { await ffmpeg.FS('unlink', 'output.mp4'); } catch (_) {}
         hideProgress();
         return;
       }
 
       updateProgress(98, 'Finalizing...', onProgress);
-      var out  = ffmpeg.FS('readFile', 'output.mp4');
+      var out  = await ffmpeg.FS('readFile', 'output.mp4');
       var outBlob = new Blob([out.buffer], { type: 'video/mp4' });
 
-      created.forEach(function(f) { try { ffmpeg.FS('unlink', f); } catch (_) {} });
-      if (hasAudio) try { ffmpeg.FS('unlink', 'audio.wav'); } catch (_) {}
-      try { ffmpeg.FS('unlink', 'output.mp4'); } catch (_) {}
+      for (var cj = 0; cj < created.length; cj++) { try { await ffmpeg.FS('unlink', created[cj]); } catch (_) {} }
+      if (hasAudio) try { await ffmpeg.FS('unlink', 'audio.wav'); } catch (_) {}
+      try { await ffmpeg.FS('unlink', 'output.mp4'); } catch (_) {}
 
       var outFileName = sanitizeName(customName || ps.name) + '.mp4';
       logExport('FFmpeg:Complete', 'Export finished! File size: ' + (outBlob.size / 1024 / 1024).toFixed(2) + ' MB | Download: ' + outFileName);

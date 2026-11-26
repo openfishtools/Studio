@@ -2173,6 +2173,7 @@ if (typeof window !== 'undefined' && window.__PENDING_NATIVE_FILE__) {
 
 // Native Download & Export Pipeline for Standalone App
 window.saveBlobViaNativeBridge = function (blob, filename, mimeType) {
+  if (window.OFTSNative) return false;
   if (!window.AndroidBridge) return false;
   const mime = mimeType || (blob && blob.type) || 'application/octet-stream';
   const name = filename || ('download_' + Date.now());
@@ -2421,6 +2422,45 @@ async function updateStorageDurabilityUI() {
     if (totalEl) totalEl.textContent = '/ --';
     renderBar(0);
     if (btnEl) btnEl.style.display = 'none';
+    return;
+  }
+
+  if (info.nativeDisk) {
+    const nameEl = document.querySelector('.settings-storage-name');
+    const tagEl = document.querySelector('.settings-storage-tag');
+    if (nameEl) nameEl.textContent = 'Local Disk Storage';
+    if (tagEl) {
+      tagEl.textContent = 'Native Disk Storage';
+      tagEl.title = info.storageDir || '';
+    }
+    if (usedEl) usedEl.textContent = fmtBytes(info.usage || 0);
+    if (totalEl) {
+      totalEl.textContent = info.quota > 0 ? '/ ' + fmtBytes(info.quota) + ' disk' : '/ Local Disk';
+    }
+    const pct = info.quota > 0 ? ((info.usage || 0) / info.quota) * 100 : 0;
+    renderBar(pct);
+    if (statusEl) {
+      const freeText = info.diskFree > 0 ? ' • ' + fmtBytes(info.diskFree) + ' free' : '';
+      statusEl.textContent = (info.storageDir || 'Local Disk') + freeText;
+    }
+    if (btnEl) {
+      const canChangeFolder = window.OFTSNative && window.OFTSNative.platform !== 'android' &&
+        window.OFTSNative.storage && typeof window.OFTSNative.storage.pickFolder === 'function';
+      if (canChangeFolder) {
+        btnEl.style.display = 'inline-flex';
+        btnEl.textContent = 'Change Folder';
+        btnEl.onclick = async function (e) {
+          e.preventDefault();
+          const picked = await window.OFTSNative.storage.pickFolder(info.storageDir);
+          if (picked) {
+            await window.OFTSNative.storage.setDir(picked);
+            window.location.reload();
+          }
+        };
+      } else {
+        btnEl.style.display = 'none';
+      }
+    }
     return;
   }
 
@@ -2955,7 +2995,8 @@ window.initUiScaleSliders = initUiScaleSliders;
 // APP THEME & ACCENT COLOR MANAGER (bright accents only, no dark tones)
 // ==========================================================================
 const STUDIO_THEMES = [
-  { id: 'default', name: 'Matcha Tea', desc: 'Default Brand', color: '#aef380', checkFill: '#12170e' },
+  { id: 'default', name: 'Studio Sage', desc: 'Default Logo', color: '#c7dc9c', checkFill: '#212a1a' },
+  { id: 'matcha-tea', name: 'Matcha Tea', desc: 'Fresh Matcha', color: '#aef380', checkFill: '#12170e' },
   { id: 'sakura-milk', name: 'Sakura Milk', desc: 'Pastel Pink', color: '#ffb3d1', checkFill: '#2a121a' },
   { id: 'lemon-soda', name: 'Lemon Soda', desc: 'Bright Citrus', color: '#ffe45e', checkFill: '#241d05' },
   { id: 'sky-candy', name: 'Sky Candy', desc: 'Soft Cyan', color: '#8ee6ff', checkFill: '#0a1a22' },

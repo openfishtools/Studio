@@ -5,6 +5,12 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.1] - 2026-11-26
+
+### Added
+- **Standalone Native App Integration (`js/storage/db.js`, `js/media/fish-export-engine.js`, `js/editor/editor-state.js`, `js/app/main.js`, `effects/loader.js`)**: Added native `window.OFTSNative` support for the standalone desktop & Android app, including local disk storage (bypassing browser sandbox quota), streamed direct-to-disk MP4 export, native FFmpeg acceleration, `Ctrl+S` project overwrite, and window title sync.
+- **Studio Sage Default Theme (`css/tokens/theme.css`, `js/app/main.js`)**: Added the `Studio Sage` theme matching the official logo palette (`#212a1a` / `#9cb477` / `#c7dc9c`) as the new default theme, while keeping `Matcha Tea` available in Theme Settings.
+
 ## [0.7.0] - 2026-11-25
 
 ### Added

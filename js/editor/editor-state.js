@@ -840,6 +840,21 @@
           } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
             e.preventDefault();
             this.redo();
+          } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 's' || e.key === 'S') && window.OFTSNative) {
+            e.preventDefault();
+            var curProjId = window.currentProjectState && window.currentProjectState.id;
+            if (curProjId && window.FishDatabase && typeof window.FishDatabase.exportProjectToOFTS === 'function') {
+              var existingPath =
+                window.OFTSNative.platform !== 'android' && typeof window.OFTSNative.getProjectPath === 'function'
+                  ? window.OFTSNative.getProjectPath(curProjId)
+                  : null;
+              window.FishDatabase.exportProjectToOFTS(
+                curProjId,
+                existingPath ? { targetPath: existingPath } : undefined
+              ).catch(function (saveErr) {
+                console.warn('[OFTSNative] Ctrl+S save failed:', saveErr);
+              });
+            }
           }
         });
       }
@@ -2884,6 +2899,9 @@
       if (nameInput && initialProjectName) {
         nameInput.value = initialProjectName;
         document.title = `${initialProjectName} - OpenFishTools Studio`;
+      if (window.OFTSNative && typeof window.OFTSNative.setWindowTitle === 'function') {
+        window.OFTSNative.setWindowTitle(initialProjectName);
+      }
       }
       const loadingTitleEl = document.getElementById('editor-loading-title');
       if (loadingTitleEl && initialProjectName) {
@@ -3151,6 +3169,9 @@
       if (nameInput) {
         nameInput.value = currentProjectState.name;
         document.title = `${currentProjectState.name} - OpenFishTools Studio`;
+        if (window.OFTSNative && typeof window.OFTSNative.setWindowTitle === 'function') {
+          window.OFTSNative.setWindowTitle(currentProjectState.name);
+        }
         if (!nameInput._renameWired) {
           nameInput._renameWired = true;
           nameInput.addEventListener('change', async () => {
@@ -3158,6 +3179,9 @@
             nameInput.value = updatedName;
             currentProjectState.name = updatedName;
             document.title = `${updatedName} - OpenFishTools Studio`;
+            if (window.OFTSNative && typeof window.OFTSNative.setWindowTitle === 'function') {
+              window.OFTSNative.setWindowTitle(updatedName);
+            }
             if (currentProjectState.id && window.FishDatabase) {
               await window.FishDatabase.renameProject(currentProjectState.id, updatedName);
             }
