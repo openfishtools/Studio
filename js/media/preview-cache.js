@@ -57,9 +57,26 @@
         }
       }
       const projectFrames = totalDur > 0 ? Math.ceil(totalDur * fps) : Math.round(60 * fps);
-      // Adapt dynamically to project duration so entire timeline can be cached without premature eviction,
-      // adding buffer headroom so boundary frames are never pruned.
-      return Math.max(projectFrames + 120, Math.round(60 * fps));
+      const desiredMax = Math.max(projectFrames + 120, Math.round(60 * fps));
+
+      // On mobile/Android/low-RAM devices, enforce a real GPU/RAM byte budget (~160 MB)
+      // so uncompressed ImageBitmaps never overflow shared GPU VRAM and cause progressive lag.
+      if (this._isMobile || (this._devMem && this._devMem <= 4)) {
+        let frameW = 540;
+        let frameH = 960;
+        if (typeof document !== 'undefined') {
+          const activeCanvas = document.getElementById('editor-active-canvas');
+          if (activeCanvas && activeCanvas.width > 0 && activeCanvas.height > 0) {
+            frameW = activeCanvas.width;
+            frameH = activeCanvas.height;
+          }
+        }
+        const bytesPerFrame = Math.max(65536, frameW * frameH * 4);
+        const vramCapFrames = Math.max(24, Math.floor((160 * 1024 * 1024) / bytesPerFrame));
+        return Math.min(desiredMax, vramCapFrames);
+      }
+
+      return desiredMax;
     }
 
     get frames() {
@@ -146,8 +163,37 @@
       }
       this.setupUserActivityListeners();
       this._bindBakingListeners();
+      this._bindLifecycleCleanup();
       const savedIdle = typeof localStorage !== 'undefined' ? localStorage.getItem('oft_idle_cache') === 'true' : false;
       this.idleCacheEnabled = (typeof window !== 'undefined' && window.isPreviewCacheEnabled !== false) && savedIdle;
+    }
+
+    _bindLifecycleCleanup() {
+      if (this._lifecycleCleanupBound || typeof window === 'undefined') return;
+      this._lifecycleCleanupBound = true;
+      const releaseAll = () => {
+        try { this.stopIdleWorker(); } catch (_) {}
+        try { this.stopLookaheadWorker(); } catch (_) {}
+        try { this.clearAll('all'); } catch (_) {}
+        if (Array.isArray(this._idleCanvasPool)) {
+          for (let i = 0; i < this._idleCanvasPool.length; i++) {
+            try {
+              this._idleCanvasPool[i].width = 0;
+              this._idleCanvasPool[i].height = 0;
+            } catch (_) {}
+          }
+          this._idleCanvasPool = null;
+        }
+        if (this._audioOnlyCanvas) {
+          try {
+            this._audioOnlyCanvas.width = 0;
+            this._audioOnlyCanvas.height = 0;
+          } catch (_) {}
+          this._audioOnlyCanvas = null;
+        }
+      };
+      window.addEventListener('pagehide', releaseAll);
+      window.addEventListener('beforeunload', releaseAll);
     }
 
     setFps(fps) {
