@@ -57,26 +57,30 @@
         }
       }
       const projectFrames = totalDur > 0 ? Math.ceil(totalDur * fps) : Math.round(60 * fps);
-      const desiredMax = Math.max(projectFrames + 120, Math.round(60 * fps));
+      // Full-project capacity on all devices; GPU VRAM pressure is managed by maxHotBitmaps + 2-tier cold cache.
+      return Math.max(projectFrames + 120, Math.round(60 * fps));
+    }
 
-      // On mobile/Android/low-RAM devices, enforce a real GPU/RAM byte budget (~160 MB)
-      // so uncompressed ImageBitmaps never overflow shared GPU VRAM and cause progressive lag.
-      if (this._isMobile || (this._devMem && this._devMem <= 4)) {
-        let frameW = 540;
-        let frameH = 960;
-        if (typeof document !== 'undefined') {
-          const activeCanvas = document.getElementById('editor-active-canvas');
-          if (activeCanvas && activeCanvas.width > 0 && activeCanvas.height > 0) {
-            frameW = activeCanvas.width;
-            frameH = activeCanvas.height;
-          }
+    /**
+     * Max uncompressed GPU ImageBitmaps kept "hot" in VRAM at once.
+     * Excess frames beyond this window are demoted to compressed WebP cold cache
+     * (local disk cache on Standalone, compact Blob on Web) so full-project caching never overflows VRAM.
+     */
+    get maxHotBitmaps() {
+      let frameW = 540;
+      let frameH = 960;
+      if (typeof document !== 'undefined') {
+        const activeCanvas = document.getElementById('editor-active-canvas');
+        if (activeCanvas && activeCanvas.width > 0 && activeCanvas.height > 0) {
+          frameW = activeCanvas.width;
+          frameH = activeCanvas.height;
         }
-        const bytesPerFrame = Math.max(65536, frameW * frameH * 4);
-        const vramCapFrames = Math.max(24, Math.floor((160 * 1024 * 1024) / bytesPerFrame));
-        return Math.min(desiredMax, vramCapFrames);
       }
-
-      return desiredMax;
+      const bytesPerFrame = Math.max(65536, frameW * frameH * 4);
+      const byteBudget = (this._isMobile || (this._devMem && this._devMem <= 4))
+        ? 120 * 1024 * 1024
+        : ((this._devMem && this._devMem <= 8) ? 384 * 1024 * 1024 : 768 * 1024 * 1024);
+      return Math.max(30, Math.floor(byteBudget / bytesPerFrame));
     }
 
     get frames() {
@@ -594,7 +598,187 @@
           return null;
         }
       }
+      if (entry.cold) {
+        this._hydrateColdFrame(frameIndex, targetComp);
+        return null;
+      }
+      this._prehydrateAroundFrame(frameIndex, targetComp);
       return entry.bitmap;
+    }
+
+    _getCurrentPlayheadFrame() {
+      const currentFps = this.fps || 60;
+      const pps = (typeof window !== 'undefined' && window.currentPixelsPerSecond) ? window.currentPixelsPerSecond : 80;
+      const curSec = (typeof window !== 'undefined' && typeof window.getCurrentPlayheadTime === 'function')
+        ? window.getCurrentPlayheadTime()
+        : ((typeof window !== 'undefined' && window.timelinePanX !== undefined) ? Math.abs(window.timelinePanX) / pps : 0);
+      return Math.round(curSec * currentFps);
+    }
+
+    async _encodeBitmapToWebpBlob(bitmap, w, h) {
+      try {
+        if (typeof OffscreenCanvas !== 'undefined') {
+          if (!this._demoteCanvas || this._demoteCanvas.width !== w || this._demoteCanvas.height !== h) {
+            this._demoteCanvas = new OffscreenCanvas(w, h);
+            this._demoteCtx = this._demoteCanvas.getContext('2d');
+          }
+          if (this._demoteCtx) {
+            this._demoteCtx.clearRect(0, 0, w, h);
+            this._demoteCtx.drawImage(bitmap, 0, 0, w, h);
+            return await this._demoteCanvas.convertToBlob({ type: 'image/webp', quality: 0.85 });
+          }
+        }
+        if (typeof document !== 'undefined') {
+          if (!this._demoteDomCanvas) this._demoteDomCanvas = document.createElement('canvas');
+          if (this._demoteDomCanvas.width !== w || this._demoteDomCanvas.height !== h) {
+            this._demoteDomCanvas.width = w;
+            this._demoteDomCanvas.height = h;
+          }
+          const dCtx = this._demoteDomCanvas.getContext('2d');
+          if (dCtx) {
+            dCtx.clearRect(0, 0, w, h);
+            dCtx.drawImage(bitmap, 0, 0, w, h);
+            return await new Promise((res) => this._demoteDomCanvas.toBlob(res, 'image/webp', 0.85));
+          }
+        }
+      } catch (_) {}
+      return null;
+    }
+
+    _demoteHotFramesIfNeeded(compId = null) {
+      if (typeof createImageBitmap !== 'function') return;
+      const targetComp = compId || this.activeCompId || 'root';
+      const pool = this.getPool(targetComp);
+      const hotLimit = this.maxHotBitmaps;
+      if (pool.size <= hotLimit) return;
+
+      if (!this._demoteInFlight) this._demoteInFlight = 0;
+      if (this._demoteInFlight >= 2) return;
+
+      let hotCount = 0;
+      let worstIdx = -1;
+      let worstDist = -1;
+      const curFrame = this._getCurrentPlayheadFrame();
+
+      for (const [fIdx, entry] of pool.entries()) {
+        if (!entry || entry.shared || entry.cold || entry.demoting || entry.isPendingBitmap || !entry.bitmap) continue;
+        hotCount++;
+        const dist = Math.abs(fIdx - curFrame);
+        if (dist > worstDist) {
+          worstDist = dist;
+          worstIdx = fIdx;
+        }
+      }
+
+      if (hotCount <= hotLimit || worstIdx === -1) return;
+      const entry = pool.get(worstIdx);
+      if (!entry || !entry.bitmap) return;
+
+      entry.demoting = true;
+      this._demoteInFlight++;
+      const bmp = entry.bitmap;
+      const w = entry.width || bmp.width || 320;
+      const h = entry.height || bmp.height || 180;
+      const diskKey = `${String(targetComp).replace(/[^a-zA-Z0-9_-]/g, '_')}_f${worstIdx}`;
+
+      this._encodeBitmapToWebpBlob(bmp, w, h).then(async (blob) => {
+        if (!blob || pool.get(worstIdx) !== entry) {
+          entry.demoting = false;
+          return;
+        }
+        const nativeCache = (typeof window !== 'undefined' && window.OFTSNative && window.OFTSNative.previewCache)
+          ? window.OFTSNative.previewCache
+          : null;
+        if (nativeCache && typeof nativeCache.write === 'function') {
+          try {
+            await nativeCache.write(diskKey, blob);
+            if (pool.get(worstIdx) === entry) {
+              entry.diskKey = diskKey;
+              entry.coldBlob = null;
+              entry.cold = true;
+              entry.demoting = false;
+              entry.bitmap = null;
+              if (typeof bmp.close === 'function') {
+                try { bmp.close(); } catch (_) {}
+              }
+            }
+            return;
+          } catch (_) {}
+        }
+        if (pool.get(worstIdx) === entry) {
+          entry.coldBlob = blob;
+          entry.cold = true;
+          entry.demoting = false;
+          entry.bitmap = null;
+          if (typeof bmp.close === 'function') {
+            try { bmp.close(); } catch (_) {}
+          }
+        }
+      }).catch(() => {
+        entry.demoting = false;
+      }).finally(() => {
+        this._demoteInFlight = Math.max(0, (this._demoteInFlight || 1) - 1);
+      });
+    }
+
+    _hydrateColdFrame(frameIndex, compId = null) {
+      if (typeof createImageBitmap !== 'function') return;
+      const targetComp = compId || this.activeCompId || 'root';
+      const pool = this.getPool(targetComp);
+      const entry = pool.get(frameIndex);
+      if (!entry || !entry.cold || entry.hydrating) return;
+      if (!this._hydrateInFlight) this._hydrateInFlight = 0;
+      if (this._hydrateInFlight >= 4) return;
+
+      entry.hydrating = true;
+      this._hydrateInFlight++;
+
+      const loadBlob = async () => {
+        if (entry.coldBlob) return entry.coldBlob;
+        const nativeCache = (typeof window !== 'undefined' && window.OFTSNative && window.OFTSNative.previewCache)
+          ? window.OFTSNative.previewCache
+          : null;
+        if (entry.diskKey && nativeCache && typeof nativeCache.url === 'function') {
+          const resp = await fetch(nativeCache.url(entry.diskKey));
+          if (!resp.ok) return null;
+          return await resp.blob();
+        }
+        return null;
+      };
+
+      loadBlob().then((blob) => {
+        if (!blob || pool.get(frameIndex) !== entry) return null;
+        return createImageBitmap(blob);
+      }).then((bmp) => {
+        if (!bmp) return;
+        if (pool.get(frameIndex) === entry) {
+          entry.bitmap = bmp;
+          entry.cold = false;
+          entry.hydrating = false;
+          this._demoteHotFramesIfNeeded(targetComp);
+        } else if (typeof bmp.close === 'function') {
+          try { bmp.close(); } catch (_) {}
+        }
+      }).catch(() => {
+        entry.hydrating = false;
+      }).finally(() => {
+        this._hydrateInFlight = Math.max(0, (this._hydrateInFlight || 1) - 1);
+      });
+    }
+
+    _prehydrateAroundFrame(frameIndex, compId = null) {
+      const targetComp = compId || this.activeCompId || 'root';
+      const pool = this.getPool(targetComp);
+      if (!pool || pool.size <= this.maxHotBitmaps) return;
+      if (this._hydrateInFlight && this._hydrateInFlight >= 4) return;
+      for (let offset = 1; offset <= 30; offset++) {
+        if (this._hydrateInFlight && this._hydrateInFlight >= 4) break;
+        const f = frameIndex + offset;
+        const e = pool.get(f);
+        if (e && e.cold && !e.hydrating) {
+          this._hydrateColdFrame(f, targetComp);
+        }
+      }
     }
 
     /**
@@ -814,12 +998,12 @@
       return count >= effectiveMinRun;
     }
 
-    // Throttled ruler update: rapid batched updates to display green progress bar promptly
+    // Throttled ruler update: avoid 40fps full-width ruler redraws during idle caching
     _scheduleRulerUpdate() {
       if (typeof window !== 'undefined' && window.isExporting) return;
       if (this._rulerUpdatePending) return;
       this._rulerUpdatePending = true;
-      const delay = (typeof window !== 'undefined' && window.isTimelinePlaying) ? 250 : 25;
+      const delay = (typeof window !== 'undefined' && window.isTimelinePlaying) ? 250 : 120;
       setTimeout(() => {
         this._rulerUpdatePending = false;
         this.updateRulerUI();
@@ -911,6 +1095,7 @@
           if (currentEntry === provisionalEntry) {
             provisionalEntry.bitmap = bitmap;
             provisionalEntry.isPendingBitmap = false;
+            this._demoteHotFramesIfNeeded(targetComp);
           } else if (bitmap && typeof bitmap.close === 'function') {
             try { bitmap.close(); } catch (_) {}
           }
@@ -950,6 +1135,10 @@
         if (!entry.shared && entry.bitmap && typeof entry.bitmap.close === 'function') {
           try { entry.bitmap.close(); } catch (_) {}
         }
+        if (entry.diskKey && typeof window !== 'undefined' && window.OFTSNative && window.OFTSNative.previewCache) {
+          try { window.OFTSNative.previewCache.remove(entry.diskKey); } catch (_) {}
+        }
+        entry.coldBlob = null;
         pool.delete(frameIndex);
         if (updateUI && targetComp === this.activeCompId) {
           this.updateRulerUI();
@@ -1353,6 +1542,9 @@
             }
           }
           pool.clear();
+        }
+        if (typeof window !== 'undefined' && window.OFTSNative && window.OFTSNative.previewCache) {
+          try { window.OFTSNative.previewCache.clear(); } catch (_) {}
         }
       } else {
         const pool = this.getPool(compId || this.activeCompId);
@@ -2097,7 +2289,7 @@
           break;
         }
 
-        const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 16 : 32;
+        const maxInFlight = (this._isMobile || (this._devMem && this._devMem <= 4)) ? 6 : 12;
         if (this._inFlightFrames && this._inFlightFrames.size >= maxInFlight) {
           break;
         }
@@ -2215,10 +2407,6 @@
           this._unreadyFrames.add(inFlightKey);
           sawUnready = true;
         }
-      }
-
-      if (cachedInBatch > 0 && typeof window !== 'undefined' && window.currentProjectState) {
-        this.refreshBaselineSnapshot(window.currentProjectState, this.activeCompId);
       }
 
       if (this.isIdleRunning) {
