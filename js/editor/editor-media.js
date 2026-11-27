@@ -2421,7 +2421,7 @@
 
         window._activeMediaMap = window._activeMediaMap || new Map();
         window._activeMediaMap.set(placeholderId, audioMediaItem);
-        await renderMediaGrid();
+        await renderMediaGrid(true);
         if (typeof renderFillMediaPool === 'function') {
           renderFillMediaPool();
         }
@@ -2535,18 +2535,25 @@
       window.renderMediaGrid = renderMediaGrid;
 
       // 1. Render all stored media for current project
-      async function renderMediaGrid() {
+      async function renderMediaGrid(useMemoryFastPath = false) {
         const projectId = currentProjectState.id;
         if (!projectId || !window.FishDatabase) return;
 
-        let mediaItems = [];
-        try {
-          mediaItems = await window.FishDatabase.getProjectMedia(projectId);
-        } catch (e) {
-          mediaItems = [];
-        }
-
         window._activeMediaMap = window._activeMediaMap || new Map();
+        let mediaItems = [];
+        if (useMemoryFastPath && window._activeMediaMap.size > 0) {
+          window._activeMediaMap.forEach(item => {
+            if (item && (!item.projectId || item.projectId === projectId)) {
+              mediaItems.push(item);
+            }
+          });
+        } else {
+          try {
+            mediaItems = await window.FishDatabase.getProjectMedia(projectId);
+          } catch (e) {
+            mediaItems = [];
+          }
+        }
         // Hydrate or merge in-memory session media items so live dataUrls are never lost
         mediaItems.forEach(item => {
           if (!item.dataUrl && item.buffer) {
@@ -3138,9 +3145,8 @@
           }
         }
 
-        // Phase 2: Instant Render (< 16ms)
-        // Render newly registered tiles into media pool grid immediately
-        await renderMediaGrid();
+        // Phase 2: Instant Render (< 16ms) — read directly from in-memory map without waiting for IndexedDB
+        await renderMediaGrid(true);
 
         // If dropped directly onto Timeline/Canvas or auto-add requested, instantiate layers immediately
         if (autoAddToTimeline && addedItems.length > 0 && typeof window.addOrSelectMediaLayer === 'function') {
@@ -3332,7 +3338,7 @@
 
         window._activeMediaMap = window._activeMediaMap || new Map();
         window._activeMediaMap.set(placeholderId, audioMediaItem);
-        await renderMediaGrid();
+        await renderMediaGrid(true);
         if (typeof renderFillMediaPool === 'function') {
           renderFillMediaPool();
         }

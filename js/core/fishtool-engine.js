@@ -124,11 +124,11 @@
     vec4 traceSceneReflection(vec3 worldPos, vec3 N, vec3 R) {
       if (u_reflParams.x < 0.5) return vec4(0.0);
       float maxDist = max(u_reflParams.y, 100.0);
-      float stepSize = maxDist / 24.0;
+      float stepSize = maxDist / 16.0;
       float thickness = max(u_reflParams.w, 0.015);
       vec3 origin = worldPos + N * 4.0;
       float prevT = 0.0;
-      for (int s = 1; s <= 24; s++) {
+      for (int s = 1; s <= 16; s++) {
         float t = float(s) * stepSize;
         vec3 p = origin + R * t;
         vec4 cp = u_cameraVP * vec4(p, 1.0);
@@ -142,11 +142,11 @@
         float sceneZ = texture2D(u_sceneDepthTex, uv).r;
         float diff = rayZ - sceneZ;
         if (sceneZ < 0.9999 && diff > 0.0004 && diff < thickness) {
-          // 4-step binary refinement for crisp reflection edge
+          // 3-step binary refinement for crisp reflection edge
           float lo = prevT;
           float hi = t;
           vec2 hitUv = uv;
-          for (int b = 0; b < 4; b++) {
+          for (int b = 0; b < 3; b++) {
             float mid = 0.5 * (lo + hi);
             vec4 mp = u_cameraVP * vec4(origin + R * mid, 1.0);
             vec3 mndc = mp.xyz / max(mp.w, 0.001);
@@ -253,7 +253,7 @@
       if (u_numLights > 0) {
         litRgb = baseColor.rgb * totalDiffuseLight * diffCoeff * (1.0 - metallic * 0.85) + totalSpecularLight * specTint * specBoost;
       } else {
-        litRgb = baseColor.rgb * (1.0 - metallic * 0.7);
+        litRgb = baseColor.rgb * (1.0 - metallic * (hasEnvMap ? 0.7 : 0.25));
       }
 
       if (hasEnvGloss) {
@@ -5469,17 +5469,19 @@
           if (this._entryHasReflection(transList[i])) hasReflectiveEntry = true;
         }
       }
+      const reflW = Math.max(1, vw >> 1);
+      const reflH = Math.max(1, vh >> 1);
       const useRefl = Boolean(
         hasReflectiveEntry &&
         (opaqueList.length + transList.length) > 1 &&
         this.isWebGL2 &&
-        this._ensureReflGl(vw, vh)
+        this._ensureReflGl(reflW, reflH)
       );
 
       if (useRefl) {
-        // Pass 1: Render lit+shadowed scene into _reflFbo (color + depth)
+        // Pass 1: Render lit+shadowed scene into half-res _reflFbo (color + depth) to avoid GPU TDR on heavy meshes
         gl.bindFramebuffer(gl.FRAMEBUFFER, this._reflFbo);
-        gl.viewport(0, 0, vw, vh);
+        gl.viewport(0, 0, reflW, reflH);
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         this._activeReflPass = false;

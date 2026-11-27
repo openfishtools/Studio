@@ -5,6 +5,15 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] - 2026-11-27
+
+### Improved
+- **Instant Local Media Pool Imports (`js/editor/editor-media.js`, `js/editor/editor-3d-materials.js`)**: Added an in-memory fast path (`renderMediaGrid(true)`) so imported local Images, Videos, Audio, and 3D `.zip`/`.fbx`/`.obj` models appear immediately in the Project Pool without waiting for a full IndexedDB `getProjectMedia` round-trip, while metadata, thumbnails, and persistent storage continue in the background.
+
+### Fixed
+- **3D `.zip`/`.fbx` Import Crash & 120-Byte Project Size Bug (`js/storage/db.js`, `js/editor/editor-3d-materials.js`)**: Stripped `modelData` (heavy geometry typed arrays, skeletal rigs, and base64 textures) from `saveMetaToLocal()` so 3D models are never `JSON.stringify`'d into `localStorage` (eliminating `QuotaExceededError`, severe lag, and reload crashes), and computed accurate `modelRecord.size` byte totals for Dashboard project size reporting.
+- **Advance 3D Reflection Blackout / GPU Hang on Heavy FBX Meshes (`js/core/fishtool-engine.js`)**: Rendered the Screen-Space Reflection pass at half resolution (`vw >> 1`, `vh >> 1`) with a lighter 16+3 raymarch to prevent GPU TDR / WebGL context loss, and prevented unlit metallic surfaces without an environment map from darkening sharply when Reflection is enabled.
+
 ## [0.7.2] - 2026-11-27
 
 ### Added

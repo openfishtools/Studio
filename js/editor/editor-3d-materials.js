@@ -1366,7 +1366,7 @@
       });
 
       if (typeof window.renderMediaGrid === 'function') {
-        window.renderMediaGrid();
+        window.renderMediaGrid(true);
       }
     }
     window.refreshImported3DModelsGrid = refreshImported3DModelsGrid;
@@ -1457,20 +1457,52 @@
         }
         return null;
       }
+      const ps = window.currentProjectState;
+      const projectId = ps ? ps.id : '';
+      const firstFile = fileList[0];
+      const rawName = (firstFile && firstFile.name) ? String(firstFile.name).replace(/\.(zip|fbx|obj|mtl)$/i, '') : '3D Model';
+      const pendingId = '3d_pending_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      window._activeMediaMap = window._activeMediaMap || new Map();
+      // Optimistic instant entry in Project Pool so local imports appear immediately
+      window._activeMediaMap.set(pendingId, {
+        id: pendingId,
+        projectId: projectId,
+        name: rawName + ' (Importing...)',
+        type: '3d_model',
+        thumbUrl: '',
+        _ingesting: true,
+        createdAt: Date.now()
+      });
+      if (typeof window.renderMediaGrid === 'function') {
+        window.renderMediaGrid(true);
+      }
       try {
         const bundle = await window.Fish3DLoader.importFiles(fileList);
-        let thumbUrl = '';
-        if (typeof window.Fish3DLoader.captureModelThumbnail === 'function') {
-          thumbUrl = await window.Fish3DLoader.captureModelThumbnail(bundle, 128);
+        window._activeMediaMap.delete(pendingId);
+        let modelByteSize = 0;
+        const addBufBytes = (arr) => {
+          if (arr && typeof arr.byteLength === 'number') modelByteSize += arr.byteLength;
+          else if (Array.isArray(arr)) modelByteSize += arr.length * 4;
+        };
+        addBufBytes(bundle.positions);
+        addBufBytes(bundle.normals);
+        addBufBytes(bundle.uvs);
+        addBufBytes(bundle.basePositions);
+        addBufBytes(bundle.baseNormals);
+        addBufBytes(bundle.skinIndices);
+        addBufBytes(bundle.skinWeights);
+        if (bundle.textures && typeof bundle.textures === 'object') {
+          Object.values(bundle.textures).forEach(v => {
+            if (typeof v === 'string') modelByteSize += v.length;
+          });
         }
-        const ps = window.currentProjectState;
-        const projectId = ps ? ps.id : '';
         const modelRecord = {
           id: bundle.id,
           projectId: projectId,
           name: bundle.name,
           type: '3d_model',
-          thumbUrl: thumbUrl,
+          size: modelByteSize,
+          thumbUrl: '',
           modelData: {
             positions: bundle.positions,
             normals: bundle.normals,
@@ -1490,11 +1522,7 @@
           createdAt: Date.now()
         };
         _imported3DModelsMem.set(bundle.id, modelRecord);
-        window._activeMediaMap = window._activeMediaMap || new Map();
         window._activeMediaMap.set(bundle.id, modelRecord);
-        if (projectId && window.FishDatabase && typeof window.FishDatabase.saveMedia === 'function') {
-          window.FishDatabase.saveMedia(modelRecord).catch(() => {});
-        }
         if (typeof window.renderMediaGrid === 'function') {
           window.renderMediaGrid();
         }
@@ -1504,8 +1532,27 @@
           const suffix = switchedToAdvance ? ' • Advance 3D aktif' : '';
           window.showEditorToast(`3D Imported: ${bundle.name} (${bundle.triangleCount} tris, ${bundle.slots.length} materials)${suffix}`, 2800, 'success');
         }
+        // Generate 3D thumbnail & persist to IndexedDB in background without delaying pool appearance
+        Promise.resolve().then(async () => {
+          if (typeof window.Fish3DLoader.captureModelThumbnail === 'function') {
+            try {
+              const thumbUrl = await window.Fish3DLoader.captureModelThumbnail(bundle, 128);
+              if (thumbUrl) {
+                modelRecord.thumbUrl = thumbUrl;
+                if (typeof window.renderMediaGrid === 'function') window.renderMediaGrid();
+              }
+            } catch (_) {}
+          }
+          if (projectId && window.FishDatabase && typeof window.FishDatabase.saveMedia === 'function') {
+            window.FishDatabase.saveMedia(modelRecord).catch(() => {});
+          }
+        });
         return layer || bundle;
       } catch (err) {
+        window._activeMediaMap.delete(pendingId);
+        if (typeof window.renderMediaGrid === 'function') {
+          window.renderMediaGrid();
+        }
         console.error('[3D Import] Failed:', err);
         if (typeof window.showEditorToast === 'function') {
           window.showEditorToast('3D import failed: ' + (err && err.message ? err.message : 'Unsupported format'), 3000, 'error');

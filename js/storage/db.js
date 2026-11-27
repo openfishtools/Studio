@@ -1515,6 +1515,7 @@ window.FishDatabase = (function () {
         delete clone.thumbBlob;
         delete clone.buffer;
         delete clone.thumbBuffer;
+        delete clone.modelData; // Never serialize massive 3D geometry/textures into localStorage!
         clone.dataUrl = ''; // Full data kept safely in IndexedDB
         if (clone.thumbUrl && clone.thumbUrl.startsWith('blob:')) {
           clone.thumbUrl = '';

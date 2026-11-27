@@ -4475,7 +4475,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.7.2</span>
+          <span class="welcome-badge">v0.7.3</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -4505,11 +4505,40 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.7.3 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.7.3</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Nov 27, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Instant Local Media Pool Imports (`js/editor/editor-media.js`, `js/editor/editor-3d-materials.js`)</span>
+                  <span class="changelog-item-desc">Added an in-memory fast path (`renderMediaGrid(true)`) so imported local Images, Videos, Audio, and 3D `.zip`/`.fbx`/`.obj` models appear immediately in the Project Pool without waiting for a full IndexedDB `getProjectMedia` round-trip, while metadata, thumbnails, and persistent storage continue in the background.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">3D `.zip`/`.fbx` Import Crash &amp; 120-Byte Project Size Bug (`js/storage/db.js`, `js/editor/editor-3d-materials.js`)</span>
+                  <span class="changelog-item-desc">Stripped `modelData` (heavy geometry typed arrays, skeletal rigs, and base64 textures) from `saveMetaToLocal()` so 3D models are never `JSON.stringify`'d into `localStorage` (eliminating `QuotaExceededError`, severe lag, and reload crashes), and computed accurate `modelRecord.size` byte totals for Dashboard project size reporting.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Advance 3D Reflection Blackout / GPU Hang on Heavy FBX Meshes (`js/core/fishtool-engine.js`)</span>
+                  <span class="changelog-item-desc">Rendered the Screen-Space Reflection pass at half resolution (`vw &gt;&gt; 1`, `vh &gt;&gt; 1`) with a lighter 16+3 raymarch to prevent GPU TDR / WebGL context loss, and prevented unlit metallic surfaces without an environment map from darkening sharply when Reflection is enabled.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.7.2 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.7.2</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Nov 27, 2026</span>
               </div>
               <div class="welcome-changelog-item">
