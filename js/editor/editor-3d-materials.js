@@ -1371,8 +1371,29 @@
     }
     window.refreshImported3DModelsGrid = refreshImported3DModelsGrid;
 
+    function ensureAdvance3DForModel() {
+      const ps = window.currentProjectState;
+      if (!ps || ps.threeDEngine === 'advance') return false;
+      ps.threeDEngine = 'advance';
+      const dd = document.getElementById('dropdown-3d-engine');
+      if (dd) {
+        dd.dataset.value = 'advance';
+        const lbl = dd.querySelector('.custom-dropdown-label');
+        if (lbl) lbl.textContent = 'Advance 3D';
+        dd.querySelectorAll('.custom-dropdown-item').forEach(it => {
+          it.classList.toggle('is-selected', it.dataset.val === 'advance');
+        });
+      }
+      syncProjectEnvironmentTexture();
+      if (typeof window.saveCurrentProject === 'function') {
+        try { window.saveCurrentProject(); } catch (_) {}
+      }
+      return true;
+    }
+
     function addOrReplace3DModelFromMedia(item, replaceSelected = false, extraOpts = null) {
       if (!item || !item.id) return null;
+      ensureAdvance3DForModel();
       const md = ensureModelRecordRegistered(item) || {};
       const bundle = (window.Fish3DLoader && typeof window.Fish3DLoader.getModel === 'function')
         ? window.Fish3DLoader.getModel(item.id)
@@ -1477,9 +1498,11 @@
         if (typeof window.renderMediaGrid === 'function') {
           window.renderMediaGrid();
         }
+        const switchedToAdvance = !!(window.currentProjectState && window.currentProjectState.threeDEngine !== 'advance');
         const layer = addOrReplace3DModelFromMedia(modelRecord, false);
         if (typeof window.showEditorToast === 'function') {
-          window.showEditorToast(`3D Imported: ${bundle.name} (${bundle.triangleCount} tris, ${bundle.slots.length} materials)`, 2600, 'success');
+          const suffix = switchedToAdvance ? ' • Advance 3D aktif' : '';
+          window.showEditorToast(`3D Imported: ${bundle.name} (${bundle.triangleCount} tris, ${bundle.slots.length} materials)${suffix}`, 2800, 'success');
         }
         return layer || bundle;
       } catch (err) {

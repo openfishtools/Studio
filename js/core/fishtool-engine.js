@@ -538,11 +538,57 @@
       this._initGL();
     }
 
+    _resetGpuResourceRefs() {
+      this.program = null;
+      this.buffers = null;
+      this.locations = null;
+      this.textureCache = new WeakMap();
+      if (this.dynamicTexturePool) this.dynamicTexturePool.clear();
+      this.currentTexture = null;
+      this._envTexture = null;
+      this._envFallbackTex = null;
+      this._sceneFbo = null;
+      this._sceneFboTex = null;
+      this._sceneFboDepth = null;
+      this._sceneBlitProg = null;
+      this._sceneBlitQuad = null;
+      this._sceneFboW = 0;
+      this._sceneFboH = 0;
+      this._ssaoFbo = null;
+      this._ssaoTex = null;
+      this._shadowFbo = null;
+      this._shadowTex = null;
+      this._reflFbo = null;
+      this._reflTex = null;
+      this._modelGpuCache = new WeakMap();
+      this.isReady = false;
+    }
+
     _initGL() {
       try {
-        this.glCanvas = document.createElement('canvas');
-        this.glCanvas.width = 1920;
-        this.glCanvas.height = 1080;
+        if (!this.glCanvas) {
+          this.glCanvas = document.createElement('canvas');
+          this.glCanvas.width = 1920;
+          this.glCanvas.height = 1080;
+          this.glCanvas.addEventListener('webglcontextlost', (e) => {
+            if (e && typeof e.preventDefault === 'function') e.preventDefault();
+            this._contextLost = true;
+            this._resetGpuResourceRefs();
+            console.warn('FishToolEngine: WebGL context lost (heavy GPU load). Waiting to restore...');
+          }, false);
+          this.glCanvas.addEventListener('webglcontextrestored', () => {
+            this._contextLost = false;
+            this._initGL();
+            if (typeof window !== 'undefined') {
+              if (typeof window.syncProjectEnvironmentTexture === 'function') {
+                try { window.syncProjectEnvironmentTexture(); } catch (_) {}
+              }
+              if (typeof window.redrawComposition === 'function') {
+                window.redrawComposition('webglRestored');
+              }
+            }
+          }, false);
+        }
 
         const opts = {
           alpha: true,
@@ -557,8 +603,8 @@
                   this.glCanvas.getContext('webgl', opts) ||
                   this.glCanvas.getContext('experimental-webgl', opts);
 
-        if (!this.gl) {
-          console.warn('FishToolEngine: WebGL not supported, falling back to 2D.');
+        if (!this.gl || (typeof this.gl.isContextLost === 'function' && this.gl.isContextLost())) {
+          console.warn('FishToolEngine: WebGL not supported or context lost, falling back to 2D.');
           return;
         }
 
@@ -945,7 +991,16 @@
       const hasEnv = (isAdvance && this._hasEnvMap) ? 1.0 : 0.0;
 
       const lighting = this._lightingData;
-      const numLights = (isAdvance && acceptsLights && lighting && lighting.numLights > 0) ? lighting.numLights : 0;
+      const customNumLights = (isAdvance && acceptsLights && lighting && lighting.numLights > 0) ? lighting.numLights : 0;
+      const is3DMeshLayer = Boolean(
+        layer && (
+          layer.shapeType === '3d_model' ||
+          (typeof layer.shapeType === 'string' && layer.shapeType.startsWith('3d_')) ||
+          (Number(layer.extrudeDepth) || 0) > 0
+        )
+      );
+      const useDefaultAdvanceRig = Boolean(isAdvance && acceptsLights && customNumLights === 0 && is3DMeshLayer);
+      const numLights = useDefaultAdvanceRig ? 3 : customNumLights;
       const hasReflOrEnv = (hasEnv > 0.5 || Boolean(this._activeReflPass));
       const needShading = isAdvance && (numLights > 0 || (hasReflOrEnv && (glossy > 0.005 || metallic > 0.005) && envRefl > 0.005));
 
@@ -962,7 +1017,35 @@
 
       if (needShading) {
         const bScale = (bounds && bounds.bufferScale) || 1;
-        if (numLights > 0) {
+        if (useDefaultAdvanceRig) {
+          if (!this._defaultAdvanceLights) {
+            this._defaultAdvanceLights = {
+              types: new Int32Array([0, 1, 1, 0]),
+              colors: new Float32Array([
+                0.96, 0.98, 1.0,
+                1.0, 0.97, 0.92,
+                0.78, 0.88, 1.0,
+                0.0, 0.0, 0.0
+              ]),
+              intensities: new Float32Array([0.42, 0.85, 0.38, 0.0]),
+              positions: new Float32Array(12),
+              directions: new Float32Array([
+                0.0, 0.0, -1.0,
+                -0.45, -0.60, -0.66,
+                0.60, 0.25, 0.76,
+                0.0, 0.0, -1.0
+              ]),
+              radii: new Float32Array([1000, 1000, 1000, 1000])
+            };
+          }
+          const dl = this._defaultAdvanceLights;
+          if (loc.lightTypes) gl.uniform1iv(loc.lightTypes, dl.types);
+          if (loc.lightColors) gl.uniform3fv(loc.lightColors, dl.colors);
+          if (loc.lightIntensities) gl.uniform1fv(loc.lightIntensities, dl.intensities);
+          if (loc.lightPositions) gl.uniform3fv(loc.lightPositions, dl.positions);
+          if (loc.lightDirections) gl.uniform3fv(loc.lightDirections, dl.directions);
+          if (loc.lightRadii) gl.uniform1fv(loc.lightRadii, dl.radii);
+        } else if (numLights > 0) {
           if (!this._scaledLightPositions) {
             this._scaledLightPositions = new Float32Array(12);
             this._scaledLightRadii = new Float32Array(4);
@@ -1135,8 +1218,34 @@
     _getOrCreateTexture(el) {
       if (!this._hasValidDimensions(el) || el === this.glCanvas) return null;
       const gl = this.gl;
-      const { w: ew, h: eh } = this._getElementDimensions(el);
+      if (!gl || (typeof gl.isContextLost === 'function' && gl.isContextLost())) return null;
+      let uploadEl = el;
+      let { w: ew, h: eh } = this._getElementDimensions(el);
       if (ew <= 0 || eh <= 0) return null;
+
+      // Downscale oversized static images (e.g. 4K/8K 3D model textures) to prevent mobile GPU OOM / black canvas
+      const isMobileGpu = (typeof navigator !== 'undefined' && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || ''));
+      const maxTexDim = isMobileGpu ? 1024 : 2048;
+      if (el.tagName === 'IMG' && (ew > maxTexDim || eh > maxTexDim)) {
+        if (!el._oftsDownscaledCanvas) {
+          const scale = Math.min(maxTexDim / ew, maxTexDim / eh);
+          const dw = Math.max(1, Math.round(ew * scale));
+          const dh = Math.max(1, Math.round(eh * scale));
+          const sc = document.createElement('canvas');
+          sc.width = dw;
+          sc.height = dh;
+          const sctx = sc.getContext('2d');
+          if (sctx) {
+            sctx.drawImage(el, 0, 0, dw, dh);
+            el._oftsDownscaledCanvas = sc;
+          }
+        }
+        if (el._oftsDownscaledCanvas) {
+          uploadEl = el._oftsDownscaledCanvas;
+          ew = uploadEl.width;
+          eh = uploadEl.height;
+        }
+      }
 
       // Fast path for streaming video frames (ImageBitmap / VideoFrame / HTMLVideoElement):
       // Reuse a single WebGLTexture per video stream key via gl.texSubImage2D instead of allocating
@@ -1200,7 +1309,7 @@
         const src = el.src || '';
         if (isStaticImg) {
           if (tex._uploadedSrc !== src || tex._texW !== ew || tex._texH !== eh) {
-            this._uploadToTexture(gl, tex, el, ew, eh);
+            this._uploadToTexture(gl, tex, uploadEl, ew, eh);
             if (src) tex._uploadedSrc = src;
           }
         } else if (el.tagName === 'CANVAS') {
