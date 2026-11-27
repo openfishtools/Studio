@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Selection Mode Checkmark Contrast (`css/layout/editor.css`)**: Fixed dark-on-dark checkmark rendering inside `.timeline-layer-ctrl-pill.is-selected .timeline-layer-checkbox.is-selected` by setting `color: var(--color-primary) !important;` (and `var(--bg-canvas)` fallback), ensuring crisp visibility in both dark and light themes.
 
+## [0.7.2] - 2026-11-27
+
+### Added
+- **Auto-Switch to Advance 3D on Model Import (`js/editor/editor-3d-materials.js`)**: Automatically switches Project Settings to `Advance 3D` when importing or adding a 3D model layer.
+- **Default Studio 3-Point Light Rig (`js/core/fishtool-engine.js`)**: Added a built-in ambient + warm key + cool rim directional light rig for 3D meshes in `Advance 3D` when no custom Light layers are present, making Advance 3D visually distinct from flat unlit `Classic 3D`.
+
+### Fixed
+- **Heavy 3D Model Black Canvas Recovery (`js/core/fishtool-engine.js`)**: Added `webglcontextlost` / `webglcontextrestored` auto-recovery and automatic downscaling for oversized 3D textures (`1024px` mobile / `2048px` desktop) to prevent GPU OOM black screens.
+
 ## [0.7.1] - 2026-11-27
 
 ### Added
