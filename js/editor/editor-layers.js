@@ -5254,6 +5254,9 @@
       initBeatmarkController();
 
       function requestCameraRedraw() {
+        if (typeof invalidateEffectivePropsCache === 'function') {
+          invalidateEffectivePropsCache();
+        }
         if (!window._cameraRedrawRafPending) {
           window._cameraRedrawRafPending = true;
           requestAnimationFrame(() => {
@@ -5281,6 +5284,7 @@
           const newLens = Math.max(12, Math.min(300, Math.round(initLensVal - delta * 0.4)));
           layer.cameraLens = newLens;
           layer.cameraLensPreset = newLens <= 35 ? 'wide' : (newLens >= 70 ? 'tele' : 'standard');
+          if (typeof recordLayerPropertyChange === 'function') recordLayerPropertyChange(layer, 'cameraLens');
           const valEl = document.getElementById('val-camera-lens');
           if (valEl) valEl.textContent = `${newLens} mm`;
           updateJogScrubberVisuals(document.getElementById('jog-camera-lens'), newLens, 12, 300);
@@ -5448,6 +5452,7 @@
           if (!layer || layer.type !== 'camera') return;
           const newZoom = Math.max(10, Math.min(400, Math.round(initZoomVal - delta * 0.4)));
           layer.cameraZoom = newZoom;
+          if (typeof recordLayerPropertyChange === 'function') recordLayerPropertyChange(layer, 'cameraZoom');
           const valEl = document.getElementById('val-camera-zoom');
           if (valEl) valEl.textContent = `${newZoom}%`;
           updateJogScrubberVisuals(document.getElementById('jog-camera-zoom'), newZoom, 10, 400);
@@ -5483,6 +5488,7 @@
           if (!layer || layer.type !== 'camera') return;
           const newDist = Math.max(0, Math.min(4000, Math.round(initFocusDist - delta * 2)));
           layer.cameraFocusDistance = newDist;
+          if (typeof recordLayerPropertyChange === 'function') recordLayerPropertyChange(layer, 'cameraFocusDistance');
           const valEl = document.getElementById('val-camera-focus-dist');
           if (valEl) valEl.textContent = `${newDist} px`;
           updateJogScrubberVisuals(document.getElementById('jog-camera-focus-dist'), newDist, 0, 4000);
@@ -5521,6 +5527,7 @@
           if (!layer || layer.type !== 'camera') return;
           const newRange = Math.max(1, Math.min(2000, Math.round(initFocusRange - delta * 2)));
           layer.cameraBlurNearFar = newRange;
+          if (typeof recordLayerPropertyChange === 'function') recordLayerPropertyChange(layer, 'cameraBlurNearFar');
           const valEl = document.getElementById('val-camera-focus-range');
           if (valEl) valEl.textContent = `${newRange} px`;
           updateJogScrubberVisuals(document.getElementById('jog-camera-focus-range'), newRange, 1, 2000);
@@ -5559,6 +5566,7 @@
           if (!layer || layer.type !== 'camera') return;
           const newAmt = Math.max(0, Math.min(100, Math.round(initBlurAmount - delta * 0.2)));
           layer.cameraBlurAmount = newAmt;
+          if (typeof recordLayerPropertyChange === 'function') recordLayerPropertyChange(layer, 'cameraBlurAmount');
           const valEl = document.getElementById('val-camera-blur-amount');
           if (valEl) valEl.textContent = `${newAmt} px`;
           updateJogScrubberVisuals(document.getElementById('jog-camera-blur-amount'), newAmt, 0, 100);
@@ -5597,6 +5605,7 @@
           if (!layer || layer.type !== 'camera') return;
           const newBal = Math.max(-100, Math.min(100, Math.round(initBlurBal - delta * 0.4)));
           layer.cameraBlurBalance = newBal;
+          if (typeof recordLayerPropertyChange === 'function') recordLayerPropertyChange(layer, 'cameraBlurBalance');
           const valEl = document.getElementById('val-camera-blur-balance');
           if (valEl) {
             valEl.textContent = newBal === 0 ? '0 (Balanced)' : (newBal < 0 ? `${newBal} (Front)` : `+${newBal} (Back)`);

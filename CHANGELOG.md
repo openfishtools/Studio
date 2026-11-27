@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Removed the automatic `getProjectTotalSize()` IndexedDB full-cursor scan from `saveProject()` so editing and slider releases trigger zero background DB scans (project size is computed on Dashboard load/exit).
   - Throttled automatic `captureProjectThumbnailPreview()` (`canvas.toDataURL` GPU readback) in `saveCurrentProjectLayers()` to at most once every 10 seconds during editing and raised autosave debounce from `20 ms` to `350 ms`.
   - Increased `PreviewCacheManager.scheduleIdleCheck()` debounce from `32/180 ms` to `350/650 ms` and switched `pausePlayback()` to debounced scheduling so rapid Pause -> Play and consecutive transform adjustments stay locked at 60 FPS.
+- **Realtime Camera Settings Sliders (`js/editor/editor-layers.js`)**: Added `invalidateEffectivePropsCache()` to `requestCameraRedraw()` and `recordLayerPropertyChange()` inside `onMove` for all 6 Camera Settings scrubbers (`Lens`, `Zoom`, `Focus Distance`, `Focus Range`, `Blur Amount`, `Blur Balance`) so preview updates live while dragging, including on keyframed properties.
 
 ## [0.7.3] - 2026-11-27
 
