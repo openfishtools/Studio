@@ -983,6 +983,13 @@
       }
 
       pctx.clearRect(0, 0, pw, ph);
+      const precompBg = (precompLayer.bgColor !== undefined && precompLayer.bgColor !== null)
+        ? precompLayer.bgColor
+        : ((currentProjectState && currentProjectState.bgColor) || 'transparent');
+      if (precompBg && precompBg !== 'transparent') {
+        pctx.fillStyle = precompBg;
+        pctx.fillRect(0, 0, pw, ph);
+      }
 
       const activeChildren = childLayers.filter(child => {
         const cs = child.startSec !== undefined ? child.startSec : ((child.startPx || 0) / pps);
@@ -1086,15 +1093,19 @@
             sctx.drawImage(targetCanvas, 0, 0);
             const animChild = Object.assign({}, child, childEff);
             if (window.FishEffects && typeof window.FishEffects.renderLayer === 'function' && Array.isArray(child.effects) && child.effects.length > 0) {
+              const rawAdjOp = (childEff.opacity !== undefined && childEff.opacity !== null) ? Number(childEff.opacity) : 1.0;
+              const normAdjOp = (rawAdjOp > 1.0) ? Math.max(0, Math.min(1, rawAdjOp / 100)) : Math.max(0, Math.min(1, rawAdjOp));
+              const isNormalAdjBlend = !child.blendMode || child.blendMode === 'normal';
               pctx.save();
-              if (childEff.opacity !== undefined && childEff.opacity !== null) {
-                pctx.globalAlpha = Math.max(0, Math.min(1, childEff.opacity));
+              if (isNormalAdjBlend && normAdjOp >= 0.999) {
+                pctx.clearRect(0, 0, pw, ph);
               }
-              if (child.blendMode && child.blendMode !== 'normal') {
+              pctx.globalAlpha = normAdjOp;
+              if (!isNormalAdjBlend) {
                 pctx.globalCompositeOperation = resolveBlendMode(child.blendMode);
               }
               try {
-                window.FishEffects.renderLayer(pctx, snap, animChild, { x: 0, y: 0, w: pw, h: ph, bufferScale: precompBufferScale, unitScale: precompBufferScale, baseW: pw, baseH: ph }, innerSec);
+                window.FishEffects.renderLayer(pctx, snap, animChild, { x: 0, y: 0, w: pw, h: ph, bufferScale: precompBufferScale, unitScale: precompBufferScale, baseW: baseW, baseH: baseH }, innerSec);
               } catch (e) {
                 console.warn('[Precomp Adjustment] Effect render error:', e);
               }
@@ -1314,7 +1325,7 @@
           try {
             if (window.FishEffects && typeof window.FishEffects.renderLayer === 'function' && Array.isArray(targetChild.effects) && targetChild.effects.length > 0) {
               const childRenderSec = (eff && typeof eff._currentSec === 'number') ? eff._currentSec : innerSec;
-              window.FishEffects.renderLayer(targetCtx, targetEl, Object.assign({}, targetChild, eff), { x: -curAbsW / 2 - curAx, y: -curAbsH / 2 - curAy, w: curAbsW, h: curAbsH, bufferScale: precompBufferScale, unitScale: precompBufferScale, baseW: curAbsW, baseH: curAbsH }, childRenderSec);
+              window.FishEffects.renderLayer(targetCtx, targetEl, Object.assign({}, targetChild, eff), { x: -curAbsW / 2 - curAx, y: -curAbsH / 2 - curAy, w: curAbsW, h: curAbsH, bufferScale: precompBufferScale, unitScale: precompBufferScale, baseW: baseW, baseH: baseH }, childRenderSec);
             } else {
               targetCtx.drawImage(targetEl, -curAbsW / 2 - curAx, -curAbsH / 2 - curAy, curAbsW, curAbsH);
             }
