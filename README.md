@@ -2,7 +2,7 @@
 
   <img src="https://raw.githubusercontent.com/openfishtools/.github/main/profile/assets/projects/studio.svg" width="96" height="96" alt="FishTools Studio" />
 
-  # FishTools
+  # FishTools Studio
   <sub>Studio</sub>
 
   **Browser-based motion graphics and video editing application.**
