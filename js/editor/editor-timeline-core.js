@@ -1720,9 +1720,9 @@
           window.PreviewCacheManager.refreshBaselineSnapshot(currentProjectState);
         }
 
-        // Trigger immediate idle cache fill after pause — continues filling remaining uncached frames smoothly like playback
+        // Trigger debounced idle cache fill after pause so quick pause->play never stutters
         if (window.PreviewCacheManager && window.isPreviewCacheEnabled !== false && !window.isExporting) {
-          window.PreviewCacheManager.scheduleIdleCheck(true);
+          window.PreviewCacheManager.scheduleIdleCheck(false);
         }
       }
       window.pausePlayback = pausePlayback;

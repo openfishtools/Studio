@@ -5,6 +5,14 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.4] - 2026-11-27
+
+### Fixed
+- **Eliminated Post-Drag & Pause-to-Play Micro-Freeze Stutters (`js/editor/editor-state.js`, `js/storage/db.js`, `js/media/preview-cache.js`, `js/editor/editor-timeline-core.js`)**:
+  - Removed the automatic `getProjectTotalSize()` IndexedDB full-cursor scan from `saveProject()` so editing and slider releases trigger zero background DB scans (project size is computed on Dashboard load/exit).
+  - Throttled automatic `captureProjectThumbnailPreview()` (`canvas.toDataURL` GPU readback) in `saveCurrentProjectLayers()` to at most once every 10 seconds during editing and raised autosave debounce from `20 ms` to `350 ms`.
+  - Increased `PreviewCacheManager.scheduleIdleCheck()` debounce from `32/180 ms` to `350/650 ms` and switched `pausePlayback()` to debounced scheduling so rapid Pause -> Play and consecutive transform adjustments stay locked at 60 FPS.
+
 ## [0.7.3] - 2026-11-27
 
 ### Improved

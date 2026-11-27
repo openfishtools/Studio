@@ -808,15 +808,6 @@ window.FishDatabase = (function () {
       window.dispatchEvent(new CustomEvent('fish-db-projects-updated', { detail: { action: 'save', project: project } }));
     }
 
-    // Asynchronously refresh and persist true total storage size (JSON + media + frame caches)
-    setTimeout(function () {
-      getProjectTotalSize(project.id).then(function (res) {
-        if (res && res.formatted) {
-          updateProjectSize(project.id, res.formatted, res.bytes);
-        }
-      }).catch(function () {});
-    }, 150);
-
     return project;
   }
 

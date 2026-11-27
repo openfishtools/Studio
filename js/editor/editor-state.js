@@ -1382,9 +1382,13 @@
               prj.previewCacheEnabled = window.isPreviewCacheEnabled;
             }
 
-            // Auto-capture project thumbnail from composition canvas
-            const thumb = captureProjectThumbnailPreview();
+            // Auto-capture project thumbnail (throttled to at most once every 10s unless immediate save)
+            // Avoids synchronous GPU readback (toDataURL) stutter on every slider/drag release!
+            const nowThumbTs = Date.now();
+            const shouldCaptureThumb = immediate || !currentProjectState.thumbnail || (nowThumbTs - (window._lastAutoThumbCaptureTs || 0) > 10000);
+            const thumb = shouldCaptureThumb ? captureProjectThumbnailPreview() : null;
             if (thumb) {
+              window._lastAutoThumbCaptureTs = nowThumbTs;
               prj.thumbnail = thumb;
               currentProjectState.thumbnail = thumb;
             } else if (currentProjectState.thumbnail) {
@@ -1425,7 +1429,7 @@
           saveLayersDebounceTimer = setTimeout(async () => {
             await doSave();
             resolve();
-          }, 20);
+          }, 350);
         });
       }
     }

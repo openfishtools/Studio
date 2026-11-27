@@ -1851,7 +1851,7 @@
       this.pruneBakingFrames();
       if (!this.idleCacheEnabled) return;
       if (this.idleTimer) clearTimeout(this.idleTimer);
-      const delay = immediate ? 32 : 180;
+      const delay = immediate ? 350 : 650;
       this.idleTimer = setTimeout(() => {
         if (typeof window !== 'undefined' && window.isExporting) return;
         if (this.ensureAudioOnlyFullCache()) return;
