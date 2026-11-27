@@ -1062,22 +1062,86 @@
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Adaptive export bitrate: scales with resolution and fps instead of a fixed number.
-  // Base targets are for 1080p30 H.264: light 6 / normal 10 / detail 20 Mbps (visually transparent for
-  // typical edits; previous fixed 16/25/50 Mbps produced oversized files with no visible gain).
+  // Adaptive export bitrate: scales flexibly with resolution, fps, and codec efficiency.
+  // Base targets are for 1080p30 H.264 (with latencyMode:'quality' + 4s Smart GOP):
+  // light 4.0 / normal 6.5 / detail 15.0 Mbps — crisp visual quality without mobile playback lag.
   // ─────────────────────────────────────────────────────────────────────────────
   function computeExportVideoBitrate(preset, w, h, fps, totalDur, family) {
-    var base = preset === 'light' ? 6000000 : (preset === 'detail' ? 20000000 : 10000000);
-    var pxRatio = Math.max(0.05, (w * h) / (1920 * 1080));
-    var fpsFactor = Math.pow(Math.max(12, Math.min(120, fps || 30)) / 30, 0.6);
-    var bps = base * pxRatio * fpsFactor;
-    if (family === 'vp9') bps *= 0.7; // VP9 reaches the same quality at lower bitrate
-    if (family === 'hevc') bps *= 0.6; // H.265 reaches high quality at ~40% lower bitrate (~12 Mbps for 1080p detail)
+    var base = preset === 'light' ? 4000000 : (preset === 'detail' ? 15000000 : 6500000);
+    var rawPxRatio = Math.max(0.05, (w * h) / (1920 * 1080));
+    var pxFactor = Math.pow(rawPxRatio, 0.85);
+    var fpsFactor = Math.pow(Math.max(12, Math.min(120, fps || 30)) / 30, 0.45);
+    var bps = base * pxFactor * fpsFactor;
+    if (family === 'vp9') bps *= 0.65;  // VP9 reaches the same quality at lower bitrate
+    if (family === 'hevc') bps *= 0.48; // H.265 (HEVC) is ~52% more efficient than H.264
     // Very long exports: keep in-memory Mp4Muxer buffer bounded
     if (totalDur > 60) bps *= Math.max(0.5, Math.min(1.0, 90 / totalDur));
-    return Math.round(Math.max(2000000, Math.min(100000000, bps)));
+    return Math.round(Math.max(1000000, Math.min(80000000, bps)));
   }
   window.computeExportVideoBitrate = computeExportVideoBitrate;
+
+  // ── Interface Export Frame Helpers ────────────────────────────────────────────
+  function resolveExportFrameTarget(options, ps, fps) {
+    var compDims = getProjectDims();
+    var isInterface = Boolean(
+      options &&
+      options.mode === 'interface' &&
+      window.InterfaceExportRenderer &&
+      typeof window.InterfaceExportRenderer.createSession === 'function'
+    );
+    if (!isInterface) {
+      return {
+        isInterface: false,
+        compW: compDims.w,
+        compH: compDims.h,
+        outW: compDims.w,
+        outH: compDims.h,
+        session: null
+      };
+    }
+    var icfg = options.interfaceConfig || {};
+    var outDims = window.InterfaceExportRenderer.getOutputDims(icfg.layout || 'mobile', icfg.resolution || '1080p');
+    var session = window.InterfaceExportRenderer.createSession({
+      projectState: ps,
+      layout: icfg.layout || 'mobile',
+      resolution: icfg.resolution || '1080p',
+      outW: outDims.w,
+      outH: outDims.h,
+      compW: compDims.w,
+      compH: compDims.h,
+      fps: fps,
+      scrollMode: icfg.scrollMode || 'follow-top',
+      highlightActive: icfg.highlightActive !== false,
+      showKeyframes: icfg.showKeyframes !== false,
+      showWireframe: Boolean(icfg.showWireframe),
+      inOutZoom: icfg.inOutZoom !== false,
+      interfaceMotionBlur: Boolean(icfg.interfaceMotionBlur)
+    });
+    return {
+      isInterface: true,
+      compW: compDims.w,
+      compH: compDims.h,
+      outW: outDims.w,
+      outH: outDims.h,
+      session: session
+    };
+  }
+
+  function renderExportFrame(target, exportCanvas, ps, t, frameIndex, fps, totalDur) {
+    if (target && target.isInterface && target.session && window.InterfaceExportRenderer) {
+      window.renderCanvasFrame(target.session.compCanvas, ps.bgColor, target.compW, target.compH, 'export-video', t);
+      window.InterfaceExportRenderer.renderFrame(target.session, exportCanvas, target.session.compCanvas, t, frameIndex, fps, totalDur);
+    } else {
+      window.renderCanvasFrame(exportCanvas, ps.bgColor, target.outW, target.outH, 'export-video', t);
+    }
+  }
+
+  function disposeExportFrameTarget(target) {
+    if (target && target.session && window.InterfaceExportRenderer && typeof window.InterfaceExportRenderer.disposeSession === 'function') {
+      try { window.InterfaceExportRenderer.disposeSession(target.session); } catch (_) {}
+      target.session = null;
+    }
+  }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // PATH 1: WebCodecs + Mp4Muxer (primary — deterministic frame-by-frame)
@@ -1089,6 +1153,7 @@
     var reqCodec   = String(options.codec || 'h264').toLowerCase();
     var isHevc     = (reqCodec === 'h265' || reqCodec === 'hevc');
     var family     = isHevc ? 'hevc' : 'avc';
+    var includeAudio = options.includeAudio !== false;
 
     logExportInfo('WebCodecs', 'Initializing Tier 1 WebCodecs pipeline (' + (isHevc ? 'H.265/HEVC' : 'H.264/AVC') + ')...');
     if (typeof VideoEncoder === 'undefined' || typeof Mp4Muxer === 'undefined') {
@@ -1100,10 +1165,10 @@
       return false;
     }
 
-    var dims = getProjectDims();
-    var baseW = dims.w, baseH = dims.h;
     var ps    = window.currentProjectState || {};
     var fps   = parseInt(ps.fps || 60, 10);
+    var frameTarget = resolveExportFrameTarget(options, ps, fps);
+    var baseW = frameTarget.outW, baseH = frameTarget.outH;
     var totalDur = Math.max(0.5, typeof window.getProjectTotalDuration === 'function'
       ? window.getProjectTotalDuration() : (ps.defaultDuration || 5));
     var totalFrames = Math.max(1, Math.round(totalDur * fps));
@@ -1144,9 +1209,9 @@
       : h264Candidates.concat(vp9Candidates);
 
     var chosenCodec = null, chosenConfig = null;
-    var hwModes  = ['prefer-hardware', 'no-preference'];
+    var hwModes  = ['prefer-hardware', 'no-preference', 'prefer-software'];
     var brModes  = ['variable'];
-    var latModes = ['quality', 'realtime']; // Offline render defaults to quality; realtime is fallback
+    var latModes = ['quality', 'realtime']; // Prioritize 'quality' RDO/B-frames across ALL engines before ever dropping to 'realtime'!
 
     logExportInfo('WebCodecs', 'Testing ' + candidates.length + ' ' + (isHevc ? 'H.265/' : '') + 'H.264/VP9 candidate profiles at ' + baseW + 'x' + baseH + ' @ ' + fps + 'fps (' + (videoBps/1000000).toFixed(1) + ' Mbps)...');
 
@@ -1158,16 +1223,17 @@
 
       logExportInfo('WebCodecs:Probe', 'Checking candidate ' + (ci + 1) + '/' + candidates.length + ': ' + cand.name + ' (' + cand.codec + ')...');
 
-      for (var hi = 0; hi < hwModes.length; hi++) {
-        var hw = hwModes[hi];
-        for (var bi = 0; bi < brModes.length; bi++) {
-          var br = brModes[bi];
-          for (var li = 0; li < latModes.length; li++) {
-            var lat = latModes[li];
+      // Outer loop on latencyMode ensures 'quality' mode wins over webcam-grade 'realtime' hardware mode
+      for (var li = 0; li < latModes.length; li++) {
+        var lat = latModes[li];
+        for (var hi = 0; hi < hwModes.length; hi++) {
+          var hw = hwModes[hi];
+          for (var bi = 0; bi < brModes.length; bi++) {
+            var br = brModes[bi];
 
-            var nextLat = (li + 1 < latModes.length) ? ('latency=' + latModes[li + 1]) : null;
             var nextHw  = (hi + 1 < hwModes.length) ? ('hw=' + hwModes[hi + 1]) : null;
-            var fallbackTarget = nextLat || nextHw || ('next candidate: ' + nextCandLabel);
+            var nextLat = (li + 1 < latModes.length) ? ('latency=' + latModes[li + 1]) : null;
+            var fallbackTarget = nextHw || nextLat || ('next candidate: ' + nextCandLabel);
 
             var cfg = {
               codec: cand.codec, width: baseW, height: baseH,
@@ -1198,6 +1264,7 @@
 
     if (!chosenCodec || !chosenConfig) {
       logExportWarn('WebCodecs', '⚠️ All ' + candidates.length + ' WebCodecs profiles failed capability probe for ' + baseW + 'x' + baseH + '. ↳ Gracefully falling back to Tier 2: GPU MediaRecorder...');
+      disposeExportFrameTarget(frameTarget);
       return false;
     }
 
@@ -1224,8 +1291,8 @@
     document.body.appendChild(exportCanvas);
 
     try {
-      var playableItems = flattenPlayableAudioLayers(ps.layers || [], 0, 1.0, false, 1.0, pps);
-      var hasAudio = playableItems.length > 0 && totalDur > 0.01;
+      var playableItems = includeAudio ? flattenPlayableAudioLayers(ps.layers || [], 0, 1.0, false, 1.0, pps) : [];
+      var hasAudio = includeAudio && playableItems.length > 0 && totalDur > 0.01;
       var canWebCodecsAudio = false;
       var webCodecsAudioCodec = null;
       var muxerAudioCodec = null;
@@ -1370,6 +1437,28 @@
         }
       }
 
+      // Precompute beat-aligned keyframe frames (4s max GOP + smart keyframe on beatmarks/layer cuts >= 1.2s apart)
+      // Avoids wasting ~18% of bitrate on blind 2s IDR keyframes and prevents macroblocking right after beat cuts!
+      var maxGopFrames = Math.max(fps * 2, Math.round(fps * 4));
+      var minCutFrames = Math.max(12, Math.round(fps * 1.2));
+      var cutFrameSet = Object.create(null);
+      if (Array.isArray(ps.beatmarks)) {
+        for (var bmi = 0; bmi < ps.beatmarks.length; bmi++) {
+          var bmf = Math.round(parseFloat(ps.beatmarks[bmi]) * fps);
+          if (bmf > 0 && bmf < totalFrames) cutFrameSet[bmf] = true;
+        }
+      }
+      if (Array.isArray(ps.layers)) {
+        for (var lci = 0; lci < ps.layers.length; lci++) {
+          var lc = ps.layers[lci];
+          if (!lc || lc.hidden || lc.type === 'audio') continue;
+          var lsSec = lc.startSec !== undefined ? Number(lc.startSec) : ((lc.startPx || 0) / pps);
+          var lsf = Math.round(lsSec * fps);
+          if (lsf > 0 && lsf < totalFrames) cutFrameSet[lsf] = true;
+        }
+      }
+      var lastKeyFrameIdx = 0;
+
       // ── Deterministic Frame Loop (t = i/fps, NOT wall clock) ─────────────────
       logExportInfo('WebCodecs:Render', 'Starting frame loop: ' + totalFrames + ' frames @ ' + fps + 'fps (step=' + frameDurMicros + 'µs)');
       for (var i = 0; i < totalFrames; i++) {
@@ -1388,10 +1477,8 @@
         var t = i / fps; // EXACT — never performance.now()
 
         await prepareFrameAtTime(t, videoLayers, pps);
-        window.renderCanvasFrame(exportCanvas, ps.bgColor, baseW, baseH, 'export-video', t);
-        if (i === 0 || i % 4 === 0 || i === totalFrames - 1) {
-          updateProgressPreview(exportCanvas);
-        }
+        renderExportFrame(frameTarget, exportCanvas, ps, t, i, fps, totalDur);
+        updateProgressPreview(exportCanvas);
 
         // Non-blocking GPU event-loop backpressure: keep queue bounded to <=8 frames
         while (encoder.encodeQueueSize > 8 && !encError && !isCancelled) {
@@ -1417,7 +1504,9 @@
           }
         }
 
-        var isKey = (i === 0) || ((i % (fps * 2)) === 0);
+        var sinceKey = i - lastKeyFrameIdx;
+        var isKey = (i === 0) || (sinceKey >= maxGopFrames) || (Boolean(cutFrameSet[i]) && sinceKey >= minCutFrames);
+        if (isKey) lastKeyFrameIdx = i;
         try {
           encoder.encode(vFrame, { keyFrame: isKey });
         } catch (encodeErr) {
@@ -1591,6 +1680,7 @@
         window.OFTSNative.keepScreenOn(false);
       }
       try { if (exportCanvas && exportCanvas.parentNode) exportCanvas.parentNode.removeChild(exportCanvas); } catch (_) {}
+      disposeExportFrameTarget(frameTarget);
       try {
         if (typeof window.redrawComposition === 'function') window.redrawComposition('exportFinished');
       } catch (_) {}
@@ -1638,9 +1728,10 @@
     var fps         = parseInt(ps.fps || 60, 10);
     var totalDur    = Math.max(0.5, typeof window.getProjectTotalDuration === 'function' ? window.getProjectTotalDuration() : (ps.defaultDuration || 5));
     var totalFrames = Math.max(1, Math.round(totalDur * fps));
-    var dims        = getProjectDims();
-    var baseW = dims.w, baseH = dims.h;
+    var frameTarget = resolveExportFrameTarget(options, ps, fps);
+    var baseW = frameTarget.outW, baseH = frameTarget.outH;
     var pps   = window.currentPixelsPerSecond || 80;
+    var includeAudio = options.includeAudio !== false;
 
     logExportInfo('FFmpeg', 'Exporting ' + totalFrames + ' frames @ ' + fps + 'fps (' + baseW + 'x' + baseH + ', ' + totalDur.toFixed(2) + 's, preset=' + preset + ')');
     window.isExporting = true;
@@ -1648,7 +1739,9 @@
     try {
       updateProgress(5, 'Mixing audio...', onProgress);
       var audioResult = null;
-      try { audioResult = await mixAudioBuffer(totalDur); } catch (aErr) { logExportWarn('FFmpeg:Audio', 'Audio mix error:', aErr); }
+      if (includeAudio) {
+        try { audioResult = await mixAudioBuffer(totalDur); } catch (aErr) { logExportWarn('FFmpeg:Audio', 'Audio mix error:', aErr); }
+      }
       var wavBlob = audioResult ? (audioResult.wavBlob || audioResult) : null;
       var hasAudio = false;
       if (wavBlob && wavBlob.size > 100) {
@@ -1679,10 +1772,8 @@
         var t = i / fps; // deterministic
 
         await prepareFrameAtTime(t, videoLayers, pps);
-        window.renderCanvasFrame(exportCanvas, ps.bgColor, baseW, baseH, 'export-video', t);
-        if (i === 0 || i % 4 === 0 || i === totalFrames - 1) {
-          updateProgressPreview(exportCanvas);
-        }
+        renderExportFrame(frameTarget, exportCanvas, ps, t, i, fps, totalDur);
+        updateProgressPreview(exportCanvas);
 
         var blob  = await new Promise(function(r) { exportCanvas.toBlob(r, 'image/jpeg', 0.90); });
         var bytes = new Uint8Array(await blob.arrayBuffer());
@@ -1769,6 +1860,7 @@
       alert('Export failed: ' + (err.message || err));
     } finally {
       window.isExporting = false;
+      disposeExportFrameTarget(frameTarget);
       try {
         if (typeof window.redrawComposition === 'function') window.redrawComposition('exportFinished');
       } catch (_) {}
@@ -1814,10 +1906,11 @@
     }
     logExportInfo('MediaRecorder', 'Selected MIME format: ' + selectedMime);
 
-    var dims = getProjectDims();
-    var baseW = dims.w, baseH = dims.h;
     var ps    = window.currentProjectState || {};
     var fps   = parseInt(ps.fps || 60, 10);
+    var frameTarget = resolveExportFrameTarget(options, ps, fps);
+    var baseW = frameTarget.outW, baseH = frameTarget.outH;
+    var includeAudio = options.includeAudio !== false;
     var totalDur = Math.max(0.5, typeof window.getProjectTotalDuration === 'function'
       ? window.getProjectTotalDuration() : (ps.defaultDuration || 5));
     var totalFrames = Math.max(1, Math.round(totalDur * fps));
@@ -1827,14 +1920,17 @@
     var cacheOk = await ensureVideosCached(onProgress);
     if (!cacheOk) {
       logExportWarn('MediaRecorder', 'ensureVideosCached failed');
+      disposeExportFrameTarget(frameTarget);
       return false;
     }
-    if (isCancelled) { logExportInfo('MediaRecorder', 'Cancelled by user'); return true; }
+    if (isCancelled) { logExportInfo('MediaRecorder', 'Cancelled by user'); disposeExportFrameTarget(frameTarget); return true; }
 
     window.isExporting = true;
 
     var audioResult = null;
-    try { audioResult = await mixAudioBuffer(totalDur); } catch (aErr) { logExportWarn('MediaRecorder:Audio', 'Audio mix error:', aErr); }
+    if (includeAudio) {
+      try { audioResult = await mixAudioBuffer(totalDur); } catch (aErr) { logExportWarn('MediaRecorder:Audio', 'Audio mix error:', aErr); }
+    }
     if (isCancelled) { hideProgress(); return true; }
 
     var exportCanvas = document.createElement('canvas');
@@ -1874,9 +1970,8 @@
     }
     logExportInfo('MediaRecorder:Audio', 'Audio track attached: ' + (audioResult && audioResult.buffer ? 'yes' : 'no'));
 
-    var recDims = getProjectDims();
     var recPs = window.currentProjectState || {};
-    var videoBps = computeExportVideoBitrate(preset, recDims.w, recDims.h, parseInt(recPs.fps || 60, 10), totalDur, /webm|vp/i.test(selectedMime) ? 'vp9' : 'avc');
+    var videoBps = computeExportVideoBitrate(preset, baseW, baseH, parseInt(recPs.fps || 60, 10), totalDur, /webm|vp/i.test(selectedMime) ? 'vp9' : 'avc');
 
     var recorder = new MediaRecorder(stream, {
       mimeType: selectedMime,
@@ -1933,7 +2028,7 @@
       });
     }));
 
-    window.renderCanvasFrame(exportCanvas, ps.bgColor, baseW, baseH, 'export-video', 0);
+    renderExportFrame(frameTarget, exportCanvas, ps, 0, 0, fps, totalDur);
     await Promise.all(initialVideos.map(function(item) { return item.el.play().catch(function() {}); }));
     await new Promise(function(r) { requestAnimationFrame(r); });
 
@@ -1980,7 +2075,7 @@
 
           if (elapsedSec >= totalDur) {
             updateProgress(98, 'Finalizing...', onProgress);
-            window.renderCanvasFrame(exportCanvas, ps.bgColor, baseW, baseH, 'export-video', totalDur);
+            renderExportFrame(frameTarget, exportCanvas, ps, totalDur, totalFrames - 1, fps, totalDur);
             updateProgressPreview(exportCanvas);
             setTimeout(function() {
               try { recorder.stop(); } catch (_) { onFinish(); }
@@ -2032,10 +2127,8 @@
             }
           }
 
-          window.renderCanvasFrame(exportCanvas, ps.bgColor, baseW, baseH, 'export-video', elapsedSec);
-          if (curFrame % 4 === 0) {
-            updateProgressPreview(exportCanvas);
-          }
+          renderExportFrame(frameTarget, exportCanvas, ps, elapsedSec, curFrame, fps, totalDur);
+          updateProgressPreview(exportCanvas);
           if (vTrack && typeof vTrack.requestFrame === 'function') {
             try { vTrack.requestFrame(); } catch (_) {}
           }
@@ -2130,6 +2223,7 @@
     } finally {
       window.isExporting = false;
       try { if (exportCanvas.parentNode) exportCanvas.parentNode.removeChild(exportCanvas); } catch (_) {}
+      disposeExportFrameTarget(frameTarget);
       savedMuted.forEach(function(wasMuted, el) { try { el.muted = wasMuted; } catch (_) {} });
       if (audioCtx) { try { audioCtx.close(); } catch (_) {} }
       try {

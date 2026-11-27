@@ -3526,6 +3526,20 @@
         </button>
       </div>
 
+      <!-- 1b. Interface Video (Preview + Auto-Scrolling Timeline) -->
+      <div class="export-option-card" data-export-type="interface" role="radio" aria-checked="false" tabindex="0">
+        <div class="export-option-radio">
+          <div class="export-option-radio-dot"></div>
+        </div>
+        <div class="export-option-info">
+          <span class="export-option-label">Interface Video</span>
+          <span class="export-option-desc" id="export-card-desc-interface">MP4 · 9:16 Mobile · 1080p · 60 FPS</span>
+        </div>
+        <button type="button" class="export-option-chevron" data-settings-panel="export-settings-interface" title="Interface video settings" aria-label="Interface video settings">
+          <i class='fticon fticon-video-settings' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
+        </button>
+      </div>
+
       <!-- 2. Current Frame -->
       <div class="export-option-card" data-export-type="frame" role="radio" aria-checked="false" tabindex="0">
         <div class="export-option-radio">
@@ -3678,6 +3692,137 @@
           <span class="export-setting-toggle-label-text">Include Audio Track</span>
           <label class="export-setting-toggle">
             <input type="checkbox" id="export-video-audio" checked>
+            <span class="export-toggle-track"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+    </div><!-- /export-fs-inner -->
+  </div>
+
+  <!-- ==========================================================================
+       EXPORT SETTINGS PANEL — Interface Video
+       ========================================================================== -->
+  <div class="export-settings-panel" id="export-settings-interface" role="dialog" aria-modal="true" aria-label="Interface Video Export Settings">
+    <div class="export-fs-inner">
+    <div class="export-settings-header">
+      <button type="button" class="export-fs-back-btn" data-close-settings="export-settings-interface" title="Back" aria-label="Back">
+        <i class='fticon fticon-close-export' style='width:20px;height:20px;font-size:20px;line-height:1;' aria-hidden='true'></i>
+      </button>
+      <span class="export-settings-title">Interface Video Settings</span>
+    </div>
+    <div class="export-settings-body">
+      <!-- Filename -->
+      <div class="export-setting-group">
+        <span class="export-setting-label">File Name</span>
+        <input type="text" class="export-setting-select" id="export-interface-filename" placeholder="New_Project_Interface" spellcheck="false" autocomplete="off" style="font-family:var(--font-brand);font-size:14px;font-weight:600;background-image:none;padding-right:14px;">
+      </div>
+      <!-- Layout Preset -->
+      <div class="export-setting-group">
+        <span class="export-setting-label">Layout</span>
+        <div class="export-format-pill-row">
+          <button type="button" class="export-format-pill is-active" data-interface-layout="mobile">Portrait (9:16)</button>
+          <button type="button" class="export-format-pill" data-interface-layout="desktop">Landscape (16:9)</button>
+        </div>
+      </div>
+      <!-- Resolution Dropdown Row -->
+      <div class="modal-form-row" id="row-export-interface-resolution">
+        <label class="modal-label">Resolution</label>
+        <div class="resolution-ctrl-wrap" id="container-export-interface-resolution">
+          <div class="custom-dropdown" id="dropdown-export-interface-resolution" data-value="1080p">
+            <button type="button" class="custom-dropdown-trigger" aria-haspopup="listbox" aria-expanded="false" aria-label="Select Interface Resolution">
+              <span class="custom-dropdown-label">1080p</span>
+              <i class='fticon fticon-select-animation-target custom-dropdown-arrow' style='width:14px;height:14px;font-size:14px;line-height:1;' aria-hidden='true'></i>
+            </button>
+            <div class="custom-dropdown-menu" role="listbox">
+              <div class="custom-dropdown-item" role="option" data-val="2K">2K</div>
+              <div class="custom-dropdown-item is-selected" role="option" data-val="1080p">1080p</div>
+              <div class="custom-dropdown-item" role="option" data-val="720p">720p</div>
+              <div class="custom-dropdown-item" role="option" data-val="480p">480p</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- FPS Row -->
+      <div class="modal-form-row" id="row-export-interface-fps">
+        <label class="modal-label">FPS</label>
+        <div class="modal-fps-ctrl">
+          <input type="number" id="export-interface-fps" class="modal-fps-input" min="1" max="240" value="60" aria-label="Interface Video Frame Rate">
+          <span class="modal-fps-unit">FPS</span>
+        </div>
+      </div>
+      <!-- Timeline Auto-Scroll Mode -->
+      <div class="export-setting-group">
+        <span class="export-setting-label">Timeline Auto-Scroll</span>
+        <div class="export-format-pill-row">
+          <button type="button" class="export-format-pill is-active" data-interface-scroll="follow-top">Follow Top</button>
+          <button type="button" class="export-format-pill" data-interface-scroll="auto-center">Auto-Center</button>
+          <button type="button" class="export-format-pill" data-interface-scroll="static">Static</button>
+        </div>
+      </div>
+      <!-- Timeline Display Toggles -->
+      <div class="export-setting-group">
+        <span class="export-setting-label">Timeline Display</span>
+        <div class="export-setting-toggle-row">
+          <span class="export-setting-toggle-label-text">Select All Layers</span>
+          <label class="export-setting-toggle">
+            <input type="checkbox" id="export-interface-highlight" checked>
+            <span class="export-toggle-track"></span>
+          </label>
+        </div>
+        <div class="export-setting-toggle-row">
+          <span class="export-setting-toggle-label-text">Show Keyframes</span>
+          <label class="export-setting-toggle">
+            <input type="checkbox" id="export-interface-keyframes" checked>
+            <span class="export-toggle-track"></span>
+          </label>
+        </div>
+        <div class="export-setting-toggle-row">
+          <span class="export-setting-toggle-label-text">Show Active Wireframe</span>
+          <label class="export-setting-toggle">
+            <input type="checkbox" id="export-interface-wireframe" checked>
+            <span class="export-toggle-track"></span>
+          </label>
+        </div>
+        <div class="export-setting-toggle-row">
+          <span class="export-setting-toggle-label-text">In/Out Zoom</span>
+          <label class="export-setting-toggle">
+            <input type="checkbox" id="export-interface-inout-zoom" checked>
+            <span class="export-toggle-track"></span>
+          </label>
+        </div>
+        <div class="export-setting-toggle-row">
+          <span class="export-setting-toggle-label-text">Interface Motion Blur</span>
+          <label class="export-setting-toggle">
+            <input type="checkbox" id="export-interface-motion-blur">
+            <span class="export-toggle-track"></span>
+          </label>
+        </div>
+      </div>
+      <!-- Bitrate / Quality -->
+      <div class="export-setting-group">
+        <span class="export-setting-label">Quality Preset</span>
+        <div class="export-format-pill-row">
+          <button type="button" class="export-format-pill" data-interface-bitrate="light">Light</button>
+          <button type="button" class="export-format-pill is-active" data-interface-bitrate="normal">Normal</button>
+          <button type="button" class="export-format-pill" data-interface-bitrate="detail">Detail</button>
+        </div>
+      </div>
+      <!-- Codec -->
+      <div class="export-setting-group">
+        <span class="export-setting-label">Video Codec</span>
+        <div class="export-format-pill-row" id="export-interface-codec-grid">
+          <button type="button" class="export-format-pill is-active" data-interface-codec="h264">H.264 (AVC)</button>
+          <button type="button" class="export-format-pill" data-interface-codec="h265" id="btn-export-interface-codec-h265">H.265 (HEVC)</button>
+        </div>
+      </div>
+      <!-- Audio -->
+      <div class="export-setting-group">
+        <span class="export-setting-label">Audio</span>
+        <div class="export-setting-toggle-row">
+          <span class="export-setting-toggle-label-text">Include Audio Track</span>
+          <label class="export-setting-toggle">
+            <input type="checkbox" id="export-interface-audio" checked>
             <span class="export-toggle-track"></span>
           </label>
         </div>
@@ -4323,7 +4468,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.7.1</span>
+          <span class="welcome-badge">v0.7.2</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:18px;height:18px;font-size:18px;line-height:1;' aria-hidden='true'></i>
@@ -4353,11 +4498,47 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.7.2 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.7.2</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Nov 27, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Interface Video Export (`js/media/interface-export-renderer.js`, `js/media/fish-export-engine.js`, `js/editor/editor-export.js`, `editor.html`, `desktop.html`, `css/layout/editor.css`)</span>
+                  <span class="changelog-item-desc">Added a new **Interface Video** export mode that renders the live composition inside a 1:1 `editor.html` UI mockup (Portrait 9:16 &amp; Landscape 16:9) following the user's UI scale, with live Play/Pause state, persistent-layer-aware timeline auto-scroll, `Select All Layers`, `Show Keyframes`, `Show Active Wireframe` (clipped to the Preview Stage Well), smooth `In/Out Zoom` (C² smootherstep + exponential scale synced to Beatmark 1 -&gt; Beatmark 2), After Effects-style map-pin beatmark drops (`0.0ms` impact sync), optional `Interface Motion Blur` (default off, synced with project Shutter Angle/Phase/Samples), and a live per-frame render preview in `#editor-export-progress-overlay`.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">WebCodecs Normal Quality Preset (`js/media/fish-export-engine.js`, `js/editor/editor-export.js`)</span>
+                  <span class="changelog-item-desc">Tuned `Normal` preset quality-per-byte with `latencyMode: 'quality'` priority, Beat-Aware Smart GOP (`4s` max + beat/layer cut keyframes), and `12.5 Mbps` base VBR for cleaner output at compact file sizes.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Full-Container Timeline Pill Hitboxes (`css/layout/editor.css`, `js/editor/editor-timeline-ops.js`, `js/editor/editor-timeline-core.js`)</span>
+                  <span class="changelog-item-desc">Unified left timeline pill sizing (`34px × 100%`) across Eye and Selection modes and expanded both the Eye toggle and Selection checkbox hit targets to the full pill container while preserving explicit Selection Mode on single-layer toggles.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Selection Mode Checkmark Contrast (`css/layout/editor.css`)</span>
+                  <span class="changelog-item-desc">Fixed dark-on-dark checkmark rendering inside `.timeline-layer-ctrl-pill.is-selected .timeline-layer-checkbox.is-selected` by setting `color: var(--color-primary) !important;` (and `var(--bg-canvas)` fallback), ensuring crisp visibility in both dark and light themes.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.7.1 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.7.1</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Nov 26, 2026</span>
               </div>
               <div class="welcome-changelog-item">
@@ -7368,6 +7549,9 @@
        ========================================================================== -->
   <div class="export-progress-overlay" id="editor-export-progress-overlay" role="dialog" aria-modal="true" aria-hidden="true" style="display: none;">
     <div class="export-progress-modal">
+      <div class="export-progress-preview-wrap">
+        <canvas class="export-progress-preview-canvas" id="export-progress-preview-canvas" aria-label="Current rendered video frame preview"></canvas>
+      </div>
       <div class="export-progress-title-row">
         <h3 class="export-progress-title" id="export-progress-title">Exporting video</h3>
         <span class="export-progress-percent" id="export-progress-percent">0%</span>
@@ -7569,6 +7753,7 @@
   <script src="js/plugins/text/default.js?v=unlimited-text-pad"></script>
   <script src="js/core/motion-blur-engine.js"></script>
 
+  <script src="js/media/interface-export-renderer.js?v=patch"></script>
   <script src="js/media/fish-export-engine.js?v=patch"></script>
   <!-- OpenFish Studio Modular Editor Subsystems -->
   <script src="js/editor/editor-state.js"></script>

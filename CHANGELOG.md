@@ -5,6 +5,18 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.2] - 2026-11-27
+
+### Added
+- **Interface Video Export (`js/media/interface-export-renderer.js`, `js/media/fish-export-engine.js`, `js/editor/editor-export.js`, `editor.html`, `desktop.html`, `css/layout/editor.css`)**: Added a new **Interface Video** export mode that renders the live composition inside a 1:1 `editor.html` UI mockup (Portrait 9:16 & Landscape 16:9) following the user's UI scale, with live Play/Pause state, persistent-layer-aware timeline auto-scroll, `Select All Layers`, `Show Keyframes`, `Show Active Wireframe` (clipped to the Preview Stage Well), smooth `In/Out Zoom` (C² smootherstep + exponential scale synced to Beatmark 1 -> Beatmark 2), After Effects-style map-pin beatmark drops (`0.0ms` impact sync), optional `Interface Motion Blur` (default off, synced with project Shutter Angle/Phase/Samples), and a live per-frame render preview in `#editor-export-progress-overlay`.
+
+### Improved
+- **Adaptive Mobile-Friendly Export Bitrate (`js/media/fish-export-engine.js`, `js/editor/editor-export.js`)**: Tuned the shared Video & Interface Video bitrate pipeline (`computeExportVideoBitrate`) with `latencyMode: 'quality'` priority, Beat-Aware Smart GOP (`4s` max + beat/layer cut keyframes), sub-linear resolution (`^0.85`) and FPS (`^0.45`) scaling, balanced 1080p30 H.264 base targets (`Light 4.0` / `Normal 6.5` / `Detail 15.0 Mbps`), and a `0.48×` HEVC (H.265) efficiency multiplier so 1080p 60fps exports stay sharp, compact, and smooth on mobile devices.
+- **Full-Container Timeline Pill Hitboxes (`css/layout/editor.css`, `js/editor/editor-timeline-ops.js`, `js/editor/editor-timeline-core.js`)**: Unified left timeline pill sizing (`34px × 100%`) across Eye and Selection modes and expanded both the Eye toggle and Selection checkbox hit targets to the full pill container while preserving explicit Selection Mode on single-layer toggles.
+
+### Fixed
+- **Selection Mode Checkmark Contrast (`css/layout/editor.css`)**: Fixed dark-on-dark checkmark rendering inside `.timeline-layer-ctrl-pill.is-selected .timeline-layer-checkbox.is-selected` by setting `color: var(--color-primary) !important;` (and `var(--bg-canvas)` fallback), ensuring crisp visibility in both dark and light themes.
+
 ## [0.7.1] - 2026-11-27
 
 ### Added

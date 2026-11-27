@@ -1494,14 +1494,18 @@
 
       // Export entry: delegates to FishExportEngine (offline deterministic render) for MP4.
       // Falls back to legacy exportVideoHardware if engine not loaded.
-      async function exportVideoMP4(preset, customName, format, codec) {
+      async function exportVideoMP4(preset, customName, format, codec, extraOptions) {
         if (typeof pausePlayback === 'function') {
           try { pausePlayback(false); } catch (_) {}
         }
         format = format || 'mp4';
         codec = codec || 'h264';
         if (format === 'mp4' && window.FishExportEngine && typeof window.FishExportEngine.export === 'function') {
-          await window.FishExportEngine.export({ preset: preset, customName: customName, format: 'mp4', codec: codec });
+          const exportOpts = Object.assign(
+            { preset: preset, customName: customName, format: 'mp4', codec: codec },
+            extraOptions || {}
+          );
+          await window.FishExportEngine.export(exportOpts);
         } else {
           await exportVideoHardware(preset, customName, format, codec);
         }
@@ -1561,11 +1565,12 @@
       let _currentExportType = null; // unselected initially
 
       const _exportTypeLabels = {
-        video:    'Export Video',
-        frame:    'Current Frame',
-        sequence: 'Image Sequence',
-        project:  'Project File',
-        link:     'Project Link'
+        video:     'Export Video',
+        interface: 'Interface Video',
+        frame:     'Current Frame',
+        sequence:  'Image Sequence',
+        project:   'Project File',
+        link:      'Project Link'
       };
 
       const _exportBackdrop = document.getElementById('export-drawer-backdrop');
@@ -1616,7 +1621,7 @@
 
       async function updateHevcCodecUI() {
         const isSupported = await checkBrowserHevcSupport();
-        const hevcBtns = document.querySelectorAll('#btn-export-codec-h265, [data-video-codec="h265"]');
+        const hevcBtns = document.querySelectorAll('#btn-export-codec-h265, [data-video-codec="h265"], #btn-export-interface-codec-h265, [data-interface-codec="h265"]');
         hevcBtns.forEach(btn => {
           if (!isSupported) {
             btn.disabled = true;
@@ -1624,7 +1629,7 @@
             btn.classList.remove('is-active');
             btn.setAttribute('title', 'Browser atau perangkat ini tidak mendukung encoding H.265/HEVC');
             const row = btn.closest('.export-format-pill-row');
-            const h264Btn = row ? row.querySelector('[data-video-codec="h264"]') : null;
+            const h264Btn = row ? row.querySelector('[data-video-codec="h264"], [data-interface-codec="h264"]') : null;
             if (h264Btn) h264Btn.classList.add('is-active');
           } else {
             btn.disabled = false;
@@ -1633,6 +1638,51 @@
           }
         });
         updateExportPreviewAndSpecs();
+      }
+
+      function getInterfaceExportSettings() {
+        const ps = window.currentProjectState || {};
+        const layoutBtn = document.querySelector('[data-interface-layout].is-active');
+        const layout = layoutBtn ? layoutBtn.dataset.interfaceLayout : 'mobile';
+        const dd = document.getElementById('dropdown-export-interface-resolution');
+        const resLabel = (dd && dd.dataset.value) ? dd.dataset.value : '1080p';
+        const dims = (window.InterfaceExportRenderer && typeof window.InterfaceExportRenderer.getOutputDims === 'function')
+          ? window.InterfaceExportRenderer.getOutputDims(layout, resLabel)
+          : (layout === 'desktop' ? { w: 1920, h: 1080 } : { w: 1080, h: 1920 });
+        const fpsEl = document.getElementById('export-interface-fps');
+        const rawFps = fpsEl ? parseInt(fpsEl.value, 10) : parseInt(ps.fps || 60, 10);
+        const fps = Math.max(1, Math.min(240, Number.isFinite(rawFps) ? rawFps : 60));
+        const scrollBtn = document.querySelector('[data-interface-scroll].is-active');
+        const scrollMode = scrollBtn ? scrollBtn.dataset.interfaceScroll : 'follow-top';
+        const bitrateBtn = document.querySelector('[data-interface-bitrate].is-active');
+        const preset = bitrateBtn ? bitrateBtn.dataset.interfaceBitrate : 'normal';
+        const codecBtn = document.querySelector('[data-interface-codec].is-active');
+        const codec = codecBtn ? codecBtn.dataset.interfaceCodec : 'h264';
+        const highlightActive = document.getElementById('export-interface-highlight') ? document.getElementById('export-interface-highlight').checked : true;
+        const showKeyframes = document.getElementById('export-interface-keyframes') ? document.getElementById('export-interface-keyframes').checked : true;
+        const showWireframe = document.getElementById('export-interface-wireframe') ? document.getElementById('export-interface-wireframe').checked : true;
+        const inOutZoom = document.getElementById('export-interface-inout-zoom') ? document.getElementById('export-interface-inout-zoom').checked : true;
+        const interfaceMotionBlur = document.getElementById('export-interface-motion-blur') ? document.getElementById('export-interface-motion-blur').checked : false;
+        const includeAudio = document.getElementById('export-interface-audio') ? document.getElementById('export-interface-audio').checked : true;
+        const fnInput = document.getElementById('export-interface-filename');
+        const customName = fnInput ? fnInput.value.trim() : '';
+        return {
+          layout,
+          resLabel,
+          w: dims.w,
+          h: dims.h,
+          fps,
+          scrollMode,
+          preset,
+          codec,
+          highlightActive,
+          showKeyframes,
+          showWireframe,
+          inOutZoom,
+          interfaceMotionBlur,
+          includeAudio,
+          customName
+        };
       }
 
       function getSettingsResolutionAndFps(prefix) {
@@ -1711,25 +1761,10 @@
         const codecLabel = codec === 'h265' ? 'H.265' : 'H.264';
         const includeAudio = document.getElementById('export-video-audio') ? document.getElementById('export-video-audio').checked : true;
 
-        let baseBps = 25000000;
-        let vbrFactor = 0.72;
-        if (preset === 'light') {
-          baseBps = 16000000;
-          vbrFactor = 0.68;
-        } else if (preset === 'detail') {
-          baseBps = 50000000;
-          vbrFactor = 0.90;
-        }
-        if (totalDur > 60) {
-          const durScale = Math.max(0.32, Math.min(1.0, 90 / totalDur));
-          baseBps = Math.max(6000000, Math.round(baseBps * durScale));
-        }
-        const pixelScale = Math.max(0.25, Math.min(3.2, (vCfg.w * vCfg.h) / (1920 * 1080)));
-        const fpsScale = Math.max(0.5, Math.min(1.6, Math.pow(vCfg.fps / 60, 0.45)));
-        let effectiveVideoBps = baseBps * vbrFactor * Math.pow(pixelScale, 0.65) * fpsScale;
-        if (codec === 'h265') {
-          effectiveVideoBps *= 0.6; // H.265 efisiensi kompresi ~40% lebih tinggi (kualitas setara di bitrate lebih rendah)
-        }
+        const vFamily = codec === 'h265' ? 'hevc' : 'avc';
+        let effectiveVideoBps = (typeof window.computeExportVideoBitrate === 'function')
+          ? window.computeExportVideoBitrate(preset, vCfg.w, vCfg.h, vCfg.fps, totalDur, vFamily) * 0.85
+          : 6500000;
         const audioBps = includeAudio ? 192000 : 0;
         const estVideoBytes = ((effectiveVideoBps + audioBps) / 8) * totalDur;
         const estVideoSizeStr = formatExportBytes(estVideoBytes);
@@ -1766,8 +1801,22 @@
 
         // 4. Update Option Card Descriptions
         const cardDescVideo = document.getElementById('export-card-desc-video');
+        const cardDescInterface = document.getElementById('export-card-desc-interface');
         const cardDescFrame = document.getElementById('export-card-desc-frame');
         const cardDescSeq = document.getElementById('export-card-desc-sequence');
+
+        // Compute Interface Video Specs
+        const iCfg = getInterfaceExportSettings();
+        const iPresetLabel = iCfg.preset === 'light' ? 'Light' : (iCfg.preset === 'detail' ? 'Detail' : 'Normal');
+        const iCodecLabel = iCfg.codec === 'h265' ? 'H.265' : 'H.264';
+        const iLayoutLabel = iCfg.layout === 'desktop' ? '16:9 Landscape' : '9:16 Portrait';
+        const iFamily = iCfg.codec === 'h265' ? 'hevc' : 'avc';
+        const iEffectiveBps = (typeof window.computeExportVideoBitrate === 'function')
+          ? window.computeExportVideoBitrate(iCfg.preset, iCfg.w, iCfg.h, iCfg.fps, totalDur, iFamily) * 0.85
+          : 6500000;
+        const iAudioBps = iCfg.includeAudio ? 192000 : 0;
+        const estInterfaceSizeStr = formatExportBytes(((iEffectiveBps + iAudioBps) / 8) * totalDur);
+
         const projDims = typeof window.getProjectDimensions === 'function'
           ? window.getProjectDimensions(ps.resolution || '1080p', ps.aspectRatio || '16:9')
           : [1920, 1080];
@@ -1775,6 +1824,7 @@
         const estFrameSizeStr = formatExportBytes(estFrameBytes);
 
         if (cardDescVideo) cardDescVideo.textContent = `MP4 (${codecLabel}) · ${vCfg.resLabel} · ${presetLabel} · ${vCfg.fps} FPS`;
+        if (cardDescInterface) cardDescInterface.textContent = `MP4 (${iCodecLabel}) · ${iLayoutLabel} · ${iCfg.resLabel} · ${iCfg.fps} FPS`;
         if (cardDescFrame) cardDescFrame.textContent = `PNG · ${projDims[0]}×${projDims[1]} · ${estFrameSizeStr}`;
         if (cardDescSeq) cardDescSeq.textContent = `${seqFmtLabel} · ${sCfg.resLabel} · ${sCfg.fps} FPS`;
 
@@ -1794,7 +1844,12 @@
         let displayFps = `${vCfg.fps} FPS`;
         let displayBadge = `${formatExportDurationBadge(totalDur)} · ${vCfg.w}×${vCfg.h}`;
 
-        if (activeType === 'frame') {
+        if (activeType === 'interface') {
+          displaySize = estInterfaceSizeStr;
+          displayQual = `${iLayoutLabel} · ${iCfg.resLabel} (${iCodecLabel})`;
+          displayFps = `${iCfg.fps} FPS`;
+          displayBadge = `${formatExportDurationBadge(totalDur)} · ${iCfg.w}×${iCfg.h}`;
+        } else if (activeType === 'frame') {
           displaySize = estFrameSizeStr;
           displayQual = `${ps.resolution || '1080p'} · PNG`;
           displayFps = '1 Frame';
@@ -1856,9 +1911,27 @@
         }
         if (_exportNextLabel) _exportNextLabel.textContent = 'Render';
         if (_exportSubtitle) _exportSubtitle.textContent = 'Export';
-        // Sync filename in video settings panel
+        // Sync filename in video & interface settings panels
         const fnInput = document.getElementById('export-video-filename');
         if (fnInput && currentProjectState) fnInput.value = currentProjectState.name || 'New_Project';
+        const fnInterfaceInput = document.getElementById('export-interface-filename');
+        if (fnInterfaceInput && currentProjectState) fnInterfaceInput.value = `${currentProjectState.name || 'New_Project'}_Interface`;
+        const fpsInterfaceInput = document.getElementById('export-interface-fps');
+        if (fpsInterfaceInput && currentProjectState) {
+          fpsInterfaceInput.value = String(parseInt(currentProjectState.fps || 60, 10));
+        }
+        const ddInterfaceRes = document.getElementById('dropdown-export-interface-resolution');
+        if (ddInterfaceRes && !ddInterfaceRes._exportSpecsBound) {
+          ddInterfaceRes._exportSpecsBound = true;
+          ddInterfaceRes.addEventListener('click', () => {
+            setTimeout(updateExportPreviewAndSpecs, 0);
+          });
+        }
+        if (fpsInterfaceInput && !fpsInterfaceInput._exportSpecsBound) {
+          fpsInterfaceInput._exportSpecsBound = true;
+          fpsInterfaceInput.addEventListener('input', updateExportPreviewAndSpecs);
+          fpsInterfaceInput.addEventListener('change', updateExportPreviewAndSpecs);
+        }
 
         function syncExportSettingsPanel(prefix) {
           const grid = document.getElementById(`${prefix}-aspect-grid`);
@@ -2148,6 +2221,45 @@
         _exportAudioToggle.addEventListener('change', updateExportPreviewAndSpecs);
       }
 
+      // Interface Video settings pill & toggle listeners
+      document.querySelectorAll('[data-interface-layout]').forEach(pill => {
+        pill.addEventListener('click', () => {
+          document.querySelectorAll('[data-interface-layout]').forEach(p => p.classList.remove('is-active'));
+          pill.classList.add('is-active');
+          updateExportPreviewAndSpecs();
+        });
+      });
+
+      document.querySelectorAll('[data-interface-scroll]').forEach(pill => {
+        pill.addEventListener('click', () => {
+          document.querySelectorAll('[data-interface-scroll]').forEach(p => p.classList.remove('is-active'));
+          pill.classList.add('is-active');
+          updateExportPreviewAndSpecs();
+        });
+      });
+
+      document.querySelectorAll('[data-interface-bitrate]').forEach(pill => {
+        pill.addEventListener('click', () => {
+          document.querySelectorAll('[data-interface-bitrate]').forEach(p => p.classList.remove('is-active'));
+          pill.classList.add('is-active');
+          updateExportPreviewAndSpecs();
+        });
+      });
+
+      document.querySelectorAll('[data-interface-codec]').forEach(pill => {
+        pill.addEventListener('click', () => {
+          if (pill.disabled || pill.classList.contains('is-disabled')) return;
+          document.querySelectorAll('[data-interface-codec]').forEach(p => p.classList.remove('is-active'));
+          pill.classList.add('is-active');
+          updateExportPreviewAndSpecs();
+        });
+      });
+
+      ['export-interface-audio', 'export-interface-highlight', 'export-interface-keyframes', 'export-interface-wireframe', 'export-interface-inout-zoom', 'export-interface-motion-blur'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('change', updateExportPreviewAndSpecs);
+      });
+
       // Image sequence format pill selection
       document.querySelectorAll('[data-seq-format]').forEach(pill => {
         pill.addEventListener('click', () => {
@@ -2267,7 +2379,66 @@
               currentProjectState.aspectRatio = targetAspect;
 
               try {
-                await exportVideoMP4(preset, customName, 'mp4', codec);
+                const videoIncludeAudio = document.getElementById('export-video-audio') ? document.getElementById('export-video-audio').checked : true;
+                await exportVideoMP4(preset, customName, 'mp4', codec, { includeAudio: videoIncludeAudio });
+              } finally {
+                currentProjectState.resolution = _origRes;
+                currentProjectState.fps = _origFps;
+                currentProjectState.aspectRatio = _origAspect;
+                if (_origBaseW !== undefined) currentProjectState._baseW = _origBaseW; else delete currentProjectState._baseW;
+                if (_origBaseH !== undefined) currentProjectState._baseH = _origBaseH; else delete currentProjectState._baseH;
+                delete currentProjectState._nativeBaseW;
+                delete currentProjectState._nativeBaseH;
+                delete currentProjectState._nativeRes;
+                delete currentProjectState._nativeAspect;
+              }
+              break;
+            }
+
+            case 'interface': {
+              const iCfg = getInterfaceExportSettings();
+              const _origRes = currentProjectState.resolution;
+              const _origFps = currentProjectState.fps;
+              const _origAspect = currentProjectState.aspectRatio;
+              const _origBaseW = currentProjectState._baseW;
+              const _origBaseH = currentProjectState._baseH;
+
+              const compDims = (typeof window.getProjectDimensions === 'function')
+                ? window.getProjectDimensions(_origRes || '1080p', _origAspect || '16:9')
+                : null;
+              if (!compDims || !compDims[0] || !compDims[1]) {
+                if (typeof showEditorToast === 'function') {
+                  showEditorToast('Gagal menentukan ukuran komposisi proyek', 2400, 'error');
+                }
+                return;
+              }
+
+              const nativeBaseW = _origBaseW || compDims[0];
+              const nativeBaseH = _origBaseH || compDims[1];
+
+              currentProjectState._nativeBaseW = nativeBaseW;
+              currentProjectState._nativeBaseH = nativeBaseH;
+              currentProjectState._nativeRes = _origRes || '1080p';
+              currentProjectState._nativeAspect = _origAspect || '16:9';
+              currentProjectState._baseW = nativeBaseW;
+              currentProjectState._baseH = nativeBaseH;
+              currentProjectState.fps = iCfg.fps;
+
+              try {
+                await exportVideoMP4(iCfg.preset, iCfg.customName || `${currentProjectState.name || 'New_Project'}_Interface`, 'mp4', iCfg.codec, {
+                  mode: 'interface',
+                  includeAudio: iCfg.includeAudio,
+                  interfaceConfig: {
+                    layout: iCfg.layout,
+                    resolution: iCfg.resLabel,
+                    scrollMode: iCfg.scrollMode,
+                    highlightActive: iCfg.highlightActive,
+                    showKeyframes: iCfg.showKeyframes,
+                    showWireframe: iCfg.showWireframe,
+                    inOutZoom: iCfg.inOutZoom,
+                    interfaceMotionBlur: iCfg.interfaceMotionBlur
+                  }
+                });
               } finally {
                 currentProjectState.resolution = _origRes;
                 currentProjectState.fps = _origFps;

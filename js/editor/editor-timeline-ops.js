@@ -308,9 +308,8 @@ function initTimelineOperations() {
             selectedLayerId = layerId;
             window.selectedLayerId = selectedLayerId;
           }
-          isSelectorMode = selectedLayerIds.size > 1;
+          isSelectorMode = Boolean(window._isExplicitSelectionMode || selectedLayerIds.size > 1);
           window.isSelectorMode = isSelectorMode;
-          window._isExplicitSelectionMode = isSelectorMode;
           renderTimelineLayers();
           if (typeof syncSelectionModeButtonUI === 'function') {
             syncSelectionModeButtonUI();
@@ -4310,8 +4309,8 @@ function initTimelineOperations() {
                 window.addEventListener('pointercancel', onPillPointerUp);
               }
 
-              pillEl.addEventListener('pointerdown', onPillPointerDown);
-              pillEl.addEventListener('contextmenu', (e) => {
+              pillSlot.addEventListener('pointerdown', onPillPointerDown);
+              pillSlot.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 triggerClipContextMenu(layer, e.clientX, e.clientY, e);

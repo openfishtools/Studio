@@ -3062,9 +3062,11 @@ body.has-active-drawer .timeline-layers-viewport {
 .timeline-layer-ctrl-pill.is-selected .timeline-layer-checkbox.is-selected {
   border-color: var(--bg-canvas) !important;
   background-color: var(--bg-canvas) !important;
+  color: var(--color-primary) !important;
 }
 
 .timeline-layer-ctrl-pill.is-selected .timeline-layer-checkbox.is-selected .fticon {
+  color: var(--color-primary) !important;
 }
 
 .timeline-layer-eye-btn {
@@ -3073,8 +3075,9 @@ body.has-active-drawer .timeline-layers-viewport {
   outline: none;
   padding: 0;
   margin: 0;
-  width: 18px;
-  height: 18px;
+  width: 100%;
+  height: 100%;
+  flex: 1 1 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3282,23 +3285,29 @@ body.has-active-drawer .timeline-layers-viewport {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  pointer-events: none;
   box-sizing: border-box;
   flex-shrink: 0;
   transition: transform 0.1s ease, border-color 0.12s ease, background-color 0.12s ease;
+}
+
+.timeline-lane-heads-overlay.is-selector-mode .timeline-lane-pill-slot {
+  cursor: pointer;
 }
 
 .timeline-lane-heads-overlay.is-selector-mode .timeline-layer-checkbox {
   display: inline-flex !important;
 }
 
-.timeline-layer-checkbox:hover {
-  transform: scale(1.15);
+.timeline-lane-heads-overlay.is-selector-mode .timeline-layer-ctrl-pill:hover .timeline-layer-checkbox {
+  transform: scale(1.1);
   border-color: var(--color-primary);
 }
 
 .timeline-layer-checkbox.is-selected {
   border-color: var(--color-primary) !important;
   background-color: var(--color-primary) !important;
+  color: var(--bg-canvas) !important;
 }
 
 .timeline-layer-checkbox .fticon {
@@ -3307,9 +3316,13 @@ body.has-active-drawer .timeline-layers-viewport {
 
 .timeline-layer-checkbox.is-selected .fticon {
   display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
   width: 12px;
   height: 12px;
   font-size: 12px;
+  line-height: 1;
+  color: var(--bg-canvas) !important;
 }
 
 .timeline-layer-thumb-circle,
@@ -3654,21 +3667,25 @@ body.has-active-drawer .timeline-layers-viewport {
 }
 
 .timeline-layer-ctrl-pill {
-  width: 28px;
-  height: var(--tl-mobile-clip-height, 30px);
+  width: 34px;
+  height: 100%;
   border-radius: 0 9px 9px 0;
 }
 
 .timeline-layer-ctrl-pill.has-precomp-expand {
-  width: 46px;
+  width: 48px;
   gap: 2px;
   padding: 0 3px;
 }
 
-.timeline-layer-eye-btn,
+.timeline-layer-eye-btn {
+  width: 100%;
+  height: 100%;
+}
+
 .timeline-layer-checkbox {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
 }
 
 .timeline-layer-eye-btn .fticon,
@@ -3820,13 +3837,38 @@ body.has-active-drawer .timeline-fab-add {
   background-color: var(--bg-panel);
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
-  padding: 20px 22px 18px;
+  padding: 18px 20px 18px;
   width: 92%;
-  max-width: 360px;
+  max-width: 380px;
   display: flex;
   flex-direction: column;
   gap: 14px;
   box-sizing: border-box;
+}
+
+.export-progress-preview-wrap {
+  width: 100%;
+  min-height: 150px;
+  max-height: 300px;
+  background-color: var(--bg-preview);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.export-progress-preview-canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 284px;
+  width: auto;
+  height: auto;
+  border-radius: 6px;
+  background-color: var(--bg-canvas);
 }
 
 .export-progress-title-row {

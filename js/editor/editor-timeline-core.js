@@ -2175,7 +2175,7 @@
         );
 
         if (!hasOtherActiveItemDrag) {
-          if (e.target.closest('.timeline-clip-block') || e.target.closest('.timeline-layer-ctrl-pill') || e.target.closest('.timeline-layer-reorder-pill') || e.target.closest('.timeline-beatmark-item') || e.target.closest('.timeline-ruler-selection-pill')) return; // Allow clip, pill and selection button interactions
+          if (e.target.closest('.timeline-clip-block') || e.target.closest('.timeline-lane-pill-slot') || e.target.closest('.timeline-layer-ctrl-pill') || e.target.closest('.timeline-layer-reorder-pill') || e.target.closest('.timeline-beatmark-item') || e.target.closest('.timeline-ruler-selection-pill')) return; // Allow clip, pill and selection button interactions
         }
 
         isPanning = true;
@@ -2477,6 +2477,7 @@
           : (e && e.target && e.target.parentElement ? e.target.parentElement : null);
         const isInsideTimelineInteractive = targetEl && typeof targetEl.closest === 'function' && (
           targetEl.closest('.timeline-clip-block') ||
+          targetEl.closest('.timeline-lane-pill-slot') ||
           targetEl.closest('.timeline-layer-ctrl-pill') ||
           targetEl.closest('.timeline-layer-reorder-pill')
         );

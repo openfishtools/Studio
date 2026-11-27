@@ -55,7 +55,7 @@
         <h1 class="brand-title">FishTools</h1>
         <div class="brand-subtitle-row">
           <span class="brand-subtitle">Studio</span>
-          <span class="badge-pre-alpha" id="studio-version-badge">0.7.1</span>
+          <span class="badge-pre-alpha" id="studio-version-badge">0.7.2</span>
         </div>
 
         <!-- Desktop Folders Shelf in Photo 2 area -->
@@ -773,7 +773,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">FishTools Studio</h3>
-          <span class="welcome-badge">v0.7.1</span>
+          <span class="welcome-badge">v0.7.2</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
@@ -809,11 +809,47 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.7.2 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.7.2</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Nov 27, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Interface Video Export (`js/media/interface-export-renderer.js`, `js/media/fish-export-engine.js`, `js/editor/editor-export.js`, `editor.html`, `desktop.html`, `css/layout/editor.css`)</span>
+                  <span class="changelog-item-desc">Added a new **Interface Video** export mode that renders the live composition inside a 1:1 `editor.html` UI mockup (Portrait 9:16 &amp; Landscape 16:9) following the user's UI scale, with live Play/Pause state, persistent-layer-aware timeline auto-scroll, `Select All Layers`, `Show Keyframes`, `Show Active Wireframe` (clipped to the Preview Stage Well), smooth `In/Out Zoom` (C² smootherstep + exponential scale synced to Beatmark 1 -&gt; Beatmark 2), After Effects-style map-pin beatmark drops (`0.0ms` impact sync), optional `Interface Motion Blur` (default off, synced with project Shutter Angle/Phase/Samples), and a live per-frame render preview in `#editor-export-progress-overlay`.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">WebCodecs Normal Quality Preset (`js/media/fish-export-engine.js`, `js/editor/editor-export.js`)</span>
+                  <span class="changelog-item-desc">Tuned `Normal` preset quality-per-byte with `latencyMode: 'quality'` priority, Beat-Aware Smart GOP (`4s` max + beat/layer cut keyframes), and `12.5 Mbps` base VBR for cleaner output at compact file sizes.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-improved">Improved</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Full-Container Timeline Pill Hitboxes (`css/layout/editor.css`, `js/editor/editor-timeline-ops.js`, `js/editor/editor-timeline-core.js`)</span>
+                  <span class="changelog-item-desc">Unified left timeline pill sizing (`34px × 100%`) across Eye and Selection modes and expanded both the Eye toggle and Selection checkbox hit targets to the full pill container while preserving explicit Selection Mode on single-layer toggles.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Selection Mode Checkmark Contrast (`css/layout/editor.css`)</span>
+                  <span class="changelog-item-desc">Fixed dark-on-dark checkmark rendering inside `.timeline-layer-ctrl-pill.is-selected .timeline-layer-checkbox.is-selected` by setting `color: var(--color-primary) !important;` (and `var(--bg-canvas)` fallback), ensuring crisp visibility in both dark and light themes.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.7.1 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.7.1</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Nov 26, 2026</span>
               </div>
               <div class="welcome-changelog-item">
