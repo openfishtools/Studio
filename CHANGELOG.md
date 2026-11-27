@@ -5,11 +5,18 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.1] - 2026-11-26
+## [0.7.1] - 2026-11-27
 
 ### Added
 - **Standalone Native App Integration (`js/storage/db.js`, `js/media/fish-export-engine.js`, `js/editor/editor-state.js`, `js/app/main.js`, `effects/loader.js`)**: Added native `window.OFTSNative` support for the standalone desktop & Android app, including local disk storage (bypassing browser sandbox quota), streamed direct-to-disk MP4 export, native FFmpeg acceleration, `Ctrl+S` project overwrite, and window title sync.
 - **Studio Sage Default Theme (`css/tokens/theme.css`, `js/app/main.js`)**: Added the `Studio Sage` theme matching the official logo palette (`#212a1a` / `#9cb477` / `#c7dc9c`) as the new default theme, while keeping `Matcha Tea` available in Theme Settings.
+
+### Improved
+- **60 FPS Editor Responsiveness (`css/components/popover.css`, `css/components/drawer.css`, `css/components/modal.css`, `css/layout/editor.css`, `js/core/canvas-overlay.js`, `js/editor/editor-inspector.js`)**: Removed global `:has()` selectors that triggered full-document style recalculation on every readout text update, eliminated per-frame overlay layout reflows, and fixed double-rAF throttling in transform/scrubbing controls.
+- **2-Tier Full-Project Preview Cache (`js/media/preview-cache.js`, `js/editor/editor-timeline-core.js`)**: Added Hot VRAM + Cold WebP/disk tiering so full-project caching stays smooth on mobile/tablet without overflowing GPU memory, auto-releases bitmaps on page exit, and immediately clears cached frames when Preview Cache is turned off.
+
+### Fixed
+- **Shape Outline Offset in Landscape/High-DPR (`js/core/canvas-overlay.js`)**: Scaled `shapeContour`, `shapeContourLocal`, `apexPoint`, and anchor offsets in `_scaleBoundsForOverlay`.
 
 ## [0.7.0] - 2026-11-25
 
