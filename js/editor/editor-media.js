@@ -3280,6 +3280,12 @@
                         }
                       }
                     });
+                    if (window.FishAudioEngine && typeof window.FishAudioEngine.invalidateLayerCache === 'function') {
+                      window.FishAudioEngine.invalidateLayerCache();
+                    }
+                    if (window.FishAudioScheduler && typeof window.FishAudioScheduler.prefetch === 'function') {
+                      window.FishAudioScheduler.prefetch(layers);
+                    }
                     if (typeof window.updateTimelineDuration === 'function') {
                       window.updateTimelineDuration(true);
                     }
@@ -4125,12 +4131,8 @@
         return 100;
       })();
       document.documentElement.style.setProperty('--oft-ui-scale', String(_v / 100));
-      if (_v !== 100) document.documentElement.style.setProperty('zoom', String(_v / 100));
-      else document.documentElement.style.removeProperty('zoom');
-      try {
-        window.__OFT_ZOOM = _v / 100;
-        document.documentElement.classList.toggle('is-scaled', _v !== 100);
-      } catch (_) {}
+      if (_v !== 100) document.documentElement.style.fontSize = `${((16 * _v) / 100).toFixed(3)}px`;
+      else document.documentElement.style.fontSize = '';
     } catch (_) {}
 
     // Interactive Option Selectors for Modal Dialogs (Custom Dropdowns, Aspect Frames, Swatches)

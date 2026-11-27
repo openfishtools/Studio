@@ -676,9 +676,8 @@
         return { w: cw, h: ch };
       }
       const rect = dial.getBoundingClientRect();
-      const z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || 1;
-      const w = Math.round((rect.width || (defaultW * z)) / z) || defaultW;
-      const h = Math.round((rect.height || (defaultH * z)) / z) || defaultH;
+      const w = Math.round(rect.width) || defaultW;
+      const h = Math.round(rect.height) || defaultH;
       return { w, h };
     }
 

@@ -55,24 +55,20 @@ const Popover = (function () {
     const popoverRect = activePopover.getBoundingClientRect();
     const tailEl = activePopover.querySelector('.popover-tail');
 
-    // UI-scale zoom compensation: rects + innerWidth report visual px, but
-    // offsetWidth/left/top styles live in layout px. Normalize everything
-    // below to layout px so flip/clamp math holds at any UI scale.
-    const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || 1;
-    const _vw = vw / _z;
-    const _vh = vh / _z;
+    const _vw = vw;
+    const _vh = vh;
 
     const hasValidCoords = triggerRect && Number.isFinite(triggerRect.left) && Number.isFinite(triggerRect.top);
 
     // If trigger has valid coordinates (including 0x0 point anchors like right-click mouse cursor), use them directly.
     // Only fallback to screen center if coordinates are genuinely invalid/missing.
     const effectiveTriggerRect = hasValidCoords ? {
-      left: triggerRect.left / _z,
-      right: Number.isFinite(triggerRect.right) ? triggerRect.right / _z : triggerRect.left / _z,
-      top: triggerRect.top / _z,
-      bottom: Number.isFinite(triggerRect.bottom) ? triggerRect.bottom / _z : triggerRect.top / _z,
-      width: Math.max(0, (triggerRect.width || 0) / _z),
-      height: Math.max(0, (triggerRect.height || 0) / _z)
+      left: triggerRect.left,
+      right: Number.isFinite(triggerRect.right) ? triggerRect.right : triggerRect.left,
+      top: triggerRect.top,
+      bottom: Number.isFinite(triggerRect.bottom) ? triggerRect.bottom : triggerRect.top,
+      width: Math.max(0, triggerRect.width || 0),
+      height: Math.max(0, triggerRect.height || 0)
     } : {
       left: _vw / 2 - 10,
       right: _vw / 2 + 10,
@@ -171,6 +167,10 @@ const Popover = (function () {
 
     if (explicitPlacement) {
       placement = explicitPlacement;
+    } else if (activePopover.id === 'popover-camera-view') {
+      // Mobile (<=600px): pop DOWNWARD over timeline so preview stays unobstructed.
+      // Tablet & Desktop (>600px): pop UPWARD above the bottom controller bar.
+      placement = isMobile ? 'bottom' : 'top';
     } else if (isMobile && isControllerTrigger) {
       // On mobile, flexible smart placement: dynamically choose top or bottom based on available clearance
       const fitsAbove = spaceAbove >= popoverHeight;

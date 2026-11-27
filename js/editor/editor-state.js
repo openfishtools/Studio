@@ -2117,21 +2117,12 @@
     function applyEditorUiScale(page, val) {
       const scale = clampEditorUiScale(val);
       try {
-        document.documentElement.style.setProperty('--oft-ui-scale', String(scale / 100));
+        const factor = scale / 100;
+        document.documentElement.style.setProperty('--oft-ui-scale', String(factor));
         if (scale === 100) {
-          document.documentElement.style.zoom = '';
-          document.documentElement.style.removeProperty('zoom');
+          document.documentElement.style.fontSize = '';
         } else {
-          document.documentElement.style.zoom = String(scale / 100);
-          document.documentElement.style.setProperty('zoom', String(scale / 100));
-        }
-        window.__OFT_ZOOM = scale / 100;
-        document.documentElement.classList.toggle('is-scaled', scale !== 100);
-
-        const settingsCard = document.querySelector('#modal-project-settings .modal-card');
-        if (settingsCard) {
-          settingsCard.style.zoom = '';
-          settingsCard.style.removeProperty('zoom');
+          document.documentElement.style.fontSize = `${(16 * factor).toFixed(3)}px`;
         }
 
         window.dispatchEvent(new Event('oft-ui-scale-changed'));
@@ -3193,6 +3184,34 @@
         }
       }
 
+      // Compute size ONLY once on project open (non-blocking; falls back to '-' on error)
+      const refreshSingleProjectSize = (pid, maxWaitMs = 0) => {
+        if (!pid || !window.FishDatabase || typeof window.FishDatabase.getProjectTotalSize !== 'function') {
+          return Promise.resolve();
+        }
+        const task = window.FishDatabase.getProjectTotalSize(pid)
+          .then(res => {
+            if (res && res.formatted && typeof window.FishDatabase.updateProjectSize === 'function') {
+              return window.FishDatabase.updateProjectSize(pid, res.formatted, res.bytes);
+            }
+            if (!currentProjectState.size && typeof window.FishDatabase.updateProjectSize === 'function') {
+              return window.FishDatabase.updateProjectSize(pid, '-', 0);
+            }
+          })
+          .catch(() => {
+            if (!currentProjectState.size && typeof window.FishDatabase.updateProjectSize === 'function') {
+              try { window.FishDatabase.updateProjectSize(pid, '-', 0); } catch (_) {}
+            }
+          });
+        if (maxWaitMs > 0) {
+          return Promise.race([task, new Promise(r => setTimeout(r, maxWaitMs))]);
+        }
+        return task;
+      };
+      if (currentProjectState.id) {
+        setTimeout(() => { refreshSingleProjectSize(currentProjectState.id); }, 800);
+      }
+
       // Synchronous Save & Exit Trapping on Back Button
       const projectBackBtn = document.getElementById('editor-project-back-btn');
       if (projectBackBtn && !projectBackBtn._backSaveWired) {
@@ -3238,6 +3257,11 @@
             }
           } catch (err) {
             console.warn('[Editor] Error flushing project before back navigation:', err);
+          }
+
+          // Compute size once on project close (capped at 450ms; fallback '-' on failure)
+          if (currentProjectState.id) {
+            await refreshSingleProjectSize(currentProjectState.id, 450);
           }
 
           window.location.href = 'index.html';

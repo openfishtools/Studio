@@ -7,15 +7,6 @@
     }
   }
 
-  function getZoomFactor() {
-    var z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || 1;
-    if (!(z > 0)) z = 1;
-    if (z === 1 && typeof window.__OFT_ZOOM === 'number' && window.__OFT_ZOOM > 0) {
-      z = window.__OFT_ZOOM;
-    }
-    return z;
-  }
-
   function isStandaloneMode() {
     try {
       if (window.navigator && window.navigator.standalone === true) return true;
@@ -31,7 +22,6 @@
   }
 
   function syncAppHeight() {
-    var z = getZoomFactor();
     var docEl = document.documentElement;
     if (!docEl) return;
 
@@ -46,7 +36,7 @@
     // (including the Android/iOS bottom navigation bar) before settling, whereas
     // visualViewport.height and clientHeight reflect the true visible zone.
     var innerH = window.innerHeight || 0;
-    var clientH = docEl.clientHeight ? (docEl.clientHeight * z) : 0;
+    var clientH = docEl.clientHeight || 0;
     var vv = window.visualViewport;
     // Ignore transient keyboard shrink when an input is focused so the whole
     // editor layout does not collapse into a tiny strip, unless visualViewport
@@ -66,15 +56,13 @@
     var rawH = candidates.length ? Math.min.apply(Math, candidates) : (innerH || clientH || 0);
     if (!(rawH > 0)) return;
 
-    var h = Math.floor(rawH / z);
-    docEl.style.setProperty('--app-height', h + 'px');
+    docEl.style.setProperty('--app-height', Math.floor(rawH) + 'px');
 
     var innerW = window.innerWidth || 0;
     var vvW = (vv && vv.width > 0) ? (vv.width * (vv.scale || 1)) : 0;
     var rawW = (vvW > 0 && innerW > 0) ? Math.min(innerW, vvW) : (innerW || vvW || 0);
     if (rawW > 0) {
-      var w = Math.floor(rawW / z);
-      docEl.style.setProperty('--app-width', w + 'px');
+      docEl.style.setProperty('--app-width', Math.floor(rawW) + 'px');
     }
   }
 

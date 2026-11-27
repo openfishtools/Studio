@@ -641,13 +641,20 @@
         if (rulerBm.length > 0) {
           rulerBm.forEach(el => {
             const t = parseFloat(el.dataset.time);
-            if (!isNaN(t)) el.style.left = `${(t * newPps).toFixed(1)}px`;
+            if (!isNaN(t)) {
+              const px = t * newPps;
+              el._leftPx = px;
+              el.style.left = `${px.toFixed(1)}px`;
+            }
           });
           const layersBm = layersTrackEl ? layersTrackEl.querySelectorAll('.timeline-layers-beatmark-line') : [];
           layersBm.forEach(el => {
             const t = parseFloat(el.dataset.time);
             if (!isNaN(t)) el.style.left = `${(t * newPps).toFixed(1)}px`;
           });
+          if (typeof updateBeatmarksBadgeAvoidance === 'function') {
+            updateBeatmarksBadgeAvoidance();
+          }
         } else if (Array.isArray(currentProjectState.beatmarks) && currentProjectState.beatmarks.length > 0) {
           if (typeof renderTimelineBeatmarks === 'function') {
             renderTimelineBeatmarks();
@@ -831,6 +838,9 @@
           rulerTrack.style.transform = panStr;
           layersTrack.style.transform = panStr;
           syncNeedleToActivePlayback();
+          if (typeof updateBeatmarksBadgeAvoidance === 'function') {
+            updateBeatmarksBadgeAvoidance();
+          }
         } else if (typeof window.syncDesktopPlayhead === 'function') {
           window.syncDesktopPlayhead();
         }
@@ -1029,12 +1039,16 @@
       _lastBeatmarkNearState = null;
       function updateTimeBadgeBeatmarkState() {
         const badge = document.getElementById('timeline-time-badge');
-        if (!badge) return;
+        const btnAddBm = document.getElementById('editor-btn-add-beatmark');
+        if (badge && badge.classList.contains('has-beatmark')) {
+          badge.classList.remove('has-beatmark');
+        }
+        if (!btnAddBm) return;
         // Avoid style/attribute invalidations during active 60fps playback
         if (isPlaying) {
           if (_lastBeatmarkNearState !== false) {
             _lastBeatmarkNearState = false;
-            badge.classList.remove('has-beatmark');
+            btnAddBm.classList.remove('has-beatmark');
           }
           return;
         }
@@ -1045,8 +1059,8 @@
         const isNear = beatmarks.some(b => Math.abs(b - currentSec) <= tolerance);
         if (isNear !== _lastBeatmarkNearState) {
           _lastBeatmarkNearState = isNear;
-          badge.classList.toggle('has-beatmark', isNear);
-          badge.setAttribute('title', isNear ? 'Playhead on Beatmark. Click to delete Beatmark.' : 'Click to add Beatmark at current time');
+          btnAddBm.classList.toggle('has-beatmark', isNear);
+          btnAddBm.setAttribute('title', isNear ? 'Playhead on Beatmark. Click to delete (M)' : 'Add Beatmark at Current Time (M)');
         }
       }
       window.updateTimeBadgeBeatmarkState = updateTimeBadgeBeatmarkState;
@@ -1065,6 +1079,79 @@
         return '';
       }
 
+      // After Effects-style pentagon/shield pin SVG — matches drawAeMarkerPinPath in interface-export-renderer.js 1:1
+      // (rounded top pentagon, var(--bg-canvas) stroke & inner pinhole dot; flat, zero drop-shadow)
+      function getAeMarkerPinSvg() {
+        return `<svg class="timeline-beatmark-svg" viewBox="0 0 14 17" width="12" height="15" aria-hidden="true"><path d="M7 15.8 L1.3 9.7 L1.3 3.9 Q1.3 1.3 3.9 1.3 L10.1 1.3 Q12.7 1.3 12.7 3.9 L12.7 9.7 Z" fill="currentColor" stroke="var(--bg-canvas)" stroke-width="1.2" stroke-linejoin="round"/><circle cx="7" cy="6.6" r="2.1" fill="var(--bg-canvas)"/></svg>`;
+      }
+
+      // Smoothly glides beatmark pins around the rounded bottom contour of #timeline-time-badge
+      // Use var (function-scoped, hoisted) so early applyPan() calls during init never hit a let TDZ ReferenceError.
+      var _cachedTimeBadgeW = 0;
+      var _cachedTimeBadgeH = 0;
+      var _cachedRulerH = 0;
+      var _cachedRulerBeatmarksEl = null;
+      window.addEventListener('resize', () => {
+        _cachedTimeBadgeW = 0;
+        _cachedTimeBadgeH = 0;
+        _cachedRulerH = 0;
+      }, { passive: true });
+
+      function updateBeatmarksBadgeAvoidance() {
+        const isDesktop = (_cachedIsDesktop !== null)
+          ? _cachedIsDesktop
+          : (_cachedIsDesktop = Boolean(document.querySelector('.desktop-workstation, .desktop-viewport')));
+        if (isDesktop) return;
+
+        if (!_cachedRulerBeatmarksEl || !_cachedRulerBeatmarksEl.isConnected) {
+          _cachedRulerBeatmarksEl = rulerTrack ? rulerTrack.querySelector('#timeline-ruler-beatmarks') : null;
+        }
+        const container = _cachedRulerBeatmarksEl;
+        if (!container) return;
+        const items = container.children;
+        const count = items.length;
+        if (count === 0) return;
+
+        if (!_cachedTimeBadgeW || !_cachedTimeBadgeH || !_cachedRulerH) {
+          const badge = document.getElementById('timeline-time-badge');
+          if (!badge) return;
+          _cachedTimeBadgeW = badge.offsetWidth || 86;
+          _cachedTimeBadgeH = badge.offsetHeight || 20;
+          _cachedRulerH = (rulerTrack && rulerTrack.offsetHeight) || 28;
+        }
+
+        const halfW = _cachedTimeBadgeW * 0.5;
+        // Pin sits at top of ruler (top: 1px). Drop down below badge bottom border when passing under #timeline-time-badge.
+        const dodgeDrop = Math.max(0, _cachedTimeBadgeH);
+        if (dodgeDrop <= 0) return;
+
+        const cornerR = 10; // smooth circular arc hugging badge's rounded bottom corner + pin half-width
+        const innerEdge = Math.max(0, halfW - 3);
+        const outerEdge = halfW + cornerR;
+        const span = outerEdge - innerEdge;
+        const curPanX = panX;
+
+        for (let i = 0; i < count; i++) {
+          const el = items[i];
+          const pin = el._pinEl || (el._pinEl = el.querySelector('.timeline-beatmark-pin'));
+          if (!pin) continue;
+          const leftPx = el._leftPx !== undefined ? el._leftPx : (el._leftPx = parseFloat(el.style.left) || 0);
+          const absDx = Math.abs(leftPx + curPanX);
+          let dy = 0;
+          if (absDx <= innerEdge) {
+            dy = dodgeDrop;
+          } else if (absDx < outerEdge) {
+            const u = (absDx - innerEdge) / span;
+            // Quarter-ellipse arc hugging the rounded bottom corner of #timeline-time-badge
+            dy = Math.round(dodgeDrop * Math.sqrt(Math.max(0, 1 - u * u)) * 10) / 10;
+          }
+          if (pin._lastDodgeY !== dy) {
+            pin._lastDodgeY = dy;
+            pin.style.transform = dy > 0 ? `translate3d(0, ${dy}px, 0)` : '';
+          }
+        }
+      }
+
       function createBeatmarkItemEl(bm, pps) {
         const leftPx = Math.round(bm * pps);
         const timeStr = formatTimecode(Math.round(bm * 1000));
@@ -1074,14 +1161,14 @@
         item.className = `timeline-beatmark-item ${isNamed ? '' : 'is-beatmark'}`;
         item.dataset.time = String(bm);
         item.style.left = `${leftPx}px`;
+        item._leftPx = leftPx;
 
+        const pinSvg = getAeMarkerPinSvg();
         if (isNamed) {
           item.title = `Marker: ${name} (${Number(bm).toFixed(2)}s) — Hold to move, tap to edit`;
           item.setAttribute('aria-label', `Marker ${name} at ${timeStr}`);
           item.innerHTML = `
-            <div class="timeline-beatmark-pin">
-              <i class='fticon fticon-icon-31 timeline-beatmark-svg' style='width:10px;height:12px;font-size:12px;line-height:1;' aria-hidden='true'></i>
-            </div>
+            <div class="timeline-beatmark-pin">${pinSvg}</div>
             <div class="timeline-beatmark-stem"></div>
             <span class="timeline-beatmark-label">${name}</span>
           `;
@@ -1089,9 +1176,7 @@
           item.title = `Beatmark: ${Number(bm).toFixed(2)}s — Hold to move, tap to edit`;
           item.setAttribute('aria-label', `Beatmark at ${timeStr}`);
           item.innerHTML = `
-            <div class="timeline-beatmark-pin">
-              <i class='fticon fticon-icon-31 timeline-beatmark-svg' style='width:10px;height:12px;font-size:12px;line-height:1;' aria-hidden='true'></i>
-            </div>
+            <div class="timeline-beatmark-pin">${pinSvg}</div>
             <div class="timeline-beatmark-stem"></div>
           `;
         }
@@ -1118,6 +1203,7 @@
         }
         rulerBeatmarks.appendChild(createBeatmarkItemEl(bm, pps));
         layersBeatmarks.appendChild(createBeatmarkLineEl(bm, pps));
+        updateBeatmarksBadgeAvoidance();
         if (typeof window.syncDesktopMarkerLabels === 'function') {
           window.syncDesktopMarkerLabels();
         }
@@ -1163,6 +1249,8 @@
 
         rulerBeatmarks.replaceChildren(rulerFrag);
         layersBeatmarks.replaceChildren(layersFrag);
+        _cachedRulerBeatmarksEl = rulerBeatmarks;
+        updateBeatmarksBadgeAvoidance();
         updateTimeBadgeBeatmarkState();
         if (typeof window.syncDesktopMarkerLabels === 'function') {
           window.syncDesktopMarkerLabels();
@@ -1503,38 +1591,41 @@
       window.navigateBeatmark = navigateBeatmark;
       window.navigateTimelineStops = navigateBeatmark;
 
-      // Event Listeners for Badge & Beatmarks
-      const timeBadgeEl = document.getElementById('timeline-time-badge');
-      if (timeBadgeEl) {
-        let lastBadgeTime = 0;
-        let lastBadgePointerDownTime = 0;
-        const triggerBadgeBeatmark = (e) => {
+      // Event Listeners for Dedicated Beatmark Button (separated from timecode badge)
+      const addBeatmarkBtnEl = document.getElementById('editor-btn-add-beatmark');
+      if (addBeatmarkBtnEl && !addBeatmarkBtnEl._bound) {
+        addBeatmarkBtnEl._bound = true;
+        let lastBmClickTime = 0;
+        let lastBmPointerDownTime = 0;
+        const triggerAddBeatmarkBtn = (e) => {
           const now = performance.now();
-          if (e.type === 'click' && (now - lastBadgePointerDownTime < 800)) {
+          if (e.type === 'click' && (now - lastBmPointerDownTime < 800)) {
             if (e.cancelable) e.preventDefault();
             e.stopPropagation();
             return;
           }
-          if (now - lastBadgeTime < 45) {
+          if (now - lastBmClickTime < 45) {
             if (e.cancelable) e.preventDefault();
             e.stopPropagation();
             return;
           }
-          lastBadgeTime = now;
+          lastBmClickTime = now;
           if (e.type === 'pointerdown') {
-            lastBadgePointerDownTime = now;
+            lastBmPointerDownTime = now;
           }
           if (e.cancelable) e.preventDefault();
           e.stopPropagation();
-          toggleBeatmarkAtCurrentTime();
-        };
-        timeBadgeEl.addEventListener('pointerdown', triggerBadgeBeatmark);
-        timeBadgeEl.addEventListener('click', triggerBadgeBeatmark);
-        timeBadgeEl.addEventListener('keydown', (e) => {
-          if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) {
-            triggerBadgeBeatmark(e);
+          addBeatmarkBtnEl.blur();
+          addBeatmarkBtnEl.classList.add('is-pressed');
+          if (addBeatmarkBtnEl._pressTimer) clearTimeout(addBeatmarkBtnEl._pressTimer);
+          addBeatmarkBtnEl._pressTimer = setTimeout(() => addBeatmarkBtnEl.classList.remove('is-pressed'), 35);
+          toggleBeatmarkAtCurrentTime(isPlaying ? 'add' : 'toggle');
+          if (typeof window.syncDesktopMarkerLabels === 'function') {
+            window.syncDesktopMarkerLabels();
           }
-        });
+        };
+        addBeatmarkBtnEl.addEventListener('pointerdown', triggerAddBeatmarkBtn);
+        addBeatmarkBtnEl.addEventListener('click', triggerAddBeatmarkBtn);
       }
 
       rulerTrack.addEventListener('click', (e) => {
@@ -2090,10 +2181,10 @@
           const diff = targetPan - panX;
           if (Math.abs(diff) < 2.0) {
             panX = targetPan;
-            updateTimelinePosition(panX, true);
             window._isPlaybackRecentering = false;
             window._isPlaybackUserPanned = false;
             window._isPlaybackRecenteringRaf = null;
+            updateTimelinePosition(panX, true);
             if (typeof resetNeedleToCenter === 'function') resetNeedleToCenter();
             return;
           }
@@ -2916,10 +3007,10 @@
             resetNeedleToCenter();
           }
         } else {
-          const timeText = document.getElementById('playhead-current-time');
-          if (timeText && typeof window.formatTimecode === 'function') {
-            const safeFps = (typeof getProjectFps === 'function') ? getProjectFps() : (window.currentTimelineFps || 60);
-            timeText.textContent = window.formatTimecode(nextSec, safeFps);
+          const nextMs = Math.round(nextSec * 1000);
+          if (timecodeEl && nextMs !== lastDisplayedMs && Math.abs(nextMs - lastDisplayedMs) >= 40) {
+            lastDisplayedMs = nextMs;
+            timecodeEl.textContent = formatTimecode(nextMs);
           }
           if (typeof syncNeedleToActivePlayback === 'function') {
             syncNeedleToActivePlayback();
@@ -3458,8 +3549,7 @@
                 const curClipStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
                 const curClipDurSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
 
-                const currentZoom = window.__OFT_ZOOM || (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || parseFloat(document.documentElement.style.zoom) || 1;
-                const relPx = (ev.clientX - cachedClipLeft) / currentZoom;
+                const relPx = ev.clientX - cachedClipLeft;
                 let targetRelSec = relPx / pps;
                 let absTime = curClipStartSec + targetRelSec;
 
@@ -4453,9 +4543,8 @@
                     }];
 
                 function onDiamondMove(ev) {
-                  const currentZoom = window.__OFT_ZOOM || (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || parseFloat(document.documentElement.style.zoom) || 1;
-                  const dx = (ev.clientX - startX) / currentZoom;
-                  const dy = (ev.clientY - startY) / currentZoom;
+                  const dx = ev.clientX - startX;
+                  const dy = ev.clientY - startY;
                   if (!hasMoved && Math.hypot(dx, dy) > 3) {
                     hasMoved = true;
                     window.isTransformInteracting = true;

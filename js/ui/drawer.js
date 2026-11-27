@@ -85,7 +85,6 @@ class DrawerManager {
     let lastY = 0;
     let lastTime = 0;
     let velocityY = 0;
-    let dragZoom = 1;
     let currentHandle = null;
     let currentCard = null;
     let currentContainer = null;
@@ -124,10 +123,7 @@ class DrawerManager {
       rawDownDist = 0;
       isMagnetDetached = false;
 
-      // UI-scale zoom compensation: pointer + rects report visual px, but
-      // card heights live in layout px — convert once here.
-      dragZoom = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || 1;
-      startHeight = card.getBoundingClientRect().height / dragZoom;
+      startHeight = card.getBoundingClientRect().height;
 
       // Effects Gallery is flexible and allowed to expand all the way up to topLimit (full screen)
       const isEffectsGallery = Boolean(
@@ -140,10 +136,10 @@ class DrawerManager {
         !document.documentElement.classList.contains('force-mobile-view') &&
         !(document.body && document.body.classList.contains('force-mobile-view'));
       const containerH = (isEffectsGallery && isTablet)
-        ? (container.clientHeight || (window.innerHeight / dragZoom - 44))
+        ? (container.clientHeight || (window.innerHeight - 44))
         : (isEffectsGallery
-            ? ((window.innerHeight / dragZoom) || document.documentElement.clientHeight)
-            : (container.clientHeight || window.innerHeight / dragZoom));
+            ? (window.innerHeight || document.documentElement.clientHeight)
+            : (container.clientHeight || window.innerHeight));
       const topLimit = Math.max(80, containerH - 16);
 
       currentIsFlexible = isEffectsGallery;
@@ -179,13 +175,13 @@ class DrawerManager {
       const now = performance.now();
       const dt = now - lastTime;
       if (dt > 0) {
-        const instVy = ((e.clientY - lastY) / dragZoom) / dt; // px/ms, positive = dragging down
+        const instVy = (e.clientY - lastY) / dt; // px/ms, positive = dragging down
         velocityY = velocityY * 0.4 + instVy * 0.6;
         lastY = e.clientY;
         lastTime = now;
       }
 
-      const rawDownY = (e.clientY - startY) / dragZoom; // positive = dragging downward
+      const rawDownY = e.clientY - startY; // positive = dragging downward
       rawDownDist = Math.max(0, rawDownY);
 
       if (currentIsFlexible) {
@@ -289,7 +285,7 @@ class DrawerManager {
         }
 
         const effectiveH = currentIsFlexible
-          ? (cardRef.getBoundingClientRect().height / dragZoom)
+          ? cardRef.getBoundingClientRect().height
           : startHeight;
 
         // Dismiss only when pulled past the magnetic detachment threshold OR Deliberate fast downward flick

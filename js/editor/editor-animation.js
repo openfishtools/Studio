@@ -1297,6 +1297,9 @@
     function invalidateEffectivePropsCache(targetLayerId = null) {
       // Bump so per-layer derived caches (e.g. 3D asset-readiness flags) revalidate after any mutation
       window._layerPropsVersion = ((window._layerPropsVersion | 0) + 1) | 0;
+      if (window.FishAudioEngine && typeof window.FishAudioEngine.invalidateLayerCache === 'function') {
+        window.FishAudioEngine.invalidateLayerCache();
+      }
       if (!targetLayerId) {
         _effectivePropsCache.clear();
         return;

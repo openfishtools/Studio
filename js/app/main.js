@@ -457,7 +457,7 @@ function renderProjects(projects, container, countBadge) {
 
   container.innerHTML = projects.map(project => {
     const name = project.name || 'Untitled Project';
-    const size = project.size || '12 KB';
+    const size = project.size || '-';
     const savedTime = formatRelativeTime(project.updatedAt || project.createdAt);
     const specs = `${escapeHtml(project.resolution || '1080p')} • ${escapeHtml(project.fps || '60')} fps`;
 
@@ -502,32 +502,6 @@ function renderProjects(projects, container, countBadge) {
   }).join('');
 
   bindProjectSwipeGestures(container);
-
-  // Asynchronously compute and hydrate true total project size (JSON + Media + Frame Caches)
-  if (window.FishDatabase && typeof window.FishDatabase.getProjectTotalSize === 'function') {
-    (projects || []).forEach(project => {
-      if (!project || !project.id) return;
-      window.FishDatabase.getProjectTotalSize(project.id).then(res => {
-        if (!res || !res.formatted) return;
-        const selector = (window.CSS && typeof window.CSS.escape === 'function')
-          ? `.project-size[data-project-size-id="${window.CSS.escape(project.id)}"]`
-          : `.project-size[data-project-size-id="${project.id}"]`;
-        const sizeBadge = container.querySelector(selector);
-        if (sizeBadge) {
-          sizeBadge.textContent = res.formatted;
-          const tooltip = `${res.formatted} (${res.bytes.toLocaleString()} bytes)\n• Project: ${res.breakdown.jsonFormatted}\n• Media: ${res.breakdown.mediaFormatted}\n• Cache: ${res.breakdown.cacheFormatted}`;
-          sizeBadge.setAttribute('title', tooltip);
-        }
-        if (project.size !== res.formatted) {
-          project.size = res.formatted;
-          project.sizeBytes = res.bytes;
-          if (typeof window.FishDatabase.updateProjectSize === 'function') {
-            window.FishDatabase.updateProjectSize(project.id, res.formatted, res.bytes);
-          }
-        }
-      }).catch(() => {});
-    });
-  }
 }
 
 /**
@@ -3115,26 +3089,14 @@ function updateSliderTrackFill(slider) {
 function applyUiScale(page, val) {
   const scale = clampUiScale(val);
   try {
-    document.documentElement.style.setProperty('--oft-ui-scale', String(scale / 100));
-    // Zoom on <html> scales UI chrome; canvas internal resolution stays independent.
-    // Clear at 100% so no residual transform affects fixed overlays / splitters.
+    const factor = scale / 100;
+    document.documentElement.style.setProperty('--oft-ui-scale', String(factor));
+    // True native rem scaling via root font-size; viewport units, pointer coords & canvas stay 1:1 native.
     if (scale === 100) {
-      document.documentElement.style.zoom = '';
-      document.documentElement.style.removeProperty('zoom');
+      document.documentElement.style.fontSize = '';
     } else {
-      document.documentElement.style.zoom = String(scale / 100);
-      document.documentElement.style.setProperty('zoom', String(scale / 100));
+      document.documentElement.style.fontSize = `${(16 * factor).toFixed(3)}px`;
     }
-    window.__OFT_ZOOM = scale / 100;
-    document.documentElement.classList.toggle('is-scaled', scale !== 100);
-
-    // Clean up any residual counter-zoom on settings card
-    const settingsCard = document.querySelector('#modal-settings .modal-card');
-    if (settingsCard) {
-      settingsCard.style.zoom = '';
-      settingsCard.style.removeProperty('zoom');
-    }
-
     window.dispatchEvent(new Event('oft-ui-scale-changed'));
   } catch (_) {}
   return scale;

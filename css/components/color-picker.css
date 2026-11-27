@@ -10,17 +10,17 @@
 /* Color Picker Popover Card Integration */
 .color-picker-popover-card {
   padding: 0;
-  width: 326px;
+  width: 20.375rem;
   background-color: var(--bg-panel);
   border: none;
   box-shadow: none;
 }
 
 .color-picker-standalone {
-  border-radius: 12px;
+  border-radius: 0.75rem;
   overflow: hidden;
   width: 100%;
-  max-width: 326px;
+  max-width: 20.375rem;
   background-color: var(--bg-panel);
   border: 1px solid var(--border-panel);
   box-sizing: border-box;
@@ -30,7 +30,7 @@
   display: flex;
   width: 100%;
   height: 100%;
-  border-radius: 11px;
+  border-radius: 0.6875rem;
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -46,11 +46,11 @@
 
 /* Header Bar */
 .color-picker-header {
-  height: 32px;
+  height: 2rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 10px;
+  padding: 0 0.625rem;
   box-sizing: border-box;
   transition: background-color 0.08s ease;
 }
@@ -59,15 +59,15 @@
   flex: 1;
   text-align: center;
   font-family: var(--font-brand);
-  font-size: 12.5px;
+  font-size: 0.7813rem;
   font-weight: 700;
   letter-spacing: 0.5px;
   transition: color 0.08s ease;
 }
 
 .color-picker-add-btn {
-  width: 20px;
-  height: 20px;
+  width: 1.25rem;
+  height: 1.25rem;
   border-radius: 50%;
   border: 1.5px solid currentColor;
   background: transparent;
@@ -76,7 +76,7 @@
   justify-content: center;
   cursor: pointer;
   outline: none;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
   line-height: 1;
   padding: 0;
@@ -93,12 +93,12 @@
 
 /* Body */
 .color-picker-body {
-  padding: 10px;
+  padding: 0.625rem;
   display: flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  min-height: 110px;
+  min-height: 6.875rem;
 }
 
 /* Tab 1: Palette View */
@@ -106,19 +106,19 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .color-picker-swatch-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 .color-picker-swatch-item {
   width: 100%;
   aspect-ratio: 1 / 1;
-  border-radius: 6px;
+  border-radius: 0.375rem;
   border: 1px solid transparent;
   cursor: pointer;
   outline: none;
@@ -133,12 +133,12 @@
 }
 
 .color-picker-swatch-item.is-selected {
-  border: 2px solid var(--color-primary);
+  border: 0.125rem solid var(--color-primary);
 }
 
 .color-picker-swatch-saved.is-hold-pending {
   transform: scale(0.82);
-  border: 2px solid #ff3b30;
+  border: 0.125rem solid #ff3b30;
   opacity: 0.6;
   transition: transform 0.1s ease, opacity 0.1s ease, border-color 0.1s ease;
 }
@@ -146,13 +146,13 @@
 .color-picker-saved-section {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0.25rem;
   border-top: 1px solid var(--border-panel);
-  padding-top: 6px;
+  padding-top: 0.375rem;
 }
 
 .color-picker-saved-title {
-  font-size: 9.5px;
+  font-size: 0.5938rem;
   font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -161,7 +161,7 @@
 .color-picker-saved-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 /* Tab 2: Spectrum View */
@@ -170,14 +170,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 /* SV Rect */
 .color-picker-sv-box {
-  width: 58px;
-  height: 110px;
-  border-radius: 6px;
+  width: 3.625rem;
+  height: 6.875rem;
+  border-radius: 0.375rem;
   position: relative;
   overflow: visible;
   cursor: crosshair;
@@ -189,7 +189,7 @@
 .color-picker-sv-white {
   position: absolute;
   inset: 0;
-  border-radius: 5px;
+  border-radius: 0.3125rem;
   background: linear-gradient(to right, #ffffff, transparent);
   pointer-events: none;
 }
@@ -197,17 +197,17 @@
 .color-picker-sv-black {
   position: absolute;
   inset: 0;
-  border-radius: 5px;
+  border-radius: 0.3125rem;
   background: linear-gradient(to bottom, transparent, #000000);
   pointer-events: none;
 }
 
 .color-picker-sv-cursor {
   position: absolute;
-  width: 14px;
-  height: 14px;
+  width: 0.875rem;
+  height: 0.875rem;
   border-radius: 50%;
-  border: 2px solid #ffffff;
+  border: 0.125rem solid #ffffff;
   transform: translate(-50%, -50%);
   pointer-events: none;
   box-sizing: border-box;
@@ -216,8 +216,8 @@
 
 /* Hue Ring */
 .color-picker-wheel-box {
-  width: 110px;
-  height: 110px;
+  width: 6.875rem;
+  height: 6.875rem;
   position: relative;
   display: flex;
   align-items: center;
@@ -225,8 +225,8 @@
 }
 
 .color-picker-wheel-ring {
-  width: 106px;
-  height: 106px;
+  width: 6.625rem;
+  height: 6.625rem;
   border-radius: 50%;
   background: conic-gradient(#ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
   position: relative;
@@ -236,17 +236,17 @@
 
 .color-picker-wheel-ring-mask {
   position: absolute;
-  inset: 16px;
+  inset: 1rem;
   border-radius: 50%;
   background-color: var(--bg-panel);
 }
 
 .color-picker-wheel-cursor {
   position: absolute;
-  width: 14px;
-  height: 14px;
+  width: 0.875rem;
+  height: 0.875rem;
   border-radius: 50%;
-  border: 2px solid #ffffff;
+  border: 0.125rem solid #ffffff;
   transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 3;
@@ -255,8 +255,8 @@
 
 .color-picker-wheel-center {
   position: absolute;
-  width: 64px;
-  height: 64px;
+  width: 4rem;
+  height: 4rem;
   border-radius: 50%;
   display: flex;
   flex-direction: column;
@@ -271,7 +271,7 @@
 
 .color-picker-wheel-center-hex {
   font-family: var(--font-brand);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
   line-height: 1.1;
   transition: color 0.08s ease;
@@ -279,29 +279,29 @@
 
 .color-picker-wheel-center-pct {
   font-family: var(--font-brand);
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 700;
   transition: color 0.08s ease;
 }
 
 .color-picker-wheel-arrow {
   position: absolute;
-  top: 3px;
-  right: 3px;
+  top: 0.1875rem;
+  right: 0.1875rem;
   width: 0;
   height: 0;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  border-left: 6px solid var(--text-muted);
+  border-top: 0.25rem solid transparent;
+  border-bottom: 0.25rem solid transparent;
+  border-left: 0.375rem solid var(--text-muted);
   transform: rotate(-35deg);
   pointer-events: none;
 }
 
 /* Alpha Slider */
 .color-picker-alpha-box {
-  width: 18px;
-  height: 110px;
-  border-radius: 9px;
+  width: 1.125rem;
+  height: 6.875rem;
+  border-radius: 0.5625rem;
   position: relative;
   cursor: pointer;
   touch-action: none;
@@ -313,14 +313,14 @@
     linear-gradient(-45deg, #777 25%, transparent 25%),
     linear-gradient(45deg, transparent 75%, #777 75%),
     linear-gradient(-45deg, transparent 75%, #777 75%);
-  background-size: 6px 6px;
-  background-position: 0 0, 0 3px, 3px -3px, -3px 0px;
+  background-size: 0.375rem 0.375rem;
+  background-position: 0 0, 0 0.1875rem, 0.1875rem -0.1875rem, -0.1875rem 0px;
 }
 
 .color-picker-alpha-fill {
   position: absolute;
   inset: 0;
-  border-radius: 8px;
+  border-radius: 0.5rem;
   background: linear-gradient(to bottom, #3d4cf5, transparent);
   pointer-events: none;
 }
@@ -328,10 +328,10 @@
 .color-picker-alpha-cursor {
   position: absolute;
   left: 50%;
-  width: 14px;
-  height: 14px;
+  width: 0.875rem;
+  height: 0.875rem;
   border-radius: 50%;
-  border: 2px solid #ffffff;
+  border: 0.125rem solid #ffffff;
   transform: translate(-50%, -50%);
   pointer-events: none;
   box-sizing: border-box;
@@ -340,7 +340,7 @@
 
 /* Right Tool Sidebar */
 .color-picker-sidebar {
-  width: 46px;
+  width: 2.875rem;
   display: flex;
   flex-direction: column;
   background-color: var(--bg-panel-inner);
@@ -348,7 +348,7 @@
 
 .color-picker-tab-btn {
   flex: 1;
-  min-height: 46px;
+  min-height: 2.875rem;
   border: none;
   border-bottom: 1px solid var(--border-panel);
   background: transparent;
@@ -379,75 +379,75 @@
 
 .color-picker-tab-btn.is-active .color-picker-tab-icon-wrap {
   border: 1.5px solid var(--color-primary);
-  border-radius: 6px;
+  border-radius: 0.375rem;
 }
 
 .color-picker-tab-icon-wrap {
-  width: 32px;
-  height: 32px;
+  width: 2rem;
+  height: 2rem;
   display: flex;
   align-items: center;
   justify-content: center;
   border: 1.5px solid transparent;
   box-sizing: border-box;
   transition: border-color 0.12s ease;
-  font-size: 32px;}
+  font-size: 2rem;}
 
 .color-picker-tab-icon {
-  width: 18px;
-  height: 18px;
+  width: 1.125rem;
+  height: 1.125rem;
   display: block;
-  font-size: 18px;}
+  font-size: 1.125rem;}
 
 /* Mobile & Tablet Compact Proportions for Color Picker Popovers */
 .color-picker-popover-card,
 .color-picker-standalone {
-  width: min(300px, calc(100vw - 24px));
-  max-width: min(300px, calc(100vw - 24px));
+  width: min(18.75rem, calc(100vw - 1.5rem));
+  max-width: min(18.75rem, calc(100vw - 1.5rem));
 }
 
 .color-picker-header {
-  height: 30px;
-  padding: 0 8px;
+  height: 1.875rem;
+  padding: 0 0.5rem;
 }
 
 .color-picker-header-label {
-  font-size: 11.5px;
+  font-size: 0.7188rem;
 }
 
 .color-picker-body {
-  padding: 8px;
-  min-height: 100px;
+  padding: 0.5rem;
+  min-height: 6.25rem;
 }
 
 .color-picker-sv-box,
 .color-picker-alpha-box {
-  height: 100px;
+  height: 6.25rem;
 }
 
 .color-picker-wheel-box {
-  width: 100px;
-  height: 100px;
+  width: 6.25rem;
+  height: 6.25rem;
 }
 
 .color-picker-wheel-ring {
-  width: 96px;
-  height: 96px;
+  width: 6rem;
+  height: 6rem;
 }
 
 .color-picker-wheel-ring-mask {
-  inset: 15px;
+  inset: 0.9375rem;
 }
 
 .color-picker-wheel-center {
-  width: 58px;
-  height: 58px;
+  width: 3.625rem;
+  height: 3.625rem;
 }
 
 .color-picker-sidebar {
-  width: 42px;
+  width: 2.625rem;
 }
 
 .color-picker-tab-btn {
-  min-height: 42px;
+  min-height: 2.625rem;
 }

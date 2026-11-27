@@ -1416,17 +1416,29 @@
     window.renderPrecompToCanvas = renderPrecompToCanvas;
 
     // Sync interactive canvas overlay & wireframe bounds strictly for visible player
-    function syncActiveViewerOverlay(targetSec, w, h, bufferScale = null, camEff = null, activeLayers = null) {
+    const _defaultFrontCameraScratch = {
+      id: '__default_front_camera__',
+      posX: 0, posY: 0, posZ: 0, rotX: 0, rotY: 0, rotZ: 0, rotation: 0, cameraLens: 50, cameraZoom: 100
+    };
+    const _scratchFrustumCameras = [];
+    const _cameraFrustumInfoScratch = {
+      viewerCamera: null,
+      cameras: _scratchFrustumCameras,
+      activeCameraId: null,
+      bufferScale: 1,
+      w: 0,
+      h: 0
+    };
+
+    function syncActiveViewerOverlay(targetSec, w, h, bufferScale = null, camEff = null, activeLayers = null, realCamEff = undefined, isCustomCamView = undefined) {
       const allSelectedIds = (window.selectedLayerIds && window.selectedLayerIds.size > 0)
         ? Array.from(window.selectedLayerIds)
         : (window.selectedLayerId ? [window.selectedLayerId] : []);
 
-      // Fast-path during active playback: if no layer is selected and grid overlay is off, skip per-frame overlay redraw
-      if (window.isTimelinePlaying && allSelectedIds.length === 0) {
-        if (!window.CanvasOverlay || !window.CanvasOverlay.showGrid) {
-          return;
-        }
-      }
+      const customCam = (isCustomCamView !== undefined)
+        ? !!isCustomCamView
+        : (typeof window.isCustomCameraViewActive === 'function' && window.isCustomCameraViewActive());
+      const isCamViewModified = typeof window.isEditorCameraViewModified === 'function' && window.isEditorCameraViewModified();
 
       const layers = (currentProjectState && currentProjectState.layers) || [];
       const pixelsPerSecond = window.currentPixelsPerSecond || 80;
@@ -1438,6 +1450,26 @@
           const end = start + dur;
           return targetSec >= start && targetSec < end;
         });
+      }
+
+      // Count visible active camera layers (for multi-camera wireframe visibility)
+      let visibleCameraCount = 0;
+      let primaryCamLayer = null;
+      for (let i = 0; i < activeLayers.length; i++) {
+        const l = activeLayers[i];
+        if (l && l.type === 'camera' && !l.hidden) {
+          if (!primaryCamLayer) primaryCamLayer = l;
+          visibleCameraCount++;
+        }
+      }
+      const needsCameraFrustum = (customCam && (visibleCameraCount > 0 || isCamViewModified)) || (!customCam && visibleCameraCount > 1);
+
+      // Fast-path during active playback: if no layer is selected, grid overlay is off, and no camera frustum needs drawing, skip per-frame overlay redraw
+      if (window.isTimelinePlaying && allSelectedIds.length === 0 && !needsCameraFrustum) {
+        if (!window.CanvasOverlay || !window.CanvasOverlay.showGrid) {
+          window._activeCameraFrustumInfo = null;
+          return;
+        }
       }
 
       if (bufferScale === null) {
@@ -1453,11 +1485,47 @@
       }
       window._lastBufferScale = bufferScale;
 
-      if (camEff === null) {
-        const activeCamera = activeLayers.find(l => l.type === 'camera' && !l.hidden);
-        camEff = activeCamera
-          ? ((typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(activeCamera, targetSec) : activeCamera)
+      if (realCamEff === undefined) {
+        realCamEff = primaryCamLayer
+          ? ((typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(primaryCamLayer, targetSec) : primaryCamLayer)
           : null;
+      }
+
+      if (camEff === null) {
+        camEff = (customCam && typeof window.getEditorCameraView === 'function')
+          ? window.getEditorCameraView(realCamEff)
+          : realCamEff;
+      }
+
+      _scratchFrustumCameras.length = 0;
+      if (needsCameraFrustum) {
+        if (visibleCameraCount > 0) {
+          for (let i = 0; i < activeLayers.length; i++) {
+            const l = activeLayers[i];
+            if (!l || l.type !== 'camera' || l.hidden) continue;
+            // In Active Camera mode, skip the camera we are currently looking through
+            if (!customCam && l === primaryCamLayer) continue;
+            const eff = (l === primaryCamLayer && realCamEff)
+              ? realCamEff
+              : ((typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(l, targetSec) : l);
+            if (eff) _scratchFrustumCameras.push(eff);
+          }
+        } else if (customCam && isCamViewModified) {
+          // Default front camera wireframe is ONLY shown when Camera View has been moved away from default
+          _scratchFrustumCameras.push(_defaultFrontCameraScratch);
+        }
+      }
+
+      if (_scratchFrustumCameras.length > 0) {
+        _cameraFrustumInfoScratch.viewerCamera = camEff || _defaultFrontCameraScratch;
+        _cameraFrustumInfoScratch.cameras = _scratchFrustumCameras;
+        _cameraFrustumInfoScratch.activeCameraId = primaryCamLayer ? primaryCamLayer.id : '__default_front_camera__';
+        _cameraFrustumInfoScratch.bufferScale = bufferScale;
+        _cameraFrustumInfoScratch.w = w;
+        _cameraFrustumInfoScratch.h = h;
+        window._activeCameraFrustumInfo = _cameraFrustumInfoScratch;
+      } else {
+        window._activeCameraFrustumInfo = null;
       }
 
       if (allSelectedIds.length > 0) {
@@ -1525,11 +1593,12 @@
                 ? getLayerEffectivePropsAtTime(selL, targetSec)
                 : selL;
               selL._canvasBounds = computeCollapsedPrecompBounds(selL, effProps, targetSec, bufferScale, camEff, w, h);
-            } else if (!selL._canvasBounds || selL._currentSec !== targetSec) {
+            } else if (!selL._canvasBounds || selL._currentSec !== targetSec || selL._camViewVer !== (window._editorCameraViewVersion || 0)) {
               const effProps = (typeof getLayerEffectivePropsAtTime === 'function')
                 ? getLayerEffectivePropsAtTime(selL, targetSec)
                 : selL;
               selL._canvasBounds = engine.getBounds(Object.assign({}, selL, effProps), bufferScale, camEff, w, h);
+              selL._camViewVer = window._editorCameraViewVersion || 0;
             }
           }
         });
@@ -1622,10 +1691,15 @@
       // If frame is cached, blit directly and skip the entire render pipeline
       // (layer filter, camera transform, effects, etc.).
       // Bypassed during export, idle-cache generation, or direct canvas transform dragging.
+      const isCustomCamViewEarly = !isExport && !isIdleCache && !isTemplate &&
+        triggerSource !== 'lookahead-cache' && triggerSource !== 'idle-cache' &&
+        typeof window.isCustomCameraViewActive === 'function' && window.isCustomCameraViewActive();
+
       if (
         !isExport && !isIdleCache && !isTemplate &&
         triggerSource !== 'lookahead-cache' &&
         !isTransformDragging &&
+        !isCustomCamViewEarly &&
         window.PreviewCacheManager &&
         window.isPreviewCacheEnabled !== false
       ) {
@@ -1681,12 +1755,14 @@
 
       // 1. Detect active Camera layer
       const activeCamera = activeLayers.find(l => l.type === 'camera' && !l.hidden);
-      const camEff = activeCamera
+      const realCamEff = activeCamera
         ? ((typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(activeCamera, currentSec) : activeCamera)
         : null;
-      if (camEff && activeCamera) {
-        camEff._rawCamera = activeCamera;
+      if (realCamEff && activeCamera) {
+        realCamEff._rawCamera = activeCamera;
       }
+      const isCustomCamView = isCustomCamViewEarly && typeof window.getEditorCameraView === 'function';
+      const camEff = isCustomCamView ? window.getEditorCameraView(realCamEff) : realCamEff;
 
       let selectedWireframeBounds = null;
       let cachedBitmap = null;
@@ -1741,7 +1817,7 @@
       const isScrubbing = !!(window.isTimelineScrubbing || window.isTimelinePanning || (typeof window.isPanning !== 'undefined' && window.isPanning));
       // RAM preview cache: used during playback, scrubbing, and frame park for instant 60fps blit.
       // Canvas wireframe transform interaction bypasses cache to track cursor movements live.
-      if (!isExport && !isIdleCache && !isTemplate && !isTransformDragging && window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
+      if (!isExport && !isIdleCache && !isTemplate && !isTransformDragging && !isCustomCamView && window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
         cachedBitmap = window.PreviewCacheManager.getFrame(frameIndex, w, h);
       }
 
@@ -2785,7 +2861,7 @@
 
             // Calculate Camera Depth of Field blur if camera blur is enabled (3D layers only)
             let layerDofBlur = 0;
-            if (layer.is3D && activeCamera && camEff && camEff.cameraBlurEnabled && (camEff.cameraBlurAmount || 20) > 0) {
+            if (!isCustomCamView && layer.is3D && activeCamera && camEff && camEff.cameraBlurEnabled && (camEff.cameraBlurAmount || 20) > 0) {
               const layerZ = effProps.posZ || 0;
               let focusZ = camEff.cameraFocusDistance || 0;
               let distToFocus = 0;
@@ -3254,7 +3330,7 @@
         const shouldBakeLiveFrame = !isScrubbing;
         const isBakingNow = window.PreviewCacheManager && typeof window.PreviewCacheManager.isTimeBaking === 'function' && window.PreviewCacheManager.isTimeBaking(currentSec);
 
-        if (!isBakingNow && shouldBakeLiveFrame && !hasUnreadyMedia && !hasUnreadyVideoInComposition && !isExport && !window.isExporting && !isIdleCache && !isTransformDragging &&
+        if (!isBakingNow && shouldBakeLiveFrame && !hasUnreadyMedia && !hasUnreadyVideoInComposition && !isExport && !window.isExporting && !isIdleCache && !isTransformDragging && !isCustomCamView &&
             triggerSource !== 'lookahead-cache' &&
             window.PreviewCacheManager && window.isPreviewCacheEnabled !== false) {
           if (typeof window.PreviewCacheManager.ensureAudioOnlyFullCache === 'function' &&
@@ -3285,7 +3361,7 @@
         triggerSource !== 'lookahead-cache' && triggerSource !== 'idle-cache';
 
       if (isInteractiveViewer) {
-        syncActiveViewerOverlay(currentSec, w, h, bufferScale, camEff, activeLayers);
+        syncActiveViewerOverlay(currentSec, w, h, bufferScale, camEff, activeLayers, realCamEff, isCustomCamView);
       }
       if (isInteractiveViewer && hasUnreadyMedia && !window.isExporting) {
         // A layer was skipped because its media was not decoded yet (typical right after refresh).
@@ -3543,7 +3619,10 @@
         const baseH = baseDims[1];
         const bufferScale = window._lastBufferScale || (activeCanvasEl.width / (baseW || 1920));
         const activeCam = getActiveCameraLayer();
-        const camEff = activeCam ? ((typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(activeCam, sec) : activeCam) : null;
+        const realCamEff = activeCam ? ((typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(activeCam, sec) : activeCam) : null;
+        const camEff = (typeof window.isCustomCameraViewActive === 'function' && window.isCustomCameraViewActive() && typeof window.getEditorCameraView === 'function')
+          ? window.getEditorCameraView(realCamEff)
+          : realCamEff;
         const eff = (typeof getLayerEffectivePropsAtTime === 'function') ? getLayerEffectivePropsAtTime(layer, sec) : layer;
         if (layer.type === 'light') {
           layer._canvasBounds = buildLightCanvasBounds(layer, eff, bufferScale, camEff, activeCanvasEl.width, activeCanvasEl.height);
@@ -4301,11 +4380,10 @@
               const boxR = Math.min(cRect.right, Math.max(startLassoClientX, clampedX));
               const boxB = Math.min(cRect.bottom, Math.max(startLassoClientY, clampedY));
 
-              const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || (window.__OFT_ZOOM || 1) || 1;
-              canvasMarqueeBox.style.left = `${boxL / _z}px`;
-              canvasMarqueeBox.style.top = `${boxT / _z}px`;
-              canvasMarqueeBox.style.width = `${Math.max(0, boxR - boxL) / _z}px`;
-              canvasMarqueeBox.style.height = `${Math.max(0, boxB - boxT) / _z}px`;
+              canvasMarqueeBox.style.left = `${boxL}px`;
+              canvasMarqueeBox.style.top = `${boxT}px`;
+              canvasMarqueeBox.style.width = `${Math.max(0, boxR - boxL)}px`;
+              canvasMarqueeBox.style.height = `${Math.max(0, boxB - boxT)}px`;
             }
           }
 

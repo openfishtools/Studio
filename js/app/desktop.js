@@ -753,27 +753,21 @@
       const spaceAbove = badgeRect.top;
       const spaceBelow = vh - badgeRect.bottom;
 
-      // UI-scale zoom compensation: rects + innerWidth report visual px,
-      // but left/top/bottom/maxHeight styles render scaled — divide the
-      // final style-bound values back to layout px. Comparisons above stay
-      // in visual space (mutually consistent).
-      const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || 1;
-
       let left = Math.max(8, Math.min(vw - dropdownRect.width - 8, badgeRect.left));
 
       if (spaceAbove >= dropdownRect.height + 6 || spaceAbove >= spaceBelow) {
         // Pop Upward (standard on bottom timeline)
         dropdown.style.top = '';
-        dropdown.style.bottom = `${(vh - badgeRect.top + 4) / _z}px`;
-        dropdown.style.left = `${left / _z}px`;
-        dropdown.style.maxHeight = `${Math.max(120, Math.min(320, spaceAbove / _z - 12))}px`;
+        dropdown.style.bottom = `${vh - badgeRect.top + 4}px`;
+        dropdown.style.left = `${left}px`;
+        dropdown.style.maxHeight = `${Math.max(120, Math.min(320, spaceAbove - 12))}px`;
         dropdown.style.transformOrigin = 'bottom left';
       } else {
         // Pop Downward
         dropdown.style.bottom = '';
-        dropdown.style.top = `${(badgeRect.bottom + 4) / _z}px`;
-        dropdown.style.left = `${left / _z}px`;
-        dropdown.style.maxHeight = `${Math.max(120, Math.min(320, spaceBelow / _z - 12))}px`;
+        dropdown.style.top = `${badgeRect.bottom + 4}px`;
+        dropdown.style.left = `${left}px`;
+        dropdown.style.maxHeight = `${Math.max(120, Math.min(320, spaceBelow - 12))}px`;
         dropdown.style.transformOrigin = 'top left';
       }
 
@@ -1431,9 +1425,8 @@
                 const ev = _layerDragLastE;
                 if (!ev || !isDragging || !dragGhost) return;
 
-                const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || (window.__OFT_ZOOM || 1) || 1;
-                dragGhost.style.left = ((ev.clientX + 10) / _z) + 'px';
-                dragGhost.style.top = ((ev.clientY - 17) / _z) + 'px';
+                dragGhost.style.left = (ev.clientX + 10) + 'px';
+                dragGhost.style.top = (ev.clientY - 17) + 'px';
 
                 const curSlots = Array.from(overlayContainer.querySelectorAll('.timeline-lane-pill-slot'));
                 const track = document.getElementById('timeline-layers-track');
@@ -1455,15 +1448,15 @@
                 const vpRect = layersViewport.getBoundingClientRect();
                 if (dropIdx < curSlots.length) {
                   const targetSlotRect = curSlots[dropIdx].getBoundingClientRect();
-                  indicator.style.top = (((targetSlotRect.top - vpRect.top) / _z) + layersViewport.scrollTop) + 'px';
+                  indicator.style.top = ((targetSlotRect.top - vpRect.top) + layersViewport.scrollTop) + 'px';
                 } else if (curSlots.length > 0) {
                   const lastSlotRect = curSlots[curSlots.length - 1].getBoundingClientRect();
-                  indicator.style.top = (((lastSlotRect.bottom - vpRect.top) / _z) + layersViewport.scrollTop) + 'px';
+                  indicator.style.top = ((lastSlotRect.bottom - vpRect.top) + layersViewport.scrollTop) + 'px';
                 }
 
                 // 1. Live translate all moving slots & lanes smoothly with pointer
                 const pitch = 34;
-                const deltaY = (ev.clientY - startY) / _z;
+                const deltaY = ev.clientY - startY;
                 const movingIndices = movingLayers.map(l => curLayers.findIndex(x => String(x.id) === String(l.id))).sort((a, b) => a - b);
                 const movingCount = movingLayers.length;
                 const minMovingIdx = movingIndices.length > 0 ? movingIndices[0] : fromIdx;
@@ -2631,14 +2624,13 @@
       isMarquee = false;
 
       function updateMarqueeGeometry() {
-        const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || (window.__OFT_ZOOM || 1) || 1;
         const vpRect = layersViewport.getBoundingClientRect();
         const curScrollX = (typeof window.getDesktopScrollX === 'function') ? window.getDesktopScrollX() : (desktopScrollX || 0);
         const curScrollY = layersViewport.scrollTop;
 
         // Content-anchored start position projected to current screen space
-        const screenStartX = startClientX - (curScrollX - startScrollX) * _z;
-        const screenStartY = startClientY - (curScrollY - startScrollY) * _z;
+        const screenStartX = startClientX - (curScrollX - startScrollX);
+        const screenStartY = startClientY - (curScrollY - startScrollY);
 
         // Clamp X to viewport
         const clampedClientX = Math.max(vpRect.left, Math.min(vpRect.right, currentClientX));
@@ -2656,28 +2648,28 @@
         const boxW = Math.max(0, boxRight - boxLeft);
         const boxH = Math.max(0, boxBottom - boxTop);
 
-        marqueeBox.style.left = `${boxLeft / _z}px`;
-        marqueeBox.style.top = `${boxTop / _z}px`;
-        marqueeBox.style.width = `${boxW / _z}px`;
-        marqueeBox.style.height = `${boxH / _z}px`;
+        marqueeBox.style.left = `${boxLeft}px`;
+        marqueeBox.style.top = `${boxTop}px`;
+        marqueeBox.style.width = `${boxW}px`;
+        marqueeBox.style.height = `${boxH}px`;
 
         // Convert marquee to scroll-space for intersection — use UNCLAMPED rawClientY
         // so clips scrolled below/above the visible viewport are still detected
         const rawBoxTop    = Math.min(screenStartY, rawClientY);
         const rawBoxBottom = Math.max(screenStartY, rawClientY);
-        const mScrollLeft   = boxLeft    - vpRect.left + curScrollX * _z;
-        const mScrollTop    = rawBoxTop  - vpRect.top  + curScrollY * _z;
-        const mScrollRight  = boxRight   - vpRect.left + curScrollX * _z;
-        const mScrollBottom = rawBoxBottom - vpRect.top + curScrollY * _z;
+        const mScrollLeft   = boxLeft    - vpRect.left + curScrollX;
+        const mScrollTop    = rawBoxTop  - vpRect.top  + curScrollY;
+        const mScrollRight  = boxRight   - vpRect.left + curScrollX;
+        const mScrollBottom = rawBoxBottom - vpRect.top + curScrollY;
 
         const clips = layersViewport.querySelectorAll('.timeline-clip-block');
         clips.forEach(clip => {
           const cr = clip.getBoundingClientRect();
           // Convert clip rect to scroll-space
-          const crLeft   = cr.left   - vpRect.left + curScrollX * _z;
-          const crTop    = cr.top    - vpRect.top  + curScrollY * _z;
-          const crRight  = cr.right  - vpRect.left + curScrollX * _z;
-          const crBottom = cr.bottom - vpRect.top  + curScrollY * _z;
+          const crLeft   = cr.left   - vpRect.left + curScrollX;
+          const crTop    = cr.top    - vpRect.top  + curScrollY;
+          const crRight  = cr.right  - vpRect.left + curScrollX;
+          const crBottom = cr.bottom - vpRect.top  + curScrollY;
           const intersects = !(
             crRight  < mScrollLeft  ||
             crLeft   > mScrollRight ||
@@ -2690,10 +2682,10 @@
         const diamonds = layersViewport.querySelectorAll('.desktop-kf-diamond');
         diamonds.forEach(diamond => {
           const dr = diamond.getBoundingClientRect();
-          const drLeft   = dr.left   - vpRect.left + curScrollX * _z;
-          const drTop    = dr.top    - vpRect.top  + curScrollY * _z;
-          const drRight  = dr.right  - vpRect.left + curScrollX * _z;
-          const drBottom = dr.bottom - vpRect.top  + curScrollY * _z;
+          const drLeft   = dr.left   - vpRect.left + curScrollX;
+          const drTop    = dr.top    - vpRect.top  + curScrollY;
+          const drRight  = dr.right  - vpRect.left + curScrollX;
+          const drBottom = dr.bottom - vpRect.top  + curScrollY;
           const intersects = !(
             drRight  < mScrollLeft  ||
             drLeft   > mScrollRight ||
@@ -2792,12 +2784,11 @@
           isMarquee = false;
           marqueeBox.style.display = 'none';
 
-          const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || (window.__OFT_ZOOM || 1) || 1;
           const vpRect = layersViewport.getBoundingClientRect();
           const curScrollX = (typeof window.getDesktopScrollX === 'function') ? window.getDesktopScrollX() : (desktopScrollX || 0);
           const curScrollY = layersViewport.scrollTop;
-          const screenStartX = startClientX - (curScrollX - startScrollX) * _z;
-          const screenStartY = startClientY - (curScrollY - startScrollY) * _z;
+          const screenStartX = startClientX - (curScrollX - startScrollX);
+          const screenStartY = startClientY - (curScrollY - startScrollY);
 
           const clampedClientX = Math.max(vpRect.left, Math.min(vpRect.right, upEvent.clientX));
           const rawClientY = upEvent.clientY; // unclamped Y for full scroll-space coverage
@@ -2808,20 +2799,20 @@
           const boxBottom = Math.max(screenStartY, rawClientY);
 
           // Marquee in scroll-space for off-screen intersection
-          const mLeft   = boxLeft   - vpRect.left + curScrollX * _z;
-          const mTop    = boxTop    - vpRect.top  + curScrollY * _z;
-          const mRight  = boxRight  - vpRect.left + curScrollX * _z;
-          const mBottom = boxBottom - vpRect.top  + curScrollY * _z;
+          const mLeft   = boxLeft   - vpRect.left + curScrollX;
+          const mTop    = boxTop    - vpRect.top  + curScrollY;
+          const mRight  = boxRight  - vpRect.left + curScrollX;
+          const mBottom = boxBottom - vpRect.top  + curScrollY;
 
           const matchedDiamonds = [];
           const diamonds = layersViewport.querySelectorAll('.desktop-kf-diamond');
           diamonds.forEach(diamond => {
             diamond.classList.remove('is-marquee-candidate');
             const dr = diamond.getBoundingClientRect();
-            const drLeft   = dr.left   - vpRect.left + curScrollX * _z;
-            const drTop    = dr.top    - vpRect.top  + curScrollY * _z;
-            const drRight  = dr.right  - vpRect.left + curScrollX * _z;
-            const drBottom = dr.bottom - vpRect.top  + curScrollY * _z;
+            const drLeft   = dr.left   - vpRect.left + curScrollX;
+            const drTop    = dr.top    - vpRect.top  + curScrollY;
+            const drRight  = dr.right  - vpRect.left + curScrollX;
+            const drBottom = dr.bottom - vpRect.top  + curScrollY;
             const intersects = !(drRight < mLeft || drLeft > mRight || drBottom < mTop || drTop > mBottom);
             if (intersects) {
               matchedDiamonds.push(diamond);
@@ -2866,10 +2857,10 @@
           clips.forEach(clip => {
             clip.classList.remove('is-marquee-candidate');
             const cr = clip.getBoundingClientRect();
-            const crLeft   = cr.left   - vpRect.left + curScrollX * _z;
-            const crTop    = cr.top    - vpRect.top  + curScrollY * _z;
-            const crRight  = cr.right  - vpRect.left + curScrollX * _z;
-            const crBottom = cr.bottom - vpRect.top  + curScrollY * _z;
+            const crLeft   = cr.left   - vpRect.left + curScrollX;
+            const crTop    = cr.top    - vpRect.top  + curScrollY;
+            const crRight  = cr.right  - vpRect.left + curScrollX;
+            const crBottom = cr.bottom - vpRect.top  + curScrollY;
             const intersects = !(crRight < mLeft || crLeft > mRight || crBottom < mTop || crTop > mBottom);
             if (intersects && clip.dataset.layerId) {
               matchedIds.add(clip.dataset.layerId);
@@ -3575,6 +3566,7 @@
     const fps = window.currentTimelineFps || (window.currentProjectState && window.currentProjectState.fps) || 60;
     const beatmarks = (window.currentProjectState && window.currentProjectState.beatmarks) || [];
     const isNear = beatmarks.some(b => Math.abs(b - currentSec) <= 0.5 / fps);
+    btnAddBm.classList.toggle('has-beatmark', isNear);
     btnAddBm.setAttribute('title', isNear ? 'Playhead on Marker (M)' : 'Add Marker / Beatmark at Playhead (M)');
   }
 

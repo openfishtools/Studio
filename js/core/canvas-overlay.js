@@ -125,6 +125,7 @@
       const scaleY = (main && main.height > 0) ? (h / main.height) : 1;
 
       this._drawWireframes(ctx, w, h, scaleX, scaleY);
+      this._drawCameraFrustumOverlay(ctx, w, h, scaleX, scaleY);
       this._drawVectorEditorOverlay(ctx, w, h, scaleX, scaleY);
     },
 
@@ -873,6 +874,224 @@
         ctx.fill();
         ctx.stroke();
         ctx.restore();
+      }
+
+      ctx.restore();
+    },
+
+    // Pre-allocated scratch buffers for Blender-style Camera Frustum wireframes (zero per-frame GC)
+    _frustumProjParams: {
+      cx: 0, cy: 0, posZ: 0, rotX: 0, rotY: 0, rotZ: 0,
+      bufferScale: 1, vw: 0, vh: 0, camera: null
+    },
+    _frustumCamScaleScratch: { x: 1, y: 1 },
+    _frustumPts: [
+      { x: 0, y: 0, isBehind: false }, // 0: Eye apex
+      { x: 0, y: 0, isBehind: false }, // 1: Near TL
+      { x: 0, y: 0, isBehind: false }, // 2: Near TR
+      { x: 0, y: 0, isBehind: false }, // 3: Near BR
+      { x: 0, y: 0, isBehind: false }, // 4: Near BL
+      { x: 0, y: 0, isBehind: false }, // 5: Far TL (composition plane)
+      { x: 0, y: 0, isBehind: false }, // 6: Far TR
+      { x: 0, y: 0, isBehind: false }, // 7: Far BR
+      { x: 0, y: 0, isBehind: false }, // 8: Far BL
+      { x: 0, y: 0, isBehind: false }, // 9: Up-arrow apex (Blender top triangle)
+      { x: 0, y: 0, isBehind: false }, // 10: Up-arrow base left
+      { x: 0, y: 0, isBehind: false }, // 11: Up-arrow base right
+      { x: 0, y: 0, isBehind: false }, // 12: Focus plane TL (when DOF enabled)
+      { x: 0, y: 0, isBehind: false }, // 13: Focus plane TR
+      { x: 0, y: 0, isBehind: false }, // 14: Focus plane BR
+      { x: 0, y: 0, isBehind: false }  // 15: Focus plane BL
+    ],
+
+    _drawCameraFrustumOverlay(ctx, w, h, scaleX, scaleY) {
+      const info = window._activeCameraFrustumInfo;
+      if (!info || !info.viewerCamera || !Array.isArray(info.cameras) || info.cameras.length === 0) return;
+      const engine = window.FishToolEngine || window.LayerTransform;
+      if (!engine || typeof engine.projectPoint !== 'function') return;
+
+      const viewerCam = info.viewerCamera;
+      const bScale = info.bufferScale || 1;
+      const vw = info.w || w;
+      const vh = info.h || h;
+      if (!vw || !vh) return;
+
+      const colors = this._getThemeColors();
+      const uiScale = this._dprScale || 1;
+      const projParams = this._frustumProjParams;
+      projParams.bufferScale = bScale;
+      projParams.vw = vw;
+      projParams.vh = vh;
+      projParams.camera = viewerCam;
+
+      const pts = this._frustumPts;
+      const drawSeg = (a, b) => {
+        if (pts[a].isBehind || pts[b].isBehind) return;
+        ctx.moveTo(pts[a].x, pts[a].y);
+        ctx.lineTo(pts[b].x, pts[b].y);
+      };
+
+      ctx.save();
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+
+      for (let ci = 0; ci < info.cameras.length; ci++) {
+        const realCam = info.cameras[ci];
+        if (!realCam) continue;
+        const isPrimary = !info.activeCameraId || realCam.id === info.activeCameraId || (realCam._rawCamera && realCam._rawCamera.id === info.activeCameraId);
+
+        // Dynamic camera intrinsics: Focal Length (lens mm), Zoom %, and Camera Scale
+        const realLens = Math.max(1, realCam.cameraLens !== undefined ? realCam.cameraLens : 50);
+        const realZoom = Math.max(1, realCam.cameraZoom !== undefined ? realCam.cameraZoom : 100);
+        const lensFactor = Math.max(0.01, realLens / 50);
+        const totalZoom = Math.max(0.05, lensFactor * (realZoom / 100));
+        const D_cam = 1000.0 * lensFactor * bScale;
+
+        let camInvX = 1;
+        let camInvY = 1;
+        if (typeof engine._getCameraInverseScale === 'function') {
+          const inv = engine._getCameraInverseScale(realCam, vw, vh, bScale, this._frustumCamScaleScratch);
+          camInvX = Math.max(0.05, Math.abs(inv.x || 1));
+          camInvY = Math.max(0.05, Math.abs(inv.y || 1));
+        }
+
+        const eyeX = vw * 0.5 + (realCam.posX || 0) * bScale;
+        const eyeY = vh * 0.5 + (realCam.posY || 0) * bScale;
+        const eyeZ = (realCam.posZ || 0) * bScale + D_cam;
+
+        // Inverse of FishToolEngine camera rotation: Rz(+rotZ) * Ry(-rotY) * Rx(-rotX)
+        const radX = -((realCam.rotX || 0) * Math.PI) / 180;
+        const radY = -((realCam.rotY || 0) * Math.PI) / 180;
+        const radZ = ((realCam.rotZ !== undefined ? realCam.rotZ : (realCam.rotation || 0)) * Math.PI) / 180;
+        const cX = Math.cos(radX), sX = Math.sin(radX);
+        const cY = Math.cos(radY), sY = Math.sin(radY);
+        const cZ = Math.cos(radZ), sZ = Math.sin(radZ);
+
+        const projectLocalCamPt = (idx, vx, vy, vz) => {
+          const y1 = vy * cX - vz * sX;
+          const z1 = vy * sX + vz * cX;
+          const x1 = vx;
+          const x2 = x1 * cY + z1 * sY;
+          const z2 = -x1 * sY + z1 * cY;
+          const y2 = y1;
+          const wx = eyeX + (x2 * cZ - y2 * sZ);
+          const wy = eyeY + (x2 * sZ + y2 * cZ);
+          const wz = eyeZ + z2;
+          const p = engine.projectPoint(wx, wy, wz, projParams);
+          pts[idx].x = p.x * scaleX;
+          pts[idx].y = p.y * scaleY;
+          pts[idx].isBehind = !!p.isBehind;
+        };
+
+        // Frustum geometry scales dynamically with focal length (D_cam) & zoom (totalZoom)
+        const dFar = D_cam;
+        const dNear = Math.max(60 * bScale, Math.min(D_cam * 0.22, 220 * bScale * lensFactor));
+        const farHalfW = (vw * 0.5) * (dFar / (D_cam * totalZoom * camInvX));
+        const farHalfH = (vh * 0.5) * (dFar / (D_cam * totalZoom * camInvY));
+        const nearHalfW = (vw * 0.5) * (dNear / (D_cam * totalZoom * camInvX));
+        const nearHalfH = (vh * 0.5) * (dNear / (D_cam * totalZoom * camInvY));
+
+        // 0: Eye apex
+        projectLocalCamPt(0, 0, 0, 0);
+        // 1..4: Near camera lens-hood rectangle (Blender camera body)
+        projectLocalCamPt(1, -nearHalfW, -nearHalfH, -dNear);
+        projectLocalCamPt(2,  nearHalfW, -nearHalfH, -dNear);
+        projectLocalCamPt(3,  nearHalfW,  nearHalfH, -dNear);
+        projectLocalCamPt(4, -nearHalfW,  nearHalfH, -dNear);
+        // 5..8: Far composition viewport rectangle
+        projectLocalCamPt(5, -farHalfW, -farHalfH, -dFar);
+        projectLocalCamPt(6,  farHalfW, -farHalfH, -dFar);
+        projectLocalCamPt(7,  farHalfW,  farHalfH, -dFar);
+        projectLocalCamPt(8, -farHalfW,  farHalfH, -dFar);
+        // 9..11: Iconic Blender UP-orientation triangle above near lens-hood
+        const triBaseY = -nearHalfH * 1.14;
+        const triHalfW = nearHalfW * 0.52;
+        const triApexY = -nearHalfH * 1.72;
+        projectLocalCamPt(9,   0,        triApexY, -dNear);
+        projectLocalCamPt(10, -triHalfW, triBaseY, -dNear);
+        projectLocalCamPt(11,  triHalfW, triBaseY, -dNear);
+
+        const baseAlpha = isPrimary ? 1.0 : 0.65;
+
+        // 1. Dashed frustum sightlines (Near corners -> Far composition frame)
+        ctx.beginPath();
+        ctx.strokeStyle = colors.primary;
+        ctx.globalAlpha = 0.45 * baseAlpha;
+        ctx.lineWidth = 1.15 * uiScale;
+        ctx.setLineDash([5 * uiScale, 4 * uiScale]);
+        drawSeg(1, 5);
+        drawSeg(2, 6);
+        drawSeg(3, 7);
+        drawSeg(4, 8);
+        ctx.stroke();
+
+        // 2. Far composition frame rectangle (solid)
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.globalAlpha = 0.78 * baseAlpha;
+        ctx.lineWidth = 1.35 * uiScale;
+        drawSeg(5, 6);
+        drawSeg(6, 7);
+        drawSeg(7, 8);
+        drawSeg(8, 5);
+        ctx.stroke();
+
+        // 3. Blender-style camera pyramid body (Eye -> Near hood + Near rect)
+        ctx.beginPath();
+        ctx.globalAlpha = 0.95 * baseAlpha;
+        ctx.lineWidth = 1.75 * uiScale;
+        drawSeg(0, 1);
+        drawSeg(0, 2);
+        drawSeg(0, 3);
+        drawSeg(0, 4);
+        drawSeg(1, 2);
+        drawSeg(2, 3);
+        drawSeg(3, 4);
+        drawSeg(4, 1);
+        ctx.stroke();
+
+        // 4. Blender UP triangle (filled for active camera, outlined for secondary cameras)
+        if (!pts[9].isBehind && !pts[10].isBehind && !pts[11].isBehind) {
+          ctx.beginPath();
+          ctx.moveTo(pts[9].x, pts[9].y);
+          ctx.lineTo(pts[10].x, pts[10].y);
+          ctx.lineTo(pts[11].x, pts[11].y);
+          ctx.closePath();
+          if (isPrimary) {
+            ctx.fillStyle = colors.primary;
+            ctx.globalAlpha = 0.95;
+            ctx.fill();
+          } else {
+            ctx.strokeStyle = colors.primary;
+            ctx.globalAlpha = 0.85;
+            ctx.lineWidth = 1.5 * uiScale;
+            ctx.stroke();
+          }
+        }
+
+        // 5. Optional DOF focus distance plane rectangle (when cameraBlurEnabled is active)
+        if (realCam.cameraBlurEnabled && (realCam.cameraBlurAmount || 0) > 0) {
+          const focusDist = Math.max(dNear * 1.1, D_cam - ((realCam.cameraFocusDistance || 0) * bScale));
+          if (focusDist > dNear * 1.05 && focusDist < D_cam * 4) {
+            const focHalfW = (vw * 0.5) * (focusDist / (D_cam * totalZoom * camInvX));
+            const focHalfH = (vh * 0.5) * (focusDist / (D_cam * totalZoom * camInvY));
+            projectLocalCamPt(12, -focHalfW, -focHalfH, -focusDist);
+            projectLocalCamPt(13,  focHalfW, -focHalfH, -focusDist);
+            projectLocalCamPt(14,  focHalfW,  focHalfH, -focusDist);
+            projectLocalCamPt(15, -focHalfW,  focHalfH, -focusDist);
+            ctx.beginPath();
+            ctx.strokeStyle = colors.primary;
+            ctx.globalAlpha = 0.5 * baseAlpha;
+            ctx.lineWidth = 1.1 * uiScale;
+            ctx.setLineDash([3 * uiScale, 3 * uiScale]);
+            drawSeg(12, 13);
+            drawSeg(13, 14);
+            drawSeg(14, 15);
+            drawSeg(15, 12);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+        }
       }
 
       ctx.restore();

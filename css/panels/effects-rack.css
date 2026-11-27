@@ -8,10 +8,10 @@
 /* 1. Effects Rack Subview Container Layout */
 .effects-rack-layout {
   display: grid;
-  grid-template-columns: 48px 1fr;
+  grid-template-columns: 3rem 1fr;
   width: 100%;
-  height: 250px;
-  min-height: 240px;
+  height: 15.625rem;
+  min-height: 15rem;
   background-color: var(--bg-panel);
   color: var(--text-primary);
   font-family: var(--font-brand);
@@ -33,9 +33,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 44px;
-  min-height: 44px;
-  padding: 0 12px;
+  height: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
   background-color: var(--bg-panel);
   border-bottom: 1px solid var(--border-panel);
   box-sizing: border-box;
@@ -46,19 +46,19 @@
 .effects-rack-header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .effects-back-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 2.25rem;
+  height: 2.25rem;
   background: transparent;
   color: var(--text-muted);
   border: none;
-  border-radius: 8px;
+  border-radius: 0.5rem;
   outline: none;
   cursor: pointer;
   padding: 0;
@@ -76,19 +76,19 @@
 }
 
 .effects-back-btn svg {
-  width: 20px;
-  height: 20px;
+  width: 1.25rem;
+  height: 1.25rem;
   fill: currentColor;
-  font-size: 20px;}
+  font-size: 1.25rem;}
 
 .effects-back-btn i.fticon {
-  width: 20px;
-  height: 20px;
+  width: 1.25rem;
+  height: 1.25rem;
   fill: currentColor;
-  font-size: 20px;}
+  font-size: 1.25rem;}
 
 .effects-rack-title {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: 0.3px;
@@ -98,7 +98,7 @@
 .effects-rack-header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   position: relative;
 }
 
@@ -106,17 +106,17 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 10px;
+  gap: 0.3125rem;
+  height: 1.75rem;
+  padding: 0 0.625rem;
   background-color: var(--bg-panel-inner);
   color: var(--text-primary);
   border: none;
-  border-radius: 999px;
+  border-radius: 62.4375rem;
   outline: none;
   cursor: pointer;
   font-family: var(--font-brand);
-  font-size: 11.5px;
+  font-size: 0.7188rem;
   font-weight: 700;
   letter-spacing: 0.2px;
   white-space: nowrap;
@@ -133,35 +133,35 @@
 }
 
 .btn-effects-header-action svg {
-  width: 14px;
-  height: 14px;
+  width: 0.875rem;
+  height: 0.875rem;
   fill: currentColor;
   flex-shrink: 0;
-  font-size: 14px;}
+  font-size: 0.875rem;}
 
 .btn-effects-header-action i.fticon {
-  width: 14px;
-  height: 14px;
+  width: 0.875rem;
+  height: 0.875rem;
   fill: currentColor;
   flex-shrink: 0;
-  font-size: 14px;}
+  font-size: 0.875rem;}
 
 /* 3. Small "Add Effects" Button (Compact Pill / Action Button) */
 .btn-add-effect {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  height: 28px;
-  padding: 0 10px;
+  gap: 0.3125rem;
+  height: 1.75rem;
+  padding: 0 0.625rem;
   background-color: var(--color-primary);
   color: var(--bg-canvas);
   border: none;
-  border-radius: 999px;
+  border-radius: 62.4375rem;
   outline: none;
   cursor: pointer;
   font-family: var(--font-brand);
-  font-size: 11.5px;
+  font-size: 0.7188rem;
   font-weight: 700;
   letter-spacing: 0.2px;
   white-space: nowrap;
@@ -180,26 +180,26 @@
 }
 
 .btn-add-effect svg {
-  width: 13px;
-  height: 13px;
+  width: 0.8125rem;
+  height: 0.8125rem;
   fill: currentColor;
   flex-shrink: 0;
-  font-size: 13px;}
+  font-size: 0.8125rem;}
 
 .btn-add-effect i.fticon {
-  width: 13px;
-  height: 13px;
+  width: 0.8125rem;
+  height: 0.8125rem;
   fill: currentColor;
   flex-shrink: 0;
-  font-size: 13px;}
+  font-size: 0.8125rem;}
 
 /* 4. Rack Body & Effect Cards Stack */
 .effects-rack-body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding: 10px 12px;
-  gap: 8px;
+  padding: 0.625rem 0.75rem;
+  gap: 0.5rem;
   overflow-y: auto;
   box-sizing: border-box;
   -webkit-overflow-scrolling: touch;
@@ -212,49 +212,49 @@
   align-items: center;
   justify-content: center;
   flex: 1;
-  min-height: 160px;
+  min-height: 10rem;
   text-align: center;
-  padding: 16px 20px;
+  padding: 1rem 1.25rem;
   box-sizing: border-box;
 }
 
 .effects-empty-icon-wrap {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.625rem;
   background-color: var(--bg-panel-inner);
   color: var(--color-primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 10px;
+  margin-bottom: 0.625rem;
   flex-shrink: 0;
-  font-size: 44px;}
+  font-size: 2.75rem;}
 
 .effects-empty-icon-wrap svg {
-  width: 22px;
-  height: 22px;
+  width: 1.375rem;
+  height: 1.375rem;
   fill: currentColor;
-  font-size: 22px;}
+  font-size: 1.375rem;}
 
 .effects-empty-icon-wrap i.fticon {
-  width: 22px;
-  height: 22px;
+  width: 1.375rem;
+  height: 1.375rem;
   fill: currentColor;
-  font-size: 22px;}
+  font-size: 1.375rem;}
 
 .effects-empty-title {
-  font-size: 13.5px;
+  font-size: 0.8438rem;
   font-weight: 700;
   color: var(--text-primary);
-  margin: 0 0 4px 0;
+  margin: 0 0 0.25rem 0;
 }
 
 .effects-empty-desc {
-  font-size: 11px;
+  font-size: 0.6875rem;
   color: var(--text-muted);
   margin: 0;
-  max-width: 250px;
+  max-width: 15.625rem;
   line-height: 1.4;
 }
 
@@ -263,10 +263,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 42px;
-  padding: 0 10px;
+  height: 2.625rem;
+  padding: 0 0.625rem;
   background-color: var(--bg-panel-inner);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   box-sizing: border-box;
   cursor: pointer;
   transition: background-color 0.12s ease;
@@ -284,19 +284,19 @@
 .effects-item-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   overflow: hidden;
 }
 
 .effects-item-icon {
-  width: 18px;
-  height: 18px;
+  width: 1.125rem;
+  height: 1.125rem;
   fill: currentColor;
   flex-shrink: 0;
-  font-size: 18px;}
+  font-size: 1.125rem;}
 
 .effects-item-name {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   white-space: nowrap;
   overflow: hidden;
@@ -306,19 +306,19 @@
 .effects-item-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 .effects-item-action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 1.75rem;
+  height: 1.75rem;
   background: transparent;
   color: var(--text-muted);
   border: none;
-  border-radius: 6px;
+  border-radius: 0.375rem;
   outline: none;
   cursor: pointer;
   padding: 0;
@@ -338,22 +338,22 @@
 }
 
 .effects-item-action-btn svg {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   fill: currentColor;
-  font-size: 16px;}
+  font-size: 1rem;}
 
 .effects-item-action-btn i.fticon {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   fill: currentColor;
-  font-size: 16px;}
+  font-size: 1rem;}
 
 /* 7. Effect Card & Inspector Controls (Matches Reference Design) */
 .effects-rack-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.5rem;
   width: 100%;
 }
 
@@ -362,7 +362,7 @@
   flex-direction: column;
   background-color: var(--bg-panel-inner);
   border: 1px solid var(--border-panel);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   overflow: visible;
   box-sizing: border-box;
   position: relative;
@@ -382,18 +382,18 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 40px;
+  height: 2.5rem;
   background-color: var(--color-danger);
-  border-radius: 7px;
+  border-radius: 0.4375rem;
   display: none;
   align-items: center;
   justify-content: flex-end;
-  padding-right: 14px;
-  gap: 6px;
+  padding-right: 0.875rem;
+  gap: 0.375rem;
   color: var(--bg-canvas);
   z-index: 1;
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -406,12 +406,12 @@
 }
 
 .effects-swipe-trash-icon {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   fill: currentColor;
   flex-shrink: 0;
   transition: transform 0.12s ease;
-  font-size: 16px;}
+  font-size: 1rem;}
 
 .effects-card.is-swipe-active .effects-swipe-trash-icon {
   transform: scale(1.2);
@@ -421,10 +421,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 40px;
-  padding: 0 10px;
+  height: 2.5rem;
+  padding: 0 0.625rem;
   background-color: var(--bg-panel-inner);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   user-select: none;
   box-sizing: border-box;
   position: relative;
@@ -442,7 +442,7 @@
 .effects-card-header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   cursor: pointer;
   overflow: hidden;
   flex: 1;
@@ -454,14 +454,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  min-height: 28px;
+  width: 1.75rem;
+  height: 1.75rem;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
   background: transparent;
   color: var(--text-muted);
   border: none;
-  border-radius: 6px;
+  border-radius: 0.375rem;
   padding: 0;
   margin: 0;
   outline: none;
@@ -481,9 +481,9 @@ i.fticon.effects-card-caret {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  width: 14px !important;
-  height: 14px !important;
-  font-size: 14px !important;
+  width: 0.875rem !important;
+  height: 0.875rem !important;
+  font-size: 0.875rem !important;
   line-height: 1 !important;
   text-align: center !important;
   fill: currentColor !important;
@@ -495,11 +495,11 @@ i.fticon.effects-card-caret {
 .effects-card-caret::before,
 i.fticon.effects-card-caret::before {
   display: block !important;
-  width: 14px !important;
-  height: 14px !important;
-  line-height: 14px !important;
+  width: 0.875rem !important;
+  height: 0.875rem !important;
+  line-height: 0.875rem !important;
   text-align: center !important;
-  font-size: 14px !important;
+  font-size: 0.875rem !important;
 }
 
 .effects-card.is-expanded .effects-card-caret {
@@ -507,7 +507,7 @@ i.fticon.effects-card-caret::before {
 }
 
 .effects-card-title {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--text-primary);
   font-family: var(--font-brand);
@@ -516,9 +516,9 @@ i.fticon.effects-card-caret::before {
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
-  border-radius: 4px;
-  padding: 1px 4px;
-  margin: -1px -4px;
+  border-radius: 0.25rem;
+  padding: 1px 0.25rem;
+  margin: -1px -0.25rem;
   transition: background-color 0.15s ease, color 0.15s ease;
 }
 
@@ -528,19 +528,19 @@ i.fticon.effects-card-caret::before {
 }
 
 .effects-card-title-input {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--text-primary);
   font-family: var(--font-brand);
   background: var(--bg-dashboard);
   border: 1px solid var(--color-primary);
-  border-radius: 4px;
-  padding: 1px 6px;
-  margin: -2px 0;
-  height: 22px;
+  border-radius: 0.25rem;
+  padding: 1px 0.375rem;
+  margin: -0.125rem 0;
+  height: 1.375rem;
   outline: none;
-  min-width: 80px;
-  max-width: 180px;
+  min-width: 5rem;
+  max-width: 11.25rem;
   width: auto;
 }
 
@@ -550,7 +550,7 @@ i.fticon.effects-card-caret::before {
 .effects-card-expanded-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 0.25rem;
   flex-shrink: 0;
 }
 
@@ -578,12 +578,12 @@ i.fticon.effects-card-caret::before {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 1.75rem;
+  height: 1.75rem;
   background: transparent;
   color: var(--text-muted);
   border: none;
-  border-radius: 6px;
+  border-radius: 0.375rem;
   cursor: pointer;
   padding: 0;
   outline: none;
@@ -609,23 +609,23 @@ i.fticon.effects-card-caret::before {
 .effects-card-eye-btn svg,
 .effects-card-kebab-btn svg,
 .effects-card-delete-btn svg {
-  width: 18px;
-  height: 18px;
-  font-size: 18px;}
+  width: 1.125rem;
+  height: 1.125rem;
+  font-size: 1.125rem;}
 
 .effects-card-eye-btn i.fticon,
 .effects-card-kebab-btn i.fticon,
 .effects-card-delete-btn i.fticon {
-  width: 18px;
-  height: 18px;
-  font-size: 18px;}
+  width: 1.125rem;
+  height: 1.125rem;
+  font-size: 1.125rem;}
 
 .effects-card-drag-handle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 1.75rem;
+  height: 1.75rem;
   color: var(--text-muted);
   cursor: grab;
   touch-action: none;
@@ -643,14 +643,14 @@ i.fticon.effects-card-caret::before {
 }
 
 .effects-card-drag-handle svg {
-  width: 18px;
-  height: 18px;
-  font-size: 18px;}
+  width: 1.125rem;
+  height: 1.125rem;
+  font-size: 1.125rem;}
 
 .effects-card-drag-handle i.fticon {
-  width: 18px;
-  height: 18px;
-  font-size: 18px;}
+  width: 1.125rem;
+  height: 1.125rem;
+  font-size: 1.125rem;}
 
 .effects-card.is-dragging {
   opacity: 0.45;
@@ -661,12 +661,12 @@ i.fticon.effects-card-caret::before {
 .effects-kebab-menu {
   display: none;
   position: absolute;
-  top: 38px;
-  right: 10px;
-  width: 180px;
+  top: 2.375rem;
+  right: 0.625rem;
+  width: 11.25rem;
   background-color: var(--bg-panel);
   border: 1px solid var(--border-panel);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   flex-direction: column;
   overflow: hidden;
   z-index: 100;
@@ -680,14 +680,14 @@ i.fticon.effects-card-caret::before {
 .effects-kebab-item {
   display: flex;
   align-items: center;
-  height: 36px;
-  padding: 0 14px;
+  height: 2.25rem;
+  padding: 0 0.875rem;
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--border-panel);
   color: var(--text-primary);
   font-family: var(--font-brand);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   text-align: left;
   cursor: pointer;
@@ -709,9 +709,9 @@ i.fticon.effects-card-caret::before {
 .effects-card-controls {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  max-height: 2500px;
+  gap: 0.375rem;
+  padding: 0.5rem 0.625rem;
+  max-height: 156.25rem;
   opacity: 1;
   overflow: hidden;
   transition: max-height 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.22s ease, padding 0.28s cubic-bezier(0.16, 1, 0.3, 1);
@@ -720,10 +720,10 @@ i.fticon.effects-card-caret::before {
 
 .effects-control-row {
   display: grid;
-  grid-template-columns: minmax(95px, 36%) 1fr;
+  grid-template-columns: minmax(5.9375rem, 36%) 1fr;
   align-items: center;
-  gap: 8px;
-  min-height: 28px;
+  gap: 0.5rem;
+  min-height: 1.75rem;
   box-sizing: border-box;
 }
 
@@ -738,9 +738,9 @@ i.fticon.effects-card-caret::before {
 .effects-param-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--text-muted);
   white-space: nowrap;
@@ -772,18 +772,18 @@ i.fticon.effects-card-caret::before {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
-  width: 10px;
-  height: 10px;
-  margin-right: 4px;
+  font-size: 0.5625rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-right: 0.25rem;
   color: var(--color-primary);
   vertical-align: middle;
   flex-shrink: 0;
 }
 
 .fx-param-kf-icon svg {
-  width: 8px;
-  height: 8px;
+  width: 0.5rem;
+  height: 0.5rem;
   fill: currentColor;
 }
 
@@ -792,26 +792,26 @@ i.fticon.effects-card-caret::before {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
-  width: 10px;
-  height: 10px;
-  margin-right: 4px;
+  font-size: 0.625rem;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-right: 0.25rem;
   color: var(--color-primary);
   vertical-align: middle;
   flex-shrink: 0;
 }
 
 .fx-param-expr-icon svg {
-  width: 9px;
-  height: 9px;
+  width: 0.5625rem;
+  height: 0.5625rem;
   fill: currentColor;
 }
 
 /* Selected Effect Parameter Row (Inverted High-Contrast Highlight) */
 .effects-control-row.is-selected {
   background-color: var(--color-primary) !important;
-  border-radius: 8px;
-  padding: 3px 6px;
+  border-radius: 0.5rem;
+  padding: 0.1875rem 0.375rem;
   margin: 1px 0;
   box-sizing: border-box;
 }
@@ -901,11 +901,11 @@ i.fticon.effects-card-caret::before {
   justify-content: flex-end;
   flex: 1;
   min-width: 0;
-  height: 26px;
+  height: 1.625rem;
   background-color: var(--bg-canvas);
   border: 1px solid var(--border-panel);
-  border-radius: 4px;
-  padding: 0 8px;
+  border-radius: 0.25rem;
+  padding: 0 0.5rem;
   cursor: ew-resize;
   user-select: none;
   overflow: hidden;
@@ -950,7 +950,7 @@ i.fticon.effects-card-caret::before {
   position: relative;
   z-index: 1;
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
@@ -962,7 +962,7 @@ i.fticon.effects-card-caret::before {
 .effects-param-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 4px;
+  gap: 0.25rem;
   width: 100%;
   align-items: center;
 }
@@ -971,7 +971,7 @@ i.fticon.effects-card-caret::before {
   position: relative;
   z-index: 1;
   font-family: var(--font-brand);
-  font-size: 9.5px;
+  font-size: 0.5938rem;
   font-weight: 700;
   color: var(--text-dim, #556b55);
   margin-right: auto;
@@ -982,12 +982,12 @@ i.fticon.effects-card-caret::before {
 /* Legacy 3-Box Compatibility Support */
 .effects-param-select-btn {
   width: 100%;
-  height: 26px;
+  height: 1.625rem;
   background: transparent;
   border: none;
   color: var(--text-muted);
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -1010,14 +1010,14 @@ i.fticon.effects-card-caret::before {
 }
 
 .effects-param-value-btn {
-  height: 26px;
+  height: 1.625rem;
   flex-shrink: 0;
   background-color: var(--bg-canvas);
   border: 1px solid var(--border-panel);
-  border-radius: 4px;
+  border-radius: 0.25rem;
   color: var(--text-primary);
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -1025,7 +1025,7 @@ i.fticon.effects-card-caret::before {
   cursor: pointer;
   outline: none;
   user-select: none;
-  padding: 0 6px;
+  padding: 0 0.375rem;
   box-sizing: border-box;
   transition: border-color 0.12s ease, background-color 0.12s ease;
 }
@@ -1037,12 +1037,12 @@ i.fticon.effects-card-caret::before {
 
 .effects-param-label-static {
   width: 100%;
-  height: 26px;
+  height: 1.625rem;
   background: transparent;
   border: none;
   color: var(--text-muted);
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   display: inline-flex;
   align-items: center;
@@ -1057,14 +1057,14 @@ i.fticon.effects-card-caret::before {
 .effects-segmented-group {
   flex: 1;
   width: 100%;
-  height: 32px;
+  height: 2rem;
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 0.1875rem;
   background-color: var(--bg-canvas);
   border: 1px solid var(--border-panel);
-  border-radius: 4px;
-  padding: 2px;
+  border-radius: 0.25rem;
+  padding: 0.125rem;
   box-sizing: border-box;
 }
 
@@ -1072,11 +1072,11 @@ i.fticon.effects-card-caret::before {
   flex: 1;
   height: 100%;
   border: none;
-  border-radius: 3px;
+  border-radius: 0.1875rem;
   background-color: transparent;
   color: var(--text-muted);
   font-family: var(--font-brand);
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   font-weight: 600;
   cursor: pointer;
   outline: none;
@@ -1101,11 +1101,11 @@ i.fticon.effects-card-caret::before {
 
 @media (pointer: coarse) {
   .effects-switch-group {
-    height: 44px;
+    height: 2.75rem;
   }
 
   .effects-switch-group .effects-segmented-btn {
-    font-size: 12px;
+    font-size: 0.75rem;
   }
 }
 
@@ -1120,17 +1120,17 @@ i.fticon.effects-card-caret::before {
 
 .effects-control-row .custom-dropdown-trigger {
   width: 100%;
-  height: 32px;
+  height: 2rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 8px;
+  padding: 0 0.5rem;
   background-color: var(--bg-canvas);
   color: var(--text-primary);
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
-  border-radius: 4px;
+  border-radius: 0.25rem;
   border: 1px solid var(--border-panel);
   outline: none;
   cursor: pointer;
@@ -1160,7 +1160,7 @@ i.fticon.effects-card-caret::before {
   justify-content: center;
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), color 0.12s ease;
   flex-shrink: 0;
-  margin-left: 6px;
+  margin-left: 0.375rem;
 }
 
 .effects-control-row .custom-dropdown-trigger:hover .custom-dropdown-arrow,
@@ -1174,36 +1174,36 @@ i.fticon.effects-card-caret::before {
 
 .effects-control-row .custom-dropdown-menu {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 0.25rem);
   right: 0;
   min-width: 100%;
   width: max-content;
-  max-width: 320px;
+  max-width: 20rem;
   background-color: var(--bg-panel);
   border: 1px solid var(--border-panel);
-  border-radius: 8px;
-  padding: 4px;
+  border-radius: 0.5rem;
+  padding: 0.25rem;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 0.1875rem;
   z-index: 1050;
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-4px);
+  transform: translateY(-0.25rem);
   transition: opacity 0.14s ease, transform 0.14s ease;
   box-sizing: border-box;
-  max-height: 260px;
+  max-height: 16.25rem;
   overflow-y: auto;
   scrollbar-width: thin;
 }
 
 .effects-control-row .custom-dropdown-menu::-webkit-scrollbar {
-  width: 4px;
+  width: 0.25rem;
 }
 
 .effects-control-row .custom-dropdown-menu::-webkit-scrollbar-thumb {
   background: var(--border-subtle);
-  border-radius: 4px;
+  border-radius: 0.25rem;
 }
 
 .effects-control-row .custom-dropdown.is-open .custom-dropdown-menu {
@@ -1214,8 +1214,8 @@ i.fticon.effects-card-caret::before {
 
 .effects-control-row .custom-dropdown.is-dropup .custom-dropdown-menu {
   top: auto;
-  bottom: calc(100% + 4px);
-  transform: translateY(4px);
+  bottom: calc(100% + 0.25rem);
+  transform: translateY(0.25rem);
 }
 
 .effects-control-row .custom-dropdown.is-dropup.is-open .custom-dropdown-menu {
@@ -1225,14 +1225,14 @@ i.fticon.effects-card-caret::before {
 .effects-control-row .custom-dropdown-item {
   display: flex;
   align-items: center;
-  height: 28px;
-  min-height: 28px;
-  padding: 0 10px;
+  height: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0 0.625rem;
   font-family: var(--font-brand);
-  font-size: 11.5px;
+  font-size: 0.7188rem;
   font-weight: 600;
   color: var(--text-primary);
-  border-radius: 4px;
+  border-radius: 0.25rem;
   cursor: pointer;
   transition: background-color 0.1s ease, color 0.1s ease;
   text-align: left;
@@ -1242,7 +1242,7 @@ i.fticon.effects-card-caret::before {
   text-overflow: ellipsis;
   flex-shrink: 0;
   box-sizing: border-box;
-  line-height: 28px;
+  line-height: 1.75rem;
 }
 
 .effects-control-row .custom-dropdown-item:hover {
@@ -1263,7 +1263,7 @@ i.fticon.effects-card-caret::before {
 
 /* Layer Dropdown Component with Thumbnails & Type Badges */
 .effects-layer-dropdown .custom-dropdown-trigger {
-  padding: 0 6px !important;
+  padding: 0 0.375rem !important;
 }
 
 .layer-dropdown-trigger-label {
@@ -1278,16 +1278,16 @@ i.fticon.effects-card-caret::before {
 .layer-dropdown-item-content {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 0.4375rem;
   width: 100%;
   min-width: 0;
   pointer-events: none;
 }
 
 .layer-dropdown-thumb {
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 0.25rem;
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -1307,9 +1307,9 @@ i.fticon.effects-card-caret::before {
 }
 
 .layer-dropdown-thumb i.fticon {
-  width: 13px;
-  height: 13px;
-  font-size: 13px;
+  width: 0.8125rem;
+  height: 0.8125rem;
+  font-size: 0.8125rem;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1334,17 +1334,17 @@ i.fticon.effects-card-caret::before {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-brand);
-  font-size: 11.5px;
+  font-size: 0.7188rem;
   font-weight: 600;
   text-align: left;
   color: inherit;
 }
 
 .layer-dropdown-tag {
-  font-size: 9px;
+  font-size: 0.5625rem;
   font-weight: 700;
-  padding: 1px 4px;
-  border-radius: 3px;
+  padding: 1px 0.25rem;
+  border-radius: 0.1875rem;
   letter-spacing: 0.5px;
   flex-shrink: 0;
   text-transform: uppercase;
@@ -1362,9 +1362,9 @@ i.fticon.effects-card-caret::before {
 .layer-dropdown-tag.tag-precomp { background-color: rgba(249, 226, 175, 0.18); color: #f9e2af; }
 
 .custom-dropdown-layer-item {
-  height: 30px !important;
-  min-height: 30px !important;
-  padding: 0 8px !important;
+  height: 1.875rem !important;
+  min-height: 1.875rem !important;
+  padding: 0 0.5rem !important;
 }
 
 .custom-dropdown-layer-item:hover .layer-dropdown-thumb {
@@ -1391,23 +1391,23 @@ i.fticon.effects-card-caret::before {
   flex: 1;
   min-width: 0;
   width: 100%;
-  height: 26px;
+  height: 1.625rem;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 .effects-color-swatch-btn {
-  width: 26px;
-  height: 26px;
+  width: 1.625rem;
+  height: 1.625rem;
   flex-shrink: 0;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 0.25rem;
   overflow: hidden;
   border: 1px solid var(--border-panel);
   display: block;
   box-sizing: border-box;
-  padding: 2px;
+  padding: 0.125rem;
   background-color: var(--bg-canvas);
   transition: border-color 0.12s ease;
   outline: none;
@@ -1421,7 +1421,7 @@ i.fticon.effects-card-caret::before {
   display: block;
   width: 100%;
   height: 100%;
-  border-radius: 2px;
+  border-radius: 0.125rem;
   pointer-events: none;
 }
 
@@ -1429,15 +1429,15 @@ i.fticon.effects-card-caret::before {
   flex: 1;
   min-width: 0;
   width: 0;
-  height: 26px;
+  height: 1.625rem;
   background-color: var(--bg-canvas);
   border: 1px solid var(--border-panel);
-  border-radius: 4px;
+  border-radius: 0.25rem;
   color: var(--text-primary);
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
-  padding: 0 8px;
+  padding: 0 0.5rem;
   outline: none;
   text-transform: uppercase;
   box-sizing: border-box;
@@ -1450,17 +1450,17 @@ i.fticon.effects-card-caret::before {
 
 .effects-rack-toast {
   position: absolute;
-  bottom: 16px;
+  bottom: 1rem;
   left: 50%;
   transform: translateX(-50%);
   background-color: var(--bg-panel);
   border: 1px solid var(--border-panel);
   color: var(--text-primary);
   font-family: var(--font-brand);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
-  padding: 6px 14px;
-  border-radius: 6px;
+  padding: 0.375rem 0.875rem;
+  border-radius: 0.375rem;
   z-index: 200;
   pointer-events: none;
   white-space: nowrap;
@@ -1469,9 +1469,9 @@ i.fticon.effects-card-caret::before {
 /* 8. Mobile Responsive Refinements */
 @media (max-width: 600px) {
   .effects-rack-layout {
-    grid-template-columns: 48px 1fr;
-    height: 240px;
-    min-height: 240px;
+    grid-template-columns: 3rem 1fr;
+    height: 15rem;
+    min-height: 15rem;
   }
 }
 
@@ -1490,7 +1490,7 @@ i.fticon.effects-card-caret::before {
   flex-direction: column;
   width: 100%;
   height: 100%;
-  min-height: 380px;
+  min-height: 23.75rem;
   background-color: var(--bg-panel);
   color: var(--text-primary);
   font-family: var(--font-brand);
@@ -1504,8 +1504,8 @@ i.fticon.effects-card-caret::before {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px 10px;
-  padding: 8px 12px 8px 6px;
+  gap: 0.5rem 0.625rem;
+  padding: 0.5rem 0.75rem 0.5rem 0.375rem;
   background-color: var(--bg-panel);
   box-sizing: border-box;
   flex-shrink: 0;
@@ -1515,13 +1515,13 @@ i.fticon.effects-card-caret::before {
 .effects-gallery-header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
   flex: 0 0 auto;
-  min-height: 36px;
+  min-height: 2.25rem;
 }
 
 .effects-gallery-title {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: 0.3px;
@@ -1532,16 +1532,16 @@ i.fticon.effects-card-caret::before {
 .effects-gallery-search-box {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex: 1 1 160px;
+  gap: 0.5rem;
+  flex: 1 1 10rem;
   min-width: 0;
-  max-width: 280px;
-  height: 36px;
-  padding: 0 12px;
+  max-width: 17.5rem;
+  height: 2.25rem;
+  padding: 0 0.75rem;
   margin-left: auto;
   background-color: var(--bg-dashboard);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   box-sizing: border-box;
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
@@ -1551,18 +1551,18 @@ i.fticon.effects-card-caret::before {
 }
 
 .effects-gallery-search-box svg {
-  width: 15px;
-  height: 15px;
+  width: 0.9375rem;
+  height: 0.9375rem;
   fill: var(--text-muted);
   flex-shrink: 0;
-  font-size: 15px;}
+  font-size: 0.9375rem;}
 
 .effects-gallery-search-box i.fticon {
-  width: 15px;
-  height: 15px;
+  width: 0.9375rem;
+  height: 0.9375rem;
   fill: var(--text-muted);
   flex-shrink: 0;
-  font-size: 15px;}
+  font-size: 0.9375rem;}
 
 .effects-gallery-search-input {
   background: transparent;
@@ -1570,7 +1570,7 @@ i.fticon.effects-card-caret::before {
   outline: none;
   color: var(--text-primary);
   font-family: var(--font-brand);
-  font-size: 13px;
+  font-size: 0.8125rem;
   width: 100%;
   min-width: 0;
   padding: 0;
@@ -1587,7 +1587,7 @@ i.fticon.effects-card-caret::before {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0 12px calc(48px + env(safe-area-inset-bottom, 0px));
+  padding: 0 0.75rem calc(3rem + env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
@@ -1601,14 +1601,14 @@ i.fticon.effects-card-caret::before {
 .effects-gallery-home-view {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 1rem;
   width: 100%;
 }
 
 .effects-gallery-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.5rem;
   width: 100%;
 }
 
@@ -1616,13 +1616,13 @@ i.fticon.effects-card-caret::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 0 2px;
+  gap: 0.5rem;
+  padding: 0 0.125rem;
 }
 
 .effects-gallery-section-title {
   font-family: var(--font-brand);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -1630,7 +1630,7 @@ i.fticon.effects-card-caret::before {
 }
 
 .effects-gallery-section-count {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--text-muted);
 }
@@ -1638,11 +1638,11 @@ i.fticon.effects-card-caret::before {
 .effects-gallery-horizontal-list {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 0.625rem;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 4px 2px 8px;
-  margin: 0 -2px;
+  padding: 0.25rem 0.125rem 0.5rem;
+  margin: 0 -0.125rem;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
   box-sizing: border-box;
@@ -1653,26 +1653,26 @@ i.fticon.effects-card-caret::before {
 }
 
 .effects-gallery-horizontal-list .effects-gallery-item-card {
-  flex: 0 0 84px;
-  width: 84px;
+  flex: 0 0 5.25rem;
+  width: 5.25rem;
 }
 
 .effects-gallery-empty-state {
   flex: 1 1 100%;
   width: 100%;
-  min-height: 52px;
+  min-height: 3.25rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px 16px;
+  padding: 0.625rem 1rem;
   color: var(--text-muted);
   font-family: var(--font-brand);
-  font-size: 11.5px;
+  font-size: 0.7188rem;
   font-weight: 600;
   text-align: center;
   background-color: var(--bg-dashboard);
   border: 1px dashed var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   box-sizing: border-box;
   user-select: none;
 }
@@ -1680,9 +1680,9 @@ i.fticon.effects-card-caret::before {
 /* ── Category tiles ───────────────────────────────────────────────────── */
 .effects-category-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-  gap: 8px;
-  padding-top: 4px;
+  grid-template-columns: repeat(auto-fill, minmax(9.25rem, 1fr));
+  gap: 0.5rem;
+  padding-top: 0.25rem;
   box-sizing: border-box;
 }
 
@@ -1690,15 +1690,15 @@ i.fticon.effects-card-caret::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  min-height: 84px;
-  padding: 0 8px;
+  gap: 0.5rem;
+  min-height: 5.25rem;
+  padding: 0 0.5rem;
   background-color: var(--bg-dashboard);
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   cursor: pointer;
   text-align: left;
   box-sizing: border-box;
@@ -1715,10 +1715,10 @@ i.fticon.effects-card-caret::before {
 
 .effects-category-name {
   min-width: 0;
-  padding: 4px 8px;
-  border-radius: 8px;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
   background-color: var(--bg-canvas);
-  font-size: 11.5px;
+  font-size: 0.7188rem;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
@@ -1730,16 +1730,16 @@ i.fticon.effects-card-caret::before {
 
 .effects-category-count {
   flex: 0 0 auto;
-  min-width: 26px;
-  height: 22px;
-  padding: 0 8px;
+  min-width: 1.625rem;
+  height: 1.375rem;
+  padding: 0 0.5rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 11px;
+  border-radius: 0.6875rem;
   background-color: var(--bg-canvas);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   box-sizing: border-box;
   transition: background-color 0.12s ease, color 0.12s ease;
@@ -1763,9 +1763,9 @@ i.fticon.effects-card-caret::before {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 36px 10px;
+  padding: 2.25rem 0.625rem;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 0.8125rem;
   text-align: center;
 }
 
@@ -1774,19 +1774,19 @@ i.fticon.effects-card-caret::before {
   display: flex;
   flex-direction: column;
   width: 100%;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .effects-items-header {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
-  padding: 2px 2px 0;
+  gap: 0.5rem;
+  padding: 0.125rem 0.125rem 0;
 }
 
 .effects-items-category-title {
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -1794,7 +1794,7 @@ i.fticon.effects-card-caret::before {
 }
 
 .effects-items-count {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--text-muted);
 }
@@ -1806,9 +1806,9 @@ i.fticon.effects-card-caret::before {
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin: 0 -12px;
-  padding: 4px 12px 8px;
+  gap: 0.375rem;
+  margin: 0 -0.75rem;
+  padding: 0.25rem 0.75rem 0.5rem;
   overflow-x: auto;
   overflow-y: hidden;
   background-color: var(--bg-panel);
@@ -1823,14 +1823,14 @@ i.fticon.effects-card-caret::before {
 
 .effects-chip {
   flex: 0 0 auto;
-  height: 32px;
-  padding: 0 12px;
+  height: 2rem;
+  padding: 0 0.75rem;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   background-color: var(--bg-dashboard);
   color: var(--text-secondary);
   font-family: var(--font-brand);
-  font-size: 11.5px;
+  font-size: 0.7188rem;
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
@@ -1849,8 +1849,8 @@ i.fticon.effects-card-caret::before {
 /* ── Effect cards ─────────────────────────────────────────────────────── */
 .effects-items-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
-  gap: 14px 8px;
+  grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
+  gap: 0.875rem 0.5rem;
   box-sizing: border-box;
 }
 
@@ -1858,7 +1858,7 @@ i.fticon.effects-card-caret::before {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 0.375rem;
   min-width: 0;
   width: 100%;
   padding: 0;
@@ -1876,7 +1876,7 @@ i.fticon.effects-card-caret::before {
   isolation: isolate;
   width: 100%;
   aspect-ratio: 1 / 1;
-  border-radius: 8px;
+  border-radius: 0.5rem;
   overflow: hidden;
   background-color: var(--bg-dashboard);
   border: 1px solid var(--border-subtle);
@@ -1900,17 +1900,17 @@ i.fticon.effects-card-caret::before {
 /* Star favorite button at top-right corner of card thumbnail */
 .effects-gallery-star-btn {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 0.25rem;
+  right: 0.25rem;
   z-index: 3;
-  width: 22px;
-  height: 22px;
+  width: 1.375rem;
+  height: 1.375rem;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   border: none;
-  border-radius: 6px;
+  border-radius: 0.375rem;
   background-color: var(--bg-canvas);
   color: var(--text-tertiary);
   cursor: pointer;
@@ -1920,8 +1920,8 @@ i.fticon.effects-card-caret::before {
 }
 
 .effects-gallery-star-btn .effects-star-svg {
-  width: 12px;
-  height: 12px;
+  width: 0.75rem;
+  height: 0.75rem;
   fill: none;
   stroke: currentColor;
   stroke-width: 2.2;
@@ -1942,7 +1942,7 @@ i.fticon.effects-card-caret::before {
 
 .effects-gallery-item-name {
   max-width: 100%;
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   font-weight: 700;
   color: var(--text-secondary);
   line-height: 1.25;
@@ -1952,7 +1952,7 @@ i.fticon.effects-card-caret::before {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  padding: 0 2px;
+  padding: 0 0.125rem;
   transition: color 0.12s ease;
 }
 
@@ -2017,108 +2017,108 @@ i.fticon.effects-card-caret::before {
 
 /* Mobile & Tablet (editor.html): compact header, sleek search bar, proportional category & effect tiles */
 .effects-gallery-layout {
-  min-height: 280px;
+  min-height: 17.5rem;
 }
 .effects-gallery-header {
-  padding: 4px 10px 6px 4px;
-  gap: 6px 8px;
+  padding: 0.25rem 0.625rem 0.375rem 0.25rem;
+  gap: 0.375rem 0.5rem;
 }
 .effects-gallery-header-left {
   flex: 1 1 100%;
-  min-height: 30px;
-  gap: 6px;
+  min-height: 1.875rem;
+  gap: 0.375rem;
 }
 .effects-gallery-title {
-  font-size: 12.5px;
+  font-size: 0.7813rem;
 }
 .effects-back-btn {
-  width: 30px;
-  height: 30px;
+  width: 1.875rem;
+  height: 1.875rem;
 }
 .effects-back-btn svg,
 .effects-back-btn i.fticon {
-  width: 18px;
-  height: 18px;
-  font-size: 18px;
+  width: 1.125rem;
+  height: 1.125rem;
+  font-size: 1.125rem;
 }
 .effects-gallery-search-box {
   flex: 1 1 100%;
   max-width: none;
-  height: 32px;
-  padding: 0 10px;
+  height: 2rem;
+  padding: 0 0.625rem;
   margin-left: 0;
-  border-radius: 7px;
+  border-radius: 0.4375rem;
 }
 .effects-gallery-search-input {
-  font-size: 12.5px;
+  font-size: 0.7813rem;
 }
 .effects-gallery-body {
-  padding: 0 10px calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: 0 0.625rem calc(1rem + env(safe-area-inset-bottom, 0px));
 }
 .effects-gallery-home-view {
-  gap: 10px;
+  gap: 0.625rem;
 }
 .effects-gallery-section {
-  gap: 6px;
+  gap: 0.375rem;
 }
 .effects-gallery-section-title {
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 .effects-gallery-horizontal-list {
-  gap: 8px;
-  padding-bottom: 4px;
+  gap: 0.5rem;
+  padding-bottom: 0.25rem;
 }
 .effects-gallery-horizontal-list .effects-gallery-item-card {
-  flex: 0 0 68px;
-  width: 68px;
+  flex: 0 0 4.25rem;
+  width: 4.25rem;
 }
 .effects-gallery-star-btn {
-  width: 18px;
-  height: 18px;
-  top: 3px;
-  right: 3px;
+  width: 1.125rem;
+  height: 1.125rem;
+  top: 0.1875rem;
+  right: 0.1875rem;
 }
 .effects-gallery-star-btn .effects-star-svg {
-  width: 10px;
-  height: 10px;
+  width: 0.625rem;
+  height: 0.625rem;
 }
 .effects-category-grid {
   grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
+  gap: 0.375rem;
 }
 .effects-category-card {
-  min-height: 58px;
-  padding: 0 6px;
-  border-radius: 8px;
+  min-height: 3.625rem;
+  padding: 0 0.375rem;
+  border-radius: 0.5rem;
 }
 .effects-category-name {
-  font-size: 11px;
-  padding: 3px 7px;
-  border-radius: 6px;
+  font-size: 0.6875rem;
+  padding: 0.1875rem 0.4375rem;
+  border-radius: 0.375rem;
 }
 .effects-category-count {
-  min-width: 22px;
-  height: 20px;
-  padding: 0 6px;
-  font-size: 10px;
+  min-width: 1.375rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  font-size: 0.625rem;
 }
 .effects-chip-bar {
-  margin: 0 -10px;
-  padding: 2px 10px 6px;
-  gap: 5px;
+  margin: 0 -0.625rem;
+  padding: 0.125rem 0.625rem 0.375rem;
+  gap: 0.3125rem;
 }
 .effects-chip {
-  height: 28px;
-  padding: 0 10px;
-  font-size: 11px;
-  border-radius: 6px;
+  height: 1.75rem;
+  padding: 0 0.625rem;
+  font-size: 0.6875rem;
+  border-radius: 0.375rem;
 }
 .effects-items-grid {
-  grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
-  gap: 10px 6px;
+  grid-template-columns: repeat(auto-fill, minmax(4.375rem, 1fr));
+  gap: 0.625rem 0.375rem;
 }
 .effects-gallery-item-name {
-  font-size: 10px;
+  font-size: 0.625rem;
 }
 
 
@@ -2131,9 +2131,9 @@ i.fticon.effects-card-caret::before {
   grid-column: 1 / -1 !important;
   flex-direction: column !important;
   align-items: stretch !important;
-  padding: 6px 0 !important;
+  padding: 0.375rem 0 !important;
   height: auto !important;
-  min-height: 270px;
+  min-height: 16.875rem;
   overflow: visible !important;
 }
 
@@ -2142,7 +2142,7 @@ i.fticon.effects-card-caret::before {
   flex-direction: column;
   background-color: var(--bg-panel-inner);
   border: 1px solid var(--border-panel);
-  border-radius: 8px;
+  border-radius: 0.5rem;
   overflow: hidden;
   box-sizing: border-box;
   width: 100%;
@@ -2152,25 +2152,25 @@ i.fticon.effects-card-caret::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 8px;
+  padding: 0.375rem 0.5rem;
   background-color: var(--bg-panel);
   border-bottom: 1px solid var(--border-panel);
 }
 
 .effects-curve-channels {
   display: flex;
-  gap: 4px;
+  gap: 0.25rem;
 }
 
 .effects-curve-chan-btn {
   background: transparent;
   border: 1px solid var(--border-panel);
   color: var(--text-muted);
-  border-radius: 4px;
+  border-radius: 0.25rem;
   font-family: var(--font-brand);
-  font-size: 10px;
+  font-size: 0.625rem;
   font-weight: 700;
-  padding: 2px 6px;
+  padding: 0.125rem 0.375rem;
   cursor: pointer;
   outline: none;
   transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease;
@@ -2196,7 +2196,7 @@ i.fticon.effects-card-caret::before {
 .effects-curve-presets-bar {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 0.1875rem;
   flex-wrap: wrap;
 }
 
@@ -2204,11 +2204,11 @@ i.fticon.effects-card-caret::before {
   background: var(--bg-panel-inner);
   border: 1px solid var(--border-panel);
   color: var(--text-muted);
-  border-radius: 4px;
+  border-radius: 0.25rem;
   font-family: var(--font-brand);
-  font-size: 9.5px;
+  font-size: 0.5938rem;
   font-weight: 700;
-  padding: 2px 5px;
+  padding: 0.125rem 0.3125rem;
   cursor: pointer;
   outline: none;
   transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease;
@@ -2229,13 +2229,13 @@ i.fticon.effects-card-caret::before {
 
 .effects-curve-canvas-wrap {
   width: 100%;
-  max-width: 220px;
+  max-width: 13.75rem;
   aspect-ratio: 1 / 1;
-  margin: 8px auto;
+  margin: 0.5rem auto;
   position: relative;
   background-color: var(--bg-canvas);
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
+  border-radius: 0.375rem;
   touch-action: none;
   user-select: none;
   box-sizing: border-box;
@@ -2251,7 +2251,7 @@ i.fticon.effects-card-caret::before {
 .effects-curve-point {
   fill: var(--color-primary);
   stroke: var(--bg-canvas);
-  stroke-width: 2px;
+  stroke-width: 0.125rem;
   cursor: grab;
   transition: transform 0.08s ease, r 0.08s ease;
 }
@@ -2269,13 +2269,13 @@ i.fticon.effects-card-caret::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
+  padding: 0.25rem 0.5rem;
   background-color: var(--bg-panel);
   border-top: 1px solid var(--border-panel);
 }
 
 .effects-curve-coord {
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   font-family: monospace;
   color: var(--text-secondary);
 }
@@ -2283,11 +2283,11 @@ i.fticon.effects-card-caret::before {
 .effects-curve-footer-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .effects-curve-tip {
-  font-size: 9.5px;
+  font-size: 0.5938rem;
   color: var(--text-muted);
   font-family: var(--font-brand);
   user-select: none;
@@ -2298,11 +2298,11 @@ i.fticon.effects-card-caret::before {
   border: none;
   color: var(--text-muted);
   font-family: var(--font-brand);
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   font-weight: 600;
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
   outline: none;
 }
 
@@ -2313,19 +2313,19 @@ i.fticon.effects-card-caret::before {
 
 /* --- Action Button Param (e.g. Scene Editor) --- */
 .effects-control-row-button {
-  padding: 4px 8px;
+  padding: 0.25rem 0.5rem;
 }
 
 .effects-action-btn {
   display: block;
   width: 100%;
-  height: 28px;
+  height: 1.75rem;
   background: var(--bg-panel);
   color: var(--color-primary);
   border: 1px solid var(--border-panel);
-  border-radius: 4px;
+  border-radius: 0.25rem;
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: 0.6875rem;
   letter-spacing: 0.3px;
   cursor: pointer;
   outline: none;
@@ -2345,9 +2345,9 @@ i.fticon.effects-card-caret::before {
 /* Mobile lock notice for 3D Element effect */
 .fx-mobile-lock {
   width: 100%;
-  padding: 8px 10px;
+  padding: 0.5rem 0.625rem;
   font-family: var(--font-brand);
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--text-muted);
   text-align: center;
   font-style: italic;
@@ -2357,113 +2357,113 @@ i.fticon.effects-card-caret::before {
 body .effects-rack-main .effects-control-row .effects-param-pill.jog-wheel-container,
 body .effects-rack-main .effects-control-row .effects-segmented-group,
 body .effects-rack-main .effects-control-row .custom-dropdown-trigger {
-  height: 32px !important;
-  min-height: 32px !important;
-  max-height: 32px !important;
+  height: 2rem !important;
+  min-height: 2rem !important;
+  max-height: 2rem !important;
   margin: 0 !important;
 }
 
 body .effects-rack-main .effects-control-row .effects-custom-dropdown {
-  height: 32px !important;
-  min-height: 32px !important;
+  height: 2rem !important;
+  min-height: 2rem !important;
   margin: 0 !important;
 }
 
 body .effects-rack-main .effects-control-row .effects-param-pill.jog-wheel-container,
 body .effects-rack-main .effects-control-row .custom-dropdown-trigger {
-  padding: 0 8px !important;
+  padding: 0 0.5rem !important;
 }
 
 body .effects-rack-main .effects-control-row .effects-segmented-group {
-  padding: 2px !important;
+  padding: 0.125rem !important;
 }
 
 /* Force label buttons to 32px to match */
 body .effects-rack-main .effects-control-row .effects-param-select-btn {
-  height: 32px !important;
+  height: 2rem !important;
 }
 
 body .effects-rack-main .effects-control-row .effects-param-value-btn {
-  height: 32px !important;
+  height: 2rem !important;
 }
 
 /* Mobile & Tablet Compact Proportions for Effects Rack Subview (editor.html) */
 .effects-rack-layout {
-  grid-template-columns: 44px 1fr;
-  height: 224px;
-  min-height: 224px;
-  max-height: 224px;
+  grid-template-columns: 2.75rem 1fr;
+  height: 14rem;
+  min-height: 14rem;
+  max-height: 14rem;
 }
 
 .effects-rack-header {
-  height: 36px;
-  min-height: 36px;
-  padding: 0 8px;
+  height: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0 0.5rem;
 }
 
 .effects-rack-title {
-  font-size: 12.5px;
+  font-size: 0.7813rem;
 }
 
 .effects-rack-header-right {
-  gap: 5px;
+  gap: 0.3125rem;
 }
 
 .btn-effects-header-action,
 .btn-add-effect {
-  height: 26px;
-  padding: 0 8px;
-  font-size: 11px;
-  gap: 4px;
+  height: 1.625rem;
+  padding: 0 0.5rem;
+  font-size: 0.6875rem;
+  gap: 0.25rem;
 }
 
 .btn-effects-header-action i.fticon,
 .btn-effects-header-action svg {
-  width: 13px !important;
-  height: 13px !important;
-  font-size: 13px !important;
+  width: 0.8125rem !important;
+  height: 0.8125rem !important;
+  font-size: 0.8125rem !important;
 }
 
 .effects-rack-body {
-  padding: 6px 8px;
-  gap: 6px;
+  padding: 0.375rem 0.5rem;
+  gap: 0.375rem;
 }
 
 .effects-rack-empty {
-  min-height: 130px;
-  padding: 10px 14px;
+  min-height: 8.125rem;
+  padding: 0.625rem 0.875rem;
 }
 
 .effects-empty-icon-wrap {
-  width: 36px;
-  height: 36px;
-  margin-bottom: 6px;
-  font-size: 36px;
+  width: 2.25rem;
+  height: 2.25rem;
+  margin-bottom: 0.375rem;
+  font-size: 2.25rem;
 }
 
 .effects-empty-icon-wrap svg,
 .effects-empty-icon-wrap i.fticon {
-  width: 18px;
-  height: 18px;
-  font-size: 18px;
+  width: 1.125rem;
+  height: 1.125rem;
+  font-size: 1.125rem;
 }
 
 .effects-empty-title {
-  font-size: 12.5px;
+  font-size: 0.7813rem;
 }
 
 .effects-empty-desc {
-  font-size: 10.5px;
+  font-size: 0.6563rem;
 }
 
 .effects-card-header,
 .effects-card-swipe-bg {
-  height: 34px;
-  padding: 0 8px;
+  height: 2.125rem;
+  padding: 0 0.5rem;
 }
 
 .effects-card-title {
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .effects-card-caret-btn,
@@ -2472,10 +2472,10 @@ body .effects-rack-main .effects-control-row .effects-param-value-btn {
 .effects-card-kebab-btn,
 .effects-card-delete-btn,
 .effects-card-drag-handle {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
-  min-height: 24px;
+  width: 1.5rem;
+  height: 1.5rem;
+  min-width: 1.5rem;
+  min-height: 1.5rem;
 }
 
 .effects-card-eye-btn svg,
@@ -2486,20 +2486,20 @@ body .effects-rack-main .effects-control-row .effects-param-value-btn {
 .effects-card-kebab-btn i.fticon,
 .effects-card-delete-btn i.fticon,
 .effects-card-drag-handle i.fticon {
-  width: 16px;
-  height: 16px;
-  font-size: 16px;
+  width: 1rem;
+  height: 1rem;
+  font-size: 1rem;
 }
 
 .effects-card-controls {
-  padding: 6px 8px;
-  gap: 5px;
+  padding: 0.375rem 0.5rem;
+  gap: 0.3125rem;
 }
 
 .effects-control-row {
-  grid-template-columns: minmax(82px, 34%) 1fr;
-  gap: 6px;
-  min-height: 28px;
+  grid-template-columns: minmax(5.125rem, 34%) 1fr;
+  gap: 0.375rem;
+  min-height: 1.75rem;
 }
 
 body .effects-rack-main .effects-control-row .effects-param-pill.jog-wheel-container,
@@ -2509,11 +2509,11 @@ body .effects-rack-main .effects-control-row .custom-dropdown-trigger,
 body .effects-rack-main .effects-control-row .effects-custom-dropdown,
 body .effects-rack-main .effects-control-row .effects-param-select-btn,
 body .effects-rack-main .effects-control-row .effects-param-value-btn {
-  height: 28px !important;
-  min-height: 28px !important;
-  max-height: 28px !important;
+  height: 1.75rem !important;
+  min-height: 1.75rem !important;
+  max-height: 1.75rem !important;
 }
 
 .effects-switch-group .effects-segmented-btn {
-  font-size: 11px;
+  font-size: 0.6875rem;
 }

@@ -708,20 +708,14 @@
 
       const startRot = isActionFolder ? -8 : 0;
 
-      // UI-scale zoom compensation: rects report visual px, but translate /
-      // left / width styles render scaled — divide back to layout px so the
-      // morph lands exactly on the folder at any UI scale. Ratios (sx/sy)
-      // are unaffected. At 100% the factor is 1 (no behavior change).
-      const _z = (typeof window.oftUiScaleFactor === 'function' ? window.oftUiScaleFactor() : 1) || 1;
-
       return {
-        dx: dx / _z, dy: dy / _z, sx, sy, sRect, tRect,
+        dx, dy, sx, sy, sRect, tRect,
         targetRadiusTop, targetRadiusBottom, targetBg,
         startRot,
-        cx: sCenterX / _z, cy: sCenterY / _z,
-        gx: gx / _z, gy: gy / _z,
-        gw: (svgRect.width || 60) / _z,
-        gh: (svgRect.height || 48) / _z,
+        cx: sCenterX, cy: sCenterY,
+        gx, gy,
+        gw: svgRect.width || 60,
+        gh: svgRect.height || 48,
         isActionFolder,
         graphicEl: graphic
       };

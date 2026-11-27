@@ -5,6 +5,21 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.5] - 2026-11-28
+
+### Added
+- **Editor Camera View Popover & Blender-Style Camera Frustum Wireframes (`editor.html`, `desktop.html`, `js/editor/editor-layers.js`, `js/editor/editor-canvas.js`, `js/core/canvas-overlay.js`, `css/components/popover.css`, `css/panels/transform-controller.css`)**: Added an editor-only virtual orbit camera popover using native `.rotate-jogwheel` controls (vertical Orbit X & Zoom, center 2D Pan Pad, horizontal Orbit Y), preset dropdown (`Active Camera`, `Front`, `Back`, `Left`, `Right`, `Top`, `Bottom`, `Custom`), outline-to-filled camera trigger icon, and dynamic Blender-style multi-camera frustum wireframes reacting to focal length, zoom, and DOF without affecting video exports.
+- **After Effects-Style Timeline Beatmark Pins (`js/editor/editor-timeline-core.js`, `css/layout/editor.css`)**: Replaced plain ruler beatmark lines with flat After Effects pentagon/shield pins that smoothly glide around the rounded bottom contour of `#timeline-time-badge`.
+- **Interface Export Beatmark Fly-In Vector Morphing (`js/media/interface-export-renderer.js`)**: Added parabolic Bookmark-to-After-Effects-Pin 7-vertex morphing animation launching from the controller bar Bookmark button to the timeline ruler playhead on each beat.
+
+### Improved
+- **True Native `rem` UI Scaling (`css/**/*.css`, `index.html`, `editor.html`, `desktop.html`, `js/app/main.js`, `js/editor/editor-state.js`, `js/editor/editor-media.js`, `js/storage/db.js`, `js/ui/*.js`, `js/app/desktop.js`)**: Migrated all 18 CSS files and inline HTML styles to native `rem` scaling (`document.documentElement.style.fontSize`), completely removing CSS `zoom`, `html.is-scaled`, and `oftUiScaleFactor` / `__OFT_ZOOM` coordinate workarounds while keeping `1px` borders, viewport units, pointer coordinates, and canvas resolution native.
+- **Interface Export 1:1 Scale & Smooth Horizontal Intro/Outro (`js/media/interface-export-renderer.js`)**: Synced Portrait & Landscape Interface Export scaling 1:1 with Editor UI Scale, simplified the export header to layer count + resolution/FPS, added unified offscreen UI shell fade-in/fade-out, and synchronized C² smootherstep pan/zoom for horizontal intro and outro transitions.
+- **Global Popover Tail & Controller Bar Polish (`css/components/popover.css`, `css/layout/editor.css`, `js/ui/popover.js`)**: Fixed popover tail background inheritance, stacking order behind UI content, and outward-only `clip-path`, plus dedicated outline/filled Bookmark button and boxed Play button.
+
+### Fixed
+- **Detached Playback Timecode Glitch & First-Play Imported Audio Silence (`js/editor/editor-timeline-core.js`, `js/media/fish-audio-engine.js`, `js/media/fish-audio-scheduler.js`, `js/editor/editor-animation.js`, `js/editor/editor-media.js`)**: Fixed timecode flicker after scrubbing during playback and invalidated audio buffer caches immediately after importing audio so first-play outputs sound reliably.
+
 ## [0.7.4] - 2026-11-27
 
 ### Fixed

@@ -28,6 +28,9 @@
   };
 
   var SVG_PUZZLE_PATH = 'M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5s-1.12-2.5-2.5-2.5z';
+  var SVG_CAMERA_VIEW_PATH = 'M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z';
+  var SVG_BOOKMARK_OUTLINE_PATH = 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2zm0 15l-5-2.18L7 18V5h10v13z';
+  var SVG_BOOKMARK_FILLED_PATH = 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z';
   var SVG_SELECT_ARC_PATH = 'M15 9A6 6 0 1 0 9 15';
   var SVG_SELECT_CHECK_PATH = 'M12.5 15L14.3 16.8L17.5 13.2';
 
@@ -47,11 +50,13 @@
     beatPin:   'fticon-icon-31',
     undo:      'fticon-undo',
     redo:      'fticon-redo',
+    camera:    'fticon-camera',
     previous:  'fticon-previous',
     play:      'fticon-play',
     pause:     'fticon-pause',
     next:      'fticon-next',
     more:      'fticon-more',
+    beatmark:  'fticon-beatmark',
     eye:       'fticon-eye',
     reorder:   'fticon-drag-to-reorder-layer',
     plus:      'fticon-plus'
@@ -73,14 +78,11 @@
     return x < 0.5 ? (4 * x * x * x) : (1 - Math.pow(-2 * x + 2, 3) * 0.5);
   }
 
-  // Ultra-smooth C2 continuous ease (zero velocity & zero acceleration at both ends — never rushes or jerks!)
+  // Ultra-smooth C2 continuous quintic smootherstep (zero velocity & zero acceleration at both ends)
   function ultraSmoothEase(x) {
     if (x <= 0) return 0;
     if (x >= 1) return 1;
-    // Blend cosine ease with quintic smootherstep for silky, unhurried cinema camera motion
-    var s = x * x * x * (x * (x * 6 - 15) + 10);
-    var c = 0.5 - 0.5 * Math.cos(Math.PI * x);
-    return 0.65 * s + 0.35 * c;
+    return x * x * x * (x * (x * 6 - 15) + 10);
   }
 
   function readCssVar(cs, name, fallback) {
@@ -145,27 +147,27 @@
     return glyphs;
   }
 
-  // Resolve user's UI Scale setting (80%..130%) from Studio settings once per session
+  // Resolve user's Editor UI Scale setting (80%..130%) from Studio settings once per session
   function resolveUserUiScale() {
     var pct = null;
-    try {
-      if (typeof localStorage !== 'undefined' && localStorage) {
-        var rawEditor = localStorage.getItem('oft_ui_scale_editor');
-        var rawDesktop = localStorage.getItem('oft_ui_scale_desktop');
-        var rawGeneric = localStorage.getItem('oft_ui_scale');
-        var pick = (rawEditor !== null && rawEditor !== '') ? rawEditor
-          : ((rawDesktop !== null && rawDesktop !== '') ? rawDesktop : rawGeneric);
-        if (pick !== null && pick !== undefined && pick !== '') {
-          var parsed = parseFloat(pick);
-          if (Number.isFinite(parsed)) pct = parsed;
-        }
-      }
-    } catch (_) {}
-
-    if (pct === null && typeof window !== 'undefined' && typeof window.getUiScale === 'function') {
+    if (typeof window !== 'undefined' && typeof window.getUiScale === 'function') {
       try {
-        var fnVal = Number(window.getUiScale());
+        var fnVal = Number(window.getUiScale('editor'));
         if (Number.isFinite(fnVal) && fnVal > 0) pct = fnVal;
+      } catch (_) {}
+    }
+
+    if (pct === null) {
+      try {
+        if (typeof localStorage !== 'undefined' && localStorage) {
+          var rawEditor = localStorage.getItem('oft_ui_scale_editor');
+          var rawGeneric = localStorage.getItem('oft_ui_scale');
+          var pick = (rawEditor !== null && rawEditor !== '') ? rawEditor : rawGeneric;
+          if (pick !== null && pick !== undefined && pick !== '') {
+            var parsed = parseFloat(pick);
+            if (Number.isFinite(parsed)) pct = parsed;
+          }
+        }
       } catch (_) {}
     }
 
@@ -485,25 +487,32 @@
   // Authentic Map-Pin / After Effects Marker drop + squash-bounce:
   // Pre-beat lead-in (-0.065s .. 0s) drops the pin from above so IMPACT lands at dtHit === 0.000s
   // (0ms lag, 0px offset — dead center on the playhead needle & audio beat!).
-  var PIN_LEAD_SEC = 0.065;
+  // Parabolic Bookmark-to-Marker Fly-In + After Effects Marker Landing Bounce:
+  // Pre-beat lead-in (-0.22s .. 0s) launches a bookmark silhouette from the Bookmark button
+  // on the controller bar, morphing smoothly in mid-air into the After Effects Pentagon Pin
+  // so IMPACT lands squarely at dtHit === 0.000s (0ms lag on playhead & audio beat).
+  var PIN_LEAD_SEC = 0.22;
   var PIN_BOUNCE_SEC = 0.38;
 
   function evalPinDropAnim(dtHit) {
     if (dtHit < -PIN_LEAD_SEC) return null;
     if (dtHit >= PIN_BOUNCE_SEC) {
-      return { active: false, scaleX: 1, scaleY: 1, offsetY: 0, alpha: 1, pulse: 0, lineProg: 1 };
+      return { active: false, inFlight: false, flightU: 1, morph: 1, scaleX: 1, scaleY: 1, offsetY: 0, alpha: 1, pulse: 0, lineProg: 1 };
     }
 
     if (dtHit < 0) {
-      // Pre-beat drop-in (-0.065s -> 0.000s): accelerates downward to land squarely on t = bm.time
+      // Pre-beat parabolic fly-in (-0.22s -> 0.000s): accelerates cleanly into impact
       var u = (dtHit + PIN_LEAD_SEC) / PIN_LEAD_SEC; // 0..1
-      var accel = u * u;
+      var morph = ultraSmoothEase(u);
       return {
         active: true,
-        scaleX: 0.65 + 0.25 * u,
-        scaleY: 0.35 + 0.90 * u,
-        offsetY: -1.15 * (1 - accel),
-        alpha: Math.min(1, u * 1.8),
+        inFlight: true,
+        flightU: u,
+        morph: morph,
+        scaleX: 0.92 + 0.14 * Math.sin(u * Math.PI),
+        scaleY: 0.92 + 0.14 * Math.sin(u * Math.PI),
+        offsetY: 0,
+        alpha: Math.min(1, u * 4.0),
         pulse: 0,
         lineProg: 0
       };
@@ -512,14 +521,16 @@
     // dtHit >= 0 (EXACT BEAT IMPACT at dtHit === 0!): instant squash -> bouncy rebound -> settle
     var b = dtHit / PIN_BOUNCE_SEC; // 0..1
     var wave = Math.exp(-6.5 * b) * Math.cos(b * Math.PI * 3.2);
-    // At b = 0 (exact beat): wave = +1 -> instant impact squash on (playheadX, pinTipY), then springs tall!
-    var scaleY = 1.0 - 0.32 * wave;
-    var scaleX = 1.0 + 0.26 * wave;
+    var scaleY = 1.0 - 0.30 * wave;
+    var scaleX = 1.0 + 0.24 * wave;
     var pulse = Math.pow(1 - b, 1.6);
     var lineProg = easyEase(Math.min(1, 0.35 + (dtHit / 0.12) * 0.65));
 
     return {
       active: true,
+      inFlight: false,
+      flightU: 1,
+      morph: 1,
       scaleX: scaleX,
       scaleY: scaleY,
       offsetY: 0.0,
@@ -529,21 +540,30 @@
     };
   }
 
-  // Draw classic After Effects pentagon/shield marker pin with bottom tip at (0, 0)
-  function drawAeMarkerPinPath(ctx, w, h, r) {
+  // Draw 7-vertex morphed silhouette: m = 0 (Bookmark ribbon notch) -> m = 1 (After Effects pentagon pin)
+  // Bottom anchor at (0, 0), height extends upward to -h
+  function drawMorphedBookmarkToPinPath(ctx, w, h, r, m) {
     var hw = w * 0.5;
-    var shoulderY = -h * 0.42;
     var topY = -h;
-    var rad = Math.min(r, hw * 0.65, (h * 0.58) * 0.5);
+    var rad = Math.min(r, hw * 0.65, (h * 0.55) * 0.5);
+    // Bookmark (m=0): corners at y=0, center notch at y=-h*0.26
+    // AE Pin   (m=1): shoulders at y=-h*0.42, center tip at y=0
+    var sideY = -h * 0.42 * m;
+    var centerY = -h * 0.26 * (1 - m);
     ctx.beginPath();
-    ctx.moveTo(0, 0); // Sharp bottom pin point
-    ctx.lineTo(-hw, shoulderY);
+    ctx.moveTo(0, centerY);
+    ctx.lineTo(-hw, sideY);
     ctx.lineTo(-hw, topY + rad);
     ctx.quadraticCurveTo(-hw, topY, -hw + rad, topY);
     ctx.lineTo(hw - rad, topY);
     ctx.quadraticCurveTo(hw, topY, hw, topY + rad);
-    ctx.lineTo(hw, shoulderY);
+    ctx.lineTo(hw, sideY);
     ctx.closePath();
+  }
+
+  // Draw classic After Effects pentagon/shield marker pin with bottom tip at (0, 0)
+  function drawAeMarkerPinPath(ctx, w, h, r) {
+    drawMorphedBookmarkToPinPath(ctx, w, h, r, 1.0);
   }
 
   // Compute UI reveal factor u in [0..1]:
@@ -623,6 +643,9 @@
     var hasPath2D = (typeof Path2D === 'function');
     var svgPaths = {
       puzzle: hasPath2D ? new Path2D(SVG_PUZZLE_PATH) : null,
+      cameraView: hasPath2D ? new Path2D(SVG_CAMERA_VIEW_PATH) : null,
+      bookmarkOutline: hasPath2D ? new Path2D(SVG_BOOKMARK_OUTLINE_PATH) : null,
+      bookmarkFilled: hasPath2D ? new Path2D(SVG_BOOKMARK_FILLED_PATH) : null,
       selectArc: hasPath2D ? new Path2D(SVG_SELECT_ARC_PATH) : null,
       selectCheck: hasPath2D ? new Path2D(SVG_SELECT_CHECK_PATH) : null
     };
@@ -671,9 +694,9 @@
       }
     }
 
-    // Match Portrait (412px ref) & Landscape (760px editor.html tablet/landscape ref) physical density, multiplied by user's UI Scale!
+    // Match Portrait (412px mobile ref) & Landscape (1160px editor landscape ref) 1:1 with user's Editor UI Scale!
     var uiScale = (typeof config.uiScale === 'number' && config.uiScale > 0) ? config.uiScale : resolveUserUiScale();
-    var baseScale = (layout === 'desktop') ? (outW / 760) : (outW / 412);
+    var baseScale = (layout === 'desktop') ? (outW / 1160) : (outW / 412);
     var s = baseScale * uiScale;
 
     var pad = Math.round(12 * s);
@@ -1061,17 +1084,16 @@
       var dCy = session.drawCompY + session.drawCompH * 0.5;
 
       // Perceptually uniform Exponential Scale (After Effects "Exponential Scale")
-      // Eliminates the mid-transition speed rush of linear scale interpolation!
+      // Synchronized with C2 smootherstep u so pan & zoom decelerate together smoothly
+      // at both intro start and outro finish (especially noticeable on wide Horizontal layouts).
       var fullScale = session.fullCompW / Math.max(1, session.drawCompW);
       camScale = Math.pow(fullScale, 1.0 - u);
 
       curCompW = session.drawCompW * camScale;
       curCompH = session.drawCompH * camScale;
 
-      // Match center translation seamlessly to the optical zoom factor
-      var posFrac = (fullScale > 1.0001) ? ((fullScale - camScale) / (fullScale - 1.0)) : u;
-      var curCx = fCx + (dCx - fCx) * posFrac;
-      var curCy = fCy + (dCy - fCy) * posFrac;
+      var curCx = fCx + (dCx - fCx) * u;
+      var curCy = fCy + (dCy - fCy) * u;
       curCompX = curCx - curCompW * 0.5;
       curCompY = curCy - curCompH * 0.5;
 
@@ -1083,15 +1105,35 @@
     var selectAll = session.highlightActive && session.layers.length > 0;
     var beatHit = findRecentBeatHit(session.beatmarks, t, frameTol);
 
-    // 1. Base Background & Camera Transform for Studio UI Shell
+    // 1. Base Background & Unified UI Shell Fade + Camera Transform
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = p.bgPreview;
     ctx.fillRect(0, 0, w, h);
 
-    ctx.save();
-    if (u < 0.9995) {
-      ctx.setTransform(camScale, 0, 0, camScale, camTx, camTy);
+    // Smoothly fade the entire Studio UI shell in during intro (u: 0 -> 0.45) and out during outro (u: 0.45 -> 0)
+    // so horizontal/letterboxed compositions NEVER pop the UI shell in abruptly at frame 1.
+    var uiShellAlpha = (u < 0.9995) ? ultraSmoothEase(Math.min(1.0, Math.max(0.0, u / 0.45))) : 1.0;
+    var useUiOffscreen = (uiShellAlpha > 0.001 && uiShellAlpha < 0.999);
+    var mainCtx = ctx;
+    if (useUiOffscreen) {
+      if (!session._uiFadeCanvas) {
+        session._uiFadeCanvas = document.createElement('canvas');
+        session._uiFadeCtx = session._uiFadeCanvas.getContext('2d', { alpha: true });
+      }
+      if (session._uiFadeCanvas.width !== w || session._uiFadeCanvas.height !== h) {
+        session._uiFadeCanvas.width = w;
+        session._uiFadeCanvas.height = h;
+      }
+      ctx = session._uiFadeCtx;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, w, h);
     }
+
+    if (uiShellAlpha > 0.001) {
+      ctx.save();
+      if (u < 0.9995) {
+        ctx.setTransform(camScale, 0, 0, camScale, camTx, camTy);
+      }
 
     // 2. Top Header Bar (.editor-header)
     ctx.fillStyle = p.bgPanel;
@@ -1100,32 +1142,20 @@
     ctx.fillRect(0, session.headerY + session.headerH - Math.max(1, Math.round(s * 0.5)), w, Math.max(1, Math.round(s * 0.5)));
 
     var headerMidY = session.headerY + session.headerH * 0.5;
-    var hIconSz = Math.round(18 * s);
-
-    drawFticon(ctx, g.back, session.pad + hIconSz * 0.5, headerMidY, hIconSz, p.colorPrimary);
-
-    ctx.fillStyle = p.textPrimary;
-    ctx.font = '700 ' + Math.round(14 * s) + 'px ' + p.fontBrand;
     ctx.textBaseline = 'middle';
-    ctx.textAlign = 'left';
-    var titleX = session.pad + hIconSz + Math.round(12 * s);
-    var projLabel = selectAll ? (session.layers.length + ' Selected') : session.projectName;
-    ctx.fillText(projLabel, titleX, headerMidY);
 
-    var iconGap = Math.round((session.layout === 'desktop' ? 32 : 30) * s);
-    var rightX = w - session.pad - hIconSz * 0.5;
-    if (selectAll) {
-      drawFticon(ctx, g.options, rightX, headerMidY, hIconSz, p.colorPrimary);
-      drawFticon(ctx, g.link,    rightX - iconGap, headerMidY, hIconSz, p.colorPrimary);
-      drawFticon(ctx, g.badge3d, rightX - iconGap * 2, headerMidY, hIconSz, p.colorPrimary);
-      drawMotionBlurSvg(ctx,     rightX - iconGap * 3, headerMidY, Math.round(18 * s), p.colorPrimary);
-      drawFticon(ctx, g.del,     rightX - iconGap * 4, headerMidY, hIconSz, p.colorPrimary);
-    } else {
-      drawFticon(ctx, g.export2,  rightX, headerMidY, hIconSz, p.colorPrimary);
-      drawFticon(ctx, g.settings, rightX - iconGap, headerMidY, hIconSz, p.colorPrimary);
-      drawFticon(ctx, g.template, rightX - iconGap * 2, headerMidY, hIconSz, p.colorPrimary);
-      drawFticon(ctx, g.desktop,  rightX - iconGap * 3, headerMidY, hIconSz, p.colorPrimary);
-    }
+    // Left: Layer count (e.g. "100 Layer")
+    ctx.fillStyle = p.textPrimary;
+    ctx.font = '700 ' + Math.round(13.5 * s) + 'px ' + p.fontBrand;
+    ctx.textAlign = 'left';
+    ctx.fillText(session.layers.length + ' Layer', session.pad, headerMidY);
+
+    // Right: Composition Resolution + FPS (e.g. "1080×1920 · 60 FPS")
+    var specText = session.compW + '\u00d7' + session.compH + ' \u00b7 ' + safeFps + ' FPS';
+    ctx.font = '600 ' + Math.round(12 * s) + 'px ' + p.fontMono;
+    ctx.fillStyle = p.textSecondary;
+    ctx.textAlign = 'right';
+    ctx.fillText(specText, w - session.pad, headerMidY);
 
     // 3. Preview Stage Well Background
     ctx.fillStyle = p.bgPreview;
@@ -1151,18 +1181,50 @@
 
     var trMidY = session.transportY + session.transportH * 0.5;
     var tbIconSz = Math.round(18 * s);
-    var cols = 7;
+    var cols = 9;
     var colSpan = (trW - session.pad * 2) / cols;
     var c0 = trX + session.pad + colSpan * 0.5;
     var endDur = Math.max(0.5, totalDur || 5);
     var isPlayingNow = (frameIndex > 1) && (t < endDur - (0.75 / safeFps));
     drawFticon(ctx, g.undo,     c0,               trMidY, tbIconSz, p.textMuted);
     drawFticon(ctx, g.redo,     c0 + colSpan,     trMidY, tbIconSz, p.textMuted);
-    drawFticon(ctx, g.previous, c0 + colSpan * 2, trMidY, tbIconSz, p.colorPrimary);
-    drawFticon(ctx, isPlayingNow ? g.pause : g.play, c0 + colSpan * 3, trMidY, tbIconSz, p.colorPrimary);
-    drawFticon(ctx, g.next,     c0 + colSpan * 4, trMidY, tbIconSz, p.colorPrimary);
-    drawFticon(ctx, g.more,     c0 + colSpan * 5, trMidY, tbIconSz, p.colorPrimary);
-    drawSvgPathIcon(ctx, session.svgPaths.puzzle, c0 + colSpan * 6, trMidY, Math.round(19 * s), p.colorPrimary, false);
+    drawSvgPathIcon(ctx, session.svgPaths.cameraView, c0 + colSpan * 2, trMidY, Math.round(19 * s), p.colorPrimary, false);
+    drawFticon(ctx, g.previous, c0 + colSpan * 3, trMidY, tbIconSz, p.colorPrimary);
+    var playBoxW = Math.round(40 * s);
+    var playBoxH = Math.round(25 * s);
+    var playBoxX = Math.round(c0 + colSpan * 4 - playBoxW * 0.5);
+    var playBoxY = Math.round(trMidY - playBoxH * 0.5);
+    ctx.fillStyle = p.colorPrimary;
+    drawRoundedRectPath(ctx, playBoxX, playBoxY, playBoxW, playBoxH, Math.round(6 * s));
+    ctx.fill();
+    drawFticon(ctx, isPlayingNow ? g.pause : g.play, c0 + colSpan * 4, trMidY, Math.round(16 * s), p.bgCanvas);
+    drawFticon(ctx, g.next,     c0 + colSpan * 5, trMidY, tbIconSz, p.colorPrimary);
+    drawFticon(ctx, g.more,     c0 + colSpan * 6, trMidY, tbIconSz, p.colorPrimary);
+    var bmBtnX = c0 + colSpan * 7;
+    var bmBtnY = trMidY;
+    // Detect if a beatmark is launching right now for tactile Bookmark button press feedback
+    var bmLaunching = false;
+    var bmPressScale = 1.0;
+    var bmsCtrl = session.beatmarks;
+    for (var lbi = 0; lbi < bmsCtrl.length; lbi++) {
+      var ldt = t - bmsCtrl[lbi].time;
+      if (ldt >= -PIN_LEAD_SEC && ldt <= -PIN_LEAD_SEC + 0.11) {
+        bmLaunching = true;
+        var pressU = (ldt + PIN_LEAD_SEC) / 0.11;
+        bmPressScale = 1.0 - 0.16 * Math.sin(pressU * Math.PI);
+        break;
+      }
+    }
+    var bookmarkPath = (beatHit || bmLaunching) ? session.svgPaths.bookmarkFilled : session.svgPaths.bookmarkOutline;
+    ctx.save();
+    if (bmPressScale !== 1.0) {
+      ctx.translate(bmBtnX, bmBtnY);
+      ctx.scale(bmPressScale, bmPressScale);
+      ctx.translate(-bmBtnX, -bmBtnY);
+    }
+    drawSvgPathIcon(ctx, bookmarkPath, bmBtnX, bmBtnY, Math.round(19 * s), p.colorPrimary, false);
+    ctx.restore();
+    drawSvgPathIcon(ctx, session.svgPaths.puzzle, c0 + colSpan * 8, trMidY, Math.round(19 * s), p.colorPrimary, false);
 
     // 5. Time Ruler & Vertical Grid + Beatmark Lines (inside Right Pane in Landscape, or Bottom Pane in Portrait)
     ctx.fillStyle = p.bgTimeline;
@@ -1478,17 +1540,11 @@
     }
     ctx.restore();
 
-    // Vertical Split Resizer Handle (.timeline-split-handle) between Left & Right Panes in Landscape!
+    // Vertical divider between Left & Right Panes in Landscape (idle handle pill is transparent)
     if (session.layout === 'desktop') {
       var splitX = session.timelineX;
       ctx.fillStyle = p.borderDefault;
       ctx.fillRect(splitX - Math.max(1, Math.round(s * 0.5)), session.headerH, Math.max(1, Math.round(s)), h - session.headerH);
-      var handlePillW = Math.round(5 * s);
-      var handlePillH = Math.round(52 * s);
-      var handlePillY = Math.round(session.headerH + (h - session.headerH - handlePillH) * 0.5);
-      ctx.fillStyle = p.borderDefault;
-      drawRoundedRectPath(ctx, Math.round(splitX - handlePillW * 0.5), handlePillY, handlePillW, handlePillH, handlePillW * 0.5);
-      ctx.fill();
     }
 
     // 7. Playhead Needle + Timecode Badge + AE Beatmark Map-Pins (identical in Portrait & Landscape, no '+' FAB!)
@@ -1517,6 +1573,7 @@
     ctx.fillText(tcText, session.playheadX, tcY + tcH * 0.5);
 
     // 7b. After Effects Beatmark Pins — hidden before beat, drop & squash-bounce like a Map Pin when hit!
+    // 7a. Landed After Effects Marker Pins on Ruler (clipped to ruler track)
     ctx.save();
     ctx.beginPath();
     var leftClipX = session.timelineX + Math.round(34 * s);
@@ -1532,7 +1589,7 @@
 
     for (var rbi = 0; rbi < bms.length; rbi++) {
       var rbm = bms[rbi];
-      if (t + PIN_LEAD_SEC < rbm.time) break; // Start drop 65ms early so impact lands at 0.000s on the playhead!
+      if (t + frameTol < rbm.time) break; // In-flight pins are drawn in unclipped pass 7b below
       if (rbm.time < leftSec - 0.3 || rbm.time > rightSec + 0.3) continue;
 
       var rbx = Math.round(session.playheadX + (rbm.time - t) * pps);
@@ -1554,8 +1611,7 @@
 
       ctx.save();
       ctx.globalAlpha = pAnim ? pAnim.alpha : 1.0;
-      var dropPx = pAnim ? (pAnim.offsetY * pinH) : 0;
-      ctx.translate(rbx, pinTipY + dropPx);
+      ctx.translate(rbx, pinTipY);
       if (pAnim) {
         ctx.scale(pAnim.scaleX, pAnim.scaleY);
       }
@@ -1576,7 +1632,76 @@
     }
     ctx.restore();
 
-    ctx.restore(); // Exit camera transform so compCanvas & wireframes render at crisp 1:1 output pixels!
+    // 7b. In-Flight Parabolic Bookmark -> After Effects Pin Vector Morphing (unclipped above UI shell)
+    for (var fbi = 0; fbi < bms.length; fbi++) {
+      var fbm = bms[fbi];
+      var fdt = t - fbm.time;
+      if (fdt < -PIN_LEAD_SEC) break;
+      if (fdt >= -frameTol) continue;
+
+      var fAnim = evalPinDropAnim(fdt);
+      if (!fAnim || !fAnim.inFlight) continue;
+
+      var targetX = Math.round(session.playheadX + (fbm.time - t) * pps);
+      var targetY = pinTipY;
+      var fu = easyEase(fAnim.flightU);
+      var invFu = 1.0 - fu;
+
+      // Quadratic Bezier parabolic arc from Bookmark button (bmBtnX, bmBtnY) -> Ruler target (targetX, targetY)
+      var arcDist = Math.hypot(targetX - bmBtnX, targetY - bmBtnY);
+      var arcLift = Math.max(36 * s, Math.min(180 * s, arcDist * 0.30));
+      var ctrlX = (bmBtnX + targetX) * 0.5;
+      var ctrlY = Math.min(bmBtnY, targetY) - arcLift;
+
+      var curFlyX = invFu * invFu * bmBtnX + 2 * invFu * fu * ctrlX + fu * fu * targetX;
+      var curFlyY = invFu * invFu * (bmBtnY + pinH * 0.5) + 2 * invFu * fu * ctrlY + fu * fu * targetY;
+
+      // Subtle aerodynamic tilt during flight that levels out right before landing
+      var tiltRad = Math.sin(fu * Math.PI) * ((targetX >= bmBtnX ? 1 : -1) * 0.22);
+      var morph = fAnim.morph;
+
+      ctx.save();
+      ctx.globalAlpha = fAnim.alpha;
+      ctx.translate(curFlyX, curFlyY);
+      ctx.rotate(tiltRad);
+      ctx.scale(fAnim.scaleX, fAnim.scaleY);
+
+      ctx.fillStyle = p.colorPrimary;
+      drawMorphedBookmarkToPinPath(ctx, pinW, pinH, pinR, morph);
+      ctx.fill();
+
+      if (morph > 0.15) {
+        ctx.save();
+        ctx.globalAlpha = fAnim.alpha * Math.min(1, (morph - 0.15) / 0.55);
+        ctx.strokeStyle = p.bgCanvas;
+        ctx.lineWidth = Math.max(1.2, Math.round(1.1 * s));
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // Inner pinhole dot fades & scales in cleanly as Bookmark morphs into AE Pin
+      if (morph > 0.35) {
+        var dotT = Math.min(1, (morph - 0.35) / 0.55);
+        ctx.fillStyle = p.bgCanvas;
+        ctx.beginPath();
+        ctx.arc(0, -pinH * 0.62, Math.max(0.5, Math.max(1.5, pinW * 0.19) * dotT), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+      ctx.restore(); // Exit camera transform so compCanvas & wireframes render at crisp 1:1 output pixels!
+    } // end if (uiShellAlpha > 0.001)
+
+    if (useUiOffscreen) {
+      ctx = mainCtx;
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha = uiShellAlpha;
+      ctx.drawImage(session._uiFadeCanvas, 0, 0);
+      ctx.restore();
+    }
 
     // 8. Draw Composition Video, Border & Wireframes
     // Composition pixels stay inside curComp rect; Wireframes can extend into the Preview Stage Well

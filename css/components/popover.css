@@ -20,11 +20,11 @@
   z-index: 2000;
   background-color: var(--bg-panel-hover);
   color: var(--text-primary);
-  border-radius: 12px;
+  border-radius: 0.75rem;
   box-sizing: border-box;
-  padding: 14px 16px;
-  min-width: 180px;
-  max-width: calc(100vw - 24px);
+  padding: 0.875rem 1rem;
+  min-width: 11.25rem;
+  max-width: calc(100vw - 1.5rem);
   outline: none;
   border: 1px solid var(--border-subtle);
   box-shadow: none;
@@ -48,20 +48,26 @@
 /* Sharp Pointy Arrow Tail (Masked against card border seamlessly) */
 .popover-tail {
   position: absolute;
-  width: 12px;
-  height: 12px;
-  background-color: var(--bg-panel-hover);
+  width: 0.75rem;
+  height: 0.75rem;
+  background-color: inherit;
   border: none;
   pointer-events: none;
   box-sizing: border-box;
-  z-index: 1;
+  z-index: 0;
   -webkit-transform-origin: 50% 50%;
   transform-origin: 50% 50%;
 }
 
-/* Tail Placements & Rotation */
+/* Keep all popover UI content strictly above the tail, while tail stays above card bg */
+.popover-card > :not(.popover-tail) {
+  position: relative;
+  z-index: 1;
+}
+
+/* Tail Placements & Rotation (Clipped strictly to outward-pointing triangle half) */
 .popover-card[data-placement^="bottom"] > .popover-tail {
-  top: -6px;
+  top: -0.375rem;
   bottom: auto !important;
   -webkit-transform: translateX(-50%) rotate(45deg);
   transform: translateX(-50%) rotate(45deg);
@@ -69,10 +75,11 @@
   border-left: 1px solid var(--border-subtle);
   border-right: none;
   border-bottom: none;
+  clip-path: polygon(0 0, 105% 0, 0 105%);
 }
 
 .popover-card[data-placement^="top"] > .popover-tail {
-  bottom: -6px;
+  bottom: -0.375rem;
   top: auto !important;
   -webkit-transform: translateX(-50%) rotate(45deg);
   transform: translateX(-50%) rotate(45deg);
@@ -80,26 +87,29 @@
   border-right: 1px solid var(--border-subtle);
   border-top: none;
   border-left: none;
+  clip-path: polygon(100% 100%, -5% 100%, 100% -5%);
 }
 
 .popover-card[data-placement^="right"] > .popover-tail {
-  left: -6px;
+  left: -0.375rem;
   -webkit-transform: translateY(-50%) rotate(45deg);
   transform: translateY(-50%) rotate(45deg);
   border-bottom: 1px solid var(--border-subtle);
   border-left: 1px solid var(--border-subtle);
   border-top: none;
   border-right: none;
+  clip-path: polygon(0 100%, 0 -5%, 105% 100%);
 }
 
 .popover-card[data-placement^="left"] > .popover-tail {
-  right: -6px;
+  right: -0.375rem;
   -webkit-transform: translateY(-50%) rotate(45deg);
   transform: translateY(-50%) rotate(45deg);
   border-top: 1px solid var(--border-subtle);
   border-right: 1px solid var(--border-subtle);
   border-bottom: none;
   border-left: none;
+  clip-path: polygon(100% 0, 100% 105%, -5% 0);
 }
 
 /* Popover Content Typography & Sections */
@@ -107,14 +117,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.375rem;
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .popover-title {
   font-family: var(--font-brand);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: -0.2px;
   color: var(--color-primary);
@@ -124,7 +134,7 @@
 
 .popover-body {
   font-family: var(--font-brand);
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.45;
   color: var(--text-muted);
 }
@@ -132,7 +142,7 @@
 .popover-menu-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 0.25rem;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -141,11 +151,11 @@
 .popover-menu-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 6px;
+  gap: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  border-radius: 0.375rem;
   font-family: var(--font-brand);
-  font-size: 12.5px;
+  font-size: 0.7813rem;
   font-weight: 600;
   color: var(--text-primary);
   background-color: transparent;
@@ -169,24 +179,24 @@
 }
 
 .popover-menu-item svg {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   flex-shrink: 0;
   fill: currentColor;
-  font-size: 16px;}
+  font-size: 1rem;}
 
 .popover-menu-item i.fticon {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   flex-shrink: 0;
   fill: currentColor;
-  font-size: 16px;}
+  font-size: 1rem;}
 
 .popover-menu-item .fticon {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   flex-shrink: 0;
-  font-size: 16px;}
+  font-size: 1rem;}
 
 .popover-menu-item:disabled {
   opacity: 0.35;
@@ -215,14 +225,14 @@
 .popover-menu-divider {
   height: 1px;
   background-color: var(--border-subtle);
-  margin: 4px 6px;
+  margin: 0.25rem 0.375rem;
 }
 
 /* Dedicated Context / Actions Menu Popover Card */
 .popover-card.is-menu-popover {
-  padding: 6px;
-  min-width: 168px;
-  border-radius: 10px;
+  padding: 0.375rem;
+  min-width: 10.5rem;
+  border-radius: 0.625rem;
   background-color: var(--bg-panel-hover);
   border: 1px solid var(--border-subtle);
   box-shadow: none;
@@ -231,7 +241,7 @@
 .popover-card.is-menu-popover .popover-menu-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.125rem;
 }
 
 /* ==========================================================================
@@ -239,12 +249,12 @@
    Clean flat rectangular surface, no tail, elevated surface, instant response.
    ========================================================================== */
 .popover-card.is-context-menu {
-  border-radius: 10px !important;
+  border-radius: 0.625rem !important;
   border: 1px solid var(--border-subtle) !important;
   background-color: var(--bg-panel-hover) !important;
-  padding: 4px !important;
-  min-width: 172px !important;
-  max-width: 260px !important;
+  padding: 0.25rem !important;
+  min-width: 10.75rem !important;
+  max-width: 16.25rem !important;
   box-shadow: none !important;
   transform: scale(0.96);
   opacity: 0;
@@ -267,10 +277,10 @@
 }
 
 .popover-card.is-context-menu .popover-menu-item {
-  padding: 6px 12px;
-  font-size: 12.5px;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.7813rem;
   font-weight: 500;
-  border-radius: 4px;
+  border-radius: 0.25rem;
   color: var(--text-primary);
   background-color: transparent;
   display: flex;
@@ -297,15 +307,15 @@
 .popover-card.is-context-menu .popover-menu-divider {
   height: 1px;
   background-color: var(--border-subtle);
-  margin: 3px 0;
+  margin: 0.1875rem 0;
   border: none;
 }
 
 /* Context Menu Keyboard Shortcut Hint */
 .context-menu-shortcut {
   margin-left: auto;
-  padding-left: 14px;
-  font-size: 11px;
+  padding-left: 0.875rem;
+  font-size: 0.6875rem;
   font-weight: 500;
   color: var(--text-muted);
   opacity: 0.8;
@@ -331,28 +341,28 @@
 .popover-settings-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0.75rem;
   margin: 0;
-  padding: 4px 0 2px;
+  padding: 0.25rem 0 0.125rem;
 }
 
 .popover-setting-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  min-height: 28px;
+  gap: 1rem;
+  min-height: 1.75rem;
 }
 
 .popover-setting-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 0.125rem;
 }
 
 .popover-setting-label {
   font-family: var(--font-brand);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
@@ -360,17 +370,17 @@
 
 .popover-setting-desc {
   font-family: var(--font-brand);
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   color: var(--text-muted);
   line-height: 1.2;
 }
 
 /* Flat Pure Toggle Switch */
 .popover-toggle-switch {
-  width: 36px;
-  height: 20px;
+  width: 2.25rem;
+  height: 1.25rem;
   background-color: var(--bg-panel-inner);
-  border-radius: 10px;
+  border-radius: 0.625rem;
   position: relative;
   cursor: pointer;
   border: none;
@@ -382,13 +392,13 @@
 }
 
 .popover-toggle-switch .toggle-thumb {
-  width: 14px;
-  height: 14px;
+  width: 0.875rem;
+  height: 0.875rem;
   background-color: var(--text-muted);
   border-radius: 50%;
   position: absolute;
-  top: 3px;
-  left: 3px;
+  top: 0.1875rem;
+  left: 0.1875rem;
   transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease;
   pointer-events: none;
 }
@@ -398,7 +408,7 @@
 }
 
 .popover-toggle-switch.is-active .toggle-thumb {
-  transform: translateX(16px);
+  transform: translateX(1rem);
   background-color: var(--bg-canvas);
 }
 
@@ -407,21 +417,21 @@
   display: inline-flex;
   align-items: center;
   background-color: var(--bg-panel-inner);
-  border-radius: 8px;
-  padding: 2px;
-  gap: 2px;
+  border-radius: 0.5rem;
+  padding: 0.125rem;
+  gap: 0.125rem;
   flex-shrink: 0;
 }
 
 .stepper-btn {
-  width: 26px;
-  height: 26px;
+  width: 1.625rem;
+  height: 1.625rem;
   border: none;
-  border-radius: 6px;
+  border-radius: 0.375rem;
   background-color: transparent;
   color: var(--text-primary);
   font-family: var(--font-brand);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
   cursor: pointer;
   display: flex;
@@ -446,17 +456,17 @@
 }
 
 .stepper-value {
-  min-width: 44px;
+  min-width: 2.75rem;
   text-align: center;
   font-family: var(--font-brand);
-  font-size: 11.5px;
+  font-size: 0.7188rem;
   font-weight: 700;
   color: var(--color-primary);
   font-variant-numeric: tabular-nums;
-  padding: 4px 6px;
+  padding: 0.25rem 0.375rem;
   user-select: none;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 0.25rem;
   line-height: 1;
   transition: background-color 0.12s ease;
 }
@@ -469,21 +479,21 @@
    COMPACT VERTICAL ICON DOCK POPOVER
    ========================================================================== */
 .popover-card.is-icon-dock {
-  padding: 6px;
+  padding: 0.375rem;
   min-width: auto;
-  width: 44px;
-  border-radius: 10px;
+  width: 2.75rem;
+  border-radius: 0.625rem;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 0.25rem;
   box-sizing: border-box;
 }
 
 .popover-icon-btn {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.375rem;
   border: none;
   background-color: transparent;
   color: var(--color-primary);
@@ -496,7 +506,7 @@
   transition: background-color 0.12s ease, color 0.12s ease, transform 0.1s ease;
   -webkit-tap-highlight-color: transparent;
   flex-shrink: 0;
-  font-size: 32px;}
+  font-size: 2rem;}
 
 .popover-icon-btn:hover {
   background-color: var(--bg-panel-hover);
@@ -519,22 +529,22 @@
 }
 
 .popover-icon-btn svg {
-  width: 18px;
-  height: 18px;
+  width: 1.125rem;
+  height: 1.125rem;
   display: block;
-  font-size: 18px;}
+  font-size: 1.125rem;}
 
 .popover-icon-btn i.fticon {
-  width: 18px;
-  height: 18px;
+  width: 1.125rem;
+  height: 1.125rem;
   display: block;
-  font-size: 18px;}
+  font-size: 1.125rem;}
 
 .popover-icon-divider {
-  width: 20px;
+  width: 1.25rem;
   height: 1px;
   background-color: var(--bg-panel-hover);
-  margin: 2px 0;
+  margin: 0.125rem 0;
   flex-shrink: 0;
   font-size: 1px;}
 
@@ -544,22 +554,22 @@
   flex-direction: column;
   align-items: center;
   background-color: var(--bg-panel-inner);
-  border-radius: 6px;
-  padding: 2px;
-  gap: 2px;
-  width: 32px;
+  border-radius: 0.375rem;
+  padding: 0.125rem;
+  gap: 0.125rem;
+  width: 2rem;
   box-sizing: border-box;
 }
 
 .popover-v-stepper .stepper-btn-v {
-  width: 28px;
-  height: 22px;
+  width: 1.75rem;
+  height: 1.375rem;
   border: none;
-  border-radius: 4px;
+  border-radius: 0.25rem;
   background-color: transparent;
   color: var(--text-primary);
   font-family: var(--font-brand);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 700;
   cursor: pointer;
   display: flex;
@@ -583,15 +593,15 @@
 
 .popover-v-stepper .stepper-val-v {
   font-family: var(--font-brand);
-  font-size: 9.5px;
+  font-size: 0.5938rem;
   font-weight: 700;
   color: var(--color-primary);
   font-variant-numeric: tabular-nums;
   text-align: center;
-  padding: 3px 0;
+  padding: 0.1875rem 0;
   user-select: none;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: 0.1875rem;
   width: 100%;
   line-height: 1;
   transition: background-color 0.12s ease;
@@ -607,81 +617,81 @@
 @media (max-width: 1100px), (hover: none) and (pointer: coarse) {
   /* Mobile & Tablet Grid Icon Dock: Space-saving multi-column wrap layout with horizontal zoom stepper */
   .popover-card.is-icon-dock {
-    width: 154px;
-    padding: 8px;
-    border-radius: 14px;
+    width: 9.625rem;
+    padding: 0.5rem;
+    border-radius: 0.875rem;
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: center;
     align-items: center;
-    gap: 6px;
+    gap: 0.375rem;
     box-sizing: border-box;
   }
 
   .popover-card.is-icon-dock .popover-icon-btn,
   .popover-icon-btn {
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 0.5rem;
     flex-shrink: 0;
-  font-size: 40px;}
+  font-size: 2.5rem;}
 
   .popover-card.is-icon-dock .popover-icon-btn svg,
   .popover-icon-btn svg {
-    width: 22px;
-    height: 22px;
-  font-size: 22px;}
+    width: 1.375rem;
+    height: 1.375rem;
+  font-size: 1.375rem;}
 
   .popover-card.is-icon-dock .popover-icon-btn i.fticon,
   .popover-icon-btn i.fticon {
-    width: 22px;
-    height: 22px;
-  font-size: 22px;}
+    width: 1.375rem;
+    height: 1.375rem;
+  font-size: 1.375rem;}
 
   .popover-card.is-icon-dock .popover-icon-btn i.fticon,
   .popover-icon-btn i.fticon {
-    width: 22px;
-    height: 22px;
-  font-size: 22px;
-  font-size: 22px;}
+    width: 1.375rem;
+    height: 1.375rem;
+  font-size: 1.375rem;
+  font-size: 1.375rem;}
 
   .popover-card.is-icon-dock .popover-icon-divider {
     width: 100%;
     flex-basis: 100%;
     height: 1px;
     background-color: var(--bg-panel-hover);
-    margin: 3px 0;
+    margin: 0.1875rem 0;
     flex-shrink: 0;
   font-size: 1px;}
 
   .popover-icon-divider {
-    width: 26px;
-    margin: 3px 0;
+    width: 1.625rem;
+    margin: 0.1875rem 0;
   }
 
   .popover-card.is-icon-dock .popover-v-stepper,
   .popover-v-stepper {
     width: 100%;
     flex-basis: 100%;
-    height: 36px;
-    border-radius: 8px;
-    padding: 3px 4px;
+    height: 2.25rem;
+    border-radius: 0.5rem;
+    padding: 0.1875rem 0.25rem;
     display: flex;
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
-    gap: 4px;
+    gap: 0.25rem;
     box-sizing: border-box;
     background-color: var(--bg-canvas);
-  font-size: 36px;}
+  font-size: 2.25rem;}
 
   .popover-card.is-icon-dock .popover-v-stepper .stepper-btn-v,
   .popover-v-stepper .stepper-btn-v {
-    width: 36px;
-    height: 30px;
-    font-size: 18px;
-    border-radius: 6px;
+    width: 2.25rem;
+    height: 1.875rem;
+    font-size: 1.125rem;
+    border-radius: 0.375rem;
     flex-shrink: 0;
   }
 
@@ -693,13 +703,13 @@
   .popover-card.is-icon-dock .popover-v-stepper .stepper-val-v,
   .popover-v-stepper .stepper-val-v {
     order: 2; /* '100%' in middle */
-    font-size: 11px;
+    font-size: 0.6875rem;
     flex: 1;
     height: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0 4px;
+    padding: 0 0.25rem;
   }
 
   .popover-card.is-icon-dock .popover-v-stepper .stepper-btn-v:first-of-type,
@@ -708,15 +718,15 @@
   }
 
   .popover-card[data-placement^="top"] > .popover-tail {
-    bottom: -7px;
-    width: 14px;
-    height: 14px;
+    bottom: -0.4375rem;
+    width: 0.875rem;
+    height: 0.875rem;
   }
 
   .popover-card[data-placement^="bottom"] > .popover-tail {
-    top: -7px;
-    width: 14px;
-    height: 14px;
+    top: -0.4375rem;
+    width: 0.875rem;
+    height: 0.875rem;
   }
 }
 
@@ -724,14 +734,14 @@
    DYNAMIC EMBEDDED TOOL PANEL POPOVER (.is-embed-panel)
    ========================================================================== */
 .popover-card.is-embed-panel {
-  width: min(390px, calc(100vw - 20px));
-  height: min(460px, 68vh);
+  width: min(24.375rem, calc(100vw - 1.25rem));
+  height: min(28.75rem, 68vh);
   padding: 0;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
   overflow: visible;
-  border-radius: 12px;
+  border-radius: 0.75rem;
   background-color: var(--bg-panel-hover);
   border: 1px solid var(--border-subtle);
 }
@@ -744,7 +754,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 4px 8px;
+  padding: 0 0.25rem 0.5rem;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
@@ -752,18 +762,18 @@
 .popover-embed-title-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .popover-embed-title-group img {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 0.25rem;
 }
 
 .popover-embed-title {
   font-family: var(--font-brand);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--color-primary);
   margin: 0;
@@ -774,9 +784,9 @@
   background: transparent;
   border: none;
   color: var(--text-muted);
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.375rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -811,18 +821,18 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
+  gap: 0.75rem;
   color: var(--color-primary);
   font-family: var(--font-brand);
-  font-size: 12.5px;
+  font-size: 0.7813rem;
   font-weight: 700;
   user-select: none;
 }
 
 .popover-flat-spinner {
-  width: 24px;
-  height: 24px;
-  border: 2.5px solid var(--bg-panel-inner);
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 0.1563rem solid var(--bg-panel-inner);
   border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: popoverSpin 0.7s linear infinite;
@@ -851,9 +861,9 @@
 
 @media (max-width: 600px) {
   .popover-card.is-embed-panel {
-    width: calc(100vw - 20px);
-    max-width: calc(100vw - 20px);
-    border-radius: 12px;
+    width: calc(100vw - 1.25rem);
+    max-width: calc(100vw - 1.25rem);
+    border-radius: 0.75rem;
   }
 }
 
@@ -861,18 +871,18 @@
    MODULAR LAYER LINK / PARENTING POPOVER COMPONENT
    ========================================================================== */
 .popover-card.is-layer-link-popover {
-  min-width: 220px;
-  max-width: 280px;
-  padding: 8px;
-  border-radius: 10px;
+  min-width: 13.75rem;
+  max-width: 17.5rem;
+  padding: 0.5rem;
+  border-radius: 0.625rem;
   background-color: var(--bg-panel);
   border: none;
   box-shadow: none;
 }
 
 .popover-card.is-layer-link-popover .popover-header {
-  padding: 4px 8px 8px;
-  margin-bottom: 4px;
+  padding: 0.25rem 0.5rem 0.5rem;
+  margin-bottom: 0.25rem;
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
@@ -882,8 +892,8 @@
 .layer-link-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: 260px;
+  gap: 0.125rem;
+  max-height: 16.25rem;
   overflow-y: auto;
   margin: 0;
   padding: 0;
@@ -892,9 +902,9 @@
 .layer-link-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: 8px;
+  gap: 0.625rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.5rem;
   background-color: transparent;
   border: 1px solid transparent;
   color: var(--text-primary);
@@ -931,9 +941,9 @@
 
 /* Layer Preview Box */
 .layer-link-preview-box {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 0.375rem;
   overflow: hidden;
   background-color: var(--bg-dashboard);
   border: 1px solid var(--border-subtle);
@@ -965,34 +975,34 @@
 }
 
 .layer-link-preview-box svg {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   fill: currentColor;
-  font-size: 16px;}
+  font-size: 1rem;}
 
 .layer-link-preview-box i.fticon {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   fill: currentColor;
-  font-size: 16px;}
+  font-size: 1rem;}
 
 .layer-link-preview-box.is-none svg {
-  width: 15px;
-  height: 15px;
+  width: 0.9375rem;
+  height: 0.9375rem;
   stroke: currentColor;
   fill: none;
-  font-size: 15px;}
+  font-size: 0.9375rem;}
 
 .layer-link-preview-box.is-none i.fticon {
-  width: 15px;
-  height: 15px;
+  width: 0.9375rem;
+  height: 0.9375rem;
   stroke: currentColor;
   fill: none;
-  font-size: 15px;}
+  font-size: 0.9375rem;}
 
 .layer-link-item-name {
   font-family: var(--font-brand);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1006,8 +1016,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   color: var(--color-primary);
   flex-shrink: 0;
   margin-left: auto;
@@ -1015,16 +1025,16 @@
 }
 
 .layer-link-check svg {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   fill: currentColor;
-  font-size: 16px;}
+  font-size: 1rem;}
 
 .layer-link-check i.fticon {
-  width: 16px;
-  height: 16px;
+  width: 1rem;
+  height: 1rem;
   fill: currentColor;
-  font-size: 16px;}
+  font-size: 1rem;}
 
 .layer-link-item:hover:not(.is-disabled) .layer-link-check,
 .layer-link-item.is-drag-hover:not(.is-disabled) .layer-link-check {
@@ -1037,37 +1047,37 @@
 .popover-card.is-confirm-popover {
   background-color: var(--bg-panel);
   border: none;
-  border-radius: 8px;
+  border-radius: 0.5rem;
   box-sizing: border-box;
   box-shadow: none;
 }
 
 .popover-confirm-title {
   font-family: var(--font-brand);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .popover-confirm-desc {
   font-family: var(--font-brand);
-  font-size: 10.5px;
+  font-size: 0.6563rem;
   color: var(--text-muted);
 }
 
 .popover-confirm-actions {
   display: flex;
-  gap: 8px;
+  gap: 0.5rem;
   justify-content: flex-end;
 }
 
 .popover-confirm-btn {
-  height: 28px;
-  padding: 0 12px;
+  height: 1.75rem;
+  padding: 0 0.75rem;
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
-  border-radius: 6px;
+  border-radius: 0.375rem;
   cursor: pointer;
   border: none;
   outline: none;
@@ -1097,12 +1107,12 @@
    Direct keyboard numeric input for effect & controller value badges
    ========================================================================== */
 .popover-card.is-value-input-popover {
-  padding: 4px;
+  padding: 0.25rem;
   min-width: unset;
   width: auto;
   background-color: var(--bg-panel);
   border: none;
-  border-radius: 8px;
+  border-radius: 0.5rem;
   box-shadow: none;
 }
 
@@ -1114,15 +1124,15 @@
 }
 
 .popover-value-field {
-  width: 80px;
-  height: 28px;
+  width: 5rem;
+  height: 1.75rem;
   background-color: var(--bg-canvas);
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  padding: 0 6px;
+  border-radius: 0.375rem;
+  padding: 0 0.375rem;
   font-family: var(--font-brand);
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   text-align: center;
   outline: none;
@@ -1146,13 +1156,13 @@
    Pure Flat & Fast | 100% Theme Tokens | No Blur | No Shadow
    ========================================================================== */
 .popover-card.is-expression-popover {
-  width: 290px;
-  max-width: calc(100vw - 32px);
-  padding: 10px 12px;
+  width: 18.125rem;
+  max-width: calc(100vw - 2rem);
+  padding: 0.625rem 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  border-radius: 10px;
+  gap: 0.5rem;
+  border-radius: 0.625rem;
   background-color: var(--bg-panel);
   border: none;
 }
@@ -1164,7 +1174,7 @@
 }
 
 .expression-popover-title {
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1174,12 +1184,12 @@
 .expression-clear-btn {
   background: none;
   border: none;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
   transition: color 0.12s, background-color 0.12s;
   outline: none;
 }
@@ -1192,21 +1202,21 @@
 .expression-popover-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.375rem;
 }
 
 .expression-textarea {
   width: 100%;
-  min-height: 80px;
-  max-height: 180px;
+  min-height: 5rem;
+  max-height: 11.25rem;
   resize: vertical;
   background-color: var(--bg-canvas);
   color: var(--text-primary);
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  padding: 8px 10px;
+  border-radius: 0.375rem;
+  padding: 0.5rem 0.625rem;
   font-family: 'Consolas', 'Courier New', monospace;
-  font-size: 12px;
+  font-size: 0.75rem;
   line-height: 1.4;
   outline: none;
   box-sizing: border-box;
@@ -1217,7 +1227,7 @@
 }
 
 .expression-error-msg {
-  font-size: 10px;
+  font-size: 0.625rem;
   color: var(--color-danger);
   line-height: 1.3;
 }
@@ -1228,10 +1238,10 @@
 .popover-card.is-play-settings-popover {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.5rem;
   background-color: var(--bg-panel);
-  border: none;
-  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.625rem;
   box-shadow: none;
 }
 
@@ -1239,12 +1249,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 0.75rem;
 }
 
 .play-settings-label {
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -1254,16 +1264,16 @@
   display: flex;
   background-color: var(--bg-canvas);
   border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  padding: 2px;
-  gap: 2px;
+  border-radius: 0.375rem;
+  padding: 0.125rem;
+  gap: 0.125rem;
 }
 
 .play-settings-segmented .effects-segmented-btn {
-  padding: 2px 7px;
-  font-size: 10.5px;
+  padding: 0.125rem 0.4375rem;
+  font-size: 0.6563rem;
   font-weight: 600;
-  border-radius: 4px;
+  border-radius: 0.25rem;
   background: transparent;
   color: var(--text-muted);
   border: none;
@@ -1282,15 +1292,200 @@
 }
 
 /* ==========================================================================
+   CAMERA VIEW POPOVER (.is-camera-view-popover)
+   Tactile Spatial Layout: Vertical X (Pitch) + 2D Pan Pad + Vertical Z (Zoom) + Horizontal Y (Yaw)
+   ========================================================================== */
+.popover-card.is-camera-view-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 15.125rem;
+  padding: 0.625rem;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.625rem;
+  box-shadow: none;
+}
+
+.popover-card.is-camera-view-popover > .camview-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  position: relative;
+  z-index: 25;
+}
+
+.camview-preset-dropdown {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+}
+
+.camview-preset-dropdown .custom-dropdown-trigger {
+  height: 1.625rem;
+  padding: 0 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  border-radius: 0.375rem;
+  background-color: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.camview-preset-dropdown .custom-dropdown-menu,
+.camview-preset-dropdown.is-dropup .custom-dropdown-menu {
+  top: calc(100% + 0.25rem);
+  bottom: auto;
+  z-index: 30;
+  max-height: 10.9375rem;
+  overflow-y: auto;
+}
+
+#popover-camera-view .rotate-jogwheel.is-horizontal .jog-wheel-ticks {
+  background-size: 8px 100%;
+}
+
+#popover-camera-view .rotate-jogwheel.is-vertical .jog-wheel-ticks {
+  background-size: 100% 8px;
+}
+
+.camview-preset-dropdown .custom-dropdown-item {
+  padding: 0.3125rem 0.5rem;
+  font-size: 0.6875rem;
+}
+
+.camview-spatial-grid {
+  display: grid;
+  grid-template-columns: 3rem 1fr 3rem;
+  gap: 0.5rem;
+  height: 8.25rem;
+  align-items: stretch;
+}
+
+#popover-camera-view .rotate-jogwheel.is-vertical {
+  width: 3rem;
+  height: 100%;
+  cursor: ns-resize;
+  touch-action: none;
+}
+
+#popover-camera-view .rotate-jogwheel.is-horizontal {
+  width: 100%;
+  height: 2.5rem;
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.camview-pan-pad {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 0.3125rem;
+  border-radius: var(--desktop-radius-sm, 0.375rem);
+  background-color: var(--bg-panel-inner);
+  border: 1px solid var(--border-subtle);
+  overflow: hidden;
+  cursor: move;
+  touch-action: none;
+  box-sizing: border-box;
+}
+
+.camview-pan-axis-h {
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  top: 50%;
+  height: 1px;
+  background-color: var(--border-subtle);
+  pointer-events: none;
+}
+
+.camview-pan-axis-v {
+  position: absolute;
+  top: 0.5rem;
+  bottom: 0.5rem;
+  left: 50%;
+  width: 1px;
+  background-color: var(--border-subtle);
+  pointer-events: none;
+}
+
+.camview-pan-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-left: -0.3125rem;
+  margin-top: -0.3125rem;
+  border-radius: 50%;
+  background-color: var(--color-primary);
+  border: 0.125rem solid var(--bg-panel);
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.camview-pan-readout {
+  position: relative;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 1px 0.3125rem;
+  border-radius: 0.25rem;
+  background-color: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-brand);
+  font-size: 0.5938rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.camview-pan-val {
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.camview-pan-val:hover {
+  color: var(--color-primary);
+}
+
+.camview-pan-sep {
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.camview-reset-btn {
+  padding: 0.1875rem 0.5625rem;
+  border-radius: 0.375rem;
+  border: 1px solid var(--border-subtle);
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-brand);
+  font-size: 0.6563rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.camview-reset-btn:hover {
+  background-color: var(--color-primary);
+  color: var(--bg-canvas);
+  border-color: var(--color-primary);
+}
+
+/* ==========================================================================
    MODULAR LAYER ATTRIBUTES POPOVER (COPY & PASTE TOGGLE MATRIX)
    100% Flat Design Tokens | Fast Tactile Selection | Zero Hyperbole
    ========================================================================== */
 .popover-card.is-attributes-popover {
-  width: 270px;
-  padding: 8px;
+  width: 16.875rem;
+  padding: 0.5rem;
   background-color: var(--bg-panel);
   border: none;
-  border-radius: 12px;
+  border-radius: 0.75rem;
   box-sizing: border-box;
 }
 
@@ -1309,9 +1504,9 @@
 /* Speed & Audio Top Row (Cut buttons removed, stretched 50%/50% to fill space) */
 .attributes-speed-audio-row {
   display: flex;
-  gap: 6px;
+  gap: 0.375rem;
   width: 100%;
-  margin: 0 0 6px 0;
+  margin: 0 0 0.375rem 0;
   box-sizing: border-box;
 }
 
@@ -1324,31 +1519,31 @@
   flex: 1 1 0;
   width: 100%;
   min-width: 0;
-  min-height: 44px;
-  height: 44px;
-  padding: 6px 12px;
+  min-height: 2.75rem;
+  height: 2.75rem;
+  padding: 0.375rem 0.75rem;
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .attributes-speed-audio-row .attr-toggle-btn .attr-toggle-icon {
-  width: 18px;
-  height: 18px;
-  font-size: 18px;
+  width: 1.125rem;
+  height: 1.125rem;
+  font-size: 1.125rem;
 }
 
 .attributes-speed-audio-row .attr-toggle-btn .attr-toggle-label {
-  font-size: 11.5px;
+  font-size: 0.7188rem;
   white-space: nowrap;
 }
 
 .attributes-toggle-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: 0.375rem;
   margin: 0;
   width: 100%;
   box-sizing: border-box;
@@ -1388,15 +1583,15 @@
   background-color: var(--bg-dashboard);
   color: var(--text-secondary);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  min-height: 62px;
-  height: 64px;
-  padding: 8px 4px;
+  border-radius: 0.5rem;
+  min-height: 3.875rem;
+  height: 4rem;
+  padding: 0.5rem 0.25rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 0.3125rem;
   cursor: pointer;
   outline: none !important;
   box-shadow: none !important;
@@ -1433,14 +1628,14 @@
 }
 
 .attr-toggle-icon {
-  width: 22px;
-  height: 22px;
+  width: 1.375rem;
+  height: 1.375rem;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   pointer-events: none;
-  font-size: 22px;}
+  font-size: 1.375rem;}
 
 .attr-toggle-icon svg,
 .attr-toggle-icon .fticon {
@@ -1451,7 +1646,7 @@
 
 .attr-toggle-label {
   font-family: var(--font-brand);
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 700;
   text-align: center;
   line-height: 1.15;
@@ -1466,8 +1661,8 @@
 .attributes-popover-footer {
   display: flex;
   width: 100%;
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: 0.375rem;
+  padding-top: 0.375rem;
   border-top: 1px solid var(--border-subtle);
   box-sizing: border-box;
 }
@@ -1477,10 +1672,10 @@
   background-color: var(--color-primary);
   color: var(--bg-canvas);
   font-family: var(--font-brand);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
-  padding: 8px 0;
-  border-radius: 8px;
+  padding: 0.5rem 0;
+  border-radius: 0.5rem;
   border: none;
   outline: none !important;
   box-shadow: none !important;
@@ -1503,21 +1698,21 @@
    EXTENSIONS POPOVER (.is-extensions-popover)
    ========================================================================== */
 .popover-card.is-extensions-popover {
-  width: 320px;
-  max-width: calc(100vw - 24px);
-  max-height: 480px;
+  width: 20rem;
+  max-width: calc(100vw - 1.5rem);
+  max-height: 30rem;
   display: flex;
   flex-direction: column;
   padding: 0;
-  border-radius: 12px;
+  border-radius: 0.75rem;
   overflow: hidden;
   background-color: var(--bg-dashboard, #121710);
   border: none;
 }
 
 .is-extensions-popover .popover-header {
-  height: 38px;
-  padding: 0 12px;
+  height: 2.375rem;
+  padding: 0 0.75rem;
   background: var(--bg-panel, #182014);
   border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
   display: flex;
@@ -1529,8 +1724,8 @@
 .is-extensions-popover .popover-header-title-box {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 0.5rem;
+  font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1540,8 +1735,8 @@
 .is-extensions-popover .extension-popover-body {
   flex: 1;
   overflow-y: auto;
-  min-height: 120px;
-  max-height: 400px;
+  min-height: 7.5rem;
+  max-height: 25rem;
   display: flex;
   flex-direction: column;
 }
@@ -1552,46 +1747,46 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 32px 20px;
-  margin: 16px;
+  padding: 2rem 1.25rem;
+  margin: 1rem;
   border: 1px dashed var(--border-subtle, rgba(255, 255, 255, 0.1));
-  border-radius: 8px;
+  border-radius: 0.5rem;
   background: rgba(255, 255, 255, 0.015);
   box-sizing: border-box;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .extension-empty-icon-box {
-  width: 48px;
-  height: 48px;
+  width: 3rem;
+  height: 3rem;
   border-radius: 50%;
   background: var(--bg-panel, #182014);
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--text-muted, #7e9471);
-  margin-bottom: 4px;
+  margin-bottom: 0.25rem;
 }
 
 .extension-empty-title {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: var(--text-primary, #ffffff);
   letter-spacing: 0.2px;
 }
 
 .extension-empty-desc {
-  font-size: 11px;
+  font-size: 0.6875rem;
   line-height: 1.45;
   color: var(--text-muted, #7e9471);
-  max-width: 240px;
+  max-width: 15rem;
 }
 
 .extension-card-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 12px;
+  gap: 0.75rem;
+  padding: 0.75rem;
   overflow-y: auto;
   box-sizing: border-box;
 }
@@ -1609,13 +1804,13 @@
 
 /* Environment / 3D Slot Texture Media Pool Mirror Popover */
 .popover-card.is-env-media-popover {
-  width: 312px;
-  max-width: calc(100vw - 24px);
-  max-height: 380px;
-  padding: 10px;
+  width: 19.5rem;
+  max-width: calc(100vw - 1.5rem);
+  max-height: 23.75rem;
+  padding: 0.625rem;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0.5rem;
 }
 
 .env-popover-tabs {
@@ -1635,22 +1830,22 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 2px 4px;
+  padding: 0.125rem 0.125rem 0.25rem;
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
 }
 
 .env-popover-title {
   font-family: var(--font-brand);
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: 0.2px;
 }
 
 .env-media-pool-grid {
-  max-height: 268px;
-  padding: 2px;
+  max-height: 16.75rem;
+  padding: 0.125rem;
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 

@@ -543,6 +543,10 @@
       this.anchorCtx = ctx.currentTime + START_LEAD_SEC;
       this.anchorSec = Math.max(0, Number(sec) || 0);
       this.playStartSec = this.anchorSec;
+      const eng = window.FishAudioEngine;
+      if (eng && typeof eng.invalidateLayerCache === 'function') {
+        eng.invalidateLayerCache();
+      }
       this.playing = true;
       this.prefetch(layers);
       this._tick();

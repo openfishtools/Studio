@@ -6017,5 +6017,352 @@
 
       syncAddLightButtons();
     })();
+
+    // =========================================================================
+    // EDITOR CAMERA VIEW POPOVER (Orbit X/Y, Zoom %, Pan X/Y — Editor-Only)
+    // Export & RAM cache always use the project's Active Camera (or front view).
+    // =========================================================================
+    (function initEditorCameraViewController() {
+      const CAM_VIEW_DEFAULTS = { mode: 'active', preset: 'active', orbitX: 0, orbitY: 0, zoom: 100, panX: 0, panY: 0 };
+      const CAM_VIEW_PRESETS = {
+        active: { label: 'Active Camera', mode: 'active', orbitX: 0,   orbitY: 0,   zoom: 100, panX: 0, panY: 0 },
+        front:  { label: 'Front',         mode: 'custom', orbitX: 0,   orbitY: 0,   zoom: 100, panX: 0, panY: 0 },
+        back:   { label: 'Back',          mode: 'custom', orbitX: 0,   orbitY: 180, zoom: 100, panX: 0, panY: 0 },
+        left:   { label: 'Left',          mode: 'custom', orbitX: 0,   orbitY: -90, zoom: 100, panX: 0, panY: 0 },
+        right:  { label: 'Right',         mode: 'custom', orbitX: 0,   orbitY: 90,  zoom: 100, panX: 0, panY: 0 },
+        top:    { label: 'Top',           mode: 'custom', orbitX: -85, orbitY: 0,   zoom: 100, panX: 0, panY: 0 },
+        bottom: { label: 'Bottom',        mode: 'custom', orbitX: 85,  orbitY: 0,   zoom: 100, panX: 0, panY: 0 },
+        custom: { label: 'Custom',        mode: 'custom' }
+      };
+      const state = window._editorCameraViewState || (window._editorCameraViewState = {
+        mode: CAM_VIEW_DEFAULTS.mode,
+        preset: CAM_VIEW_DEFAULTS.preset,
+        orbitX: CAM_VIEW_DEFAULTS.orbitX,
+        orbitY: CAM_VIEW_DEFAULTS.orbitY,
+        zoom: CAM_VIEW_DEFAULTS.zoom,
+        panX: CAM_VIEW_DEFAULTS.panX,
+        panY: CAM_VIEW_DEFAULTS.panY
+      });
+      if (!state.preset) state.preset = state.mode === 'custom' ? 'custom' : 'active';
+
+      // Pre-allocated scratch camera object (zero per-frame allocation)
+      const _scratchViewCam = {
+        posX: 0,
+        posY: 0,
+        posZ: 0,
+        rotX: 0,
+        rotY: 0,
+        rotZ: 0,
+        rotation: 0,
+        cameraLens: 50,
+        cameraZoom: 100,
+        _isEditorCameraView: true
+      };
+
+      function isCustomCameraViewActive() {
+        return state.mode === 'custom';
+      }
+      window.isCustomCameraViewActive = isCustomCameraViewActive;
+
+      function isEditorCameraViewModified() {
+        return state.orbitX !== 0 || state.orbitY !== 0 || state.zoom !== 100 || state.panX !== 0 || state.panY !== 0;
+      }
+      window.isEditorCameraViewModified = isEditorCameraViewModified;
+
+      function getEditorCameraView() {
+        if (state.mode !== 'custom') return null;
+        const D = 1000.0;
+        const zoomFactor = Math.max(0.1, (state.zoom || 100) / 100);
+        const D_orbit = D / zoomFactor;
+        const radX = (state.orbitX * Math.PI) / 180;
+        const radY = (state.orbitY * Math.PI) / 180;
+        const cosX = Math.cos(radX), sinX = Math.sin(radX);
+        const cosY = Math.cos(radY), sinY = Math.sin(radY);
+
+        _scratchViewCam.posX = state.panX - D_orbit * cosX * sinY;
+        _scratchViewCam.posY = state.panY + D_orbit * sinX;
+        _scratchViewCam.posZ = (D_orbit * cosX * cosY) - D;
+        _scratchViewCam.rotX = state.orbitX;
+        _scratchViewCam.rotY = state.orbitY;
+        _scratchViewCam.rotZ = 0;
+        _scratchViewCam.rotation = 0;
+        _scratchViewCam.cameraLens = 50;
+        _scratchViewCam.cameraZoom = 100;
+        return _scratchViewCam;
+      }
+      window.getEditorCameraView = getEditorCameraView;
+
+      let _camViewRaf = 0;
+      function bumpCameraViewVersion() {
+        window._editorCameraViewVersion = (window._editorCameraViewVersion || 0) + 1;
+      }
+
+      function requestCameraViewRedraw() {
+        bumpCameraViewVersion();
+        if (_camViewRaf) return;
+        _camViewRaf = requestAnimationFrame(() => {
+          _camViewRaf = 0;
+          if (typeof redrawComposition === 'function') redrawComposition('cameraView');
+        });
+      }
+
+      function syncCameraViewUI() {
+        const presetDropdown = document.getElementById('dropdown-camview-preset');
+        if (presetDropdown) {
+          const curPreset = CAM_VIEW_PRESETS[state.preset] ? state.preset : (state.mode === 'custom' ? 'custom' : 'active');
+          presetDropdown.dataset.value = curPreset;
+          const lbl = presetDropdown.querySelector('.custom-dropdown-label');
+          if (lbl) lbl.textContent = CAM_VIEW_PRESETS[curPreset].label;
+          presetDropdown.querySelectorAll('.custom-dropdown-item').forEach(item => {
+            item.classList.toggle('is-selected', item.dataset.val === curPreset);
+          });
+        }
+
+        const triggerBtn = document.getElementById('editor-btn-camera-view');
+        if (triggerBtn) {
+          const isModified = state.mode === 'custom' && (isEditorCameraViewModified() || (state.preset && state.preset !== 'active' && state.preset !== 'front'));
+          triggerBtn.classList.toggle('is-modified', isModified);
+          triggerBtn.classList.remove('is-active');
+        }
+
+        const valOrbitX = document.getElementById('val-camview-orbit-x');
+        const valOrbitY = document.getElementById('val-camview-orbit-y');
+        const valZoom = document.getElementById('val-camview-zoom');
+        const valPanX = document.getElementById('val-camview-pan-x');
+        const valPanY = document.getElementById('val-camview-pan-y');
+        const panDot = document.getElementById('dot-camview-pan');
+
+        if (valOrbitX) valOrbitX.textContent = `${Math.round(state.orbitX)}°`;
+        if (valOrbitY) valOrbitY.textContent = `${Math.round(state.orbitY)}°`;
+        if (valZoom) valZoom.textContent = `${Math.round(state.zoom)}%`;
+        if (valPanX) valPanX.textContent = `${Math.round(state.panX)}`;
+        if (valPanY) valPanY.textContent = `${Math.round(state.panY)}`;
+
+        if (panDot) {
+          const nx = Math.max(-1, Math.min(1, state.panX / 1200));
+          const ny = Math.max(-1, Math.min(1, state.panY / 1200));
+          panDot.style.left = `${(50 + nx * 38).toFixed(1)}%`;
+          panDot.style.top = `${(50 + ny * 38).toFixed(1)}%`;
+        }
+      }
+      window.syncCameraViewUI = syncCameraViewUI;
+
+      function applyCameraViewPreset(presetKey) {
+        const preset = CAM_VIEW_PRESETS[presetKey];
+        if (!preset) return;
+        state.preset = presetKey;
+        state.mode = preset.mode;
+        if (presetKey !== 'custom') {
+          state.orbitX = preset.orbitX;
+          state.orbitY = preset.orbitY;
+          state.zoom = preset.zoom;
+          state.panX = preset.panX;
+          state.panY = preset.panY;
+        }
+        bumpCameraViewVersion();
+        syncCameraViewUI();
+        if (typeof redrawComposition === 'function') redrawComposition('cameraView');
+      }
+      window.applyCameraViewPreset = applyCameraViewPreset;
+
+      function resetEditorCameraView(switchToActive = false) {
+        state.orbitX = CAM_VIEW_DEFAULTS.orbitX;
+        state.orbitY = CAM_VIEW_DEFAULTS.orbitY;
+        state.zoom = CAM_VIEW_DEFAULTS.zoom;
+        state.panX = CAM_VIEW_DEFAULTS.panX;
+        state.panY = CAM_VIEW_DEFAULTS.panY;
+        if (switchToActive) {
+          state.mode = 'active';
+          state.preset = 'active';
+        } else {
+          state.preset = state.mode === 'custom' ? 'front' : 'active';
+        }
+        bumpCameraViewVersion();
+        syncCameraViewUI();
+        if (typeof redrawComposition === 'function') redrawComposition('cameraView');
+      }
+      window.resetEditorCameraView = resetEditorCameraView;
+
+      // Preset dropdown wiring: main.js already handles opening/closing .custom-dropdown;
+      // here we only listen for option selection to apply the chosen camera preset.
+      const presetDropdown = document.getElementById('dropdown-camview-preset');
+      if (presetDropdown) {
+        presetDropdown.querySelectorAll('.custom-dropdown-item').forEach(item => {
+          item.addEventListener('click', () => {
+            if (!item.dataset.val) return;
+            applyCameraViewPreset(item.dataset.val);
+          });
+        });
+      }
+
+      // Reset button (resets angles/zoom/pan and returns to Active Camera)
+      const resetBtn = document.getElementById('btn-camview-reset');
+      if (resetBtn) {
+        resetBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          resetEditorCameraView(true);
+        });
+      }
+
+      // Bind Vertical Orbit X, Vertical Zoom, Horizontal Orbit Y scrubbers
+      const jogControls = [
+        { key: 'orbitX', jogId: 'jog-camview-orbit-x', valId: 'val-camview-orbit-x', min: -85,  max: 85,  sens: 0.45, step: 1, unit: '°', vertical: true },
+        { key: 'zoom',   jogId: 'jog-camview-zoom',    valId: 'val-camview-zoom',    min: 20,   max: 400, sens: 0.7,  step: 5, unit: '%', vertical: true },
+        { key: 'orbitY', jogId: 'jog-camview-orbit-y', valId: 'val-camview-orbit-y', min: -180, max: 180, sens: 0.6,  step: 1, unit: '°', vertical: false }
+      ];
+
+      jogControls.forEach(cfg => {
+        const jogEl = document.getElementById(cfg.jogId);
+        const valEl = document.getElementById(cfg.valId);
+        let initVal = state[cfg.key];
+
+        if (jogEl && typeof window.bindJogWheel === 'function') {
+          window.bindJogWheel(jogEl, {
+            onStart: () => {
+              initVal = state[cfg.key];
+              if (state.mode !== 'custom' || state.preset !== 'custom') {
+                state.mode = 'custom';
+                state.preset = 'custom';
+                syncCameraViewUI();
+              }
+            },
+            onMove: (delta) => {
+              const nextVal = Math.max(cfg.min, Math.min(cfg.max, Math.round(initVal + delta * cfg.sens)));
+              if (state[cfg.key] === nextVal && state.mode === 'custom' && state.preset === 'custom') return;
+              state.mode = 'custom';
+              state.preset = 'custom';
+              state[cfg.key] = nextVal;
+              if (valEl) valEl.textContent = `${nextVal}${cfg.unit}`;
+              const triggerBtn = document.getElementById('editor-btn-camera-view');
+              if (triggerBtn) triggerBtn.classList.toggle('is-modified', isEditorCameraViewModified());
+              requestCameraViewRedraw();
+            },
+            onEnd: () => {
+              syncCameraViewUI();
+              if (typeof redrawComposition === 'function') redrawComposition('cameraView');
+            }
+          }, cfg.vertical);
+        }
+
+        if (valEl) {
+          valEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+          valEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof window.openValueInputPopover === 'function') {
+              window.openValueInputPopover(valEl, {
+                value: state[cfg.key],
+                defaultValue: CAM_VIEW_DEFAULTS[cfg.key],
+                min: cfg.min,
+                max: cfg.max,
+                step: cfg.step,
+                onCommit: (newVal) => {
+                  const num = Number(newVal);
+                  if (!Number.isFinite(num)) return;
+                  state.mode = 'custom';
+                  state.preset = 'custom';
+                  state[cfg.key] = Math.max(cfg.min, Math.min(cfg.max, Math.round(num)));
+                  bumpCameraViewVersion();
+                  syncCameraViewUI();
+                  if (typeof redrawComposition === 'function') redrawComposition('cameraView');
+                }
+              });
+            }
+          });
+        }
+      });
+
+      // Bind Center 2D Pan Pad (Drag X & Y freely, double-click to center)
+      const panPad = document.getElementById('pad-camview-pan');
+      if (panPad) {
+        let isPanningPad = false;
+        let panStartX = 0, panStartY = 0;
+        let initPanX = 0, initPanY = 0;
+
+        panPad.addEventListener('pointerdown', (e) => {
+          if (e.target && e.target.closest('.camview-pan-val')) return;
+          isPanningPad = true;
+          panStartX = e.clientX;
+          panStartY = e.clientY;
+          initPanX = state.panX;
+          initPanY = state.panY;
+          if (state.mode !== 'custom' || state.preset !== 'custom') {
+            state.mode = 'custom';
+            state.preset = 'custom';
+            syncCameraViewUI();
+          }
+          try { panPad.setPointerCapture(e.pointerId); } catch (_) {}
+          e.preventDefault();
+        });
+
+        panPad.addEventListener('pointermove', (e) => {
+          if (!isPanningPad) return;
+          const dx = e.clientX - panStartX;
+          const dy = e.clientY - panStartY;
+          state.mode = 'custom';
+          state.preset = 'custom';
+          state.panX = Math.max(-2000, Math.min(2000, Math.round(initPanX + dx * 4)));
+          state.panY = Math.max(-2000, Math.min(2000, Math.round(initPanY + dy * 4)));
+          syncCameraViewUI();
+          requestCameraViewRedraw();
+        });
+
+        const endPanPad = (e) => {
+          if (!isPanningPad) return;
+          isPanningPad = false;
+          if (e && e.pointerId !== undefined) {
+            try { panPad.releasePointerCapture(e.pointerId); } catch (_) {}
+          }
+          syncCameraViewUI();
+          if (typeof redrawComposition === 'function') redrawComposition('cameraView');
+        };
+        panPad.addEventListener('pointerup', endPanPad);
+        panPad.addEventListener('pointercancel', endPanPad);
+        panPad.addEventListener('lostpointercapture', endPanPad);
+
+        panPad.addEventListener('dblclick', (e) => {
+          if (e.target && e.target.closest('.camview-pan-val')) return;
+          state.panX = 0;
+          state.panY = 0;
+          state.preset = state.mode === 'custom' ? 'custom' : 'active';
+          bumpCameraViewVersion();
+          syncCameraViewUI();
+          if (typeof redrawComposition === 'function') redrawComposition('cameraView');
+        });
+      }
+
+      // Bind clickable Pan X & Pan Y readouts inside Pan Pad
+      [
+        { key: 'panX', valId: 'val-camview-pan-x' },
+        { key: 'panY', valId: 'val-camview-pan-y' }
+      ].forEach(cfg => {
+        const valEl = document.getElementById(cfg.valId);
+        if (!valEl) return;
+        valEl.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+        valEl.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (typeof window.openValueInputPopover === 'function') {
+            window.openValueInputPopover(valEl, {
+              value: state[cfg.key],
+              defaultValue: 0,
+              min: -2000,
+              max: 2000,
+              step: 10,
+              onCommit: (newVal) => {
+                const num = Number(newVal);
+                if (!Number.isFinite(num)) return;
+                state.mode = 'custom';
+                state.preset = 'custom';
+                state[cfg.key] = Math.max(-2000, Math.min(2000, Math.round(num)));
+                bumpCameraViewVersion();
+                syncCameraViewUI();
+                if (typeof redrawComposition === 'function') redrawComposition('cameraView');
+              }
+            });
+          }
+        });
+      });
+
+      syncCameraViewUI();
+    })();
   })();
 
