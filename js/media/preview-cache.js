@@ -453,9 +453,7 @@
             const vEnd = voidIntervals[i][1] < totalDur - 0.001 ? voidIntervals[i][1] - framePad : voidIntervals[i][1];
             if (vEnd > vStart && fSec >= vStart && fSec <= vEnd) {
               const entry = pool.get(fIdx);
-              if (entry && !entry.shared && entry.bitmap && typeof entry.bitmap.close === 'function') {
-                try { entry.bitmap.close(); } catch (_) {}
-              }
+              this._releaseEntry(entry, targetComp);
               pool.delete(fIdx);
               break;
             }
@@ -577,12 +575,7 @@
         return this._getAudioOnlyCanvas(expectedWidth, expectedHeight);
       }
       const pool = this.getPool(targetComp);
-      const entry = pool.get(frameIndex);
-      if (!entry) return null;
-      if (entry.isAudioOnly) {
-        pool.delete(frameIndex);
-        return null;
-      }
+      let entry = pool.get(frameIndex);
       let expW = expectedWidth;
       let expH = expectedHeight;
       if ((!expW || !expH) && typeof document !== 'undefined') {
@@ -591,6 +584,14 @@
           expW = activeCanvas.width;
           expH = activeCanvas.height;
         }
+      }
+      if (!entry) {
+        entry = this.tryReuseFrameByContent(frameIndex, expW, expH, targetComp);
+        if (!entry) return null;
+      }
+      if (entry.isAudioOnly) {
+        pool.delete(frameIndex);
+        return null;
       }
       if (expW && expH && entry.width && entry.height) {
         if (Math.abs(entry.width - expW) > 2 || Math.abs(entry.height - expH) > 2) {
@@ -604,6 +605,183 @@
       }
       this._prehydrateAroundFrame(frameIndex, targetComp);
       return entry.bitmap;
+    }
+
+    _getContentIndex(compId = null) {
+      const key = compId || this.activeCompId || 'root';
+      if (!this._contentIndexByComp) this._contentIndexByComp = new Map();
+      let idx = this._contentIndexByComp.get(key);
+      if (!idx) {
+        idx = new Map();
+        this._contentIndexByComp.set(key, idx);
+      }
+      return idx;
+    }
+
+    _releaseEntry(entry, compId = null) {
+      if (!entry) return;
+      const nextRef = (entry._refCount || 1) - 1;
+      entry._refCount = nextRef;
+      if (nextRef > 0) return;
+      if (entry._contentHash) {
+        const idx = this._getContentIndex(compId);
+        if (idx && idx.get(entry._contentHash) === entry) {
+          idx.delete(entry._contentHash);
+        }
+      }
+      if (!entry.shared && entry.bitmap && typeof entry.bitmap.close === 'function') {
+        try { entry.bitmap.close(); } catch (_) {}
+      }
+      if (entry.diskKey && typeof window !== 'undefined' && window.OFTSNative && window.OFTSNative.previewCache) {
+        try { window.OFTSNative.previewCache.remove(entry.diskKey); } catch (_) {}
+      }
+      entry.coldBlob = null;
+    }
+
+    _hashStrFnv1a(h, str) {
+      if (!str) return h;
+      for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return h >>> 0;
+    }
+
+    _getPrecompVisualSig(precompLayer, depth = 0) {
+      if (!precompLayer || depth > 4) return '0';
+      let layers = precompLayer.layers;
+      if ((!Array.isArray(layers) || layers.length === 0) && precompLayer.mediaId && typeof window !== 'undefined' && window.currentProjectState && Array.isArray(window.currentProjectState.layers)) {
+        const sib = window.currentProjectState.layers.find(l => l && l.id !== precompLayer.id && l.mediaId === precompLayer.mediaId && Array.isArray(l.layers) && l.layers.length > 0);
+        if (sib) layers = sib.layers;
+      }
+      if (!Array.isArray(layers) || layers.length === 0) return 'empty';
+      let h = 2166136261;
+      for (let i = 0; i < layers.length; i++) {
+        const l = layers[i];
+        if (!l || l.hidden || l.type === 'audio') continue;
+        h = this._hashStrFnv1a(h, `|${l.type}:${l.shapeType || ''}:${l.mediaId || l.modelMediaId || l.fillMediaId || ''}:${l.startSec || 0}:${l.durationSec || 0}:${l.sourceOffsetSec || 0}:${l.speed || 1}:${l.posX || 0},${l.posY || 0},${l.posZ || 0}:${l.scaleW || 0},${l.scaleH || 0}:${l.rotation || 0},${l.rotX || 0},${l.rotY || 0},${l.rotZ || 0}:${l.opacity !== undefined ? l.opacity : 1}:${l.blendMode || ''}:${l.fillColor || ''}:${l.lightType || ''}:${l.intensity || 0}:${l.collapseTransformations ? 1 : 0}`);
+        if (l.textProps) h = this._hashStrFnv1a(h, this._fastObjectSig(l.textProps));
+        if (Array.isArray(l.effects) && l.effects.length > 0) h = this._hashStrFnv1a(h, this._fastObjectSig(l.effects));
+        if (l.keyframes) h = this._hashStrFnv1a(h, this._fastObjectSig(l.keyframes));
+        if (l.expressions) h = this._hashStrFnv1a(h, this._fastObjectSig(l.expressions));
+        if (l.type === 'precomp') h = this._hashStrFnv1a(h, this._getPrecompVisualSig(l, depth + 1));
+      }
+      return h.toString(36);
+    }
+
+    computeFrameContentHash(frameIndex, compId = null) {
+      if (typeof window === 'undefined') return null;
+      const ps = window.currentProjectState;
+      if (!ps) return null;
+      const targetComp = compId || this.activeCompId || 'root';
+      const layers = (targetComp !== 'root' && window.currentActivePrecomp && Array.isArray(window.currentActivePrecomp.layers))
+        ? window.currentActivePrecomp.layers
+        : (Array.isArray(ps.layers) ? ps.layers : null);
+      if (!layers || layers.length === 0) return null;
+
+      const fps = this.fps || 60;
+      const sec = frameIndex / fps;
+      const pps = window.currentPixelsPerSecond || 80;
+      const getEff = typeof window.getLayerEffectivePropsAtTime === 'function' ? window.getLayerEffectivePropsAtTime : null;
+      const TIME_DRIVEN_FX = this._timeDrivenFxSet || (this._timeDrivenFxSet = new Set([
+        'particle-engine', 'wave-warp', 'turbulent-displace', 'fluid-fish', 'radio-waves',
+        'scanline', 'texture-flux', 'shake', 'flicker', 'oscillate', 'swing', 'star-burst', 'rays'
+      ]));
+
+      let h = 2166136261;
+      h = this._hashStrFnv1a(h, `${ps.bgColor || ''}|${ps.threeDEngine || 'classic'}|${ps.ambientOcclusion || 'disabled'}|${ps.shadowQuality || 'disabled'}|${ps.motionBlurEnabled ? 1 : 0}`);
+
+      let activeCount = 0;
+      for (let i = 0; i < layers.length; i++) {
+        const l = layers[i];
+        if (!l || l.hidden || l.type === 'audio' || l.type === 'null') continue;
+        const startSec = l.startSec !== undefined ? l.startSec : ((l.startPx || 0) / pps);
+        const durSec = l.durationSec !== undefined ? l.durationSec : ((l.widthPx || 320) / pps);
+        if (sec < startSec - 0.0005 || sec >= startSec + durSec - 0.0005) continue;
+
+        if (l.expressions && Object.keys(l.expressions).length > 0) return null;
+        if (Array.isArray(l.effects)) {
+          for (let ei = 0; ei < l.effects.length; ei++) {
+            const ef = l.effects[ei];
+            if (ef && !ef.disabled && TIME_DRIVEN_FX.has(ef.type)) return null;
+          }
+        }
+
+        const eff = getEff ? (getEff(l, sec, null, layers) || l) : l;
+        activeCount++;
+
+        let localFrame = 0;
+        if (l.type === 'precomp') {
+          let innerSec = 0;
+          if (l.speedMode === 'time_remap') {
+            innerSec = Math.max(0, eff.timeRemap !== undefined ? eff.timeRemap : ((l.sourceOffsetSec || 0) + (sec - startSec) * (l.speed || 1.0)));
+          } else {
+            const spd = (l.speed !== undefined) ? l.speed : 1.0;
+            innerSec = spd < 0
+              ? Math.max(0, (l.sourceOffsetSec || 0) + Math.max(0, durSec - (sec - startSec)) * Math.abs(spd))
+              : Math.max(0, (l.sourceOffsetSec || 0) + (sec - startSec) * spd);
+          }
+          localFrame = Math.round(innerSec * fps);
+          h = this._hashStrFnv1a(h, `|PC:${this._getPrecompVisualSig(l)}:${localFrame}:${l.collapseTransformations ? 1 : 0}`);
+        } else if (l.type === 'video') {
+          const spd = (l.speed !== undefined) ? l.speed : 1.0;
+          const clipSec = Math.max(0, (l.sourceOffsetSec || 0) + (sec - startSec) * spd);
+          localFrame = Math.round(clipSec * fps);
+          h = this._hashStrFnv1a(h, `|VID:${l.mediaId || l.dataUrl || ''}:${localFrame}`);
+        } else if (l.shapeType === '3d_model') {
+          h = this._hashStrFnv1a(h, `|3DM:${l.modelMediaId || ''}:${l.materialSlots ? this._fastObjectSig(l.materialSlots) : ''}`);
+        } else if (l.type === 'text') {
+          h = this._hashStrFnv1a(h, `|TXT:${l.textProps ? this._fastObjectSig(l.textProps) : (l.name || '')}`);
+        } else {
+          h = this._hashStrFnv1a(h, `|${l.type}:${l.shapeType || ''}:${l.mediaId || l.fillMediaId || l.fillColor || ''}:${l.lightType || ''}:${eff.intensity !== undefined ? Math.round(eff.intensity) : (l.intensity || 0)}:${eff.cameraLens || l.cameraLens || 0}:${eff.cameraZoom || l.cameraZoom || 0}`);
+        }
+
+        // Quantized effective transform & appearance at sec (independent of layer.id & startSec)
+        const px = Math.round((eff.posX !== undefined ? eff.posX : (l.posX || 0)) * 10);
+        const py = Math.round((eff.posY !== undefined ? eff.posY : (l.posY || 0)) * 10);
+        const pz = Math.round((eff.posZ !== undefined ? eff.posZ : (l.posZ || 0)) * 10);
+        const sw = Math.round((eff.scaleW !== undefined ? eff.scaleW : (l.scaleW || 0)) * 10);
+        const sh = Math.round((eff.scaleH !== undefined ? eff.scaleH : (l.scaleH || 0)) * 10);
+        const rx = Math.round((eff.rotX !== undefined ? eff.rotX : (l.rotX || 0)) * 10);
+        const ry = Math.round((eff.rotY !== undefined ? eff.rotY : (l.rotY || 0)) * 10);
+        const rz = Math.round((eff.rotZ !== undefined ? eff.rotZ : (eff.rotation !== undefined ? eff.rotation : (l.rotation || 0))) * 10);
+        const op = Math.round((eff.opacity !== undefined ? eff.opacity : (l.opacity !== undefined ? l.opacity : 1)) * 1000);
+        h = this._hashStrFnv1a(h, `:${px},${py},${pz},${sw},${sh},${rx},${ry},${rz},${op}:${l.blendMode || ''}:${l.is3D ? 1 : 0}:${l.roundness || 0}`);
+        const effFx = Array.isArray(eff.effects) ? eff.effects : l.effects;
+        if (Array.isArray(effFx) && effFx.length > 0) {
+          h = this._hashStrFnv1a(h, this._fastObjectSig(effFx));
+        }
+      }
+
+      if (activeCount === 0) return null;
+      return `c_${h.toString(36)}_${activeCount}`;
+    }
+
+    tryReuseFrameByContent(frameIndex, expectedWidth = null, expectedHeight = null, compId = null) {
+      const targetComp = compId || this.activeCompId;
+      const contentIdx = this._getContentIndex(targetComp);
+      if (!contentIdx || contentIdx.size === 0) return null;
+
+      const hash = this.computeFrameContentHash(frameIndex, targetComp);
+      if (!hash) return null;
+      const existing = contentIdx.get(hash);
+      if (!existing || existing.cold || existing.isPendingBitmap || !existing.bitmap) return null;
+
+      if (expectedWidth && expectedHeight && existing.width && existing.height) {
+        if (Math.abs(existing.width - expectedWidth) > 2 || Math.abs(existing.height - expectedHeight) > 2) {
+          return null;
+        }
+      }
+
+      const pool = this.getPool(targetComp);
+      if (pool.get(frameIndex) === existing) return existing;
+      existing._refCount = (existing._refCount || 1) + 1;
+      pool.set(frameIndex, existing);
+      if (this._missedPlaybackFrames) {
+        this._missedPlaybackFrames.delete(frameIndex);
+      }
+      this._scheduleRulerUpdate();
+      return existing;
     }
 
     _getCurrentPlayheadFrame() {
@@ -1069,12 +1247,15 @@
         this._inFlightFrames.add(inFlightKey);
 
         // Immediately register provisional canvas in pool so next rAF tick gets a 0ms cache hit
+        const contentHash = this.computeFrameContentHash(frameIndex, targetComp);
         const provisionalEntry = {
           bitmap: stagingCanvas,
           isDraft,
           isPendingBitmap: true,
           width: srcW,
-          height: srcH
+          height: srcH,
+          _contentHash: contentHash,
+          _refCount: 1
         };
         targetPool.set(frameIndex, provisionalEntry);
         if (this._missedPlaybackFrames) {
@@ -1095,12 +1276,18 @@
           if (currentEntry === provisionalEntry) {
             provisionalEntry.bitmap = bitmap;
             provisionalEntry.isPendingBitmap = false;
+            if (contentHash) {
+              this._getContentIndex(targetComp).set(contentHash, provisionalEntry);
+            }
             this._demoteHotFramesIfNeeded(targetComp);
           } else if (bitmap && typeof bitmap.close === 'function') {
             try { bitmap.close(); } catch (_) {}
           }
         } else {
           provisionalEntry.isPendingBitmap = false;
+          if (contentHash) {
+            this._getContentIndex(targetComp).set(contentHash, provisionalEntry);
+          }
         }
       } catch (_) {}
       finally {
@@ -1132,13 +1319,7 @@
       const pool = this.getPool(targetComp);
       const entry = pool.get(frameIndex);
       if (entry) {
-        if (!entry.shared && entry.bitmap && typeof entry.bitmap.close === 'function') {
-          try { entry.bitmap.close(); } catch (_) {}
-        }
-        if (entry.diskKey && typeof window !== 'undefined' && window.OFTSNative && window.OFTSNative.previewCache) {
-          try { window.OFTSNative.previewCache.remove(entry.diskKey); } catch (_) {}
-        }
-        entry.coldBlob = null;
+        this._releaseEntry(entry, targetComp);
         pool.delete(frameIndex);
         if (updateUI && targetComp === this.activeCompId) {
           this.updateRulerUI();
@@ -1184,9 +1365,7 @@
         }
         if (pool.has(f)) {
           const entry = pool.get(f);
-          if (entry && !entry.shared && entry.bitmap && typeof entry.bitmap.close === 'function') {
-            try { entry.bitmap.close(); } catch (_) {}
-          }
+          this._releaseEntry(entry, targetComp);
           pool.delete(f);
           changed = true;
         }
@@ -1531,6 +1710,7 @@
       }
       const closedBitmaps = new Set();
       if (scope === 'all') {
+        if (this._contentIndexByComp) this._contentIndexByComp.clear();
         if (this._compVisualIntervals) this._compVisualIntervals.clear();
         if (this._compVoidIntervals) this._compVoidIntervals.clear();
         if (this._compOccupancyKeys) this._compOccupancyKeys.clear();
@@ -1547,7 +1727,9 @@
           try { window.OFTSNative.previewCache.clear(); } catch (_) {}
         }
       } else {
-        const pool = this.getPool(compId || this.activeCompId);
+        const targetKey = compId || this.activeCompId;
+        if (this._contentIndexByComp) this._contentIndexByComp.delete(targetKey);
+        const pool = this.getPool(targetKey);
         for (const entry of pool.values()) {
           if (entry && entry.bitmap && !closedBitmaps.has(entry.bitmap) && typeof entry.bitmap.close === 'function') {
             closedBitmaps.add(entry.bitmap);
@@ -2082,9 +2264,7 @@
         for (let f = startFrame; f <= endFrame; f++) {
           if (pool.has(f)) {
             const entry = pool.get(f);
-            if (entry && !entry.shared && entry.bitmap && typeof entry.bitmap.close === 'function') {
-              try { entry.bitmap.close(); } catch (_) {}
-            }
+            this._releaseEntry(entry, targetComp);
             pool.delete(f);
             const inFlightKey = `${targetComp}:${f}`;
             if (this._inFlightFrames) this._inFlightFrames.delete(inFlightKey);
@@ -2354,6 +2534,13 @@
 
         const inFlightKey = `${targetComp}:${targetFrame}`;
         const targetSec = targetFrame / currentFps;
+
+        // AE-style Content-Addressed Frame Dedup: if an identical frame (e.g. cut/duplicated precomp)
+        // is already cached in RAM, reuse it instantly with 0ms render & 0 extra RAM!
+        if (this.tryReuseFrameByContent(targetFrame, targetW, targetH, targetComp)) {
+          continue;
+        }
+
         const offscreen = this._idleCanvasPool[this._idlePoolIdx % this._idleCanvasPool.length];
         this._idlePoolIdx++;
 

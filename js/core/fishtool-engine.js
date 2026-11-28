@@ -66,6 +66,8 @@
   const FS_SOURCE = `
     #ifdef GL_FRAGMENT_PRECISION_HIGH
       precision highp float;
+      precision highp int;
+      precision highp sampler2D;
     #else
       precision mediump float;
     #endif
@@ -356,6 +358,8 @@
 
   const AO_PASS_FS = `#version 300 es
     precision highp float;
+    precision highp int;
+    precision highp sampler2D;
     in vec2 v_uv;
     out float outAO;
     uniform sampler2D u_depth;
@@ -447,16 +451,19 @@
         if (dist > 0.001 && dist < u_radius) {
           float t = 1.0 - (dist / u_radius);
           float falloff = t * sqrt(t);
-          occ += max(0.0, dot(N, v) / dist - 0.12) * falloff;
+          float aoBias = clamp(0.16 + cZ * 0.00004, 0.16, 0.24);
+          occ += max(0.0, dot(N, v) / dist - aoBias) * falloff;
         }
       }
       float rawAO = clamp(1.0 - (occ / fSamples) * u_strength, 0.0, 1.0);
-      outAO = pow(rawAO, u_power);
+      outAO = pow(max(rawAO, 0.00001), u_power);
     }
   `;
 
   const AO_BLUR_FS = `#version 300 es
     precision highp float;
+    precision highp int;
+    precision highp sampler2D;
     in vec2 v_uv;
     out float outBlurred;
     uniform sampler2D u_aoTex;
@@ -481,18 +488,18 @@
         return;
       }
       float cZ = getLinearDepth(cD01);
-      vec2 texel = (1.0 / vec2(textureSize(u_aoTex, 0))) * u_dir;
+      vec2 texel = (1.25 / vec2(textureSize(u_aoTex, 0))) * u_dir;
       float sum = 0.0;
       float wSum = 0.0;
       float invTol = 1.0 / max(1.0, u_radius * 0.45);
 
-      for (int k = -3; k <= 3; k++) {
+      for (int k = -2; k <= 2; k++) {
         vec2 sUv = clamp(v_uv + float(k) * texel, vec2(0.0), vec2(0.9999));
         ivec2 sFc = clamp(ivec2(sUv * fDSize), ivec2(0), dSize - 1);
         float sD01 = texelFetch(u_depth, sFc, 0).r;
         if (sD01 >= 0.9999) continue;
         float sZ = getLinearDepth(sD01);
-        float w = exp(-float(k * k) * 0.18) * exp(-abs(sZ - cZ) * invTol);
+        float w = exp(-float(k * k) * 0.28) * exp(-abs(sZ - cZ) * invTol);
         sum += texture(u_aoTex, sUv).r * w;
         wSum += w;
       }
@@ -502,6 +509,8 @@
 
   const AO_COMP_FS = `#version 300 es
     precision highp float;
+    precision highp int;
+    precision highp sampler2D;
     in vec2 v_uv;
     out vec4 fragColor;
     uniform sampler2D u_colorTex;
@@ -4512,7 +4521,21 @@
       const aoModeSceneMb = (psSceneMb && psSceneMb.threeDEngine === 'advance' && (psSceneMb.ambientOcclusion === 'low' || psSceneMb.ambientOcclusion === 'medium' || psSceneMb.ambientOcclusion === 'high'))
         ? psSceneMb.ambientOcclusion
         : 'disabled';
-      const useAOSceneMb = Boolean(aoModeSceneMb !== 'disabled' && this.isWebGL2 && this._ensureAOGl(vw, vh));
+      let has3DMeshSceneMb = false;
+      if (aoModeSceneMb !== 'disabled') {
+        const fxScratchMb = this._aoMeshCheckScratch || (this._aoMeshCheckScratch = {});
+        for (let mi = 0; mi < run.length; mi++) {
+          const lyr = run[mi] && run[mi].item && (run[mi].item.animLayer || run[mi].item.layer);
+          if (lyr) {
+            const mf = this._resolveMeshFx(lyr, fxScratchMb);
+            if (mf.b || mf.e || mf.p || mf.s || mf.c || mf.cyl || mf.t || mf.m) {
+              has3DMeshSceneMb = true;
+              break;
+            }
+          }
+        }
+      }
+      const useAOSceneMb = Boolean(has3DMeshSceneMb && aoModeSceneMb !== 'disabled' && this.isWebGL2 && this._ensureAOGl(vw, vh));
       // Recompute SSAO at most ~4 times per motion-blur frame; intermediate samples reuse the AO texture.
       const aoStrideScene = Math.max(1, Math.ceil(samples / 4));
 
@@ -4710,9 +4733,9 @@
         }
 
         if (this._aoFboW !== vw || this._aoFboH !== vh) {
-          const useFullResAO = (vw <= 960 && vh <= 960);
-          const aoW = useFullResAO ? vw : Math.max(1, vw >> 1);
-          const aoH = useFullResAO ? vh : Math.max(1, vh >> 1);
+          const useFullResAO = (vw <= 360 && vh <= 360);
+          const aoW = useFullResAO ? vw : Math.max(2, vw >> 1);
+          const aoH = useFullResAO ? vh : Math.max(2, vh >> 1);
           const initTex = (tex, intFmt, fmt, type, w, h, filter) => {
             gl.bindTexture(gl.TEXTURE_2D, tex);
             gl.texImage2D(gl.TEXTURE_2D, 0, intFmt, w, h, 0, fmt, type, null);
@@ -4800,14 +4823,21 @@
     }
 
     _runAOPostPass(gl, vw, vh, bufferScale, camera, aoMode, blendWeight = -1, skipCompute = false) {
-      const aoW = this._aoHalfW || Math.max(1, vw >> 1);
-      const aoH = this._aoHalfH || Math.max(1, vh >> 1);
+      const aoW = this._aoHalfW || Math.max(2, vw >> 1);
+      const aoH = this._aoHalfH || Math.max(2, vh >> 1);
       const isHigh = aoMode === 'high';
       const isMed = aoMode === 'medium';
-      const samples = isHigh ? 16 : (isMed ? 12 : 8);
-      const radius = (isHigh ? 96 : (isMed ? 72 : 50)) * (bufferScale || 1);
-      const strength = isHigh ? 6.5 : (isMed ? 4.5 : 2.8);
-      const power = isHigh ? 2.0 : (isMed ? 1.45 : 1.0);
+      const isMobile = this._isMobileAO !== undefined
+        ? this._isMobileAO
+        : (this._isMobileAO = (typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '')));
+      const isInteractive = typeof window !== 'undefined' && !window.isExporting && (window.isTimelinePlaying || window.isTimelineScrubbing);
+      let samples = isMobile
+        ? (isHigh ? 8 : (isMed ? 6 : 4))
+        : (isHigh ? 10 : (isMed ? 8 : 6));
+      if (isInteractive && samples > 6) samples = 6;
+      const radius = (isHigh ? 54 : (isMed ? 74 : 96)) * (bufferScale || 1);
+      const strength = isHigh ? 11.0 : (isMed ? 8.5 : 6.5);
+      const power = isHigh ? 2.75 : (isMed ? 2.35 : 2.0);
 
       const camLens = Math.max(1, camera && camera.cameraLens !== undefined ? camera.cameraLens : 50);
       const camZoom = camera && camera.cameraZoom !== undefined ? camera.cameraZoom : 100;
@@ -5249,7 +5279,22 @@
       const aoMode = (ps && ps.threeDEngine === 'advance' && (ps.ambientOcclusion === 'low' || ps.ambientOcclusion === 'medium' || ps.ambientOcclusion === 'high'))
         ? ps.ambientOcclusion
         : 'disabled';
-      const useAO = Boolean(aoMode !== 'disabled' && this.isWebGL2 && this._ensureAOGl(vw, vh));
+      let has3DMeshBatch = false;
+      if (aoMode !== 'disabled') {
+        const fxScratchBatch = this._aoMeshCheckScratch || (this._aoMeshCheckScratch = {});
+        for (let bi = 0; bi < batch.length; bi++) {
+          const entry = batch[bi];
+          const lyr = entry && entry.item && (entry.item.animLayer || entry.item.layer);
+          if (lyr) {
+            const mf = this._resolveMeshFx(lyr, fxScratchBatch);
+            if (mf.b || mf.e || mf.p || mf.s || mf.c || mf.cyl || mf.t || mf.m) {
+              has3DMeshBatch = true;
+              break;
+            }
+          }
+        }
+      }
+      const useAO = Boolean(has3DMeshBatch && aoMode !== 'disabled' && this.isWebGL2 && this._ensureAOGl(vw, vh));
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, useAO ? this._aoSceneFbo : null);
       gl.viewport(0, 0, vw, vh);

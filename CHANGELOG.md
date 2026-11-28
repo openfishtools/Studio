@@ -5,6 +5,17 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-11-28
+
+### Added
+- **Content-Addressed Frame Deduplication (`js/media/preview-cache.js`)**: Added After Effects-style content-hash RAM cache deduplication (`computeFrameContentHash`, `tryReuseFrameByContent`, ref-counted `_releaseEntry`) so cut, duplicated, or looped precomps (including `Collapse Transformations` 3D precomps) reuse already-cached frames instantaneously with 0ms render and 0 extra RAM.
+
+### Improved
+- **Lightweight Mobile-Friendly SSAO Pipeline & Preset Rebalancing (`js/core/fishtool-engine.js`)**: Forced half-resolution AO (`vw >> 1, vh >> 1`), switched bilateral blur to 5-tap (`k = -2..2`), introduced mobile & playback-aware adaptive sample counts (`8/6/4` mobile, `10/8/6` desktop, capped at `6` during playback/scrubbing), skipped SSAO on flat 3D precomp quad batches with no 3D meshes, and rebalanced AO presets so `Low` matches prior `High` while `Medium` and `High` deliver progressively tighter, deeper contact occlusion.
+
+### Fixed
+- **Android Mobile GPU SSAO Blotches & Depth Sampler Precision (`js/core/fishtool-engine.js`)**: Added explicit `precision highp sampler2D;` and `precision highp int;` to `AO_PASS_FS`, `AO_BLUR_FS`, `AO_COMP_FS`, and `FS_SOURCE` (fixing 8-bit `lowp` depth truncation on ARM Mali / Qualcomm Adreno), added depth-adaptive AO bias, guarded `pow(0.0, y)` against mobile `NaN`, and fixed `batch[bi].item` lookup so SSAO stays active when Global Motion Blur is disabled.
+
 ## [0.8.0] - 2026-11-28
 
 ### Added
