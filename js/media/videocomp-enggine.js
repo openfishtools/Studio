@@ -208,9 +208,12 @@
               layer._lastRenderedFrame = vsmRes.frame;
               layer._renderedExactVideoFrame = true;
               hasUnreadyMedia = false;
-            } else if (vsmRes.frame && !isExporting && !isIdleCache) {
+            } else if (vsmRes.frame && !isIdleCache) {
+              // During export, use the closest decoded frame (e.g. VFR clips) instead of returning null (black frame)
               el = vsmRes.frame;
-              hasUnreadyMedia = true;
+              layer._lastRenderedFrame = vsmRes.frame;
+              layer._renderedExactVideoFrame = isExporting;
+              hasUnreadyMedia = !isExporting;
             }
           }
         }
@@ -236,13 +239,13 @@
         }
       }
 
-      if (!el && !isExporting && !isIdleCache) {
+      if (!el && !isIdleCache) {
         if (layer._lastRenderedFrame && layer._lastRenderedFrame !== (media && media.poster)) {
           el = layer._lastRenderedFrame;
-        } else if (usingWebCodecsStream && media && media.poster && (media.poster.naturalWidth > 0 || media.poster.width > 0)) {
+        } else if (!isExporting && usingWebCodecsStream && media && media.poster && (media.poster.naturalWidth > 0 || media.poster.width > 0)) {
           // While WebCodecs worker warms up the first frame (~20-40ms on import), display poster seamlessly
           el = media.poster;
-        } else if (!usingWebCodecsStream) {
+        } else if (!isExporting && !usingWebCodecsStream) {
           const placeholderW = layer.mediaWidth || 1920;
           const placeholderH = layer.mediaHeight || 1080;
           const placeholderFn = (typeof window !== 'undefined' && typeof window.getMediaNotReadyPlaceholder === 'function')

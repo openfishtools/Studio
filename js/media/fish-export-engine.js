@@ -257,11 +257,34 @@
     return true;
   }
 
-  async function prepareFrameAtTime(t, videoLayers, pps) {
+  function seekHtmlVideoToTime(vidEl, targetSec) {
+    if (!vidEl || vidEl.tagName !== 'VIDEO' || vidEl.readyState < 1) return Promise.resolve();
+    var maxT = (vidEl.duration && isFinite(vidEl.duration) && vidEl.duration > 0) ? Math.max(0, vidEl.duration - 0.01) : targetSec;
+    var clamped = Math.max(0, Math.min(maxT, targetSec));
+    if (!vidEl.seeking && vidEl.readyState >= 2 && Math.abs((vidEl.currentTime || 0) - clamped) <= 0.008) {
+      return Promise.resolve();
+    }
+    return new Promise(function(resolve) {
+      var settled = false;
+      var finish = function() {
+        if (settled) return;
+        settled = true;
+        vidEl.removeEventListener('seeked', finish);
+        vidEl.removeEventListener('canplay', finish);
+        vidEl.removeEventListener('error', finish);
+        resolve();
+      };
+      vidEl.addEventListener('seeked', finish, { once: true });
+      vidEl.addEventListener('error', finish, { once: true });
+      try { vidEl.currentTime = clamped; } catch (_) { finish(); return; }
+      setTimeout(finish, 1200);
+    });
+  }
+
+  async function prepareFrameAtTime(t, layersToPrepare, pps) {
     var vsm = window.VideoStreamManager;
-    if (!vsm || !vsm.isSupported) return;
     var ps = window.currentProjectState || {};
-    var allLayers = (videoLayers && videoLayers.length > 0) ? videoLayers : (ps.layers || []);
+    var allLayers = Array.isArray(layersToPrepare) ? layersToPrepare : (ps.layers || []);
     var fetches = [];
     for (var i = 0; i < allLayers.length; i++) {
       var vl = allLayers[i];
@@ -286,11 +309,22 @@
       vl._lastExportClipTime = clip;
 
       if (vl.type === 'video') {
-        var key = vsm.getSourceKey(vl);
-        if (key && vsm.hasStream(key)) {
-          var syncRes = vsm.getFrameSync(key, clip, { isExport: true });
-          if (!syncRes.exact) {
-            fetches.push(vsm.getFrameAsync(key, clip, { isExport: true }));
+        var handledByVsm = false;
+        if (vsm && vsm.isSupported) {
+          var key = vsm.getSourceKey(vl);
+          if (key && vsm.hasStream(key) && !vsm.isFailed(key)) {
+            handledByVsm = true;
+            var syncRes = vsm.getFrameSync(key, clip, { isExport: true });
+            if (!syncRes.exact) {
+              fetches.push(vsm.getFrameAsync(key, clip, { isExport: true }));
+            }
+          }
+        }
+        // Cross-device fallback: seek native <video> element when WebCodecs stream is unavailable (WebM, Safari, failed demux)
+        if (!handledByVsm && typeof window.getOrLoadLayerMedia === 'function') {
+          var mediaObj = window.getOrLoadLayerMedia(vl);
+          if (mediaObj && mediaObj.el && mediaObj.el.tagName === 'VIDEO') {
+            fetches.push(seekHtmlVideoToTime(mediaObj.el, clip));
           }
         }
       }
@@ -301,7 +335,7 @@
     if (fetches.length) {
       await Promise.race([
         Promise.all(fetches),
-        new Promise(function(resolve) { setTimeout(resolve, 600); })
+        new Promise(function(resolve) { setTimeout(resolve, 3500); })
       ]);
     }
   }
@@ -927,9 +961,17 @@
         resolve(ok);
       };
       try {
+        var probeChunks = 0;
+        var lastProbeTs = -1;
+        var outOfOrder = false;
         enc = new VideoEncoder({
           output: function(chunk) {
-            if (chunk && chunk.byteLength > 0) done(true);
+            if (chunk && chunk.byteLength > 0) {
+              var ts = Number.isFinite(chunk.timestamp) ? chunk.timestamp : 0;
+              if (ts < lastProbeTs) outOfOrder = true;
+              lastProbeTs = ts;
+              probeChunks++;
+            }
           },
           error: function(e) {
             var msg = e ? (e.message || (typeof e === 'string' ? e : 'Encoding task failed')) : 'Encoding task failed';
@@ -945,26 +987,34 @@
           pctx.fillStyle = '#000000';
           pctx.fillRect(0, 0, config.width, config.height);
         }
-        var onBmp = function(b) {
-          bmp = b;
+        var runProbe3 = function(src) {
           try {
-            frame = new VideoFrame(bmp, { timestamp: 0, duration: 16666 });
-            enc.encode(frame, { keyFrame: true });
-            enc.flush().then(function() { done(true); }).catch(function(flErr) { done(false, flErr ? flErr.message : 'flush failed'); });
+            // Encode 3 frames to verify zero frame drops and monotonic PTS (no B-frame reordering)
+            for (var pf = 0; pf < 3; pf++) {
+              var f = new VideoFrame(src, { timestamp: pf * 16666, duration: 16666 });
+              enc.encode(f, { keyFrame: pf === 0 });
+              f.close();
+            }
+            enc.flush().then(function() {
+              if (outOfOrder) {
+                done(false, 'B-frame PTS reordering detected');
+              } else if (probeChunks < 3) {
+                done(false, 'encoder dropped frames during probe (' + probeChunks + '/3)');
+              } else {
+                done(true);
+              }
+            }).catch(function(flErr) { done(false, flErr ? flErr.message : 'flush failed'); });
           } catch (encEx) { done(false, encEx ? encEx.message : 'encode threw'); }
         };
         if (typeof createImageBitmap === 'function') {
-          createImageBitmap(c).then(onBmp).catch(function(bmpErr) {
-            try {
-              frame = new VideoFrame(c, { timestamp: 0, duration: 16666 });
-              enc.encode(frame, { keyFrame: true });
-              enc.flush().then(function() { done(true); }).catch(function(flErr2) { done(false, flErr2 ? flErr2.message : 'flush failed'); });
-            } catch (ex2) { done(false, ex2 ? ex2.message : 'canvas encode threw'); }
+          createImageBitmap(c).then(function(b) {
+            bmp = b;
+            runProbe3(bmp);
+          }).catch(function() {
+            runProbe3(c);
           });
         } else {
-          frame = new VideoFrame(c, { timestamp: 0, duration: 16666 });
-          enc.encode(frame, { keyFrame: true });
-          enc.flush().then(function() { done(true); }).catch(function(flErr3) { done(false, flErr3 ? flErr3.message : 'flush failed'); });
+          runProbe3(c);
         }
       } catch (setupErr) { done(false, setupErr ? setupErr.message : 'setup threw'); }
       setTimeout(function() { done(false, 'timeout 1500ms'); }, 1500);
@@ -1147,11 +1197,14 @@
   }
 
   function renderExportFrame(target, exportCanvas, ps, t, frameIndex, fps, totalDur) {
+    // MP4/H.264 video has no alpha channel; resolve 'transparent' to solid opaque black
+    // so hardware YUV420 encoders on mobile/desktop GPUs never receive alpha=0 garbage.
+    var opaqueBg = (ps.bgColor && ps.bgColor !== 'transparent') ? ps.bgColor : '#000000';
     if (target && target.isInterface && target.session && window.InterfaceExportRenderer) {
-      window.renderCanvasFrame(target.session.compCanvas, ps.bgColor, target.compW, target.compH, 'export-video', t);
+      window.renderCanvasFrame(target.session.compCanvas, opaqueBg, target.compW, target.compH, 'export-video', t);
       window.InterfaceExportRenderer.renderFrame(target.session, exportCanvas, target.session.compCanvas, t, frameIndex, fps, totalDur);
     } else {
-      window.renderCanvasFrame(exportCanvas, ps.bgColor, target.outW, target.outH, 'export-video', t);
+      window.renderCanvasFrame(exportCanvas, opaqueBg, target.outW, target.outH, 'export-video', t);
     }
   }
 
@@ -1230,31 +1283,36 @@
     var chosenCodec = null, chosenConfig = null;
     var hwModes  = ['prefer-hardware', 'no-preference', 'prefer-software'];
     var brModes  = ['variable'];
-    // Prioritize 'realtime' so VideoEncoder forbids B-frame reordering (WebCodecs does not expose DTS/CTTS,
-    // and Mp4Muxer requires monotonic DTS === PTS to avoid 0-duration stts entries & stuttery playback).
-    var latModes = ['realtime', 'quality'];
+    // Prioritize 'quality' so hardware encoders (especially Android MediaCodec & Windows MFT)
+    // NEVER drop frames under offline faster-than-realtime submission.
+    // probeEncoder() verifies 3 frames with monotonic PTS (rejecting any B-frame reordering).
+    var latModes = ['quality', 'realtime'];
 
     logExportInfo('WebCodecs', 'Testing ' + candidates.length + ' ' + (isHevc ? 'H.265/' : '') + 'H.264/VP9 candidate profiles at ' + baseW + 'x' + baseH + ' @ ' + fps + 'fps (' + (videoBps/1000000).toFixed(1) + ' Mbps)...');
 
+    // Outer loop is latModes ('quality' FIRST across ALL codecs) so if H.264 High reorders B-frames
+    // in 'quality' mode, we fall through to H.264 Constrained Baseline + 'quality' (zero B-frames,
+    // zero frame drops!) instead of prematurely falling into 'realtime' (which drops frames on Android!).
     outer:
-    for (var ci = 0; ci < candidates.length; ci++) {
-      var cand = candidates[ci];
-      var nextCand = (ci + 1 < candidates.length) ? candidates[ci + 1] : null;
-      var nextCandLabel = nextCand ? (nextCand.name + ' [' + nextCand.codec + ']') : 'Tier 2 GPU MediaRecorder';
-      var candBps = computeExportVideoBitrate(preset, baseW, baseH, fps, totalDur, cand.muxerCodec);
+    for (var li = 0; li < latModes.length; li++) {
+      var lat = latModes[li];
+      for (var ci = 0; ci < candidates.length; ci++) {
+        var cand = candidates[ci];
+        var nextCand = (ci + 1 < candidates.length) ? candidates[ci + 1] : null;
+        var nextCandLabel = nextCand
+          ? (nextCand.name + ' [' + nextCand.codec + ', latency=' + lat + ']')
+          : ((li + 1 < latModes.length) ? ('latency=' + latModes[li + 1] + ' fallback') : 'Tier 2 GPU MediaRecorder');
+        var candBps = computeExportVideoBitrate(preset, baseW, baseH, fps, totalDur, cand.muxerCodec);
 
-      logExportInfo('WebCodecs:Probe', 'Checking candidate ' + (ci + 1) + '/' + candidates.length + ': ' + cand.name + ' (' + cand.codec + ', ' + (candBps/1000000).toFixed(1) + ' Mbps)...');
+        logExportInfo('WebCodecs:Probe', 'Checking candidate ' + (ci + 1) + '/' + candidates.length + ': ' + cand.name + ' (' + cand.codec + ', latency=' + lat + ', ' + (candBps/1000000).toFixed(1) + ' Mbps)...');
 
-      for (var li = 0; li < latModes.length; li++) {
-        var lat = latModes[li];
         for (var hi = 0; hi < hwModes.length; hi++) {
           var hw = hwModes[hi];
           for (var bi = 0; bi < brModes.length; bi++) {
             var br = brModes[bi];
 
-            var nextHw  = (hi + 1 < hwModes.length) ? ('hw=' + hwModes[hi + 1]) : null;
-            var nextLat = (li + 1 < latModes.length) ? ('latency=' + latModes[li + 1]) : null;
-            var fallbackTarget = nextHw || nextLat || ('next candidate: ' + nextCandLabel);
+            var nextHw = (hi + 1 < hwModes.length) ? ('hw=' + hwModes[hi + 1]) : null;
+            var fallbackTarget = nextHw || ('next candidate: ' + nextCandLabel);
 
             var cfg = {
               codec: cand.codec, width: baseW, height: baseH,
@@ -1282,8 +1340,8 @@
             } catch (_) {}
           }
         }
+        logExportWarn('WebCodecs:Probe', 'Profile ' + cand.name + ' (' + cand.codec + ', latency=' + lat + ') could not be initialized by GPU driver. ↳ Falling back to: ' + nextCandLabel);
       }
-      logExportWarn('WebCodecs:Probe', 'Profile ' + cand.name + ' (' + cand.codec + ') could not be initialized by GPU driver. ↳ Falling back to: ' + nextCandLabel);
     }
 
     if (!chosenCodec || !chosenConfig) {
@@ -1533,12 +1591,14 @@
 
         var t = i / fps; // EXACT — never performance.now()
 
-        await prepareFrameAtTime(t, videoLayers, pps);
+        await prepareFrameAtTime(t, ps.layers || [], pps);
         renderExportFrame(frameTarget, exportCanvas, ps, t, i, fps, totalDur);
         updateProgressPreview(exportCanvas);
 
-        // Non-blocking GPU event-loop backpressure: keep queue bounded to <=8 frames
-        while (encoder.encodeQueueSize > 8 && !encError && !isCancelled) {
+        // Non-blocking GPU event-loop backpressure: keep queue <=2 on mobile (Android/iOS MediaCodec)
+        // and <=4 on desktop so lagging mobile hardware surface pools never overflow or drop frames.
+        var maxEncQueue = (typeof navigator !== 'undefined' && /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '')) ? 2 : 4;
+        while (encoder.encodeQueueSize > maxEncQueue && !encError && !isCancelled) {
           await new Promise(function(r) { setTimeout(r, 4); });
         }
         if (encError || isCancelled) break;
@@ -1843,7 +1903,7 @@
 
         var t = i / fps; // deterministic
 
-        await prepareFrameAtTime(t, videoLayers, pps);
+        await prepareFrameAtTime(t, ps.layers || [], pps);
         renderExportFrame(frameTarget, exportCanvas, ps, t, i, fps, totalDur);
         updateProgressPreview(exportCanvas);
 

@@ -5,6 +5,16 @@ All notable changes to OpenFishTools Studio are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-11-28
+
+### Fixed
+- **Cross-Device Video Export Black Frames & Android Frame Drops (`js/media/fish-export-engine.js`, `js/media/videocomp-enggine.js`)**:
+  - Prioritized `latencyMode: 'quality'` across all codec candidates (`H.264 High → Main → Constrained Baseline → Baseline → VP9`) before falling back to `'realtime'`, preventing Android MediaCodec and Windows MFT hardware encoders from silently dropping/skipping frames during offline export.
+  - Upgraded `probeEncoder()` to validate 3 consecutive test frames for zero frame drops and strictly monotonic PTS (rejecting B-frame reordering).
+  - Updated `resolveLayerVideoElement()` during export to fall back to the closest decoded frame (`vsmRes.frame`) or `layer._lastRenderedFrame` instead of returning `null` (black flash) on VFR clips or slower decoders.
+  - Fixed `prepareFrameAtTime()` to prepare nested Precomposition video layers across both WebCodecs and FFmpeg export loops, added a native `<video>` `seekHtmlVideoToTime()` fallback when WebCodecs streaming is unavailable (`.webm`, Safari, failed demux), and increased decode safety timeout from `600ms` to `3500ms`.
+  - Resolved `'transparent'` composition background to opaque `#000000` in `renderExportFrame()` for MP4/H.264 YUV420 hardware encoder compatibility, and tightened mobile encoder backpressure to `encodeQueueSize <= 2` (`<= 4` on desktop) to prevent MediaCodec surface pool exhaustion.
+
 ## [0.8.1] - 2026-11-28
 
 ### Added
