@@ -1711,14 +1711,24 @@
   // Live panel width with cached layout read to eliminate style thrashing during playback
   let _cachedDesktopPanelW = 310;
   function updateCachedDesktopPanelW() {
-    const rootVal = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--desktop-layer-panel-w'));
-    if (!isNaN(rootVal) && rootVal > 0) {
-      _cachedDesktopPanelW = rootVal;
-      return;
-    }
     const gutter = document.querySelector('.desktop-ruler-gutter');
-    if (gutter && gutter.offsetWidth > 0) {
-      _cachedDesktopPanelW = gutter.offsetWidth;
+    if (gutter) {
+      const gw = gutter.getBoundingClientRect().width || gutter.offsetWidth;
+      if (gw > 0) {
+        _cachedDesktopPanelW = gw;
+        return;
+      }
+    }
+    const rootCs = getComputedStyle(document.documentElement);
+    const rawStr = (rootCs.getPropertyValue('--desktop-layer-panel-w') || '').trim();
+    const numVal = parseFloat(rawStr);
+    if (!isNaN(numVal) && numVal > 0) {
+      if (rawStr.endsWith('rem')) {
+        const rootFontPx = parseFloat(rootCs.fontSize) || 16;
+        _cachedDesktopPanelW = numVal * rootFontPx;
+      } else {
+        _cachedDesktopPanelW = numVal;
+      }
       return;
     }
     _cachedDesktopPanelW = 310;
@@ -2131,7 +2141,7 @@
         window.removeEventListener('pointerup', onPointerUp, true);
         window.removeEventListener('pointercancel', onPointerUp, true);
 
-        _cachedDesktopPanelW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--desktop-layer-panel-w')) || startW;
+        updateCachedDesktopPanelW();
         if (typeof window.syncDesktopPlayhead === 'function') {
           window.syncDesktopPlayhead();
         }
@@ -2171,7 +2181,12 @@
           resizer.addEventListener('pointerdown', (e) => {
             if (e.button !== undefined && e.button !== 0) return;
             const startX = e.clientX;
-            const startParentW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--desktop-parent-col-w')) || 76;
+            const rootCs = getComputedStyle(document.documentElement);
+            const rawP = (rootCs.getPropertyValue('--desktop-parent-col-w') || '').trim();
+            const parsedP = parseFloat(rawP);
+            const startParentW = (!isNaN(parsedP) && parsedP > 0)
+              ? (rawP.endsWith('rem') ? parsedP * (parseFloat(rootCs.fontSize) || 16) : parsedP)
+              : 76;
             resizer.classList.add('is-dragging');
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
@@ -2205,7 +2220,12 @@
           resizer.addEventListener('pointerdown', (e) => {
             if (e.button !== undefined && e.button !== 0) return;
             const startX = e.clientX;
-            const startControlW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--desktop-control-col-w')) || 56;
+            const rootCs = getComputedStyle(document.documentElement);
+            const rawC = (rootCs.getPropertyValue('--desktop-control-col-w') || '').trim();
+            const parsedC = parseFloat(rawC);
+            const startControlW = (!isNaN(parsedC) && parsedC > 0)
+              ? (rawC.endsWith('rem') ? parsedC * (parseFloat(rootCs.fontSize) || 16) : parsedC)
+              : 56;
             resizer.classList.add('is-dragging');
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';

@@ -1193,8 +1193,23 @@ Card({
 
     ctx.history.snapshot();
     const [baseW, baseH] = ctx.project.getDimensions();
-    const targetX = targetLayer.posX !== undefined ? targetLayer.posX : Math.round(baseW / 2);
-    const targetY = targetLayer.posY !== undefined ? targetLayer.posY : Math.round(baseH / 2);
+    let pivotLayer = targetLayer;
+    if ((toolName === 'X_FLIP' || toolName === 'Y_FLIP') && targetLayer && targetLayer.type === 'null') {
+      // Walk down the child chain to locate the actual visual/photo layer so X/Y Flip pivots dead-center on it
+      let cur = targetLayer;
+      const visited = new Set([cur.id]);
+      while (cur && cur.type === 'null') {
+        const child = layers.find(l => l && l.parentId === cur.id && !visited.has(l.id));
+        if (!child) break;
+        visited.add(child.id);
+        cur = child;
+      }
+      if (cur && cur.type !== 'null') {
+        pivotLayer = cur;
+      }
+    }
+    const targetX = (pivotLayer && pivotLayer.posX !== undefined) ? pivotLayer.posX : Math.round(baseW / 2);
+    const targetY = (pivotLayer && pivotLayer.posY !== undefined) ? pivotLayer.posY : Math.round(baseH / 2);
 
     const nullNames = {
       OSCILLATE: 'OSCILLATE',

@@ -1951,7 +1951,8 @@
         img.loading = 'lazy';
         img.decoding = 'async';
         img.draggable = false;
-        img.src = (def.icon && String(def.icon).endsWith('.svg')) ? def.icon : ('assets/effects/thumbs/' + def.id + '.png');
+        const hasDedicatedSvgThumb = !!(def.icon && String(def.icon).startsWith('assets/effects/thumbs/') && String(def.icon).endsWith('.svg'));
+        img.src = hasDedicatedSvgThumb ? def.icon : ('assets/effects/thumbs/' + def.id + '.png');
         img.addEventListener('error', () => {
           const fb = def.icon || FALLBACK_EFFECT_ICON;
           if (!img.src.endsWith(fb)) img.src = fb;

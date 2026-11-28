@@ -5196,7 +5196,7 @@ function initTimelineOperations() {
                   const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
                   const curPanX = window.timelinePanX !== undefined ? window.timelinePanX : (typeof panX !== 'undefined' ? panX : 0);
                   const deltaX = (lastTrimClientX - startPointerX) - (curPanX - initialTrimPanX);
-                  let newStartPx = initialStartPx + deltaX;
+                  let newStartPx = (initialStartSec * activePps) + deltaX;
 
                   // Snap trimming start to beatmarks, other layers depan/belakang, and playhead
                   const snapTargets = (typeof getTimelineSnapTargets === 'function') ? getTimelineSnapTargets(layer.id, true) : [];
@@ -5445,7 +5445,7 @@ function initTimelineOperations() {
                   const activePps = window.currentPixelsPerSecond || pixelsPerSecond || 80;
                   const curPanX = window.timelinePanX !== undefined ? window.timelinePanX : (typeof panX !== 'undefined' ? panX : 0);
                   const deltaX = (lastTrimClientX - startPointerX) - (curPanX - initialTrimPanX);
-                  let rawEndPx = (layer.startPx || 0) + initialWidthPx + deltaX;
+                  let rawEndPx = (initialEndSec * activePps) + deltaX;
 
                   // Snap trimming end to beatmarks, other layers depan/belakang, and playhead
                   const snapTargets = (typeof getTimelineSnapTargets === 'function') ? getTimelineSnapTargets(layer.id, true) : [];
