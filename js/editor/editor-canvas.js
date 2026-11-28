@@ -944,6 +944,87 @@
 
     // Render Precompose Layer onto offscreen canvas buffer
 
+    // Shared Precomp Render Cache (After Effects style deduplication):
+    // Duplicate precomps with identical inner content at the same (innerSec, pw, ph) share
+    // a single rendered buffer instead of re-rendering heavy child trees N times per frame.
+    const _sharedPrecompFrameCache = new Map();
+    let _sharedPrecompCacheVer = '';
+
+    function _fnv1aHashStr(h, str) {
+      for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619) >>> 0;
+      }
+      return h;
+    }
+
+    function _hashPrecompLayerList(layers, depth = 0) {
+      let h = 2166136261 >>> 0;
+      if (!Array.isArray(layers) || depth > 6) return h;
+      for (let i = 0; i < layers.length; i++) {
+        const c = layers[i];
+        if (!c) continue;
+        h = _fnv1aHashStr(h, `${c.id || ''}|${c.type || ''}|${c.hidden ? 1 : 0}|${c.startSec ?? c.startPx ?? 0}|${c.durationSec ?? c.widthPx ?? 0}|${c.sourceOffsetSec || 0}|${c.speed ?? 1}|${c.speedMode || ''}|${c.posX ?? 0}|${c.posY ?? 0}|${c.posZ ?? 0}|${c.scaleW ?? 0}|${c.scaleH ?? 0}|${c.scaleZ ?? 0}|${c.rotX ?? 0}|${c.rotY ?? 0}|${c.rotZ ?? 0}|${c.rotation ?? 0}|${c.opacity ?? 1}|${c.blendMode || ''}|${c.fillColor || ''}|${c.mediaId || ''}|${c.dataUrl || ''}|${c.text || ''}|${c.shapeType || ''}`);
+        if (Array.isArray(c.effects) && c.effects.length > 0) {
+          for (let ei = 0; ei < c.effects.length; ei++) {
+            const ef = c.effects[ei];
+            if (!ef) continue;
+            h = _fnv1aHashStr(h, `|ef:${ef.type || ''}:${ef.disabled ? 1 : 0}:${ef.value ?? ''}:${ef.intensity ?? ''}:${ef.radius ?? ''}:${ef.color || ''}`);
+          }
+        }
+        if (c.keyframes) {
+          const kfKeys = Object.keys(c.keyframes);
+          for (let ki = 0; ki < kfKeys.length; ki++) {
+            const arr = c.keyframes[kfKeys[ki]];
+            h = _fnv1aHashStr(h, `|kf:${kfKeys[ki]}:${Array.isArray(arr) ? arr.length : 0}`);
+          }
+        }
+        if (c.type === 'precomp' && Array.isArray(c.layers)) {
+          h = _fnv1aHashStr(h, `|sub:${_hashPrecompLayerList(c.layers, depth + 1)}`);
+        }
+      }
+      return h >>> 0;
+    }
+
+    function _getPrecompContentSig(precompLayer) {
+      if (!precompLayer) return '';
+      const curVer = (window._layerPropsVersion | 0);
+      if (!precompLayer._dirty && precompLayer._contentSigVer === curVer && precompLayer._contentSig) {
+        return precompLayer._contentSig;
+      }
+      const childLayers = Array.isArray(precompLayer.layers) ? precompLayer.layers : [];
+      const sig = `${precompLayer.mediaId || 'pc'}_${childLayers.length}_${_hashPrecompLayerList(childLayers, 0).toString(36)}`;
+      precompLayer._contentSig = sig;
+      precompLayer._contentSigVer = curVer;
+      return sig;
+    }
+
+    function _buildSharedPrecompKey(precompLayer, frameKey, triggerSource) {
+      if (!precompLayer || precompLayer.collapseTransformations) return null;
+      const isExp = !!window.isExporting || (typeof triggerSource === 'string' && triggerSource.startsWith('export'));
+      const sig = _getPrecompContentSig(precompLayer);
+      return `${sig}_${frameKey}_${isExp ? 1 : 0}`;
+    }
+
+    function _getSharedPrecompCanvas(precompLayer, innerSec, pw, ph, triggerSource) {
+      if (!precompLayer || precompLayer._dirty || precompLayer.collapseTransformations) return null;
+      const verSig = `${window._layerPropsVersion | 0}_${window._assetReadyVersion | 0}`;
+      if (_sharedPrecompCacheVer !== verSig) {
+        _sharedPrecompFrameCache.clear();
+        _sharedPrecompCacheVer = verSig;
+        return null;
+      }
+      const fps = (typeof getProjectFps === 'function') ? getProjectFps() : 60;
+      const frameKey = `${Math.round(innerSec * fps)}_${pw}_${ph}_${window._layerPropsVersion | 0}_${window._assetReadyVersion | 0}`;
+      const sharedKey = _buildSharedPrecompKey(precompLayer, frameKey, triggerSource);
+      if (!sharedKey) return null;
+      const cached = _sharedPrecompFrameCache.get(sharedKey);
+      if (cached && cached._lastRenderKey === frameKey && cached.width === pw && cached.height === ph) {
+        return cached;
+      }
+      return null;
+    }
+
     function renderPrecompToCanvas(precompLayer, targetCanvas, innerSec, targetW = null, targetH = null, triggerSource = '', visitedPrecomps = new Set()) {
       if (!targetCanvas || typeof targetCanvas.getContext !== 'function' || !precompLayer) return;
       if (visitedPrecomps.has(precompLayer) || (precompLayer.id && visitedPrecomps.has(precompLayer.id))) return;
@@ -972,9 +1053,34 @@
       if (!Array.isArray(childLayers)) childLayers = [];
 
       // Frame key strictly bound to playhead time + props/asset version within precomp
+      const verSig = `${window._layerPropsVersion | 0}_${window._assetReadyVersion | 0}`;
+      if (_sharedPrecompCacheVer !== verSig) {
+        _sharedPrecompFrameCache.clear();
+        _sharedPrecompCacheVer = verSig;
+      }
       const frameKey = `${Math.round(innerSec * fps)}_${pw}_${ph}_${window._layerPropsVersion | 0}_${window._assetReadyVersion | 0}`;
       if (!precompLayer._dirty && targetCanvas._lastRenderKey === frameKey && targetCanvas.width === pw && targetCanvas.height === ph) {
-        return; // Fast-path: precomp content already rendered for this exact frame!
+        return targetCanvas; // Fast-path: precomp content already rendered for this exact frame!
+      }
+
+      // Shared Precomp Render Cache hit: reuse identical sibling precomp's rendered buffer
+      const sharedKey = _buildSharedPrecompKey(precompLayer, frameKey, triggerSource);
+      if (!precompLayer._dirty && sharedKey) {
+        const sharedCanvas = _sharedPrecompFrameCache.get(sharedKey);
+        if (sharedCanvas && sharedCanvas._lastRenderKey === frameKey && sharedCanvas.width === pw && sharedCanvas.height === ph) {
+          if (sharedCanvas !== targetCanvas) {
+            if (targetCanvas.width !== pw || targetCanvas.height !== ph) {
+              targetCanvas.width = pw;
+              targetCanvas.height = ph;
+            }
+            pctx.clearRect(0, 0, pw, ph);
+            pctx.drawImage(sharedCanvas, 0, 0);
+            targetCanvas._lastRenderKey = frameKey;
+            targetCanvas._contentVersion = sharedCanvas._contentVersion || ((targetCanvas._contentVersion || 0) + 1);
+          }
+          precompLayer._dirty = false;
+          return sharedCanvas;
+        }
       }
 
       if (targetCanvas.width !== pw || targetCanvas.height !== ph) {
@@ -982,14 +1088,10 @@
         targetCanvas.height = ph;
       }
 
+      // After Effects behavior: nested Precompositions always composite with a transparent
+      // alpha channel into their parent composition (Composition Background Color is strictly
+      // a viewer backdrop when opened directly, never baked as opaque pixels into parent comps).
       pctx.clearRect(0, 0, pw, ph);
-      const precompBg = (precompLayer.bgColor !== undefined && precompLayer.bgColor !== null)
-        ? precompLayer.bgColor
-        : ((currentProjectState && currentProjectState.bgColor) || 'transparent');
-      if (precompBg && precompBg !== 'transparent') {
-        pctx.fillStyle = precompBg;
-        pctx.fillRect(0, 0, pw, ph);
-      }
 
       const activeChildren = childLayers.filter(child => {
         const cs = child.startSec !== undefined ? child.startSec : ((child.startPx || 0) / pps);
@@ -1061,18 +1163,22 @@
           if (precompRes && precompRes.fromSequence && precompRes.el) {
             childEl = precompRes.el;
           } else {
-            if (!child._precompBufferCanvas || !(child._precompBufferCanvas instanceof HTMLCanvasElement) || typeof child._precompBufferCanvas.getContext !== 'function') {
-              child._precompBufferCanvas = document.createElement('canvas');
-            }
-            if (child._precompBufferCanvas.width !== childW || child._precompBufferCanvas.height !== childH) {
-              child._precompBufferCanvas.width = childW;
-              child._precompBufferCanvas.height = childH;
-              child._precompBufferCanvas._lastRenderKey = null;
-            }
             const cStart = child.startSec !== undefined ? child.startSec : ((child.startPx || 0) / pps);
             const cInnerSec = Math.max(0, (child.sourceOffsetSec || 0) + (innerSec - cStart) * effSpeed);
-            renderPrecompToCanvas(child, child._precompBufferCanvas, cInnerSec, childW, childH, triggerSource, visitedPrecomps);
-            childEl = child._precompBufferCanvas;
+            const sharedChildCanvas = _getSharedPrecompCanvas(child, cInnerSec, childW, childH, triggerSource);
+            if (sharedChildCanvas) {
+              childEl = sharedChildCanvas;
+            } else {
+              if (!child._precompBufferCanvas || !(child._precompBufferCanvas instanceof HTMLCanvasElement) || typeof child._precompBufferCanvas.getContext !== 'function') {
+                child._precompBufferCanvas = document.createElement('canvas');
+              }
+              if (child._precompBufferCanvas.width !== childW || child._precompBufferCanvas.height !== childH) {
+                child._precompBufferCanvas.width = childW;
+                child._precompBufferCanvas.height = childH;
+                child._precompBufferCanvas._lastRenderKey = null;
+              }
+              childEl = renderPrecompToCanvas(child, child._precompBufferCanvas, cInnerSec, childW, childH, triggerSource, visitedPrecomps) || child._precompBufferCanvas;
+            }
           }
           child.mediaWidth = childBaseW;
           child.mediaHeight = childBaseH;
@@ -1412,6 +1518,14 @@
       targetCanvas._lastRenderKey = frameKey;
       targetCanvas._contentVersion = (targetCanvas._contentVersion || 0) + 1;
       precompLayer._dirty = false;
+      if (sharedKey) {
+        if (_sharedPrecompFrameCache.size >= 24) {
+          const oldestKey = _sharedPrecompFrameCache.keys().next().value;
+          _sharedPrecompFrameCache.delete(oldestKey);
+        }
+        _sharedPrecompFrameCache.set(sharedKey, targetCanvas);
+      }
+      return targetCanvas;
     }
     window.renderPrecompToCanvas = renderPrecompToCanvas;
 
@@ -1709,6 +1823,14 @@
           ctx.drawImage(earlyBitmap, 0, 0, w, h);
           window._lastFrameRenderDuration = 0.5;
           window._lastFrameWasCached = true;
+          // Bridge Cached -> Uncached transition: if ~1s ahead is NOT in PreviewCacheManager,
+          // warm VideoStreamManager ahead of time so playback never freezes at cache boundaries.
+          if (window.isTimelinePlaying && window.VideoStreamManager && window.VideoStreamManager.isSupported && currentProjectState && Array.isArray(currentProjectState.layers)) {
+            const aheadFrame = frameIndex + Math.round(fps * 1.0);
+            if (!window.PreviewCacheManager.hasFrame(aheadFrame, w, h)) {
+              window.VideoStreamManager.warmAheadForLayers(currentProjectState.layers, currentSec + 1.0, pixelsPerSecond);
+            }
+          }
           if (canvas && canvas.id === 'editor-active-canvas') {
             syncActiveViewerOverlay(currentSec, w, h);
           }
@@ -2247,17 +2369,25 @@
               : null;
             return !!(def && def.isExpanding);
           });
+          const adjNormOp = (effProps.opacity !== undefined && effProps.opacity !== null)
+            ? Math.max(0, Math.min(1, effProps.opacity))
+            : 1.0;
+          const isNormalAdjBlend = !layer.blendMode || layer.blendMode === 'normal';
+
           ctx.save();
           if (effProps.opacity !== undefined && effProps.opacity !== null) {
-            ctx.globalAlpha = Math.max(0, Math.min(1, effProps.opacity));
+            ctx.globalAlpha = adjNormOp;
           }
-          if (layer.blendMode && layer.blendMode !== 'normal') {
+          if (!isNormalAdjBlend) {
             ctx.globalCompositeOperation = resolveBlendMode(layer.blendMode);
           }
 
           if (isFullCompAdj) {
             // Draw full-canvas processed image in identity screen space, no boundary clip
             ctx.setTransform(1, 0, 0, 1, 0, 0);
+            if (isNormalAdjBlend && adjNormOp >= 0.999) {
+              ctx.clearRect(0, 0, w, h);
+            }
             if (proc && proc.width > 0 && proc.height > 0 && w > 0 && h > 0) {
               ctx.drawImage(proc, 0, 0, w, h);
             }
@@ -2283,6 +2413,9 @@
 
           // Draw full-canvas processed image in identity screen space
           ctx.setTransform(1, 0, 0, 1, 0, 0);
+          if (isNormalAdjBlend && adjNormOp >= 0.999) {
+            ctx.clearRect(0, 0, w, h);
+          }
           if (proc && proc.width > 0 && proc.height > 0 && w > 0 && h > 0) {
             ctx.drawImage(proc, 0, 0, w, h);
           }
@@ -2610,14 +2743,6 @@
           if (precompRes && precompRes.fromSequence && precompRes.el) {
             el = precompRes.el;
           } else {
-            if (!layer._precompBufferCanvas || !(layer._precompBufferCanvas instanceof HTMLCanvasElement) || typeof layer._precompBufferCanvas.getContext !== 'function') {
-              layer._precompBufferCanvas = document.createElement('canvas');
-            }
-            if (layer._precompBufferCanvas.width !== pw || layer._precompBufferCanvas.height !== ph) {
-              layer._precompBufferCanvas.width = pw;
-              layer._precompBufferCanvas.height = ph;
-              layer._precompBufferCanvas._lastRenderKey = null;
-            }
             const clipStart = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pixelsPerSecond);
             let innerSec = 0;
             if (layer.speedMode === 'time_remap') {
@@ -2632,8 +2757,20 @@
                   ? Math.max(0, (layer.sourceOffsetSec || 0) + Math.max(0, (((layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pixelsPerSecond))) - (currentSec - clipStart)) * Math.abs(layer.speed)))
                   : Math.max(0, (layer.sourceOffsetSec || 0) + (currentSec - clipStart) * (layer.speed || 1.0)));
             }
-            renderPrecompToCanvas(layer, layer._precompBufferCanvas, innerSec, pw, ph, triggerSource);
-            el = layer._precompBufferCanvas;
+            const sharedCanvas = _getSharedPrecompCanvas(layer, innerSec, pw, ph, triggerSource);
+            if (sharedCanvas) {
+              el = sharedCanvas;
+            } else {
+              if (!layer._precompBufferCanvas || !(layer._precompBufferCanvas instanceof HTMLCanvasElement) || typeof layer._precompBufferCanvas.getContext !== 'function') {
+                layer._precompBufferCanvas = document.createElement('canvas');
+              }
+              if (layer._precompBufferCanvas.width !== pw || layer._precompBufferCanvas.height !== ph) {
+                layer._precompBufferCanvas.width = pw;
+                layer._precompBufferCanvas.height = ph;
+                layer._precompBufferCanvas._lastRenderKey = null;
+              }
+              el = renderPrecompToCanvas(layer, layer._precompBufferCanvas, innerSec, pw, ph, triggerSource) || layer._precompBufferCanvas;
+            }
           }
           layer.mediaWidth = basePw;
           layer.mediaHeight = basePh;

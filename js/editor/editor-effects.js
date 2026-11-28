@@ -1348,6 +1348,7 @@
                   if (hexInput) hexInput.value = hex.toUpperCase();
 
                   if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
+                  if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
                   if (typeof redrawComposition === 'function') redrawComposition('effect-color-change');
                 },
                 onCommit: (hex, alpha) => {
@@ -1375,6 +1376,7 @@
               const preview = card.querySelector(`.fx-swatch-preview-${param}`);
               if (preview) preview.style.backgroundColor = val;
 
+              if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
               if (typeof invalidatePreviewCacheForLayer === 'function') invalidatePreviewCacheForLayer(layer);
               if (typeof redrawComposition === 'function') redrawComposition('effect-color-change');
             }
@@ -1842,8 +1844,8 @@
 
       // Category presentation: known categories get a stable order + label; any NEW category introduced
       // by a plugin is picked up automatically (appended alphabetically, Title Case label).
-      const GALLERY_CATEGORY_ORDER = ['lightning', 'color', 'warp', 'movement', 'layer', 'wipe', 'background', 'artificial intelligence', 'expression', '3d'];
-      const GALLERY_CATEGORY_LABELS = { '3d': '3D', 'expression': 'Expression', 'artificial intelligence': 'Artificial Intelligence' };
+      const GALLERY_CATEGORY_ORDER = ['lightning', 'color', 'keying', 'warp', 'movement', 'layer', 'wipe', 'background', 'artificial intelligence', 'expression', '3d'];
+      const GALLERY_CATEGORY_LABELS = { '3d': '3D', 'keying': 'Keying', 'expression': 'Expression', 'artificial intelligence': 'Artificial Intelligence' };
       const chipBar = document.getElementById('effects-chip-bar');
       const itemsCountEl = document.getElementById('effects-items-count');
       const itemsTitleEl = document.getElementById('effects-items-category-title');
@@ -1949,7 +1951,7 @@
         img.loading = 'lazy';
         img.decoding = 'async';
         img.draggable = false;
-        img.src = 'assets/effects/thumbs/' + def.id + '.png';
+        img.src = (def.icon && String(def.icon).endsWith('.svg')) ? def.icon : ('assets/effects/thumbs/' + def.id + '.png');
         img.addEventListener('error', () => {
           const fb = def.icon || FALLBACK_EFFECT_ICON;
           if (!img.src.endsWith(fb)) img.src = fb;
@@ -2013,7 +2015,8 @@
             tile.setAttribute('tabindex', '0');
             tile.dataset.category = key;
             tile.title = galleryCatLabel(key);
-            tile.style.backgroundImage = 'url("assets/effects/categories/' + key.replace(/\s+/g, '-') + '.png")';
+            const catSlug = key.replace(/\s+/g, '-');
+            tile.style.backgroundImage = 'url("assets/effects/categories/' + catSlug + (catSlug === 'keying' ? '.svg' : '.png') + '")';
             const name = document.createElement('span');
             name.className = 'effects-category-name';
             name.textContent = galleryCatLabel(key);

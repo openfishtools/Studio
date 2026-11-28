@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <pattern id="catk-grid" width="16" height="16" patternUnits="userSpaceOnUse">
+      <rect width="16" height="16" fill="#181E25"/>
+      <rect width="8" height="8" fill="#252E38"/>
+      <rect x="8" y="8" width="8" height="8" fill="#252E38"/>
+    </pattern>
+  </defs>
+  <!-- Background: right side checkerboard, left side chroma green -->
+  <rect width="128" height="128" fill="url(#catk-grid)"/>
+  <polygon points="0,0 76,0 52,128 0,128" fill="#15803D"/>
+  <line x1="76" y1="0" x2="52" y2="128" stroke="#FFFFFF" stroke-width="2.5" opacity="0.85"/>
+  <!-- Crisp centered person cutout silhouette -->
+  <g fill="#F8FAFC" opacity="0.95">
+    <circle cx="64" cy="40" r="15"/>
+    <path d="M36 102 C36 79 48 66 64 66 C80 66 92 79 92 102 Z"/>
+  </g>
+</svg>

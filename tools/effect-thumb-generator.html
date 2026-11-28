@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Effect Thumbnail Generator - OpenFishTools Studio</title>
+  <base href="../" />
+  <link rel="stylesheet" href="css/tokens/theme.css" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: var(--bg-main, #0d110a);
+      color: var(--text-primary, #e9f2e1);
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    .thumb-gen-shell {
+      max-width: 980px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 20px;
+    }
+    .thumb-gen-card {
+      background: var(--bg-surface, #151c10);
+      border: 1px solid var(--border-color, #2a3620);
+      border-radius: 10px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .thumb-gen-title {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary, #e9f2e1);
+    }
+    .thumb-gen-sub {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text-secondary, #9db08c);
+    }
+    .thumb-gen-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .thumb-gen-row label {
+      font-size: 12px;
+      color: var(--text-secondary, #9db08c);
+    }
+    .thumb-gen-select,
+    .thumb-gen-input {
+      background: var(--bg-input, #0f140b);
+      color: var(--text-primary, #e9f2e1);
+      border: 1px solid var(--border-color, #2a3620);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+    .thumb-gen-btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .thumb-gen-btn {
+      background: var(--color-primary, #b8e986);
+      color: var(--bg-main, #0d110a);
+      border: 0;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .thumb-gen-btn.is-secondary {
+      background: var(--bg-elevated, #1d2716);
+      color: var(--text-primary, #e9f2e1);
+      border: 1px solid var(--border-color, #2a3620);
+    }
+    .thumb-gen-preview-stage {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .thumb-gen-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .thumb-gen-box canvas {
+      border: 1px solid var(--border-color, #2a3620);
+      border-radius: 8px;
+      image-rendering: auto;
+    }
+    .thumb-gen-params {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 360px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .thumb-gen-param-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .thumb-gen-status {
+      font-size: 12px;
+      color: var(--text-secondary, #9db08c);
+    }
+    @media (max-width: 780px) {
+      .thumb-gen-shell { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="thumb-gen-shell">
+    <div class="thumb-gen-card">
+      <h1 class="thumb-gen-title">Effect Thumbnail Generator</h1>
+      <p class="thumb-gen-sub">Renders live 128x128 PNG previews using the real Studio WASM effects engine.</p>
+
+      <div class="thumb-gen-row">
+        <label for="sel-effect">Effect</label>
+        <select id="sel-effect" class="thumb-gen-select"></select>
+      </div>
+
+      <div class="thumb-gen-row">
+        <label for="sel-backdrop">Base Image Preset</label>
+        <select id="sel-backdrop" class="thumb-gen-select">
+          <option value="cat">Original Studio Cat (128x128)</option>
+          <option value="greenscreen">Cat on Green Screen (#18c436)</option>
+          <option value="bluescreen">Cat on Blue Screen (#0e9ceb)</option>
+          <option value="dark">Cat on Black Backdrop (#000000)</option>
+        </select>
+      </div>
+
+      <div class="thumb-gen-row">
+        <label for="file-custom">Or Upload Custom Base Image</label>
+        <input id="file-custom" class="thumb-gen-input" type="file" accept="image/*" />
+      </div>
+
+      <div class="thumb-gen-param-item">
+        <label for="chk-checker">Show Transparency Checkerboard</label>
+        <input id="chk-checker" type="checkbox" checked />
+      </div>
+
+      <div id="params-container" class="thumb-gen-params"></div>
+
+      <div class="thumb-gen-btn-row">
+        <button id="btn-download-thumb" type="button" class="thumb-gen-btn">Download 128x128 PNG</button>
+        <button id="btn-reset-params" type="button" class="thumb-gen-btn is-secondary">Reset Defaults</button>
+      </div>
+      <div id="status-line" class="thumb-gen-status">Loading effects...</div>
+    </div>
+
+    <div class="thumb-gen-card">
+      <h2 class="thumb-gen-title">Live Output Preview</h2>
+      <div class="thumb-gen-preview-stage">
+        <div class="thumb-gen-box">
+          <canvas id="canvas-128" width="128" height="128"></canvas>
+          <span class="thumb-gen-sub">Exact 128x128 (Gallery Size)</span>
+        </div>
+        <div class="thumb-gen-box">
+          <canvas id="canvas-256" width="256" height="256"></canvas>
+          <span class="thumb-gen-sub">2x Zoom Preview</span>
+        </div>
+      </div>
+      <p class="thumb-gen-sub">Save downloaded files into <code>assets/effects/thumbs/&lt;effect-id&gt;.png</code>.</p>
+    </div>
+  </div>
+
+  <script src="js/plugins/effects.js"></script>
+  <script src="effects/loader.js?v=wasm"></script>
+  <script>
+    (function () {
+      'use strict';
+      const selEffect = document.getElementById('sel-effect');
+      const selBackdrop = document.getElementById('sel-backdrop');
+      const fileCustom = document.getElementById('file-custom');
+      const chkChecker = document.getElementById('chk-checker');
+      const paramsContainer = document.getElementById('params-container');
+      const btnDownload = document.getElementById('btn-download-thumb');
+      const btnReset = document.getElementById('btn-reset-params');
+      const statusLine = document.getElementById('status-line');
+      const c128 = document.getElementById('canvas-128');
+      const ctx128 = c128.getContext('2d');
+      const c256 = document.getElementById('canvas-256');
+      const ctx256 = c256.getContext('2d');
+
+      const srcCanvas = document.createElement('canvas');
+      srcCanvas.width = 128;
+      srcCanvas.height = 128;
+      const srcCtx = srcCanvas.getContext('2d');
+
+      let baseCatImg = null;
+      let customImg = null;
+      let currentFx = {};
+
+      function loadOriginalCat() {
+        return new Promise((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            const tmp = document.createElement('canvas');
+            tmp.width = 128; tmp.height = 128;
+            const tctx = tmp.getContext('2d');
+            tctx.drawImage(img, 0, 0, 128, 128);
+            const id = tctx.getImageData(0, 0, 128, 128);
+            const d = id.data;
+            for (let i = 0; i < d.length; i += 4) {
+              d[i] = 255 - d[i];
+              d[i + 1] = 255 - d[i + 1];
+              d[i + 2] = 255 - d[i + 2];
+            }
+            tctx.putImageData(id, 0, 0);
+            baseCatImg = tmp;
+            resolve();
+          };
+          img.onerror = () => resolve();
+          img.src = 'assets/effects/thumbs/invert.png';
+        });
+      }
+
+      function paintBackdropSource() {
+        srcCtx.clearRect(0, 0, 128, 128);
+        if (customImg) {
+          srcCtx.drawImage(customImg, 0, 0, 128, 128);
+          return;
+        }
+        if (!baseCatImg) return;
+        const mode = selBackdrop.value;
+        if (mode === 'cat') {
+          srcCtx.drawImage(baseCatImg, 0, 0, 128, 128);
+          return;
+        }
+        const bgColor = mode === 'greenscreen' ? [24, 196, 54] : (mode === 'bluescreen' ? [14, 156, 235] : [0, 0, 0]);
+        srcCtx.drawImage(baseCatImg, 0, 0, 128, 128);
+        const imgData = srcCtx.getImageData(0, 0, 128, 128);
+        const d = imgData.data;
+        const bgR = d[0], bgG = d[1], bgB = d[2];
+        for (let y = 0; y < 128; y++) {
+          for (let x = 0; x < 128; x++) {
+            const idx = (y * 128 + x) * 4;
+            const dist = Math.hypot(d[idx] - bgR, d[idx + 1] - bgG, d[idx + 2] - bgB);
+            const inWall = (x < 32 && y < 95) || y < 18;
+            let a = inWall ? 0 : Math.max(0, Math.min(1, (dist - 16) / 24));
+            a = a * a * (3 - 2 * a);
+            const cx = (x - 78) / 36, cy = (y - 82) / 48;
+            if (cx * cx + cy * cy < 0.85 && y > 48) a = 1;
+            d[idx] = Math.round(d[idx] * a + bgColor[0] * (1 - a));
+            d[idx + 1] = Math.round(d[idx + 1] * a + bgColor[1] * (1 - a));
+            d[idx + 2] = Math.round(d[idx + 2] * a + bgColor[2] * (1 - a));
+            d[idx + 3] = 255;
+          }
+        }
+        srcCtx.putImageData(imgData, 0, 0);
+      }
+
+      function drawChecker(ctx, w, h) {
+        for (let y = 0; y < h; y += 8) {
+          for (let x = 0; x < w; x += 8) {
+            const odd = ((x >> 3) + (y >> 3)) & 1;
+            ctx.fillStyle = odd ? '#2e343a' : '#525a62';
+            ctx.fillRect(x, y, 8, 8);
+          }
+        }
+      }
+
+      function getSelectedDef() {
+        const reg = window.FishEffectsRegistry;
+        return reg ? reg.get(selEffect.value) : null;
+      }
+
+      function resetDefaults() {
+        const def = getSelectedDef();
+        currentFx = {};
+        if (def && Array.isArray(def.params)) {
+          def.params.forEach(p => { currentFx[p.id] = p.default; });
+        }
+        renderParamInputs();
+        renderPreview();
+      }
+
+      function renderParamInputs() {
+        paramsContainer.replaceChildren();
+        const def = getSelectedDef();
+        if (!def || !Array.isArray(def.params)) return;
+        def.params.forEach(p => {
+          const row = document.createElement('div');
+          row.className = 'thumb-gen-param-item';
+          const lbl = document.createElement('label');
+          lbl.textContent = p.label || p.id;
+          let input;
+          if (p.type === 'color') {
+            input = document.createElement('input');
+            input.type = 'color';
+            input.value = currentFx[p.id] || p.default || '#00ff00';
+            input.addEventListener('input', () => { currentFx[p.id] = input.value; renderPreview(); });
+          } else if (p.type === 'boolean') {
+            input = document.createElement('input');
+            input.type = 'checkbox';
+            input.checked = !!currentFx[p.id];
+            input.addEventListener('change', () => { currentFx[p.id] = input.checked; renderPreview(); });
+          } else if (p.type === 'select' && Array.isArray(p.options)) {
+            input = document.createElement('select');
+            input.className = 'thumb-gen-select';
+            p.options.forEach(opt => {
+              const o = document.createElement('option');
+              o.value = opt; o.textContent = opt;
+              input.appendChild(o);
+            });
+            input.value = currentFx[p.id] || p.default;
+            input.addEventListener('change', () => { currentFx[p.id] = input.value; renderPreview(); });
+          } else {
+            input = document.createElement('input');
+            input.type = 'range';
+            input.min = p.min !== undefined ? p.min : 0;
+            input.max = p.max !== undefined ? p.max : 100;
+            input.step = p.step !== undefined ? p.step : 1;
+            input.value = currentFx[p.id] !== undefined ? currentFx[p.id] : (p.default || 0);
+            input.addEventListener('input', () => { currentFx[p.id] = Number(input.value); renderPreview(); });
+          }
+          row.appendChild(lbl);
+          row.appendChild(input);
+          paramsContainer.appendChild(row);
+        });
+      }
+
+      function renderPreview() {
+        paintBackdropSource();
+        ctx128.clearRect(0, 0, 128, 128);
+        if (chkChecker.checked) drawChecker(ctx128, 128, 128);
+        const def = getSelectedDef();
+        if (def && typeof def.render === 'function') {
+          try {
+            def.render(ctx128, srcCanvas, { id: 'preview', type: 'image' }, { x: 0, y: 0, w: 128, h: 128 }, currentFx);
+          } catch (err) {
+            statusLine.textContent = 'Render error: ' + err.message;
+          }
+        } else {
+          ctx128.drawImage(srcCanvas, 0, 0, 128, 128);
+        }
+        ctx256.clearRect(0, 0, 256, 256);
+        ctx256.drawImage(c128, 0, 0, 256, 256);
+      }
+
+      async function boot() {
+        await loadOriginalCat();
+        if (typeof window.prewarmWasmEffects === 'function') {
+          try { await window.prewarmWasmEffects(); } catch (_) {}
+        }
+        // Poll briefly in case async WASM fetch is still unpacking
+        const reg = window.FishEffectsRegistry;
+        for (let tries = 0; tries < 40 && reg && reg.getAll().length === 0; tries++) {
+          await new Promise(r => setTimeout(r, 50));
+        }
+        const all = reg ? reg.getAll() : [];
+        all.sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id)));
+        selEffect.replaceChildren();
+        all.forEach(def => {
+          const opt = document.createElement('option');
+          opt.value = def.id;
+          opt.textContent = `${def.name || def.id} (${def.category || 'general'})`;
+          selEffect.appendChild(opt);
+        });
+        if (reg && reg.get('chroma-key')) {
+          selEffect.value = 'chroma-key';
+          selBackdrop.value = 'greenscreen';
+        }
+        statusLine.textContent = `Ready (${all.length} effects loaded).`;
+        resetDefaults();
+      }
+
+      selEffect.addEventListener('change', resetDefaults);
+      selBackdrop.addEventListener('change', renderPreview);
+      chkChecker.addEventListener('change', renderPreview);
+      btnReset.addEventListener('click', resetDefaults);
+      fileCustom.addEventListener('change', () => {
+        const f = fileCustom.files && fileCustom.files[0];
+        if (!f) { customImg = null; renderPreview(); return; }
+        const img = new Image();
+        img.onload = () => { customImg = img; renderPreview(); };
+        img.src = URL.createObjectURL(f);
+      });
+      btnDownload.addEventListener('click', () => {
+        const id = selEffect.value || 'effect';
+        const a = document.createElement('a');
+        a.download = `${id}.png`;
+        a.href = c128.toDataURL('image/png');
+        a.click();
+      });
+
+      boot();
+    })();
+  </script>
+</body>
+</html>

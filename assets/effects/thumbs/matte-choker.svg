@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <pattern id="mc-grid" width="16" height="16" patternUnits="userSpaceOnUse">
+      <rect width="16" height="16" fill="#1C2229"/>
+      <rect width="8" height="8" fill="#2A323D"/>
+      <rect x="8" y="8" width="8" height="8" fill="#2A323D"/>
+    </pattern>
+    <clipPath id="mc-card">
+      <rect x="0" y="0" width="128" height="128" rx="14"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#mc-card)">
+    <!-- Transparency checkerboard base -->
+    <rect x="0" y="0" width="128" height="128" fill="url(#mc-grid)"/>
+    <!-- Original outer matte boundary (dashed) -->
+    <rect x="20" y="20" width="88" height="88" rx="18" fill="none" stroke="#94A3B8" stroke-width="3" stroke-dasharray="7 5"/>
+    <!-- Choked / shrunk inner solid matte -->
+    <rect x="40" y="40" width="48" height="48" rx="10" fill="#F8FAFC"/>
+    <!-- 4 crisp inward choke arrows -->
+    <g fill="none" stroke="#38BDF8" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round">
+      <!-- Top arrow pointing down -->
+      <line x1="64" y1="10" x2="64" y2="33"/>
+      <polyline points="57,26 64,33 71,26"/>
+      <!-- Bottom arrow pointing up -->
+      <line x1="64" y1="118" x2="64" y2="95"/>
+      <polyline points="57,102 64,95 71,102"/>
+      <!-- Left arrow pointing right -->
+      <line x1="10" y1="64" x2="33" y2="64"/>
+      <polyline points="26,57 33,64 26,71"/>
+      <!-- Right arrow pointing left -->
+      <line x1="118" y1="64" x2="95" y2="64"/>
+      <polyline points="102,57 95,64 102,71"/>
+    </g>
+  </g>
+</svg>

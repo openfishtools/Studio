@@ -153,10 +153,9 @@
       }
 
       async function ensureAllVideosCached() {
-        if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.ensureLayersCached === 'function') {
-          return await window.VideoFrameExtractor.ensureLayersCached(
+        if (window.VideoStreamManager && typeof window.VideoStreamManager.ensureLayersLoaded === 'function') {
+          return await window.VideoStreamManager.ensureLayersLoaded(
             currentProjectState.layers || [],
-            (pct, label) => updateExportProgress(Math.round(pct * 0.15), label || 'Extracting frames...'),
             () => isExportCancelled || window.isExportCancelled
           );
         }
@@ -164,7 +163,8 @@
       }
 
       async function prepareVideoFramesForTime(t, videoLayers, pps) {
-        if (!window.VideoFrameExtractor) return;
+        const vsm = window.VideoStreamManager;
+        if (!vsm || !vsm.isSupported) return;
         const allLayers = (videoLayers && videoLayers.length > 0) ? videoLayers : (currentProjectState.layers || []);
         const frameFetches = [];
         for (const vl of allLayers) {
@@ -185,8 +185,14 @@
             } else {
               timeInClip = Math.max(0, (vl.sourceOffsetSec || 0) + (t - start) * effSpeed);
             }
-            if (!window.VideoFrameExtractor.getFrame(vl, timeInClip)) {
-              frameFetches.push(window.VideoFrameExtractor.fetchFrameFromDBAsync(vl, timeInClip));
+            if (vl.type === 'video') {
+              const key = vsm.getSourceKey(vl);
+              if (key && vsm.hasStream(key)) {
+                const syncRes = vsm.getFrameSync(key, timeInClip, { isExport: true });
+                if (!syncRes.exact) {
+                  frameFetches.push(vsm.getFrameAsync(key, timeInClip, { isExport: true }));
+                }
+              }
             }
             if (vl.type === 'precomp' && Array.isArray(vl.layers)) {
               frameFetches.push(prepareVideoFramesForTime(timeInClip, vl.layers, pps));
@@ -605,7 +611,7 @@
         let chosenConfig = null;
         const hwModes = ['no-preference', 'prefer-hardware', 'prefer-software'];
         const brModes = chosenBitrateMode === 'variable' ? ['variable'] : [chosenBitrateMode, 'variable'];
-        const latencyModes = ['quality', 'realtime'];
+        const latencyModes = ['realtime', 'quality'];
 
         codecLoop:
         for (const candidate of candidateCodecs) {
@@ -3397,12 +3403,7 @@
         const bgTasks = (window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.getActiveTasks === 'function')
           ? window.FishBgRemovalEngine.getActiveTasks().filter(t => !t.cancelled)
           : [];
-        const bakeTasks = (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getAllBakingTasks === 'function')
-          ? window.VideoFrameExtractor.getAllBakingTasks().filter(t => !t.cancelled)
-          : ((window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getActiveTasks === 'function')
-            ? window.VideoFrameExtractor.getActiveTasks().filter(t => !t.cancelled)
-            : []);
-        return [...bakeTasks, ...bgTasks];
+        return bgTasks;
       }
 
       function updateUI() {
@@ -3465,12 +3466,12 @@
           const isDone = (task.percent >= 100 || task.status === 'done' || task.status === 'Ready' || String(task.status).includes('100% Ready'));
           let statusText = '';
 
-          if (task.status && task.status.startsWith('Downloading model')) {
+          if (task.status === 'error') {
+            statusText = `Error: ${task.error || 'Processing failed'}`;
+          } else if (task.status && task.status.startsWith('Downloading model')) {
             statusText = task.status;
           } else if (task.status === 'downloading_model') {
             statusText = 'Downloading model...';
-          } else if (task.type === 'baking' || task.type === 'video_bake') {
-            statusText = isDone ? 'Video Baked (100% Ready)' : (task.status || `Baking frames: ${task.currentFrame || 0}/${task.totalFrames || 0} (${task.percent || 0}%)`);
           } else if (task.type === 'video') {
             statusText = task.status && task.status.includes('Waiting')
               ? task.status
@@ -3502,11 +3503,7 @@
           if (cancelBtn) {
             cancelBtn.addEventListener('click', (e) => {
               e.stopPropagation();
-              if (task.type === 'baking' || task.type === 'video_bake') {
-                if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.cancelTask === 'function') {
-                  window.VideoFrameExtractor.cancelTask(task.id);
-                }
-              } else if (window.FishBgRemovalEngine) {
+              if (window.FishBgRemovalEngine) {
                 window.FishBgRemovalEngine.cancelTask(task.id);
               }
             });
@@ -3518,9 +3515,6 @@
 
       if (window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.addProgressListener === 'function') {
         window.FishBgRemovalEngine.addProgressListener(updateUI);
-      }
-      if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.addProgressListener === 'function') {
-        window.VideoFrameExtractor.addProgressListener(updateUI);
       }
       updateUI();
     }

@@ -8,10 +8,6 @@
 (function(window) {
   'use strict';
 
-  if (typeof window !== 'undefined' && !window.VideoFrameExtractor && typeof require === 'function') {
-    try { require('./frame-extractor.js'); } catch (_) {}
-  }
-
   class VideoCompEngine {
     constructor() {
       this.name = 'VideoCompEngine';
@@ -180,83 +176,42 @@
 
       const timeInClip = this.computeLayerClipTime(layer, currentSec, pixelsPerSecond);
       const isExporting = isExport || (typeof window !== 'undefined' && !!window.isExporting);
-      const extractor = (typeof window !== 'undefined') ? window.VideoFrameExtractor : null;
+      const vsm = (typeof window !== 'undefined') ? window.VideoStreamManager : null;
 
       let el = null;
       let hasUnreadyMedia = true;
+      let usingWebCodecsStream = false;
 
-      if (extractor) {
-        const sourceKey = extractor._getSourceKey(layer);
-        const source = extractor.getSourceCache(sourceKey);
+      // Priority 1: WebCodecs Sliding-Window GOP Stream (Zero-Bake MP4/MOV)
+      if (vsm && vsm.isSupported && (layer.dataUrl || layer.mediaId)) {
+        const sourceKey = (typeof vsm.getSourceKey === 'function')
+          ? vsm.getSourceKey(layer)
+          : (layer.mediaId || layer.dataUrl || layer.id);
+        const mediaSrc = (media && media.blob) || layer.dataUrl || (media && media.src) || null;
+        const lowerName = (layer.name || '').toLowerCase();
+        const lowerUrl = (typeof layer.dataUrl === 'string') ? layer.dataUrl.slice(0, 64).toLowerCase() : '';
+        const isWebM = lowerName.endsWith('.webm') || lowerUrl.startsWith('data:video/webm');
 
-        if (source && ((source.frames && source.frames.size > 0) || (source.cachedFrameIndices && source.cachedFrameIndices.size > 0))) {
-          const fIdx = Math.round(timeInClip * (source.fps || 60));
-          const interpMode = layer.speedInterpolation || 'none';
-          const extractedFrame = extractor.getInterpolatedFrame(
-            source,
-            timeInClip,
-            interpMode,
-            layer.mediaWidth || 960,
-            layer.mediaHeight || 540
-          );
-
-          if (extractedFrame) {
-            el = extractedFrame;
-            layer._lastRenderedFrame = extractedFrame;
-            layer._renderedExactVideoFrame = true;
-            hasUnreadyMedia = false;
-
-            // Proactive streaming prefetch during playback/scrubbing/idle-cache to keep RAM window replenished ahead of playhead
-            if (!isExporting && typeof extractor.ensurePlaybackFrames === 'function') {
-              const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-              if (!layer._lastPrefetchMs || (now - layer._lastPrefetchMs) >= 120) {
-                layer._lastPrefetchMs = now;
-                extractor.ensurePlaybackFrames(source, fIdx);
-              }
-            }
-          } else {
-            if (source.cachedFrameIndices && source.cachedFrameIndices.has(fIdx)) {
-              extractor.fetchFrameFromDB(source, fIdx);
-              if (!isExporting && typeof extractor.ensurePlaybackFrames === 'function') {
-                const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-                if (!layer._lastPrefetchMs || (now - layer._lastPrefetchMs) >= 120) {
-                  layer._lastPrefetchMs = now;
-                  extractor.ensurePlaybackFrames(source, fIdx);
-                }
-              }
-            }
-            if (!isExporting && !isIdleCache && !source.isExtracting) {
-              const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-              if (!layer._lastExtractRequestMs || (now - layer._lastExtractRequestMs) >= 1500) {
-                layer._lastExtractRequestMs = now;
-                extractor.extractLayerRange(layer);
-              }
-            }
-
-            if (!isExporting && !isIdleCache) {
-              let bestNearest = null;
-              let minDist = Infinity;
-              const maxHoldDist = Math.round((source.fps || 60) * 1.5);
-              for (const [kIdx, bmp] of source.frames.entries()) {
-                const dist = Math.abs(kIdx - fIdx);
-                if (dist < minDist) {
-                  minDist = dist;
-                  bestNearest = bmp;
-                  if (dist <= 1) break;
-                }
-              }
-              if (bestNearest && minDist <= maxHoldDist) {
-                el = bestNearest;
-              } else if (layer._lastRenderedFrame && layer._lastRenderedFrame !== (media && media.poster)) {
-                el = layer._lastRenderedFrame;
-              }
-            }
+        if (!isWebM && sourceKey && !vsm.isFailed(sourceKey)) {
+          usingWebCodecsStream = true;
+          if (!vsm.hasStream(sourceKey) && mediaSrc) {
+            vsm.ensureLoaded(sourceKey, mediaSrc);
           }
-        } else if (!isExporting && !isIdleCache && (layer.dataUrl || layer.mediaId)) {
-          const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
-          if (!layer._lastExtractRequestMs || (now - layer._lastExtractRequestMs) >= 1500) {
-            layer._lastExtractRequestMs = now;
-            extractor.extractLayerRange(layer);
+          if (vsm.hasStream(sourceKey)) {
+            const vsmRes = vsm.getFrameSync(sourceKey, timeInClip, {
+              isExport: isExporting,
+              noDecode: isIdleCache,
+              speed: layer.speed !== undefined ? layer.speed : 1.0
+            });
+            if (vsmRes.frame && vsmRes.exact) {
+              el = vsmRes.frame;
+              layer._lastRenderedFrame = vsmRes.frame;
+              layer._renderedExactVideoFrame = true;
+              hasUnreadyMedia = false;
+            } else if (vsmRes.frame && !isExporting && !isIdleCache) {
+              el = vsmRes.frame;
+              hasUnreadyMedia = true;
+            }
           }
         }
       }
@@ -265,14 +220,18 @@
         return { el: null, timeInClip, hasUnreadyMedia: true };
       }
 
-      // Fallback only for unit tests passing a mock HTMLVideoElement without dataUrl/mediaId
-      if (!el && !layer.dataUrl && !layer.mediaId && media) {
+      // Priority 2: Native <video> fallback (for .webm, Safari < 17, unsupported containers, or unit tests)
+      if (!el && !usingWebCodecsStream && media) {
         const isHtmlEl = (typeof HTMLElement !== 'undefined' && media instanceof HTMLElement) || !!(media && media.tagName);
-        const mockEl = (media && media.el) ? media.el : (isHtmlEl ? media : null);
-        if (mockEl && mockEl.videoWidth > 0 && mockEl.readyState >= 2) {
-          el = mockEl;
+        const vidEl = (media && media.el) ? media.el : (isHtmlEl ? media : null);
+        if (vidEl && vidEl.videoWidth > 0 && vidEl.readyState >= 2) {
+          if (!isExporting && !isIdleCache && vidEl.tagName === 'VIDEO') {
+            const isPlaying = (typeof window !== 'undefined' && !!window.isTimelinePlaying);
+            this.seekVideoElementCoalesced(vidEl, timeInClip, isPlaying, false);
+          }
+          el = vidEl;
           layer._renderedExactVideoFrame = true;
-          layer._lastRenderedFrame = mockEl;
+          layer._lastRenderedFrame = vidEl;
           hasUnreadyMedia = false;
         }
       }
@@ -280,7 +239,10 @@
       if (!el && !isExporting && !isIdleCache) {
         if (layer._lastRenderedFrame && layer._lastRenderedFrame !== (media && media.poster)) {
           el = layer._lastRenderedFrame;
-        } else {
+        } else if (usingWebCodecsStream && media && media.poster && (media.poster.naturalWidth > 0 || media.poster.width > 0)) {
+          // While WebCodecs worker warms up the first frame (~20-40ms on import), display poster seamlessly
+          el = media.poster;
+        } else if (!usingWebCodecsStream) {
           const placeholderW = layer.mediaWidth || 1920;
           const placeholderH = layer.mediaHeight || 1080;
           const placeholderFn = (typeof window !== 'undefined' && typeof window.getMediaNotReadyPlaceholder === 'function')
@@ -301,42 +263,19 @@
     }
 
     /**
-     * Resolve pre-extracted ImageBitmap frame for a Precomp layer from VideoFrameExtractor.
-     * Falls back to live renderPrecompToCanvas when dirty, during export, or while frames are still extracting.
+     * Resolve precomposition frame timing.
+     * True After Effects Model: Precompositions render dynamically on-the-fly via renderPrecompToCanvas.
      */
     resolvePrecompElement(precompLayer, options = {}) {
       if (!precompLayer || precompLayer.type !== 'precomp') {
         return { el: null, innerSec: 0, fromSequence: false, hasUnreadyMedia: false };
       }
       const {
-        isExport = false,
-        isIdleCache = false,
         currentSec = 0,
-        pixelsPerSecond = 80,
-        targetW = 960,
-        targetH = 540
+        pixelsPerSecond = 80
       } = options;
 
       const innerSec = this.computeLayerClipTime(precompLayer, currentSec, pixelsPerSecond);
-      const isExporting = isExport || (typeof window !== 'undefined' && !!window.isExporting);
-      const extractor = (typeof window !== 'undefined') ? window.VideoFrameExtractor : null;
-
-      if (!isExporting && !precompLayer._dirty && extractor) {
-        const sourceKey = extractor._getSourceKey(precompLayer);
-        const source = extractor.getSourceCache(sourceKey);
-        if (source && source.frames && source.frames.size > 0) {
-          const interpMode = precompLayer.speedInterpolation || 'none';
-          const bmp = extractor.getInterpolatedFrame(source, innerSec, interpMode, targetW, targetH);
-          if (bmp) {
-            precompLayer._lastRenderedFrame = bmp;
-            precompLayer._renderedExactVideoFrame = true;
-            return { el: bmp, innerSec, fromSequence: true, hasUnreadyMedia: false };
-          }
-        }
-      }
-
-      // True After Effects Model: Precompositions render dynamically on-the-fly via renderPrecompToCanvas.
-      // Never trigger VideoFrameExtractor baking; precomp layers are always ready.
       precompLayer._lightweightFastPath = true;
       return { el: null, innerSec, fromSequence: false, hasUnreadyMedia: false };
     }

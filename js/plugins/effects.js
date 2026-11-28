@@ -980,7 +980,7 @@
         gl.disable(gl.BLEND);
         gl.disable(gl.DEPTH_TEST);
         gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false); // same upload semantics as the per-effect paths
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true); // premultiplied alpha matches premultipliedAlpha:true canvas & prevents white/solarized alpha blow-up
         ch.unpremul = this._chainProgram(ch, '__unpremul', this._CHAIN_UNPREMUL_FS);
         canvas.addEventListener('webglcontextlost', () => { this._chain = null; }, false);
         ch.ok = !!ch.unpremul;
@@ -1109,9 +1109,10 @@
         const isLastStep = (k === steps.length - 1);
 
         if (!isLastStep) {
-          // Effect → A (pipe-size, cleared), drawn into its rect; orientation: image top = row 0
-          this._chainEnsureFbo(ch, A, PW, PH);
-          gl.bindFramebuffer(gl.FRAMEBUFFER, A.fb);
+          // Effect → ping-pong FBO (pipe-size, cleared) keeping premultiplied alpha end-to-end
+          const targetFbo = (k % 2 === 0) ? A : B;
+          this._chainEnsureFbo(ch, targetFbo, PW, PH);
+          gl.bindFramebuffer(gl.FRAMEBUFFER, targetFbo.fb);
           gl.viewport(0, 0, PW, PH);
           gl.clearColor(0, 0, 0, 0);
           gl.clear(gl.COLOR_BUFFER_BIT);
@@ -1119,12 +1120,7 @@
           gl.useProgram(p.prog);
           st.def.gpu.setup(gl, p.U, st.fx, layer, { w: fw, h: fh, rw, rh, sec });
           this._chainDraw(ch, p, inputTex, -1.0);
-          // A → B un-premultiply (mirrors 2D canvas store + texImage2D un-premultiply)
-          this._chainEnsureFbo(ch, B, PW, PH);
-          gl.bindFramebuffer(gl.FRAMEBUFFER, B.fb);
-          gl.viewport(0, 0, PW, PH);
-          this._chainDraw(ch, ch.unpremul, A.tex, -1.0);
-          inputTex = B.tex;
+          inputTex = targetFbo.tex;
         } else {
           gl.bindFramebuffer(gl.FRAMEBUFFER, null);
           const oy = this.fxFitGLCanvas(ch.canvas, rw, rh);

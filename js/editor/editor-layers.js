@@ -50,19 +50,8 @@
     window.insertLayerIntoCurrentProject = insertLayerIntoCurrentProject;
 
     function getSelectedLayerTiming() {
-      const layers = (currentProjectState && currentProjectState.layers) || [];
-      const insertIdx = getLayerInsertionIndex();
-      const selId = window.selectedLayerId || (window.selectedLayerIds && window.selectedLayerIds.size === 1 ? Array.from(window.selectedLayerIds)[0] : null);
-      let selLayer = layers.find(l => l && String(l.id) === String(selId));
-      if (!selLayer && insertIdx >= 0 && insertIdx < layers.length) {
-        selLayer = layers[insertIdx];
-      }
-      if (selLayer) {
-        return {
-          durationSec: selLayer.durationSec !== undefined ? selLayer.durationSec : null,
-          startSec: selLayer.startSec !== undefined ? selLayer.startSec : null
-        };
-      }
+      // New layers must respect Project Settings -> Default Layer Duration and the
+      // current playhead position rather than copying an unrelated selected/topmost layer.
       return { durationSec: null, startSec: null };
     }
     window.getSelectedLayerTiming = getSelectedLayerTiming;

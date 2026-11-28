@@ -3103,9 +3103,6 @@ function initTimelineOperations() {
         if (window.PreviewCacheManager) {
           window.PreviewCacheManager.setFps(fpsVal);
         }
-        if (window.VideoFrameExtractor) {
-          window.VideoFrameExtractor.setFps(fpsVal);
-        }
         if (typeof window.updateTimelineDuration === 'function') {
           window.updateTimelineDuration(true);
         }
@@ -3244,9 +3241,6 @@ function initTimelineOperations() {
           currentActivePrecomp.layers = currentProjectState.layers;
           currentActivePrecomp._precompBufferCanvas = null;
           currentActivePrecomp._dirty = true;
-          if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.invalidatePrecomp === 'function') {
-            window.VideoFrameExtractor.invalidatePrecomp(currentActivePrecomp);
-          }
 
           const pps = window.currentPixelsPerSecond || (typeof pixelsPerSecond !== 'undefined' ? pixelsPerSecond : 80);
           if (Array.isArray(currentActivePrecomp.layers) && currentActivePrecomp.layers.length > 0) {
@@ -4153,9 +4147,6 @@ function initTimelineOperations() {
                 if (typeof invalidatePreviewCacheForLayer === 'function') {
                   invalidatePreviewCacheForLayer(layer);
                 }
-                if (!layer.hidden && (layer.type === 'video' || layer.type === 'precomp') && window.VideoFrameExtractor) {
-                  window.VideoFrameExtractor.extractLayerRange(layer);
-                }
                 renderTimelineLayers();
                 redrawComposition();
                 saveCurrentProjectLayers();
@@ -4317,7 +4308,7 @@ function initTimelineOperations() {
               });
             }
 
-            if (isDesktop && layer._kfExpanded && layer.type !== 'precomp') {
+            if (isDesktop && layer._kfExpanded) {
               pillSlot.classList.add('is-kf-expanded');
               const treeEl = buildDesktopKfPropertyTree(layer, layer._kfExpandedOnlyKeyframed);
               pillSlot.appendChild(treeEl);
@@ -4395,9 +4386,6 @@ function initTimelineOperations() {
             }
             if (clipType === 'audio') {
               renderAudioClipWaveform(layer, clipEl);
-            }
-            if ((clipType === 'video' || clipType === 'precomp') && !layer.hidden && window.VideoFrameExtractor) {
-              window.VideoFrameExtractor.extractLayerRange(layer);
             }
 
             // Interactive Drag for Text IN / OUT Animation Markers (Only in selection mode)
@@ -5370,9 +5358,6 @@ function initTimelineOperations() {
                       const uEnd = Math.max(m.initialEndSec, mLayer.startSec + mLayer.durationSec);
                       invalidatePreviewCacheForLayer(mLayer, uStart, uEnd);
                     }
-                    if ((mLayer.type === 'video' || mLayer.type === 'precomp') && window.VideoFrameExtractor) {
-                      window.VideoFrameExtractor.extractLayerRange(mLayer);
-                    }
                   });
 
                   if (typeof updateCutBarRowState === 'function') updateCutBarRowState();
@@ -5601,9 +5586,6 @@ function initTimelineOperations() {
                       const uEnd = Math.max(m.initialEndSec, curStartSec + mLayer.durationSec);
                       invalidatePreviewCacheForLayer(mLayer, uStart, uEnd);
                     }
-                    if ((mLayer.type === 'video' || mLayer.type === 'precomp') && window.VideoFrameExtractor) {
-                      window.VideoFrameExtractor.extractLayerRange(mLayer);
-                    }
                   });
 
                   if (typeof updateCutBarRowState === 'function') updateCutBarRowState();
@@ -5619,7 +5601,7 @@ function initTimelineOperations() {
             }
           }
 
-          if (isDesktop && layer._kfExpanded && layer.type !== 'precomp') {
+          if (isDesktop && layer._kfExpanded) {
             lane.classList.add('is-kf-expanded');
             const tracksEl = buildDesktopKfTracksWrapper(layer, pps, layer._kfExpandedOnlyKeyframed);
             lane.appendChild(tracksEl);
@@ -5627,8 +5609,8 @@ function initTimelineOperations() {
 
           layersTrack.appendChild(lane);
 
-          // Render child elements when Precompose is expanded
-          if (layer.type === 'precomp' && layer._precompExpanded && Array.isArray(layer.layers)) {
+          // Render child elements when Precompose is expanded (on Desktop, below Transform/Effects under the LAYERS row)
+          if (layer.type === 'precomp' && layer._precompExpanded && (!isDesktop || layer._kfExpanded) && Array.isArray(layer.layers)) {
             const parentStartSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
 
             layer.layers.forEach((child) => {
@@ -5747,9 +5729,6 @@ function initTimelineOperations() {
                 renderLayerKeyframes(child, childClipEl);
                 if (childClipType === 'audio') {
                   renderAudioClipWaveform(child, childClipEl);
-                }
-                if ((childClipType === 'video' || childClipType === 'precomp') && !child.hidden && window.VideoFrameExtractor) {
-                  window.VideoFrameExtractor.extractLayerRange(child);
                 }
 
                 childClipEl.addEventListener('click', (e) => {
@@ -5911,25 +5890,6 @@ function initTimelineOperations() {
 
               layersTrack.appendChild(childLane);
             });
-
-            // On Desktop, append Precomp's Transform below its child layers ("di atas transform")
-            if (isDesktop && layer._kfExpanded) {
-              if (overlayContainer) {
-                const precompKfSlot = document.createElement('div');
-                precompKfSlot.className = 'timeline-lane-pill-slot is-kf-expanded is-precomp-transform-slot';
-                precompKfSlot.dataset.layerId = layer.id;
-                const treeEl = buildDesktopKfPropertyTree(layer, layer._kfExpandedOnlyKeyframed);
-                precompKfSlot.appendChild(treeEl);
-                overlayContainer.appendChild(precompKfSlot);
-              }
-
-              const precompKfLane = document.createElement('div');
-              precompKfLane.className = 'timeline-track-lane is-kf-expanded is-precomp-transform-lane';
-              precompKfLane.dataset.layerId = layer.id;
-              const tracksEl = buildDesktopKfTracksWrapper(layer, pps, layer._kfExpandedOnlyKeyframed);
-              precompKfLane.appendChild(tracksEl);
-              layersTrack.appendChild(precompKfLane);
-            }
           }
         });
 
@@ -6605,10 +6565,10 @@ function initTimelineOperations() {
             if (media && media.el && isFinite(media.el.duration) && media.el.duration > 0) {
               dur = media.el.duration;
               isVerifiedMediaDur = true;
-            } else if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getSourceCache === 'function') {
-              const src = window.VideoFrameExtractor.getSourceCache(item.id);
-              if (src && isFinite(src.duration) && src.duration > 0) {
-                dur = src.duration;
+            } else if (window.VideoStreamManager && window.VideoStreamManager.streams) {
+              const s = window.VideoStreamManager.streams.get(item.id);
+              if (s && isFinite(s.duration) && s.duration > 0) {
+                dur = s.duration;
                 isVerifiedMediaDur = true;
               }
             }

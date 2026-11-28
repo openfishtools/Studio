@@ -108,8 +108,9 @@
     if (typeof window.invalidateEffectivePropsCache === 'function') {
       window.invalidateEffectivePropsCache(layer.id);
     }
-    if ((layer.type === 'video' || layer.type === 'precomp') && window.VideoFrameExtractor) {
-      window.VideoFrameExtractor.clearLayer(layer);
+    if (layer.type === 'video' && window.VideoStreamManager && typeof window.VideoStreamManager.releaseMedia === 'function') {
+      const streamKey = window.VideoStreamManager.getSourceKey(layer);
+      if (streamKey) window.VideoStreamManager.releaseMedia(streamKey);
     }
   }
   window.releaseLayerMediaElement = releaseLayerMediaElement;
@@ -121,11 +122,12 @@
       if (layer.mediaDuration && isFinite(layer.mediaDuration) && layer.mediaDuration > 0) {
         return layer.mediaDuration;
       }
-      if (layer.type === 'video' && window.VideoFrameExtractor) {
-        const src = window.VideoFrameExtractor.getSourceCache(window.VideoFrameExtractor._getSourceKey(layer));
-        if (src && isFinite(src.duration) && src.duration > 0) {
-          layer.mediaDuration = src.duration;
-          return src.duration;
+      if (layer.type === 'video' && window.VideoStreamManager && window.VideoStreamManager.streams) {
+        const key = window.VideoStreamManager.getSourceKey(layer);
+        const s = key ? window.VideoStreamManager.streams.get(key) : null;
+        if (s && isFinite(s.duration) && s.duration > 0) {
+          layer.mediaDuration = s.duration;
+          return s.duration;
         }
       }
       const media = layerMediaCache.get(layer.mediaId || layer.id);
@@ -137,42 +139,11 @@
     }
     window.getLayerMediaDuration = getLayerMediaDuration;
 
-    // getOrLoadLayerMedia runs every playback tick (FishAudioEngine.syncPlayback / getMasterAudioTime).
-    // extractLayerRange starts with an IndexedDB getProjectMedia() query (full media records incl. buffers),
-    // so calling it per tick (60-120x/s) choked playback even when every frame was already cached.
-    // Explicit callers (trim, cut, unhide, hydration) still call extractLayerRange directly.
-    const _extractRequestState = new Map();
-    function requestLayerExtractionThrottled(layer) {
-      if (!layer || !window.VideoFrameExtractor || typeof window.VideoFrameExtractor.extractLayerRange !== 'function') return;
-      const k = layer.id || layer.mediaId;
-      if (!k) return;
-      const nowMs = Date.now();
-      const st = _extractRequestState.get(k);
-      if (st && (st.inFlight || (nowMs - st.t) < 1500)) return;
-      const entry = { inFlight: true, t: nowMs };
-      _extractRequestState.set(k, entry);
-      let p;
-      try {
-        p = window.VideoFrameExtractor.extractLayerRange(layer);
-      } catch (_) {
-        entry.inFlight = false;
-        return;
-      }
-      if (p && typeof p.then === 'function') {
-        p.then(() => {}, () => {}).then(() => { entry.inFlight = false; entry.t = Date.now(); });
-      } else {
-        entry.inFlight = false;
-      }
-    }
-
     function getOrLoadLayerMedia(layer) {
       if (!layer || layer.type === 'null' || layer.type === 'camera' || layer.type === 'adjustment' || layer.type === 'shape' || layer.type === 'text') return null;
       if (layer.type === 'precomp') {
         if (!layer._precompBufferCanvas || !(layer._precompBufferCanvas instanceof HTMLCanvasElement) || typeof layer._precompBufferCanvas.getContext !== 'function') {
           layer._precompBufferCanvas = document.createElement('canvas');
-        }
-        if (window.VideoFrameExtractor && !layer._extractComplete && !layer._dirty) {
-          requestLayerExtractionThrottled(layer);
         }
         return {
           type: 'precomp',
@@ -206,9 +177,6 @@
               if (typeof cachedEntry.el.load === 'function') cachedEntry.el.load();
             } catch (_) {}
             cachedEntry.el = null;
-          }
-          if (window.VideoFrameExtractor && !layer._extractComplete) {
-            requestLayerExtractionThrottled(layer);
           }
         }
         if (cachedEntry && cachedEntry.el && layer.dataUrl) {
@@ -427,8 +395,9 @@
         }
 
         const isRawMediaPoolItem = layer.id && String(layer.id).startsWith('med_') && !layer.mediaId && layer.startSec === undefined && layer.startPx === undefined;
-        if (window.VideoFrameExtractor && !isRawMediaPoolItem) {
-          window.VideoFrameExtractor.extractLayerRange(layer);
+        if (window.VideoStreamManager && window.VideoStreamManager.isSupported && !isRawMediaPoolItem && layer.dataUrl) {
+          const streamKey = window.VideoStreamManager.getSourceKey(layer);
+          if (streamKey) window.VideoStreamManager.ensureLoaded(streamKey, layer.dataUrl);
         }
       } else if (layer.type === 'audio') {
         const audio = document.createElement('audio');
@@ -611,8 +580,9 @@
               if (typeof entry.el.load === 'function') entry.el.load();
             }
             const isPoolOnly = layer.id && String(layer.id).startsWith('med_') && !layer.mediaId && layer.startSec === undefined && layer.startPx === undefined;
-            if ((layer.type === 'video' || layer.type === 'precomp') && window.VideoFrameExtractor && !isPoolOnly) {
-              window.VideoFrameExtractor.extractLayerRange(layer);
+            if (layer.type === 'video' && window.VideoStreamManager && window.VideoStreamManager.isSupported && !isPoolOnly && (m.blob || m.dataUrl)) {
+              const streamKey = window.VideoStreamManager.getSourceKey(layer);
+              if (streamKey) window.VideoStreamManager.ensureLoaded(streamKey, m.blob || m.dataUrl);
             }
             if (typeof redrawComposition === 'function') {
               redrawComposition('mediaHydrated');
@@ -1186,9 +1156,11 @@
           invalidatePreviewCacheForLayer(targetLayerInput);
         }
       }
-      if (typeof saveCurrentProjectLayers === 'function') await saveCurrentProjectLayers(true);
-      if (window.FishDatabase && currentProjectState && currentProjectState.id) {
-        try { await window.FishDatabase.saveProject(currentProjectState); } catch (_) {}
+      if (typeof saveCurrentProjectLayers === 'function') {
+        await saveCurrentProjectLayers(true);
+      } else if (window.FishDatabase && currentProjectState && currentProjectState.id) {
+        const safeRootLayers = (window.compositionStack && window.compositionStack.length > 0) ? window.compositionStack[0].layers : (currentProjectState.layers || []);
+        try { await window.FishDatabase.saveProject(Object.assign({}, currentProjectState, { layers: safeRootLayers })); } catch (_) {}
       }
       if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
       if (typeof updateVolumeAndSpeedBtnState === 'function') updateVolumeAndSpeedBtnState(targetL);
@@ -2492,13 +2464,242 @@
         }
       }
 
+      // Replace media item helper — picks a new file, updates all referencing layers (keeping transforms/effects), and disposes the old asset
+      function replaceMediaItem(oldItem) {
+        if (!oldItem || !oldItem.id) return;
+        const input = document.createElement('input');
+        input.type = 'file';
+        if (oldItem.type === '3d_model') {
+          input.accept = '.obj,.mtl,.fbx,.glb,.zip,image/*';
+          input.multiple = true;
+        } else if (oldItem.type === 'video') {
+          input.accept = 'video/*';
+        } else if (oldItem.type === 'audio') {
+          input.accept = 'audio/*';
+        } else {
+          input.accept = 'image/*';
+        }
+
+        input.addEventListener('change', async () => {
+          const files = input.files;
+          if (!files || files.length === 0) return;
+
+          if (oldItem.type === '3d_model') {
+            if (typeof window.replace3DModelMediaItem === 'function') {
+              await window.replace3DModelMediaItem(oldItem, files);
+            }
+            return;
+          }
+
+          const file = files[0];
+          if (!file) return;
+          const ps = window.currentProjectState;
+          const projectId = oldItem.projectId || (ps ? ps.id : '');
+          const oldId = oldItem.id;
+          const oldName = oldItem.name || '';
+          const oldDataUrl = oldItem.dataUrl;
+          const oldThumbUrl = oldItem.thumbUrl;
+
+          try {
+            const ext = (file.name.split('.').pop() || '').toLowerCase();
+            const mime = (file.type || '').toLowerCase();
+            const isVid = mime.startsWith('video/') || ['mp4', 'mov', 'webm', 'mkv'].includes(ext);
+            const isAud = mime.startsWith('audio/') || ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'].includes(ext);
+            const newType = isVid ? 'video' : (isAud ? 'audio' : 'image');
+
+            const newId = 'med_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
+            const objUrl = (typeof window.trackStudioObjectUrl === 'function')
+              ? window.trackStudioObjectUrl(URL.createObjectURL(file))
+              : URL.createObjectURL(file);
+
+            let newW = 0, newH = 0, newDur = 0, newThumbUrl = '';
+            if (newType === 'image') {
+              newThumbUrl = objUrl;
+              await new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => { newW = img.naturalWidth || 0; newH = img.naturalHeight || 0; resolve(); };
+                img.onerror = () => resolve();
+                img.src = objUrl;
+              });
+            } else if (newType === 'video') {
+              await new Promise((resolve) => {
+                const v = document.createElement('video');
+                v.muted = true;
+                v.preload = 'metadata';
+                v.src = objUrl;
+                v.onloadedmetadata = () => {
+                  newW = v.videoWidth || 0;
+                  newH = v.videoHeight || 0;
+                  newDur = isFinite(v.duration) ? v.duration : 0;
+                  resolve();
+                };
+                v.onerror = () => resolve();
+                setTimeout(resolve, 1500);
+              });
+              if (typeof window.generateVideoThumbnail === 'function') {
+                try { newThumbUrl = (await window.generateVideoThumbnail(objUrl)) || ''; } catch (_) {}
+              }
+            } else if (newType === 'audio') {
+              await new Promise((resolve) => {
+                const a = new Audio();
+                a.preload = 'metadata';
+                a.src = objUrl;
+                a.onloadedmetadata = () => { newDur = isFinite(a.duration) ? a.duration : 0; resolve(); };
+                a.onerror = () => resolve();
+                setTimeout(resolve, 1500);
+              });
+            }
+
+            const newMediaItem = {
+              id: newId,
+              projectId: projectId,
+              name: file.name,
+              type: newType,
+              mimeType: file.type || '',
+              size: file.size || 0,
+              blob: file,
+              dataUrl: objUrl,
+              thumbUrl: newThumbUrl,
+              width: newW || undefined,
+              height: newH || undefined,
+              duration: newDur || undefined,
+              createdAt: Date.now()
+            };
+
+            window._activeMediaMap = window._activeMediaMap || new Map();
+            window._activeMediaMap.set(newId, newMediaItem);
+
+            if (window.UndoRedoManager && typeof window.UndoRedoManager.pushState === 'function') {
+              window.UndoRedoManager.pushState('Replace Media');
+            }
+
+            // Recursively update all layers (root + nested precomps) referencing oldId
+            let replacedCount = 0;
+            const walkAndSwap = (layersArr) => {
+              if (!Array.isArray(layersArr)) return;
+              for (let i = 0; i < layersArr.length; i++) {
+                const l = layersArr[i];
+                if (!l) continue;
+                let touched = false;
+                if (l.mediaId === oldId || (oldDataUrl && l.dataUrl === oldDataUrl)) {
+                  if (typeof window.releaseLayerMediaElement === 'function') {
+                    window.releaseLayerMediaElement(l);
+                  }
+                  if (window.layerMediaCache) {
+                    window.layerMediaCache.delete(l.id);
+                    window.layerMediaCache.delete(oldId);
+                  }
+                  l.mediaId = newId;
+                  l.type = newType;
+                  l.dataUrl = objUrl;
+                  l.thumbUrl = newThumbUrl;
+                  if (!l.name || l.name === oldName) l.name = file.name;
+                  if (newW > 0 && newH > 0) {
+                    l.mediaWidth = newW;
+                    l.mediaHeight = newH;
+                  }
+                  if (newDur > 0) {
+                    l.mediaDuration = newDur;
+                  }
+                  touched = true;
+                }
+                if (l.fillMediaId === oldId) {
+                  l.fillMediaId = newId;
+                  l.fillMediaName = file.name;
+                  l.fillMediaUrl = newThumbUrl || objUrl;
+                  l._fillMediaImg = null;
+                  l._fillDirty = true;
+                  if (l._mediaFitCanvas) l._mediaFitCanvas._lastFitKey = null;
+                  touched = true;
+                }
+                if (touched) {
+                  replacedCount++;
+                  if (typeof window.invalidateEffectivePropsCache === 'function') {
+                    window.invalidateEffectivePropsCache(l.id);
+                  }
+                  if (typeof window.invalidatePreviewCacheForLayer === 'function') {
+                    window.invalidatePreviewCacheForLayer(l);
+                  }
+                }
+                if (Array.isArray(l.layers)) walkAndSwap(l.layers);
+              }
+            };
+            if (ps && Array.isArray(ps.layers)) {
+              walkAndSwap(ps.layers);
+            }
+
+            // Dispose & purge old media item
+            if (window.VideoStreamManager && typeof window.VideoStreamManager.releaseMedia === 'function') {
+              try { window.VideoStreamManager.releaseMedia(oldId); } catch (_) {}
+            }
+            if (window.layerMediaCache) window.layerMediaCache.delete(oldId);
+            window._activeMediaMap.delete(oldId);
+            if (window.selectedMediaId === oldId) window.selectedMediaId = newId;
+            document.querySelectorAll(`.media-item-tile[data-media-id="${oldId}"]`).forEach(t => t.remove());
+
+            if (oldDataUrl && typeof oldDataUrl === 'string' && oldDataUrl.startsWith('blob:')) {
+              if (typeof window.revokeStudioObjectUrl === 'function') window.revokeStudioObjectUrl(oldDataUrl);
+              else { try { URL.revokeObjectURL(oldDataUrl); } catch (_) {} }
+            }
+            if (oldThumbUrl && typeof oldThumbUrl === 'string' && oldThumbUrl.startsWith('blob:') && oldThumbUrl !== oldDataUrl) {
+              if (typeof window.revokeStudioObjectUrl === 'function') window.revokeStudioObjectUrl(oldThumbUrl);
+              else { try { URL.revokeObjectURL(oldThumbUrl); } catch (_) {} }
+            }
+
+            if (window.FishDatabase) {
+              try { await window.FishDatabase.deleteMedia(oldId); } catch (_) {}
+              try { await window.FishDatabase.saveMedia(newMediaItem); } catch (_) {}
+            }
+
+            if (window.FishAudioEngine && typeof window.FishAudioEngine.invalidateLayerCache === 'function') {
+              window.FishAudioEngine.invalidateLayerCache();
+            }
+            if (typeof window.invalidateEffectivePropsCache === 'function') {
+              window.invalidateEffectivePropsCache();
+            }
+            if (window.PreviewCacheManager && typeof window.PreviewCacheManager.invalidateAll === 'function') {
+              window.PreviewCacheManager.invalidateAll();
+            }
+            await renderMediaGrid();
+            if (typeof renderFillMediaPool === 'function') renderFillMediaPool();
+            if (typeof window.renderEnvironmentMediaPool === 'function') window.renderEnvironmentMediaPool();
+            if (typeof renderTimelineLayers === 'function') renderTimelineLayers();
+            if (typeof redrawComposition === 'function') redrawComposition('replaceMediaItem');
+            if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers();
+
+            if (typeof window.showEditorToast === 'function') {
+              const suffix = replacedCount > 0 ? ` (${replacedCount} layer diperbarui)` : '';
+              window.showEditorToast(`Media replaced: ${file.name}${suffix}`, 2600, 'success');
+            }
+          } catch (err) {
+            console.error('[MediaPool] Replace media failed:', err);
+            if (typeof window.showEditorToast === 'function') {
+              window.showEditorToast(`Gagal replace media: ${(err && err.message) || err}`, 3000, 'error');
+            }
+          }
+        }, { once: true });
+
+        input.click();
+      }
+      window.replaceMediaItem = replaceMediaItem;
+
       // Bind actions on #popover-media-item-menu once
       const popoverMediaMenu = document.getElementById('popover-media-item-menu');
       if (popoverMediaMenu && !popoverMediaMenu._eventsBound) {
         popoverMediaMenu._eventsBound = true;
+        const btnReplace = popoverMediaMenu.querySelector('#btn-media-replace');
         const btnDelete = popoverMediaMenu.querySelector('#btn-media-delete');
         const btnConvertAudio = popoverMediaMenu.querySelector('#btn-media-convert-audio');
         const btnReplace3D = popoverMediaMenu.querySelector('#btn-media-replace-3d');
+
+        if (btnReplace) {
+          btnReplace.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const item = window._activeMediaPoolItem;
+            if (window.Popover) window.Popover.close(false);
+            if (item) replaceMediaItem(item);
+          });
+        }
 
         if (btnReplace3D) {
           btnReplace3D.addEventListener('click', (e) => {
@@ -2660,7 +2861,7 @@
             } else if (_currentMediaFilter === '3d_model') {
               emptyIconClass = 'fticon-media-category';
               emptyTitle = 'No 3D models yet';
-              emptyDesc = 'Click + or drag .obj, .fbx, or .zip files here to add 3D models.';
+              emptyDesc = 'Click + or drag .obj, .fbx, .glb, or .zip files here to add 3D models.';
             } else if (_currentMediaFilter === 'precomp') {
               emptyIconClass = 'fticon-edit-group-enter-precompose';
               emptyTitle = 'No precompositions yet';
@@ -3192,13 +3393,6 @@
                     if (meta.duration && meta.duration > 0) {
                       mediaItem.duration = meta.duration;
                       mediaItem._durationVerified = true;
-                      if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getSourceCache === 'function') {
-                        const src = window.VideoFrameExtractor.getSourceCache(mediaItem.id);
-                        if (src) {
-                          src.duration = meta.duration;
-                          src._durationVerified = true;
-                        }
-                      }
                       const layers = (currentProjectState && currentProjectState.layers) || [];
                       const pps = window.currentPixelsPerSecond || 80;
                       layers.forEach(l => {
@@ -3415,7 +3609,7 @@
       const DROP_IMAGE_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg', 'bmp', 'avif', 'jfif'];
       const DROP_VIDEO_EXTS = ['mp4', 'mov', 'webm', 'mkv'];
       const DROP_AUDIO_EXTS = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'];
-      const DROP_3D_EXTS = ['obj', 'mtl', 'fbx', 'zip'];
+      const DROP_3D_EXTS = ['obj', 'mtl', 'fbx', 'glb', 'zip'];
 
       function classifyDroppedFile(file) {
         if (!file) return 'unsupported';
@@ -3442,7 +3636,7 @@
         if (mime.startsWith('audio/') || mime === 'application/ogg' || mime.includes('mpeg') || mime.includes('mp3') || mime.includes('wav')) {
           return 'audio';
         }
-        if (mime === 'application/zip' || mime === 'application/x-zip-compressed' || mime === 'multipart/x-zip' || mime === 'model/obj') {
+        if (mime === 'application/zip' || mime === 'application/x-zip-compressed' || mime === 'multipart/x-zip' || mime === 'model/obj' || mime === 'model/gltf-binary') {
           return '3d';
         }
         return 'unsupported';
@@ -3480,7 +3674,7 @@
           if (kind === '3d') {
             model3dFiles.push(f);
             const ext = ((f.name || '').split('.').pop() || '').toLowerCase();
-            if (ext === 'obj' || ext === 'mtl' || ext === 'fbx') hasExplicitMesh = true;
+            if (ext === 'obj' || ext === 'mtl' || ext === 'fbx' || ext === 'glb') hasExplicitMesh = true;
           } else if (kind === 'video' || kind === 'audio' || kind === 'image' || kind === 'ofts') {
             supportedMediaFiles.push(f);
           } else {
@@ -3669,7 +3863,7 @@
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2L3 7v10l9 5 9-5V7l-9-5zm0 2.18L18.56 7.8 12 11.45 5.44 7.8 12 4.18zM5 9.65l6 3.33v6.84l-6-3.33V9.65zm8 10.17v-6.84l6-3.33v6.84l-6 3.33z"/></svg>
                   </div>
                   <div class="media-dropzone-title">Import 3D Model</div>
-                  <div class="media-dropzone-desc">Add .obj, .fbx, or .zip 3D bundle</div>
+                  <div class="media-dropzone-desc">Add .obj, .fbx, .glb, or .zip 3D bundle</div>
                   <span class="media-dropzone-badge">3D Model</span>
                 </div>
               </div>

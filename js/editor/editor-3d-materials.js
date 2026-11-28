@@ -400,7 +400,8 @@
           proj.environmentName = ps.environmentName;
           return window.FishDatabase.saveProject(proj);
         }
-        return window.FishDatabase.saveProject(ps);
+        const safeRootLayers = (window.compositionStack && window.compositionStack.length > 0) ? window.compositionStack[0].layers : (ps.layers || []);
+        return window.FishDatabase.saveProject(Object.assign({}, ps, { layers: safeRootLayers }));
       }).catch(() => {});
     }
   }
@@ -1305,7 +1306,17 @@
 
     // 11. Import 3D Model (.obj, .mtl, .fbx, .zip + textures) & Media Pool 3D Integration
     const _imported3DModelsMem = new Map(); // id -> { id, name, modelData, thumbUrl, projectId }
-    window.forgetImported3DModelMem = (id) => { if (id) _imported3DModelsMem.delete(id); };
+    window.forgetImported3DModelMem = (id) => {
+      if (!id) return;
+      const oldRec = _imported3DModelsMem.get(id);
+      if (oldRec && oldRec.modelData && oldRec.modelData.textures && typeof oldRec.modelData.textures === 'object') {
+        Object.keys(oldRec.modelData.textures).forEach(tid => {
+          _mediaImgCache.delete(tid);
+          _mediaLoadingSet.delete(tid);
+        });
+      }
+      _imported3DModelsMem.delete(id);
+    };
 
     function ensureModelRecordRegistered(rec) {
       if (!rec || !rec.id) return null;
@@ -1460,7 +1471,7 @@
       const ps = window.currentProjectState;
       const projectId = ps ? ps.id : '';
       const firstFile = fileList[0];
-      const rawName = (firstFile && firstFile.name) ? String(firstFile.name).replace(/\.(zip|fbx|obj|mtl)$/i, '') : '3D Model';
+      const rawName = (firstFile && firstFile.name) ? String(firstFile.name).replace(/\.(zip|fbx|glb|obj|mtl)$/i, '') : '3D Model';
       const pendingId = '3d_pending_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
       window._activeMediaMap = window._activeMediaMap || new Map();
       // Optimistic instant entry in Project Pool so local imports appear immediately
@@ -1561,6 +1572,198 @@
       }
     }
     window.import3DModelFiles = import3DModelFiles;
+
+    async function replace3DModelMediaItem(oldItem, fileList) {
+      if (!oldItem || !oldItem.id || !fileList || fileList.length === 0) return null;
+      if (!window.Fish3DLoader || typeof window.Fish3DLoader.importFiles !== 'function') {
+        if (typeof window.showEditorToast === 'function') {
+          window.showEditorToast('Fish3DLoader is not available', 2400, 'error');
+        }
+        return null;
+      }
+      const ps = window.currentProjectState;
+      const projectId = (oldItem.projectId) || (ps ? ps.id : '');
+      const oldId = oldItem.id;
+      const oldName = oldItem.name || '';
+
+      try {
+        const bundle = await window.Fish3DLoader.importFiles(fileList);
+        let modelByteSize = 0;
+        const addBufBytes = (arr) => {
+          if (arr && typeof arr.byteLength === 'number') modelByteSize += arr.byteLength;
+          else if (Array.isArray(arr)) modelByteSize += arr.length * 4;
+        };
+        addBufBytes(bundle.positions);
+        addBufBytes(bundle.normals);
+        addBufBytes(bundle.uvs);
+        addBufBytes(bundle.basePositions);
+        addBufBytes(bundle.baseNormals);
+        addBufBytes(bundle.skinIndices);
+        addBufBytes(bundle.skinWeights);
+        if (bundle.textures && typeof bundle.textures === 'object') {
+          Object.values(bundle.textures).forEach(v => {
+            if (typeof v === 'string') modelByteSize += v.length;
+          });
+        }
+
+        const newModelRecord = {
+          id: bundle.id,
+          projectId: projectId,
+          name: bundle.name,
+          type: '3d_model',
+          size: modelByteSize,
+          thumbUrl: '',
+          modelData: {
+            positions: bundle.positions,
+            normals: bundle.normals,
+            uvs: bundle.uvs,
+            groups: bundle.groups,
+            slots: bundle.slots,
+            textures: bundle.textures,
+            vertexCount: bundle.vertexCount,
+            triangleCount: bundle.triangleCount,
+            basePositions: bundle.basePositions || null,
+            baseNormals: bundle.baseNormals || null,
+            skinIndices: bundle.skinIndices || null,
+            skinWeights: bundle.skinWeights || null,
+            rig: bundle.rig || null,
+            animations: bundle.animations || []
+          },
+          createdAt: Date.now()
+        };
+
+        // 1. Register new 3D model in memory & media pool
+        _imported3DModelsMem.set(bundle.id, newModelRecord);
+        window._activeMediaMap = window._activeMediaMap || new Map();
+        window._activeMediaMap.set(bundle.id, newModelRecord);
+        ensureModelRecordRegistered(newModelRecord);
+        ensureAdvance3DForModel();
+
+        // 2. Push Undo snapshot before mutating layers
+        if (window.UndoRedoManager && typeof window.UndoRedoManager.pushState === 'function') {
+          window.UndoRedoManager.pushState('Replace 3D Model');
+        }
+
+        // 3. Replace oldId -> newModelRecord.id on ALL layers (root + nested precomps),
+        //    preserving transform, effects, keyframes, expressions, timing & non-texture settings,
+        //    while resetting materialSlots/textures to the new 3D model's slots.
+        const newSlotsBase = Array.isArray(bundle.slots) ? bundle.slots : [];
+        const newAnimCount = Array.isArray(bundle.animations) ? bundle.animations.length : 0;
+        let replacedLayerCount = 0;
+        let updatedSelectedLayer = null;
+
+        const walkAndReplace = (layersArr) => {
+          if (!Array.isArray(layersArr)) return;
+          for (let i = 0; i < layersArr.length; i++) {
+            const l = layersArr[i];
+            if (!l) continue;
+            if (l.modelMediaId === oldId) {
+              l.modelMediaId = newModelRecord.id;
+              l.materialSlots = newSlotsBase.map(s => Object.assign({}, s));
+              if (!l.name || l.name === oldName) {
+                l.name = newModelRecord.name || '3D Model';
+              }
+              l._rdyP = -1;
+              l._rdyA = -1;
+              delete l._skinCache;
+              if (typeof l.modelAnimIndex === 'number' && l.modelAnimIndex >= newAnimCount) {
+                l.modelAnimIndex = 0;
+              }
+              replacedLayerCount++;
+              if (window.selectedLayerId && l.id === window.selectedLayerId) {
+                updatedSelectedLayer = l;
+              }
+              if (typeof window.invalidateEffectivePropsCache === 'function') {
+                window.invalidateEffectivePropsCache(l.id);
+              }
+            }
+            if (Array.isArray(l.layers)) {
+              walkAndReplace(l.layers);
+            }
+          }
+        };
+        if (ps && Array.isArray(ps.layers)) {
+          walkAndReplace(ps.layers);
+        }
+
+        // 4. Completely dispose & purge the old 3D model from GPU, memory, Media Pool & IndexedDB
+        if (oldId !== newModelRecord.id) {
+          if (typeof window.forgetImported3DModelMem === 'function') {
+            window.forgetImported3DModelMem(oldId);
+          }
+          if (window.Fish3DLoader && typeof window.Fish3DLoader.removeModel === 'function') {
+            window.Fish3DLoader.removeModel(oldId);
+          }
+          if (window._activeMediaMap) {
+            window._activeMediaMap.delete(oldId);
+          }
+          if (window.selectedMediaId === oldId) {
+            window.selectedMediaId = newModelRecord.id;
+          }
+          document.querySelectorAll(`.media-item-tile[data-media-id="${oldId}"]`).forEach(t => t.remove());
+          if (window.FishDatabase && typeof window.FishDatabase.deleteMedia === 'function') {
+            try { await window.FishDatabase.deleteMedia(oldId); } catch (_) {}
+          }
+        }
+
+        // 5. Refresh UI, caches, inspector & canvas immediately
+        if (typeof window.invalidateEffectivePropsCache === 'function') {
+          window.invalidateEffectivePropsCache();
+        }
+        if (window.PreviewCacheManager && typeof window.PreviewCacheManager.invalidateAll === 'function') {
+          window.PreviewCacheManager.invalidateAll();
+        }
+        if (typeof window.renderMediaGrid === 'function') {
+          window.renderMediaGrid();
+        }
+        if (typeof window.renderTimelineLayers === 'function') {
+          window.renderTimelineLayers();
+        }
+        if (updatedSelectedLayer && typeof window.syncEdit3DInspector === 'function') {
+          window.syncEdit3DInspector(updatedSelectedLayer);
+        }
+        if (typeof window.redrawComposition === 'function') {
+          window.redrawComposition('replace3DModelMedia');
+        }
+        if (typeof window.saveCurrentProject === 'function') {
+          window.saveCurrentProject();
+        }
+        if (typeof window.showEditorToast === 'function') {
+          const suffix = replacedLayerCount > 0 ? ` (${replacedLayerCount} layer diperbarui)` : '';
+          window.showEditorToast(`3D Replaced: ${bundle.name}${suffix}`, 2800, 'success');
+        }
+
+        // 6. Generate thumbnail & persist new 3D model to IndexedDB in background
+        Promise.resolve().then(async () => {
+          if (typeof window.Fish3DLoader.captureModelThumbnail === 'function') {
+            try {
+              const thumbUrl = await window.Fish3DLoader.captureModelThumbnail(bundle, 128);
+              if (thumbUrl) {
+                newModelRecord.thumbUrl = thumbUrl;
+                if (typeof window.renderMediaGrid === 'function') window.renderMediaGrid();
+              }
+            } catch (_) {}
+          }
+          if (projectId && window.FishDatabase && typeof window.FishDatabase.saveMedia === 'function') {
+            try {
+              await window.FishDatabase.saveMedia(newModelRecord);
+              if (typeof window.renderMediaGrid === 'function') window.renderMediaGrid();
+            } catch (dbErr) {
+              console.warn('[3D Model Replace] IndexedDB persist warning:', dbErr);
+            }
+          }
+        });
+
+        return newModelRecord;
+      } catch (err) {
+        console.error('[3D Model Replace] Failed:', err);
+        if (typeof window.showEditorToast === 'function') {
+          window.showEditorToast('Replace 3D gagal: ' + (err && err.message ? err.message : 'Unsupported format'), 3000, 'error');
+        }
+        return null;
+      }
+    }
+    window.replace3DModelMediaItem = replace3DModelMediaItem;
 
     syncProjectEnvironmentTexture();
     setTimeout(() => {

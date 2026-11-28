@@ -1202,20 +1202,21 @@
     drawFticon(ctx, g.more,     c0 + colSpan * 6, trMidY, tbIconSz, p.colorPrimary);
     var bmBtnX = c0 + colSpan * 7;
     var bmBtnY = trMidY;
-    // Detect if a beatmark is launching right now for tactile Bookmark button press feedback
+    // Detect if a beatmark is launching right now for crisp, snappy Bookmark button tap feedback (~85ms)
     var bmLaunching = false;
     var bmPressScale = 1.0;
+    var BM_TAP_SEC = 0.085;
     var bmsCtrl = session.beatmarks;
     for (var lbi = 0; lbi < bmsCtrl.length; lbi++) {
       var ldt = t - bmsCtrl[lbi].time;
-      if (ldt >= -PIN_LEAD_SEC && ldt <= -PIN_LEAD_SEC + 0.11) {
+      if (ldt >= -PIN_LEAD_SEC && ldt <= -PIN_LEAD_SEC + BM_TAP_SEC) {
         bmLaunching = true;
-        var pressU = (ldt + PIN_LEAD_SEC) / 0.11;
+        var pressU = (ldt + PIN_LEAD_SEC) / BM_TAP_SEC;
         bmPressScale = 1.0 - 0.16 * Math.sin(pressU * Math.PI);
         break;
       }
     }
-    var bookmarkPath = (beatHit || bmLaunching) ? session.svgPaths.bookmarkFilled : session.svgPaths.bookmarkOutline;
+    var bookmarkPath = bmLaunching ? session.svgPaths.bookmarkFilled : session.svgPaths.bookmarkOutline;
     ctx.save();
     if (bmPressScale !== 1.0) {
       ctx.translate(bmBtnX, bmBtnY);

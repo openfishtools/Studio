@@ -675,10 +675,18 @@
     }
 
     /**
+     * Signature of the range/model a video matting pass covers (invalidates when trimmed / retimed / model swapped).
+     */
+    _videoDoneSig(layer, modelId) {
+      return `${modelId}|${layer.sourceOffsetSec || 0}|${layer.durationSec !== undefined ? layer.durationSec : layer.widthPx}|${layer.speed || 1}`;
+    }
+
+    /**
      * Clear cached cutouts for a layer when model or footage is changed.
      */
     clearLayerCutouts(layer) {
       if (!layer) return;
+      delete layer._bgVideoDoneSig;
       delete layer._bgCutoutBitmap;
       delete layer._bgMaskCanvas;
       delete layer._bgSrcElement;
@@ -780,6 +788,10 @@
       const eff = this.getLayerMattingEffect(layer);
       const modelId = (eff && (eff.model || (eff.params && eff.params.model))) || 'rvm_mobilenetv3';
 
+      // Video already fully matted for this exact range/model: the render loop calls processLayer()
+      // every frame while a cutout is missing, so never re-queue a finished task.
+      if (!force && isVideo && layer._bgVideoDoneSig === this._videoDoneSig(layer, modelId)) return;
+
       let initialTotalFrames = 1;
       if (isVideo) {
         const fps = (window.currentProjectState && window.currentProjectState.fps) || 60;
@@ -795,48 +807,12 @@
         layerName: layer.name || (isVideo ? 'Video Clip' : 'Photo Layer'),
         type: isVideo ? 'video' : 'photo',
         thumbUrl: layer.thumbUrl || layer.mediaUrl || layer.dataUrl || '',
-        status: isVideo ? 'Waiting for video baking...' : 'queued',
+        status: 'queued',
         currentFrame: 0,
         totalFrames: initialTotalFrames,
         percent: 0,
         cancelled: false
       };
-
-      if (isVideo) {
-        const isBaked = (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isLayerBaked === 'function')
-          ? window.VideoFrameExtractor.isLayerBaked(layer)
-          : !!layer._extractComplete;
-
-        if (!isBaked) {
-          task.status = 'Waiting for video baking...';
-          this._activeTasks.set(taskId, task);
-          this._notifyProgress();
-
-          if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.extractLayerRange === 'function') {
-            window.VideoFrameExtractor.extractLayerRange(layer);
-          }
-
-          const waitTimer = setInterval(() => {
-            if (task.cancelled) {
-              clearInterval(waitTimer);
-              return;
-            }
-            const nowBaked = (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isLayerBaked === 'function')
-              ? window.VideoFrameExtractor.isLayerBaked(layer)
-              : !!layer._extractComplete;
-
-            if (nowBaked) {
-              clearInterval(waitTimer);
-              task.status = 'queued';
-              this._notifyProgress();
-              this._taskQueue.push({ task, layer, sourceKey, modelId });
-              this._runQueue();
-            }
-          }, 150);
-
-          return;
-        }
-      }
 
       this._activeTasks.set(taskId, task);
       this._notifyProgress();
@@ -1028,12 +1004,8 @@
         this._videoFrameCache.set(sourceKey, frameCache);
       }
 
-      let cachedSource = (window.VideoFrameExtractor && window.VideoFrameExtractor.sources)
-        ? (window.VideoFrameExtractor.sources.get(sourceKey) || (layer.mediaId ? window.VideoFrameExtractor.sources.get(layer.mediaId) : null) || (layer.id ? window.VideoFrameExtractor.sources.get(layer.id) : null))
-        : null;
-
-      // Resolve video URL for dedicated decoding element
-      let videoUrl = layer.dataUrl || (cachedSource && cachedSource.dataUrl);
+      // Resolve video URL for dedicated decoding element (or WebCodecs stream)
+      let videoUrl = layer.dataUrl;
       if (!videoUrl && window.FishDatabase && window.currentProjectState && window.currentProjectState.id) {
         try {
           const medias = await window.FishDatabase.getProjectMedia(window.currentProjectState.id);
@@ -1046,13 +1018,18 @@
         } catch (_) {}
       }
 
+      const vsm = (typeof window !== 'undefined') ? window.VideoStreamManager : null;
+      const vsmKey = (vsm && vsm.isSupported) ? vsm.getSourceKey(layer) : '';
+      let useVsm = false;
+      if (vsm && vsm.isSupported && vsmKey && videoUrl && !vsm.isFailed(vsmKey)) {
+        useVsm = await vsm.ensureLoaded(vsmKey, videoUrl);
+      }
+
       let decoderVideo = null;
       let offCanvas = null;
       let offCtx = null;
 
-      // Only mount dedicated decoder video if frames are not already baked in cachedSource
-      const hasBakedFrames = cachedSource && ((cachedSource.frames && cachedSource.frames.size > 0) || (cachedSource.cachedFrameIndices && cachedSource.cachedFrameIndices.size > 0));
-      if (!hasBakedFrames && videoUrl) {
+      if (!useVsm && videoUrl) {
         decoderVideo = document.createElement('video');
         decoderVideo.muted = true;
         decoderVideo.playsInline = true;
@@ -1107,7 +1084,7 @@
           }
 
           const timeInClip = (layer.sourceOffsetSec || 0) + (i / fps) * effSpeed;
-          const fIdx = Math.round(timeInClip * ((cachedSource && cachedSource.fps) || fps));
+          const fIdx = Math.round(timeInClip * fps);
 
           // Skip if already in cache
           if (frameCache.has(fIdx)) {
@@ -1118,11 +1095,14 @@
           }
 
           let rawFrame = null;
-          // Check if previously extracted raw frame exists in RAM or IndexedDB
-          if (cachedSource && cachedSource.frames && cachedSource.frames.has(fIdx)) {
-            rawFrame = cachedSource.frames.get(fIdx);
-          } else if (cachedSource && window.VideoFrameExtractor && typeof window.VideoFrameExtractor.fetchFrameFromDBAsync === 'function') {
-            rawFrame = await window.VideoFrameExtractor.fetchFrameFromDBAsync(cachedSource, fIdx);
+          let rawFrameOwned = false;
+          if (useVsm && vsm && vsm.hasStream(vsmKey)) {
+            // ownCopy: private bitmap that never enters the playback LRU (we close it ourselves below)
+            rawFrame = await Promise.race([
+              vsm.getFrameAsync(vsmKey, timeInClip, { isExport: false, ownCopy: true }),
+              new Promise(resolve => setTimeout(() => resolve(null), 2000))
+            ]);
+            rawFrameOwned = !!rawFrame;
           }
 
           // Otherwise seek dedicated decoder video directly to exact timestamp as fallback
@@ -1173,6 +1153,10 @@
               frameCache.set(fIdx, cutout);
             } catch (segErr) {
               console.warn('[FishBgRemovalEngine] Frame segment error at', fIdx, segErr);
+            } finally {
+              if (rawFrameOwned && typeof rawFrame.close === 'function') {
+                try { rawFrame.close(); } catch (_) {}
+              }
             }
           }
 
@@ -1209,6 +1193,7 @@
         if (!task.cancelled) {
           layer._extractComplete = true;
           layer._extractProgress = 1;
+          layer._bgVideoDoneSig = this._videoDoneSig(layer, modelId);
           task.percent = 100;
           task.status = 'done';
           this._notifyProgress();

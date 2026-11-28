@@ -666,12 +666,78 @@
         }
       },
 
+      _collectPrecompMediaMap(layers, map = new Map(), visited = new Set()) {
+        if (!Array.isArray(layers)) return map;
+        for (let i = 0; i < layers.length; i++) {
+          const l = layers[i];
+          if (!l || typeof l !== 'object' || visited.has(l)) continue;
+          visited.add(l);
+          if (l.type === 'precomp' && l.mediaId && !map.has(l.mediaId)) {
+            const projDims = (typeof window.getProjectDimensions === 'function')
+              ? window.getProjectDimensions(currentProjectState.resolution || '1080p', currentProjectState.aspectRatio || '16:9')
+              : null;
+            map.set(l.mediaId, {
+              id: l.mediaId,
+              projectId: currentProjectState.id,
+              name: l.name || 'Pre-comp',
+              type: 'precomp',
+              groupType: l.groupType || 'normal',
+              precompId: l.id,
+              duration: l.durationSec || 4,
+              width: l.mediaWidth || l.scaleW || (projDims ? projDims[0] : undefined),
+              height: l.mediaHeight || l.scaleH || (projDims ? projDims[1] : undefined),
+              layers: this._safeClone(Array.isArray(l.layers) ? l.layers : [])
+            });
+          }
+          if (Array.isArray(l.layers)) {
+            this._collectPrecompMediaMap(l.layers, map, visited);
+          }
+        }
+        return map;
+      },
+
+      async _syncPrecompMediaPool(prevLayers, nextLayers) {
+        if (!window.FishDatabase || !currentProjectState.id) return;
+        const prevMap = this._collectPrecompMediaMap(prevLayers);
+        const nextMap = this._collectPrecompMediaMap(nextLayers);
+        let changed = false;
+
+        // Delete precomp media assets that no longer exist after Undo/Redo
+        if (typeof window.FishDatabase.deleteMedia === 'function') {
+          for (const mediaId of prevMap.keys()) {
+            if (!nextMap.has(mediaId)) {
+              try {
+                await window.FishDatabase.deleteMedia(mediaId);
+                changed = true;
+              } catch (_) {}
+            }
+          }
+        }
+
+        // Restore precomp media assets that reappeared after Undo/Redo
+        if (typeof window.FishDatabase.saveMedia === 'function') {
+          for (const [mediaId, item] of nextMap.entries()) {
+            if (!prevMap.has(mediaId)) {
+              try {
+                await window.FishDatabase.saveMedia(item);
+                changed = true;
+              } catch (_) {}
+            }
+          }
+        }
+
+        if (changed && typeof window.refreshProjectMediaGrid === 'function') {
+          try { window.refreshProjectMediaGrid(); } catch (_) {}
+        }
+      },
+
       recordSnapshot() {
         try {
           if (this.isApplying) return;
           const beatmarksCopy = Array.isArray(currentProjectState.beatmarks) ? [...currentProjectState.beatmarks] : [];
           const markerNamesCopy = (currentProjectState.markerNames && typeof currentProjectState.markerNames === 'object') ? { ...currentProjectState.markerNames } : {};
-          const fingerprint = this._computeFingerprint(currentProjectState.layers || [], beatmarksCopy, markerNamesCopy);
+          const compScopeId = (window.currentActivePrecomp && window.currentActivePrecomp.id) ? window.currentActivePrecomp.id : 'root';
+          const fingerprint = `${compScopeId}|` + this._computeFingerprint(currentProjectState.layers || [], beatmarksCopy, markerNamesCopy);
 
           // Avoid duplicate consecutive states
           if (this.index >= 0 && this.index < this.stack.length) {
@@ -689,6 +755,7 @@
             layers: layersCopy,
             beatmarks: beatmarksCopy,
             markerNames: markerNamesCopy,
+            compScopeId,
             fingerprint
           });
 
@@ -729,7 +796,53 @@
         if (!snapshot) return;
         this.isApplying = true;
         try {
+          const targetScope = snapshot.compScopeId || 'root';
+          // If restoring a root snapshot while inside a precompose, exit back to root first
+          if (targetScope === 'root' && window.currentActivePrecomp && typeof window.exitPrecompose === 'function') {
+            let guard = 0;
+            while (window.currentActivePrecomp && guard < 16) {
+              window.exitPrecompose(true);
+              guard++;
+            }
+          }
+
+          const prevLayers = Array.isArray(currentProjectState.layers) ? currentProjectState.layers : [];
           currentProjectState.layers = (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(snapshot.layers || []) : (Array.isArray(snapshot.layers || []) ? [] : {}));
+
+          // Keep active precomp reference synced when undoing inside a precompose
+          if (targetScope !== 'root' && window.currentActivePrecomp && window.currentActivePrecomp.id === targetScope) {
+            window.currentActivePrecomp.layers = currentProjectState.layers;
+            window.currentActivePrecomp._dirty = true;
+            window.currentActivePrecomp._precompBufferCanvas = null;
+          }
+
+          // Sync precomp Media Pool entries (delete orphaned precomps on Undo, restore on Redo)
+          await this._syncPrecompMediaPool(prevLayers, currentProjectState.layers);
+
+          // Prune stale layer selection (e.g. deleted precomp ID after undoing Precompose)
+          const validIds = new Set();
+          (function collectIds(arr) {
+            if (!Array.isArray(arr)) return;
+            for (let i = 0; i < arr.length; i++) {
+              const l = arr[i];
+              if (l && l.id) validIds.add(l.id);
+              if (l && Array.isArray(l.layers)) collectIds(l.layers);
+            }
+          })(currentProjectState.layers);
+
+          if (window.selectedLayerIds && typeof window.selectedLayerIds.forEach === 'function') {
+            Array.from(window.selectedLayerIds).forEach(id => {
+              if (!validIds.has(id)) window.selectedLayerIds.delete(id);
+            });
+          }
+          if (window.selectedLayerId && !validIds.has(window.selectedLayerId)) {
+            window.selectedLayerId = null;
+            if (typeof selectedLayerId !== 'undefined') selectedLayerId = null;
+            if (typeof window.closeLayerDrawer === 'function') {
+              try { window.closeLayerDrawer(); } catch (_) {}
+            }
+          }
+
           if (Array.isArray(snapshot.beatmarks)) {
             currentProjectState.beatmarks = [...snapshot.beatmarks];
           }
@@ -759,6 +872,9 @@
           }
           if (typeof window.renderTimelineLayers === 'function') {
             window.renderTimelineLayers();
+          }
+          if (typeof window.updateEditorHeaderMode === 'function') {
+            window.updateEditorHeaderMode();
           }
           if (typeof window.updateTimelineDuration === 'function') {
             window.updateTimelineDuration(true);
@@ -911,9 +1027,6 @@
           if (parentPrecomp) {
             parentPrecomp._dirty = true;
             if (parentPrecomp._precompBufferCanvas) parentPrecomp._precompBufferCanvas._lastRenderKey = null;
-            if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.invalidatePrecomp === 'function') {
-              window.VideoFrameExtractor.invalidatePrecomp(parentPrecomp);
-            }
           }
           if (layer.type === 'text') {
             layer._textDirty = true;
@@ -923,9 +1036,6 @@
             layer._forceBakeInvalidation = false;
             layer._dirty = true;
             if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
-            if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.invalidatePrecomp === 'function') {
-              window.VideoFrameExtractor.invalidatePrecomp(layer);
-            }
           }
           if (layer.type === 'shape') {
             layer._shapeDirty = true;
@@ -953,9 +1063,6 @@
         if (parentPrecomp) {
           parentPrecomp._dirty = true;
           if (parentPrecomp._precompBufferCanvas) parentPrecomp._precompBufferCanvas._lastRenderKey = null;
-          if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.invalidatePrecomp === 'function') {
-            window.VideoFrameExtractor.invalidatePrecomp(parentPrecomp);
-          }
         }
         if (layer.type === 'text') {
           layer._textDirty = true;
@@ -965,9 +1072,6 @@
           layer._forceBakeInvalidation = false;
           layer._dirty = true;
           if (layer._precompBufferCanvas) layer._precompBufferCanvas._lastRenderKey = null;
-          if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.invalidatePrecomp === 'function') {
-            window.VideoFrameExtractor.invalidatePrecomp(layer);
-          }
         }
         if (layer.type === 'shape') {
           layer._shapeDirty = true;
@@ -1456,11 +1560,21 @@
     function writeEmergencySnapshot() {
       if (!currentProjectState.id) return;
       try {
-        const layers = currentProjectState.layers || [];
+        // Sync active precomp's layers and ALWAYS snapshot the ROOT composition layers,
+        // never the inner precomp layers (otherwise refresh gets stuck inside the precomp!).
+        if (currentActivePrecomp) {
+          currentActivePrecomp.layers = currentProjectState.layers;
+        }
+        const rootLayers = (compositionStack && compositionStack.length > 0)
+          ? (compositionStack[0].layers || [])
+          : (currentProjectState.layers || []);
+        const clonedRootLayers = (window.UndoRedoManager && window.UndoRedoManager._safeClone
+          ? window.UndoRedoManager._safeClone(rootLayers)
+          : (Array.isArray(rootLayers) ? [] : {}));
         const snapshot = {
           projectId: currentProjectState.id,
           timestamp: Date.now(),
-          layers: (window.UndoRedoManager && window.UndoRedoManager._safeClone ? window.UndoRedoManager._safeClone(layers) : (Array.isArray(layers) ? [] : {}))
+          layers: clonedRootLayers
         };
         localStorage.setItem(_EMERGENCY_KEY, JSON.stringify(snapshot));
         const activeProj = {
@@ -1471,7 +1585,7 @@
           fps: String(currentProjectState.fps || 60),
           defaultDuration: currentProjectState.defaultDuration || 5,
           bgColor: currentProjectState.bgColor || 'transparent',
-          layers: layers,
+          layers: clonedRootLayers,
           beatmarks: currentProjectState.beatmarks || [],
           pixelsPerSecond: window.currentPixelsPerSecond || 80,
           updatedAt: new Date().toISOString()
@@ -2515,10 +2629,14 @@
               }
               return window.FishDatabase.saveProject(proj);
             } else {
-              return window.FishDatabase.saveProject(currentProjectState);
+              const safeRootLayers = (compositionStack && compositionStack.length > 0) ? compositionStack[0].layers : (currentProjectState.layers || []);
+              return window.FishDatabase.saveProject(Object.assign({}, currentProjectState, { layers: safeRootLayers }));
             }
           }).catch(() => {
-            try { window.FishDatabase.saveProject(currentProjectState); } catch (_) {}
+            try {
+              const safeRootLayers = (compositionStack && compositionStack.length > 0) ? compositionStack[0].layers : (currentProjectState.layers || []);
+              window.FishDatabase.saveProject(Object.assign({}, currentProjectState, { layers: safeRootLayers }));
+            } catch (_) {}
           });
         }
       }, 16);
@@ -3337,10 +3455,6 @@
       if (typeof window.syncPlaySettingsUI === 'function') {
         window.syncPlaySettingsUI();
       }
-      if (window.VideoFrameExtractor) {
-        window.VideoFrameExtractor.init({ defaultFps: initialFps });
-        window.VideoFrameExtractor.setDraftMode(isDraftActive);
-      }
 
       if (typeof updatePreviewCanvas === 'function') {
         updatePreviewCanvas(
@@ -3383,14 +3497,11 @@
         window.updateTimelinePosition(window.timelinePanX || 0, true);
       }
 
-      // Automatically sanitize 3D effects & start background frame extraction for existing project video/precomp layers
+      // Automatically sanitize 3D effects for existing project layers
       if (Array.isArray(currentProjectState.layers)) {
         currentProjectState.layers.forEach(l => {
           if (typeof sanitizeLayer3DEffects === 'function') {
             sanitizeLayer3DEffects(l);
-          }
-          if ((l.type === 'video' || l.type === 'precomp') && window.VideoFrameExtractor) {
-            window.VideoFrameExtractor.extractLayerRange(l);
           }
         });
       }
@@ -3847,9 +3958,9 @@
           }
         } catch (_) {}
       }
-      if (window.VideoFrameExtractor) {
+      if (window.VideoStreamManager && typeof window.VideoStreamManager.releaseAll === 'function') {
         try {
-          window.VideoFrameExtractor.clearAll();
+          window.VideoStreamManager.releaseAll();
         } catch (_) {}
       }
 
@@ -3964,8 +4075,9 @@
               delete l._fillBufferCanvas;
               if (l._shapeBufferCanvas) l._shapeBufferCanvas._lastShapeKey = null;
             }
-            if ((l.type === 'video' || l.type === 'precomp') && window.VideoFrameExtractor) {
-              window.VideoFrameExtractor.extractLayerRange(l);
+            if (l.type === 'video' && window.VideoStreamManager && window.VideoStreamManager.isSupported && (l.dataUrl || (m && m.blob))) {
+              const streamKey = window.VideoStreamManager.getSourceKey(l);
+              if (streamKey) window.VideoStreamManager.ensureLoaded(streamKey, (m && m.blob) || l.dataUrl);
             }
             if (Array.isArray(l.layers)) {
               l.layers.forEach(hydrateLayer);

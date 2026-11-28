@@ -116,12 +116,16 @@
                 <span class="template-replace-count" id="template-replace-count">0 items</span>
               </div>
               <div class="template-media-grid" id="template-media-grid"></div>
+              <div class="template-text-editor-panel" id="template-text-editor-panel" aria-hidden="true">
+                <label class="template-text-editor-label" for="template-text-editor-input">Edit text</label>
+                <textarea class="template-text-editor-input" id="template-text-editor-input" rows="2" placeholder="Enter text..."></textarea>
+              </div>
             </section>
           </main>
         </div>
 
-        <!-- Hidden file input for media replacement -->
-        <input type="file" id="template-media-file-input" accept="image/*,video/*,.mp4,.png,.jpg,.jpeg,.webp,.mov" style="display: none;" aria-hidden="true">
+        <!-- Hidden file input for media / 3D replacement -->
+        <input type="file" id="template-media-file-input" class="template-hidden-file-input" accept="image/*,video/*,.mp4,.png,.jpg,.jpeg,.webp,.mov" aria-hidden="true">
 
       `;
 
@@ -172,6 +176,8 @@
         timeTotal: overlay.querySelector('#template-time-total'),
         replaceCount: overlay.querySelector('#template-replace-count'),
         mediaGrid: overlay.querySelector('#template-media-grid'),
+        textEditorPanel: overlay.querySelector('#template-text-editor-panel'),
+        textEditorInput: overlay.querySelector('#template-text-editor-input'),
         fileInput: overlay.querySelector('#template-media-file-input'),
         btnBack: overlay.querySelector('#template-btn-back'),
         btnNext: overlay.querySelector('#template-btn-next')
@@ -265,12 +271,7 @@
         const bgTasks = (window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.getActiveTasks === 'function')
           ? window.FishBgRemovalEngine.getActiveTasks().filter(t => !t.cancelled)
           : [];
-        const bakeTasks = (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getAllBakingTasks === 'function')
-          ? window.VideoFrameExtractor.getAllBakingTasks().filter(t => !t.cancelled)
-          : ((window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getActiveTasks === 'function')
-            ? window.VideoFrameExtractor.getActiveTasks().filter(t => !t.cancelled)
-            : []);
-        return [...bakeTasks, ...bgTasks];
+        return bgTasks;
       };
 
       const updateUI = () => {
@@ -336,8 +337,6 @@
             statusText = task.status;
           } else if (task.status === 'downloading_model') {
             statusText = 'Downloading model...';
-          } else if (task.type === 'baking' || task.type === 'video_bake') {
-            statusText = isDone ? 'Video Baked (100% Ready)' : (task.status || `Baking frames: ${task.currentFrame || 0}/${task.totalFrames || 0} (${task.percent || 0}%)`);
           } else if (task.type === 'video') {
             statusText = task.status && task.status.includes('Waiting')
               ? task.status
@@ -369,11 +368,7 @@
           if (cancelBtn) {
             cancelBtn.addEventListener('click', (e) => {
               e.stopPropagation();
-              if (task.type === 'baking' || task.type === 'video_bake') {
-                if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.cancelTask === 'function') {
-                  window.VideoFrameExtractor.cancelTask(task.id);
-                }
-              } else if (window.FishBgRemovalEngine) {
+              if (window.FishBgRemovalEngine) {
                 window.FishBgRemovalEngine.cancelTask(task.id);
               }
             });
@@ -390,9 +385,6 @@
 
       if (window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.addProgressListener === 'function') {
         window.FishBgRemovalEngine.addProgressListener(updateUI);
-      }
-      if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.addProgressListener === 'function') {
-        window.VideoFrameExtractor.addProgressListener(updateUI);
       }
       updateUI();
     },
@@ -508,14 +500,28 @@
       wrap.addEventListener('pointerup', stopScrub);
       wrap.addEventListener('pointercancel', stopScrub);
 
-      // File input change handler for media replacement
+      // File input change handler for media & 3D model replacement
       el.fileInput.addEventListener('change', async (e) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
-        const file = files[0];
-        await this._handleFileReplacement(file);
+        const slot = this.slots[this.activeSlotIndex];
+        if (slot && slot.type === '3d_model') {
+          await this._handle3DModelReplacement(files);
+        } else {
+          await this._handleFileReplacement(files[0]);
+        }
         el.fileInput.value = '';
       });
+
+      // Live inline text editor for replaceable text slots
+      if (el.textEditorInput) {
+        el.textEditorInput.addEventListener('input', () => {
+          this._handleTextReplacement(el.textEditorInput.value, false);
+        });
+        el.textEditorInput.addEventListener('change', () => {
+          this._handleTextReplacement(el.textEditorInput.value, true);
+        });
+      }
     },
 
     async open() {
@@ -725,6 +731,86 @@
           if (layer.dataUrl && (layer.dataUrl.startsWith('data:audio') || /\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i.test(layer.dataUrl))) return;
           if (layer.type === 'video' && !layer.isReplaceableSlot && !layer.mediaId) return;
 
+          // 3D Model replaceable slot
+          if (layer.shapeType === '3d_model' && layer.modelMediaId) {
+            const startSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
+            const durSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
+            const modelId = layer.modelMediaId;
+            const poolItem = (window._activeMediaMap && window._activeMediaMap.get(modelId)) ||
+              projectMedias.find(m => m && m.id === modelId) || null;
+            const existing3DSlot = this.slots.find(s => s.type === '3d_model' && s.modelMediaId === modelId);
+            if (existing3DSlot) {
+              existing3DSlot.layerIds.push(layer.id);
+              existing3DSlot.occurrences.push({ layerId: layer.id, startSec, durationSec: durSec });
+              existing3DSlot.occurrences.sort((a, b) => a.startSec - b.startSec);
+              existing3DSlot.startSec = existing3DSlot.occurrences[0].startSec;
+              existing3DSlot.durationSec = existing3DSlot.occurrences.reduce((sum, o) => sum + o.durationSec, 0);
+            } else {
+              this.slots.push({
+                layerId: layer.id,
+                layerIds: [layer.id],
+                sourceLayerId: layer.sourceLayerId || layer.id,
+                sourceLayerIds: new Set([layer.sourceLayerId || layer.id, layer.id]),
+                occurrences: [{ layerId: layer.id, startSec, durationSec: durSec }],
+                mediaPoolId: modelId,
+                mediaIds: new Set([modelId]),
+                mediaUrls: new Set(),
+                mediaId: modelId,
+                modelMediaId: modelId,
+                name: (poolItem && poolItem.name) || layer.name || '3D Model',
+                type: '3d_model',
+                thumbUrl: (poolItem && poolItem.thumbUrl) || '',
+                dataUrl: '',
+                startSec,
+                durationSec: durSec
+              });
+            }
+            if (Array.isArray(layer.layers)) traverse(layer.layers);
+            return;
+          }
+
+          // Text replaceable slot
+          if (layer.type === 'text') {
+            const startSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
+            const durSec = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 320) / pps);
+            const txtVal = (layer.textProps && typeof layer.textProps.text === 'string')
+              ? layer.textProps.text
+              : (typeof layer.text === 'string' ? layer.text : (layer.name || 'Text'));
+            const srcId = layer.sourceLayerId || layer.id;
+            const existingTextSlot = this.slots.find(s =>
+              s.type === 'text' && (s.sourceLayerId === srcId || (s.sourceLayerIds && s.sourceLayerIds.has(srcId)))
+            );
+            if (existingTextSlot) {
+              existingTextSlot.layerIds.push(layer.id);
+              existingTextSlot.sourceLayerIds.add(layer.id);
+              existingTextSlot.occurrences.push({ layerId: layer.id, startSec, durationSec: durSec });
+              existingTextSlot.occurrences.sort((a, b) => a.startSec - b.startSec);
+              existingTextSlot.startSec = existingTextSlot.occurrences[0].startSec;
+              existingTextSlot.durationSec = existingTextSlot.occurrences.reduce((sum, o) => sum + o.durationSec, 0);
+            } else {
+              this.slots.push({
+                layerId: layer.id,
+                layerIds: [layer.id],
+                sourceLayerId: srcId,
+                sourceLayerIds: new Set([srcId, layer.id]),
+                occurrences: [{ layerId: layer.id, startSec, durationSec: durSec }],
+                mediaPoolId: null,
+                mediaIds: new Set(),
+                mediaUrls: new Set(),
+                mediaId: null,
+                name: txtVal.trim() || layer.name || 'Text',
+                textContent: txtVal,
+                type: 'text',
+                thumbUrl: '',
+                dataUrl: '',
+                startSec,
+                durationSec: durSec
+              });
+            }
+            if (Array.isArray(layer.layers)) traverse(layer.layers);
+            return;
+          }
+
           const isMedia = layer.type === 'image' || layer.fillType === 'media' || layer.isReplaceableSlot || (layer.type === 'video' && layer.mediaId);
           if (isMedia) {
             const startSec = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pps);
@@ -890,36 +976,60 @@
       }
 
       if (this.slots.length === 0) {
-        grid.innerHTML = '<div class="template-media-empty">No replaceable media layers found in this project.</div>';
+        grid.innerHTML = '<div class="template-media-empty">No replaceable media, 3D, or text layers found in this project.</div>';
+        if (this._elements.textEditorPanel) {
+          this._elements.textEditorPanel.classList.remove('is-visible');
+          this._elements.textEditorPanel.setAttribute('aria-hidden', 'true');
+        }
         return;
       }
+
+      const escapeHtml = (str) => String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 
       this.slots.forEach((slot, idx) => {
         const card = document.createElement('div');
         card.className = 'template-media-card' + (idx === this.activeSlotIndex ? ' is-active' : '');
         card.setAttribute('role', 'button');
         card.setAttribute('tabindex', '0');
-        card.setAttribute('aria-label', 'Replace ' + slot.name);
+        card.setAttribute('aria-label', (slot.type === 'text' ? 'Edit ' : 'Replace ') + slot.name);
 
         const isVideo = slot.type === 'video';
-        const typeIcon = isVideo
-          ? '<i class="fticon fticon-icon-5" aria-hidden="true"></i>'
-          : '<i class="fticon fticon-icon-6" aria-hidden="true"></i>';
+        const is3D = slot.type === '3d_model';
+        const isText = slot.type === 'text';
+        const typeIcon = is3D
+          ? '<span class="template-card-badge-label">3D</span>'
+          : (isText
+            ? '<span class="template-card-badge-label">T</span>'
+            : (isVideo
+              ? '<i class="fticon fticon-icon-5" aria-hidden="true"></i>'
+              : '<i class="fticon fticon-icon-6" aria-hidden="true"></i>'));
 
         const replaceSvg = '<i class="fticon fticon-icon-7" aria-hidden="true"></i>';
 
-        const thumbHtml = slot.thumbUrl
-          ? ('<img class="template-card-thumb" src="' + slot.thumbUrl + '" alt="' + slot.name + '" />')
-          : ('<div class="template-card-fallback">' + slot.type.toUpperCase() + '</div>');
+        let thumbHtml = '';
+        if (isText) {
+          thumbHtml = '<div class="template-card-text-preview"><span>' + escapeHtml(slot.textContent || slot.name || 'Text') + '</span></div>';
+        } else if (slot.thumbUrl) {
+          thumbHtml = '<img class="template-card-thumb" src="' + escapeHtml(slot.thumbUrl) + '" alt="' + escapeHtml(slot.name) + '" />';
+        } else if (is3D) {
+          thumbHtml = '<div class="template-card-fallback">3D</div>';
+        } else {
+          thumbHtml = '<div class="template-card-fallback">' + escapeHtml(slot.type.toUpperCase()) + '</div>';
+        }
 
         const countBadge = (slot.occurrences && slot.occurrences.length > 1)
           ? ('<div class="template-card-badge-count" title="Used in ' + slot.occurrences.length + ' clips">' + slot.occurrences.length + 'x</div>')
           : '';
 
+        const actionTitle = isText ? ('Edit ' + escapeHtml(slot.name)) : ('Replace ' + escapeHtml(slot.name));
         card.innerHTML = thumbHtml +
           '<div class="template-card-badge-type">' + typeIcon + '</div>' +
           countBadge +
-          '<div class="template-card-replace-icon" role="button" tabindex="0" title="Replace ' + slot.name + '" aria-label="Replace ' + slot.name + '">' + replaceSvg + '</div>' +
+          '<div class="template-card-replace-icon" role="button" tabindex="0" title="' + actionTitle + '" aria-label="' + actionTitle + '">' + replaceSvg + '</div>' +
           '<div class="template-card-duration">' + formatTimeCS(slot.durationSec) + '</div>';
 
         const replaceBtn = card.querySelector('.template-card-replace-icon');
@@ -966,10 +1076,40 @@
           this.selectSlot(idx, false);
         }
       }
+      const slot = this.slots[this.activeSlotIndex];
+      if (slot && slot.type === 'text') {
+        this._syncTextEditorPanel(slot, true);
+        return;
+      }
       if (this._elements.fileInput) {
-        this._elements.fileInput.accept = 'image/*,video/*,.mp4,.png,.jpg,.jpeg,.webp,.mov';
+        if (slot && slot.type === '3d_model') {
+          this._elements.fileInput.accept = '.obj,.mtl,.fbx,.glb,.zip,image/*';
+          this._elements.fileInput.multiple = true;
+        } else {
+          this._elements.fileInput.accept = 'image/*,video/*,.mp4,.png,.jpg,.jpeg,.webp,.mov';
+          this._elements.fileInput.multiple = false;
+        }
         this._elements.fileInput.value = '';
         this._elements.fileInput.click();
+      }
+    },
+
+    _syncTextEditorPanel(slot, focusInput = false) {
+      const panel = this._elements.textEditorPanel;
+      const input = this._elements.textEditorInput;
+      if (!panel || !input) return;
+      if (slot && slot.type === 'text') {
+        panel.classList.add('is-visible');
+        panel.setAttribute('aria-hidden', 'false');
+        const curVal = typeof slot.textContent === 'string' ? slot.textContent : (slot.name || '');
+        if (input.value !== curVal) input.value = curVal;
+        if (focusInput) {
+          input.focus();
+          input.select();
+        }
+      } else {
+        panel.classList.remove('is-visible');
+        panel.setAttribute('aria-hidden', 'true');
       }
     },
 
@@ -1012,10 +1152,164 @@
         });
       }
 
+      this._syncTextEditorPanel(slot, false);
       this.renderFrame();
 
       if (triggerPicker) {
         this.openMediaPicker(idx);
+      }
+    },
+
+    async _handle3DModelReplacement(files) {
+      const slot = this.slots[this.activeSlotIndex];
+      if (!slot || slot.type !== '3d_model' || !files || files.length === 0) return;
+      if (typeof window.replace3DModelMediaItem !== 'function') {
+        if (typeof window.showEditorToast === 'function') {
+          window.showEditorToast('3D replacement is not available', 2400, 'error');
+        }
+        return;
+      }
+
+      const oldId = slot.modelMediaId || slot.mediaPoolId || slot.mediaId;
+      const oldItem = (window._activeMediaMap && window._activeMediaMap.get(oldId)) || {
+        id: oldId,
+        projectId: window.currentProjectState ? window.currentProjectState.id : '',
+        name: slot.name || '3D Model',
+        type: '3d_model'
+      };
+
+      const newRecord = await window.replace3DModelMediaItem(oldItem, files);
+      if (!newRecord) return;
+
+      slot.modelMediaId = newRecord.id;
+      slot.mediaPoolId = newRecord.id;
+      slot.mediaId = newRecord.id;
+      slot.name = newRecord.name || '3D Model';
+      slot.thumbUrl = newRecord.thumbUrl || '';
+      if (slot.mediaIds) {
+        slot.mediaIds.clear();
+        slot.mediaIds.add(newRecord.id);
+      }
+
+      const updateCardThumb = () => {
+        const activeCard = this._elements.mediaGrid && this._elements.mediaGrid.children[this.activeSlotIndex];
+        if (!activeCard) return;
+        let imgEl = activeCard.querySelector('.template-card-thumb');
+        let fb = activeCard.querySelector('.template-card-fallback');
+        if (newRecord.thumbUrl) {
+          if (fb) fb.remove();
+          if (!imgEl) {
+            imgEl = document.createElement('img');
+            imgEl.className = 'template-card-thumb';
+            activeCard.insertBefore(imgEl, activeCard.firstChild);
+          }
+          imgEl.src = newRecord.thumbUrl;
+          imgEl.alt = slot.name;
+        }
+      };
+      updateCardThumb();
+      // Thumbnail capture in replace3DModelMediaItem finishes asynchronously; sync once ready
+      setTimeout(() => {
+        if (newRecord.thumbUrl && slot.thumbUrl !== newRecord.thumbUrl) {
+          slot.thumbUrl = newRecord.thumbUrl;
+          updateCardThumb();
+        }
+      }, 600);
+
+      this.renderFrame();
+    },
+
+    _handleTextReplacement(newText, commitSave = false) {
+      const slot = this.slots[this.activeSlotIndex];
+      if (!slot || slot.type !== 'text') return;
+      const state = window.currentProjectState;
+      if (!state || !Array.isArray(state.layers)) return;
+
+      const textVal = String(newText === undefined || newText === null ? '' : newText);
+      const oldText = typeof slot.textContent === 'string' ? slot.textContent : '';
+      const targetIds = new Set([
+        ...(Array.isArray(slot.layerIds) ? slot.layerIds : []),
+        ...(Array.isArray(slot.occurrences) ? slot.occurrences.map(o => o.layerId).filter(Boolean) : []),
+        ...(slot.layerId ? [slot.layerId] : [])
+      ]);
+
+      const baseW = (state && state.canvasWidth > 0) ? state.canvasWidth : (this._elements.canvas ? this._elements.canvas.width : 0);
+      const baseH = (state && state.canvasHeight > 0) ? state.canvasHeight : (this._elements.canvas ? this._elements.canvas.height : 0);
+
+      const walkAndUpdateText = (layersArr) => {
+        if (!Array.isArray(layersArr)) return;
+        for (let i = 0; i < layersArr.length; i++) {
+          const l = layersArr[i];
+          if (!l) continue;
+          if (l.type === 'text' && targetIds.has(l.id)) {
+            if (!l.textProps) {
+              l.textProps = (window.FishTextEngine && typeof window.FishTextEngine.getDefaultProps === 'function')
+                ? window.FishTextEngine.getDefaultProps()
+                : {};
+            }
+            l.textProps.text = textVal;
+            if (!l.name || l.name === oldText || l.name === slot.name) {
+              l.name = textVal.trim() || 'Text';
+            }
+            l._textDirty = true;
+            if (l._textBufferCanvas) {
+              l._textBufferCanvas._lastRenderKey = null;
+            }
+            l._textMbCanvas = null;
+            if (window.FishTextEngine && typeof window.FishTextEngine.getNaturalSize === 'function') {
+              const nat = window.FishTextEngine.getNaturalSize(l);
+              const tx = (typeof l.transformScaleX === 'number' && !isNaN(l.transformScaleX) && l.transformScaleX > 0) ? l.transformScaleX : 1.0;
+              const ty = (typeof l.transformScaleY === 'number' && !isNaN(l.transformScaleY) && l.transformScaleY > 0) ? l.transformScaleY : 1.0;
+              l.scaleW = Math.round(nat.width * tx);
+              l.scaleH = Math.round(nat.height * ty);
+              l.mediaWidth = nat.width;
+              l.mediaHeight = nat.height;
+              if (baseW > 0 && baseH > 0) {
+                l.normW = Math.abs(l.scaleW) / baseW;
+                l.normH = Math.abs(l.scaleH) / baseH;
+              }
+            }
+            if (typeof window.invalidateEffectivePropsCache === 'function') {
+              window.invalidateEffectivePropsCache(l.id);
+            }
+            if (typeof window.invalidatePreviewCacheForLayer === 'function') {
+              window.invalidatePreviewCacheForLayer(l);
+            }
+          }
+          if (Array.isArray(l.layers)) walkAndUpdateText(l.layers);
+        }
+      };
+
+      walkAndUpdateText(state.layers);
+
+      slot.textContent = textVal;
+      slot.name = textVal.trim() || 'Text';
+
+      const activeCard = this._elements.mediaGrid && this._elements.mediaGrid.children[this.activeSlotIndex];
+      if (activeCard) {
+        const previewSpan = activeCard.querySelector('.template-card-text-preview span');
+        if (previewSpan) previewSpan.textContent = textVal || 'Text';
+      }
+
+      if (window.PreviewCacheManager) {
+        if (typeof window.PreviewCacheManager.clearAll === 'function') window.PreviewCacheManager.clearAll('all');
+        if (typeof window.PreviewCacheManager.clear === 'function') window.PreviewCacheManager.clear();
+      }
+      if (typeof window.invalidateEffectivePropsCache === 'function') {
+        window.invalidateEffectivePropsCache();
+      }
+      this.renderFrame();
+
+      if (commitSave) {
+        if (typeof window.renderTimelineLayers === 'function') window.renderTimelineLayers();
+        if (typeof window.redrawComposition === 'function') window.redrawComposition('template-text-replaced');
+        if (typeof window.saveCurrentProjectLayers === 'function') window.saveCurrentProjectLayers();
+      } else {
+        clearTimeout(this._textSaveTimer);
+        this._textSaveTimer = setTimeout(() => {
+          if (typeof window.renderTimelineLayers === 'function') window.renderTimelineLayers();
+          if (typeof window.saveCurrentProjectLayers === 'function') window.saveCurrentProjectLayers();
+        }, 350);
       }
     },
 

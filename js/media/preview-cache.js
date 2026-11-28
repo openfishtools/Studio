@@ -1939,22 +1939,6 @@
       if (this._bakingListenersBound) return;
       if (typeof window === 'undefined') return;
 
-      if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.addProgressListener === 'function') {
-        let lastTaskSig = '';
-        window.VideoFrameExtractor.addProgressListener((tasks) => {
-          const activeTasks = Array.isArray(tasks) ? tasks.filter(t => !t.cancelled && (t.percent === undefined || t.percent < 100)) : [];
-          const taskSig = activeTasks.map(t => `${t.id || t.sourceKey}:${t.percent === 100}`).join('|');
-          if (taskSig !== lastTaskSig) {
-            lastTaskSig = taskSig;
-            this.pruneBakingFrames();
-          }
-          if (activeTasks.length === 0 && this.idleCacheEnabled) {
-            this.scheduleIdleCheck(true);
-          }
-        });
-        this._bakingListenersBound = true;
-      }
-
       if (window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.addProgressListener === 'function') {
         let lastBgSig = '';
         window.FishBgRemovalEngine.addProgressListener((tasks) => {
@@ -1968,19 +1952,13 @@
             this.scheduleIdleCheck(true);
           }
         });
+        this._bakingListenersBound = true;
       }
     }
 
     isLayerBaking(layer) {
       if (!layer || layer.hidden) return false;
-
-      if (typeof window !== 'undefined' && window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isLayerBaking === 'function') {
-        if (window.VideoFrameExtractor.isLayerBaking(layer)) return true;
-      } else if (layer.type === 'video' || layer.mediaType === 'video') {
-        if (!layer._extractComplete) return true;
-      } else if (layer.type === 'precomp') {
-        return false;
-      }
+      if (layer.type === 'precomp') return false;
 
       if (typeof window !== 'undefined' && window.FishBgRemovalEngine) {
         const bg = window.FishBgRemovalEngine;
@@ -2078,12 +2056,6 @@
 
     hasActiveBakingTasks() {
       if (typeof window !== 'undefined') {
-        if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.getAllBakingTasks === 'function') {
-          const tasks = window.VideoFrameExtractor.getAllBakingTasks();
-          if (tasks.some(t => !t.cancelled && (t.percent === undefined || t.percent < 100) && t.status !== 'done')) {
-            return true;
-          }
-        }
         if (window.FishBgRemovalEngine && typeof window.FishBgRemovalEngine.getActiveTasks === 'function') {
           const bgTasks = window.FishBgRemovalEngine.getActiveTasks();
           if (bgTasks.some(t => !t.cancelled && (t.percent === undefined || t.percent < 100) && t.status !== 'done')) {
@@ -2156,9 +2128,12 @@
             }
           }
           if (l.type === 'video' || l.mediaType === 'video') {
-            if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isVideoFrameReady === 'function') {
-              if (!window.VideoFrameExtractor.isVideoFrameReady(l, sec)) return false;
-            } else {
+            const vsm = (typeof window !== 'undefined') ? window.VideoStreamManager : null;
+            const key = (vsm && typeof vsm.getSourceKey === 'function') ? vsm.getSourceKey(l) : (l.mediaId || l.dataUrl || l.id);
+            const clipTime = (typeof window !== 'undefined' && window.VideoCompEngine && typeof window.VideoCompEngine.computeLayerClipTime === 'function')
+              ? window.VideoCompEngine.computeLayerClipTime(l, sec, pps)
+              : Math.max(0, (l.sourceOffsetSec || 0) + (sec - start) * (l.speed || 1.0));
+            if (!vsm || !vsm.isSupported || !key || typeof vsm.hasExactFrame !== 'function' || !vsm.hasExactFrame(key, clipTime)) {
               return false;
             }
           }
@@ -2172,9 +2147,10 @@
               if (precompTime >= subStart && precompTime < subStart + subDur) {
                 if (this.isLayerBaking(sub)) return false;
                 if (sub.type === 'video' || sub.mediaType === 'video') {
-                  if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.isVideoFrameReady === 'function') {
-                    if (!window.VideoFrameExtractor.isVideoFrameReady(sub, precompTime)) return false;
-                  } else {
+                  const vsm = (typeof window !== 'undefined') ? window.VideoStreamManager : null;
+                  const subKey = (vsm && typeof vsm.getSourceKey === 'function') ? vsm.getSourceKey(sub) : (sub.mediaId || sub.dataUrl || sub.id);
+                  const subClipTime = Math.max(0, (sub.sourceOffsetSec || 0) + (precompTime - subStart) * (sub.speed || 1.0));
+                  if (!vsm || !vsm.isSupported || !subKey || typeof vsm.hasExactFrame !== 'function' || !vsm.hasExactFrame(subKey, subClipTime)) {
                     return false;
                   }
                 }

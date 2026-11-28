@@ -2010,13 +2010,18 @@
         el.classList.contains('timeline-keyframe-marker')
       ));
       if (interactiveUnder) {
+        e.stopPropagation();
+        e.preventDefault();
         interactiveUnder.dispatchEvent(new PointerEvent('pointerdown', {
           bubbles: true,
           cancelable: true,
           clientX: e.clientX,
           clientY: e.clientY,
           pointerId: e.pointerId,
-          button: e.button
+          button: e.button,
+          shiftKey: e.shiftKey,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey
         }));
         return;
       }
@@ -2820,6 +2825,12 @@
           });
 
           if (matchedDiamonds.length > 0) {
+            // Prevent trailing click event on .desktop-kf-track-row / tracksEl from clearing marquee selection
+            window._lastDesktopKfInteractTime = performance.now();
+            layersViewport.querySelectorAll('.timeline-clip-block.is-marquee-candidate').forEach(c => {
+              c.classList.remove('is-marquee-candidate');
+            });
+
             const isShift = !!(upEvent.shiftKey || upEvent.metaKey || upEvent.ctrlKey);
             if (!isShift && typeof window.clearSelectedKeyframes === 'function') {
               window.clearSelectedKeyframes();
@@ -2849,6 +2860,9 @@
                 });
               }
             });
+            if (typeof window.updateGraphEditorUI === 'function') {
+              window.updateGraphEditorUI();
+            }
             return;
           }
 

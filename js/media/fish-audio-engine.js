@@ -729,18 +729,6 @@
 
       flatItems.forEach(item => {
         const { layer, parentLayer, rootStartSec, rootEndSec, sourceOffsetSec, parentOffsetSec, parentSpeed, effectiveSpeed, isMuted, effectiveGain } = item;
-        if (!isCompCachedAhead && layer.type === 'video' && window.VideoFrameExtractor && currentSec >= rootStartSec && currentSec < rootEndSec) {
-          const sourceKey = window.VideoFrameExtractor._getSourceKey(layer);
-          const source = window.VideoFrameExtractor.getSourceCache(sourceKey);
-          if (source) {
-            const clipTime = Math.max(0, (sourceOffsetSec || 0) + (currentSec - rootStartSec) * (effectiveSpeed || 1.0));
-            const curFIdx = Math.round(clipTime * (source.fps || 60));
-            if (source._lastSyncEnsureFIdx === undefined || Math.abs(curFIdx - source._lastSyncEnsureFIdx) >= 8) {
-              source._lastSyncEnsureFIdx = curFIdx;
-              window.VideoFrameExtractor.ensurePlaybackFrames(source, curFIdx, 90);
-            }
-          }
-        }
         const sched = window.FishAudioScheduler;
         if (sched && sched.playing && sched.handles(layer, parentLayer)) {
           return; // Played sample-accurately by the Web Audio scheduler
@@ -1000,15 +988,6 @@
 
       flatItems.forEach(item => {
         const { layer, rootStartSec, rootEndSec, sourceOffsetSec, effectiveSpeed, isMuted } = item;
-        if (layer.type === 'video' && window.VideoFrameExtractor && currentSec >= rootStartSec && currentSec < rootEndSec) {
-          const sourceKey = window.VideoFrameExtractor._getSourceKey(layer);
-          const source = window.VideoFrameExtractor.getSourceCache(sourceKey);
-          if (source) {
-            const clipTime = Math.max(0, (sourceOffsetSec || 0) + (currentSec - rootStartSec) * (effectiveSpeed || 1.0));
-            const curFIdx = Math.round(clipTime * (source.fps || 60));
-            window.VideoFrameExtractor.ensurePlaybackFrames(source, curFIdx, 90);
-          }
-        }
         if (isMuted) return;
         const media = window.getOrLoadLayerMedia ? window.getOrLoadLayerMedia(layer) : null;
         if (!media || !media.el) return;

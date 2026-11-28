@@ -49,6 +49,13 @@
     "icon": "assets/effects/thumbs/checkbox-control.png"
   },
   {
+    "file": "chroma_key.js",
+    "id": "chroma-key",
+    "name": "Chroma Key",
+    "category": "keying",
+    "icon": "assets/effects/thumbs/chroma-key.svg"
+  },
+  {
     "file": "chromatic_aberration.js",
     "id": "chromatic-aberration",
     "name": "Chromatic Aberration",
@@ -68,6 +75,13 @@
     "name": "Color Control",
     "category": "expression",
     "icon": "assets/effects/thumbs/color-control.png"
+  },
+  {
+    "file": "color_key.js",
+    "id": "color-key",
+    "name": "Color Key",
+    "category": "keying",
+    "icon": "assets/effects/thumbs/color-key.svg"
   },
   {
     "file": "color_temperature.js",
@@ -238,11 +252,25 @@
     "icon": "assets/FXPH.svg"
   },
   {
+    "file": "luma_key.js",
+    "id": "luma-key",
+    "name": "Luma Key",
+    "category": "keying",
+    "icon": "assets/effects/thumbs/luma-key.svg"
+  },
+  {
     "file": "lumia.js",
     "id": "lumia",
     "name": "Lumia",
     "category": "lightning",
     "icon": "assets/FXPH.svg"
+  },
+  {
+    "file": "matte_choker.js",
+    "id": "matte-choker",
+    "name": "Simple Choker",
+    "category": "keying",
+    "icon": "assets/effects/thumbs/matte-choker.svg"
   },
   {
     "file": "mono.js",
@@ -369,6 +397,13 @@
     "name": "3D Sphere",
     "category": "3d",
     "icon": "assets/FXPH.svg"
+  },
+  {
+    "file": "spill_suppressor.js",
+    "id": "spill-suppressor",
+    "name": "Spill Suppressor",
+    "category": "keying",
+    "icon": "assets/effects/thumbs/spill-suppressor.svg"
   },
   {
     "file": "star_burst.js",

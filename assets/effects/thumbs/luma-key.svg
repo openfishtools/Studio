@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <pattern id="lk-grid" width="16" height="16" patternUnits="userSpaceOnUse">
+      <rect width="16" height="16" fill="#1C2229"/>
+      <rect width="8" height="8" fill="#2A323D"/>
+      <rect x="8" y="8" width="8" height="8" fill="#2A323D"/>
+    </pattern>
+    <clipPath id="lk-card">
+      <rect x="0" y="0" width="128" height="128" rx="14"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#lk-card)">
+    <!-- Left half: dark luminance keyed out to checkerboard -->
+    <rect x="0" y="0" width="64" height="128" fill="url(#lk-grid)"/>
+    <!-- Right half: bright luminance kept -->
+    <rect x="64" y="0" width="64" height="128" fill="#E2E8F0"/>
+    <!-- Mid-tone step bar near threshold -->
+    <rect x="64" y="0" width="10" height="128" fill="#94A3B8" opacity="0.45"/>
+    <!-- Vertical threshold divider -->
+    <line x1="64" y1="0" x2="64" y2="128" stroke="#64748B" stroke-width="2" stroke-dasharray="5 4"/>
+    <!-- Center Luminance Circle: left half dashed transparent, right half solid dark-on-light contrast -->
+    <path d="M64 34 A30 30 0 0 0 64 94" fill="none" stroke="#F8FAFC" stroke-width="3.5" stroke-dasharray="6 4"/>
+    <path d="M64 34 A30 30 0 0 1 64 94 Z" fill="#0F172A"/>
+    <!-- Sun rays on right (bright) side -->
+    <g stroke="#0F172A" stroke-width="3" stroke-linecap="round">
+      <line x1="102" y1="64" x2="112" y2="64"/>
+      <line x1="91" y1="37" x2="98" y2="30"/>
+      <line x1="91" y1="91" x2="98" y2="98"/>
+    </g>
+    <!-- Small dark-keyed indicator dot on left -->
+    <circle cx="48" cy="64" r="6" fill="none" stroke="#94A3B8" stroke-width="2.5"/>
+  </g>
+</svg>

@@ -704,9 +704,6 @@
         if (window.PreviewCacheManager) {
           window.PreviewCacheManager.setFps(currentFps);
         }
-        if (window.VideoFrameExtractor) {
-          window.VideoFrameExtractor.setFps(currentFps);
-        }
         const fpsDropdown = document.getElementById('dropdown-fps');
         if (fpsDropdown) {
           fpsDropdown.dataset.value = String(currentFps);
@@ -2528,17 +2525,16 @@
 
         const curSec = getCurrentPlayheadTime();
 
-        // Precise park seek on active unmuted audio streams + frame extractor priority for video/precomp
+        // Precise park seek on active unmuted audio streams
         const layers = currentProjectState.layers || [];
         layers.forEach(layer => {
-          if (layer.type === 'video' || layer.type === 'precomp') {
-            const start = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pixelsPerSecond);
-            const dur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pixelsPerSecond);
-            if (curSec >= start && curSec < start + dur && window.VideoFrameExtractor) {
-              window.VideoFrameExtractor.extractLayerRange(layer);
-            }
-          }
           if ((layer.type === 'audio' || layer.type === 'video') && !layer.isMuted) {
+            // Skip redundant DOM <video> seek when Web Audio scheduler already owns audio
+            // and VideoStreamManager owns video decoding (prevents double hardware H.264 decode).
+            if (layer.type === 'video' && window.VideoStreamManager && window.VideoStreamManager.isSupported &&
+                window.FishAudioScheduler && typeof window.FishAudioScheduler.handles === 'function' && window.FishAudioScheduler.handles(layer)) {
+              return;
+            }
             const start = layer.startSec !== undefined ? layer.startSec : ((layer.startPx || 0) / pixelsPerSecond);
             const dur = layer.durationSec !== undefined ? layer.durationSec : ((layer.widthPx || 400) / pixelsPerSecond);
             if (curSec >= start && curSec < start + dur) {
@@ -4064,46 +4060,59 @@
             }
             updateStopwatchState();
 
+            swBtn.addEventListener('pointerdown', (e) => {
+              e.stopPropagation();
+              e.stopImmediatePropagation();
+            });
+
             swBtn.addEventListener('click', (e) => {
               e.stopPropagation();
+              e.preventDefault();
+              const liveLayer = (window.currentProjectState && window.currentProjectState.layers)
+                ? (window.currentProjectState.layers.find(l => l.id === layer.id) || layer)
+                : layer;
               const t = Number(getPlayheadSec().toFixed(3));
-              if (!layer.keyframes) layer.keyframes = {};
-              if (!Array.isArray(layer.keyframes[p.prop])) layer.keyframes[p.prop] = [];
-              const kfs = layer.keyframes[p.prop];
+              if (!liveLayer.keyframes) liveLayer.keyframes = {};
+              if (!Array.isArray(liveLayer.keyframes[p.prop])) liveLayer.keyframes[p.prop] = [];
+              const kfs = liveLayer.keyframes[p.prop];
               const existIdx = kfs.findIndex(k => Math.abs(k.time - t) < 0.025);
               if (existIdx >= 0) {
                 kfs.splice(existIdx, 1);
-                if (kfs.length === 0) delete layer.keyframes[p.prop];
+                if (kfs.length === 0) delete liveLayer.keyframes[p.prop];
               } else {
                 let curVal;
                 if (typeof getLayerPropertyValue === 'function') {
-                  curVal = getLayerPropertyValue(layer, p.prop);
+                  curVal = getLayerPropertyValue(liveLayer, p.prop);
                 } else {
-                  curVal = layer[p.prop];
+                  curVal = liveLayer[p.prop];
                 }
-                const defEasing = getLayerPropEasing(layer, p.prop);
+                const defEasing = getLayerPropEasing(liveLayer, p.prop);
                 kfs.push({ time: t, value: curVal, easing: defEasing });
                 kfs.sort((a, b) => a.time - b.time);
               }
               if (typeof saveCurrentProjectLayers === 'function') saveCurrentProjectLayers(true);
               if (typeof invalidatePreviewCacheForLayer === 'function') {
-                invalidatePreviewCacheForLayer(layer);
+                invalidatePreviewCacheForLayer(liveLayer);
               } else if (typeof window.invalidatePreviewCacheForLayer === 'function') {
-                window.invalidatePreviewCacheForLayer(layer);
+                window.invalidatePreviewCacheForLayer(liveLayer);
               }
               if (typeof invalidateEffectivePropsCache === 'function') invalidateEffectivePropsCache();
               if (typeof redrawComposition === 'function') redrawComposition();
 
               // Update track lane markers in-place without destroying property tree DOM
-              const lane = layersTrack ? layersTrack.querySelector(`.timeline-track-lane[data-layer-id="${layer.id}"]`) : null;
+              const lane = layersTrack ? layersTrack.querySelector(`.timeline-track-lane[data-layer-id="${liveLayer.id}"]`) : null;
               if (lane) {
                 const oldTracks = lane.querySelector('.desktop-kf-tracks-wrapper');
                 if (oldTracks) oldTracks.remove();
                 const pps = window.currentPixelsPerSecond || (typeof pixelsPerSecond !== 'undefined' ? pixelsPerSecond : 80);
-                const tracksEl = buildDesktopKfTracksWrapper(layer, pps, layer._kfExpandedOnlyKeyframed);
+                const tracksEl = buildDesktopKfTracksWrapper(liveLayer, pps, liveLayer._kfExpandedOnlyKeyframed);
                 lane.appendChild(tracksEl);
               }
               updateStopwatchState();
+              if (typeof updateTransformKeyframeBtnState === 'function') updateTransformKeyframeBtnState();
+              if (typeof updateBlendKeyframeBtnState === 'function') updateBlendKeyframeBtnState();
+              if (typeof syncEffectsKeyframeState === 'function') syncEffectsKeyframeState(liveLayer);
+              if (typeof window.updateGraphEditorUI === 'function') window.updateGraphEditorUI();
             });
 
             // --- Prop name ---
@@ -4418,6 +4427,31 @@
           });
         });
 
+        // For Precompose layers on Desktop, show a collapsible "LAYERS" category row BELOW Transform/Effects
+        // (collapsed by default so Transform/Effects are always immediately accessible on top)
+        if (layer.type === 'precomp') {
+          const childCount = Array.isArray(layer.layers) ? layer.layers.length : 0;
+          const layersCatRow = document.createElement('div');
+          layersCatRow.className = `desktop-kf-cat-row desktop-kf-layers-cat-row${layer._precompExpanded ? ' is-expanded' : ''}`;
+          layersCatRow.title = layer._precompExpanded ? 'Collapse Precomp Layers' : 'Expand Precomp Layers';
+          layersCatRow.innerHTML = `<span class="desktop-kf-cat-icon">${layer._precompExpanded ? '▾' : '▸'}</span><span class="desktop-kf-cat-title">Layers${childCount > 0 ? ` (${childCount})` : ''}</span>`;
+          layersCatRow.addEventListener('pointerdown', (e) => {
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+          });
+          layersCatRow.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const curLayers = (window.currentProjectState && window.currentProjectState.layers) || [];
+            const livePrecomp = curLayers.find(l => String(l.id) === String(layer.id)) || layer;
+            livePrecomp._precompExpanded = !livePrecomp._precompExpanded;
+            if (typeof renderTimelineLayers === 'function') {
+              renderTimelineLayers();
+            }
+          });
+          treeEl.appendChild(layersCatRow);
+        }
+
         return treeEl;
       }
       window.buildDesktopKfPropertyTree = buildDesktopKfPropertyTree;
@@ -4429,6 +4463,7 @@
 
         tracksEl.addEventListener('click', (ev) => {
           if (ev.target.closest('.desktop-kf-diamond')) return;
+          if (performance.now() - (window._lastDesktopKfInteractTime || 0) < 250) return;
           if (!ev.shiftKey && !ev.metaKey && !ev.ctrlKey) {
             if (typeof window.clearSelectedKeyframes === 'function') {
               window.clearSelectedKeyframes();
@@ -4453,6 +4488,7 @@
             // Track line click: deselect keyframes if no modifier held; STRICTLY NO SEEKING PLAYHEAD
             pTrack.addEventListener('click', (ev) => {
               if (ev.target.closest('.desktop-kf-diamond')) return;
+              if (performance.now() - (window._lastDesktopKfInteractTime || 0) < 250) return;
               if (!ev.shiftKey && !ev.metaKey && !ev.ctrlKey) {
                 if (typeof window.clearSelectedKeyframes === 'function') {
                   window.clearSelectedKeyframes();
@@ -4488,10 +4524,15 @@
                 }
               }
 
+              diamond.addEventListener('click', (e) => {
+                e.stopPropagation();
+              });
+
               diamond.addEventListener('pointerdown', (e) => {
                 if (e.button !== 0) return;
                 e.stopPropagation();
                 e.preventDefault();
+                window._lastDesktopKfInteractTime = performance.now();
 
                 const isShift = !!(e.shiftKey || e.metaKey || e.ctrlKey);
                 const wasAlreadySelected = Array.isArray(window.selectedKeyframes) && window.selectedKeyframes.some(it => 
@@ -4502,13 +4543,26 @@
                   selectTimelineLayer(layer.id, false, true);
                 }
 
+                // Re-resolve live DOM diamond if selectTimelineLayer re-rendered the lane
+                let activeDiamond = diamond;
+                if (!activeDiamond.isConnected) {
+                  const live = document.querySelector(`.desktop-kf-diamond[data-layer-id="${layer.id}"][data-prop="${p.prop}"][data-time="${kf.time}"]`);
+                  if (live) activeDiamond = live;
+                }
+
                 if (!wasAlreadySelected) {
                   if (!isShift) {
                     if (typeof window.clearSelectedKeyframes === 'function') window.clearSelectedKeyframes();
                   }
-                  diamond.classList.add('is-selected-kf');
+                  activeDiamond.classList.add('is-selected-kf');
                   if (!window.selectedKeyframes) window.selectedKeyframes = [];
-                  window.selectedKeyframes.push({ layerId: layer.id, layer, prop: p.prop, time: kf.time, kf, marker: diamond });
+                  window.selectedKeyframes.push({ layerId: layer.id, layer, prop: p.prop, time: kf.time, kf, marker: activeDiamond });
+                } else {
+                  activeDiamond.classList.add('is-selected-kf');
+                  const existingItem = window.selectedKeyframes.find(it =>
+                    it.kf === kf || (it.layerId === layer.id && it.prop === p.prop && Math.abs(it.time - kf.time) < 0.002)
+                  );
+                  if (existingItem) existingItem.marker = activeDiamond;
                 }
 
                 const startX = e.clientX;
@@ -4516,14 +4570,16 @@
                 const kfInitialTime = kf.time;
                 let hasMoved = false;
 
-                try { diamond.setPointerCapture(e.pointerId); } catch (_) {}
+                try { activeDiamond.setPointerCapture(e.pointerId); } catch (_) {}
 
                 const layers = (window.currentProjectState && window.currentProjectState.layers) || [];
                 const multiDragSnapshots = (Array.isArray(window.selectedKeyframes) && window.selectedKeyframes.length > 0)
                   ? window.selectedKeyframes.map(it => {
                       const targetLayer = it.layer || layers.find(l => l.id === it.layerId);
                       const targetKf = it.kf || (targetLayer && targetLayer.keyframes && targetLayer.keyframes[it.prop] ? targetLayer.keyframes[it.prop].find(k => Math.abs(k.time - it.time) < 0.002) : null);
-                      const targetDiamond = it.marker || document.querySelector(`.desktop-kf-diamond[data-prop="${it.prop}"][data-time="${it.time}"]`);
+                      const targetDiamond = (it.marker && it.marker.isConnected)
+                        ? it.marker
+                        : document.querySelector(`.desktop-kf-diamond[data-layer-id="${it.layerId}"][data-prop="${it.prop}"][data-time="${it.time}"]`);
                       return {
                         item: it,
                         layer: targetLayer,
@@ -4534,12 +4590,12 @@
                       };
                     })
                   : [{
-                      item: { layerId: layer.id, layer, prop: p.prop, time: kf.time, kf, marker: diamond },
+                      item: { layerId: layer.id, layer, prop: p.prop, time: kf.time, kf, marker: activeDiamond },
                       layer: layer,
                       kf: kf,
                       prop: p.prop,
                       origTime: kf.time,
-                      marker: diamond
+                      marker: activeDiamond
                     }];
 
                 function onDiamondMove(ev) {
@@ -4618,7 +4674,8 @@
                 }
 
                 function onDiamondUp(ev) {
-                  try { diamond.releasePointerCapture(ev.pointerId); } catch (_) {}
+                  window._lastDesktopKfInteractTime = performance.now();
+                  try { activeDiamond.releasePointerCapture(ev.pointerId); } catch (_) {}
                   window.isTransformInteracting = false;
                   multiDragSnapshots.forEach(s => {
                     if (s.marker) s.marker.classList.remove('is-dragging');
@@ -4661,29 +4718,23 @@
                     if (typeof updateTransformKeyframeBtnState === 'function') updateTransformKeyframeBtnState();
                     if (typeof updateBlendKeyframeBtnState === 'function') updateBlendKeyframeBtnState();
                     if (typeof syncEffectsKeyframeState === 'function') syncEffectsKeyframeState(layer);
+                    if (typeof window.updateGraphEditorUI === 'function') window.updateGraphEditorUI();
                   } else {
                     if (isShift) {
                       if (wasAlreadySelected) {
-                        diamond.classList.remove('is-selected-kf');
+                        activeDiamond.classList.remove('is-selected-kf');
                         window.selectedKeyframes = window.selectedKeyframes.filter(it => 
                           !(it.kf === kf || (it.layerId === layer.id && it.prop === p.prop && Math.abs(it.time - kf.time) < 0.002))
                         );
                       }
                     } else {
-                      const wasSoleSelected = wasAlreadySelected && 
-                        Array.isArray(window.selectedKeyframes) && 
-                        window.selectedKeyframes.length === 1 && 
-                        (window.selectedKeyframes[0].kf === kf || (window.selectedKeyframes[0].layerId === layer.id && window.selectedKeyframes[0].prop === p.prop && Math.abs(window.selectedKeyframes[0].time - kf.time) < 0.002));
-
-                      if (wasSoleSelected) {
-                        if (typeof window.clearSelectedKeyframes === 'function') window.clearSelectedKeyframes();
-                      } else {
-                        if (typeof window.clearSelectedKeyframes === 'function') window.clearSelectedKeyframes();
-                        diamond.classList.add('is-selected-kf');
-                        window.selectedKeyframes = [{ layerId: layer.id, layer, prop: p.prop, time: kf.time, kf, marker: diamond }];
-                        // Strictly DO NOT seek timeline on keyframe diamond click on desktop
-                      }
+                      // After Effects behavior: clicking a keyframe without Shift selects it cleanly
+                      // (and keeps it selected if already selected, instead of erratically toggling off)
+                      if (typeof window.clearSelectedKeyframes === 'function') window.clearSelectedKeyframes();
+                      activeDiamond.classList.add('is-selected-kf');
+                      window.selectedKeyframes = [{ layerId: layer.id, layer, prop: p.prop, time: kf.time, kf, marker: activeDiamond }];
                     }
+                    if (typeof window.updateGraphEditorUI === 'function') window.updateGraphEditorUI();
                   }
                 }
 
@@ -4734,6 +4785,13 @@
           });
         });
 
+        // Matching right-side spacer row for Precompose "LAYERS" category row
+        if (layer.type === 'precomp') {
+          const layersCatTrack = document.createElement('div');
+          layersCatTrack.className = 'desktop-kf-track-cat-row';
+          tracksEl.appendChild(layersCatTrack);
+        }
+
         return tracksEl;
       }
       window.buildDesktopKfTracksWrapper = buildDesktopKfTracksWrapper;
@@ -4745,9 +4803,13 @@
 
         const isDesktop = (typeof isDesktopLayout === 'function') ? isDesktopLayout() : false;
         if (layer.type === 'precomp' && isDesktop) {
-          const willExpand = (typeof forceState === 'boolean') ? forceState : !layer._precompExpanded;
-          layer._precompExpanded = willExpand;
+          const willExpand = (typeof forceState === 'boolean') ? forceState : !layer._kfExpanded;
           layer._kfExpanded = willExpand;
+          layer._kfExpandedOnlyKeyframed = willExpand ? !!onlyKeyframed : false;
+          if (!willExpand) {
+            layer._precompExpanded = false;
+            layer._kfSoloProp = null;
+          }
           if (typeof renderTimelineLayers === 'function') {
             renderTimelineLayers();
           }

@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <pattern id="ck-grid" width="16" height="16" patternUnits="userSpaceOnUse">
+      <rect width="16" height="16" fill="#1C2229"/>
+      <rect width="8" height="8" fill="#2A323D"/>
+      <rect x="8" y="8" width="8" height="8" fill="#2A323D"/>
+    </pattern>
+    <clipPath id="ck-card">
+      <rect x="0" y="0" width="128" height="128" rx="14"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#ck-card)">
+    <!-- Right half: transparency checkerboard -->
+    <rect x="0" y="0" width="128" height="128" fill="url(#ck-grid)"/>
+    <!-- Left half: studio chroma green screen -->
+    <polygon points="0,0 74,0 54,128 0,128" fill="#16A34A"/>
+    <!-- Subtle studio frame marks on green side -->
+    <g stroke="#4ADE80" stroke-width="2" stroke-linecap="round" opacity="0.65">
+      <line x1="14" y1="22" x2="22" y2="22"/>
+      <line x1="18" y1="18" x2="18" y2="26"/>
+      <line x1="14" y1="106" x2="22" y2="106"/>
+      <line x1="18" y1="102" x2="18" y2="110"/>
+    </g>
+    <!-- Clean diagonal split line -->
+    <line x1="74" y1="0" x2="54" y2="128" stroke="#FFFFFF" stroke-width="2.5" opacity="0.9"/>
+    <!-- Crisp subject silhouette (person) standing cleanly across green screen & transparency -->
+    <g fill="#F8FAFC">
+      <circle cx="64" cy="44" r="17"/>
+      <path d="M32 114 C32 88 45 73 64 73 C83 73 96 88 96 114 Z"/>
+    </g>
+    <!-- Subtle inner contour on right side to emphasize clean alpha cutout -->
+    <g fill="none" stroke="#16A34A" stroke-width="2" stroke-dasharray="4 3" opacity="0.85">
+      <path d="M64 27 A17 17 0 0 1 64 61"/>
+      <path d="M64 73 C83 73 96 88 96 114"/>
+    </g>
+  </g>
+</svg>

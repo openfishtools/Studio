@@ -3999,6 +3999,10 @@
   <div class="popover-card is-menu-popover" id="popover-media-item-menu" role="dialog" aria-hidden="true" style="min-width: 10.9375rem;">
     <div class="popover-tail" aria-hidden="true"></div>
     <div class="popover-menu-list">
+      <button type="button" class="popover-menu-item" id="btn-media-replace">
+        <span>Replace Media</span>
+      </button>
+      <div class="popover-menu-divider" id="divider-media-replace"></div>
       <button type="button" class="popover-menu-item is-hidden-item" id="btn-media-replace-3d">
         <span>Replace Selected 3D</span>
       </button>
@@ -4556,7 +4560,7 @@
       <header class="welcome-modal-header">
         <div class="welcome-header-title-box">
           <h3 class="modal-title">OpenFishTools</h3>
-          <span class="welcome-badge">v0.7.5</span>
+          <span class="welcome-badge">v0.8.0</span>
         </div>
         <button type="button" class="modal-btn-close" aria-label="Close" onclick="closeWelcomeModal()">
           <i class='fticon fticon-close-3' style='width:1.125rem;height:1.125rem;font-size:1.125rem;line-height:1;' aria-hidden='true'></i>
@@ -4586,11 +4590,68 @@
             </a>
           </div>
           <div class="welcome-changelog-feed">
+            <!-- Version 0.8.0 -->
+            <div class="welcome-version-block">
+              <div class="welcome-version-header">
+                <span class="welcome-version-pill">v0.8.0</span>
+                <span class="welcome-version-badge-latest">Latest</span>
+                <span class="welcome-version-date">Nov 28, 2026</span>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Next-Gen WebCodecs Video Engine (`js/media/video-decoder-worker.js`, `js/media/video-stream-manager.js`, `js/media/videocomp-enggine.js`, `js/media/preview-cache.js`, `js/media/bg-removal-engine.js`, `js/media/fish-export-engine.js`)</span>
+                  <span class="changelog-item-desc">Replaced the legacy frame-baking pipeline (`frame-extractor.js` removed) with a persistent WebCodecs sliding-window GOP streaming decoder featuring a continuous forward cursor, dedicated random-access seek decoder with 10ms fuzzy timestamp matching, directional LRU cache (`180` desktop / `72` mobile frames) with zero-GC lookups, Auto-Proxy (`&gt;1080p` desktop / `&gt;720p` mobile, full-res on export), `warmAheadForLayers` cache-boundary bridging, and direct `ownCopy` frame delivery for AI Background Removal and video export.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Shared Precomp Render Cache (`js/editor/editor-canvas.js`)</span>
+                  <span class="changelog-item-desc">Added recursive content-signature caching (`_sharedPrecompFrameCache`, `_getPrecompContentSig`, `_getSharedPrecompCanvas`) so duplicated and nested precomps with identical inner content render once per frame (`N× → 1×`) while keeping edited copies isolated and bypassing `collapseTransformations`.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Media Pool Replace &amp; Full 3D Model Disposal (`editor.html`, `desktop.html`, `js/editor/editor-media.js`, `js/editor/editor-3d-materials.js`)</span>
+                  <span class="changelog-item-desc">Added **Replace Media** (`#btn-media-replace`) to the Media Pool right-click/hold context menu for images, videos, audio, and 3D models. Replacing a 3D model updates all referencing layers (including inside precomps) while preserving transforms, keyframes, expressions, effects, and non-texture settings, resets material slots/textures to the new model, and fully disposes the old 3D model from GPU buffers, memory, texture caches, Media Pool, and IndexedDB.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-new">New</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Template Editor 3D Object &amp; Text Replacement (`js/app/template-editor.js`, `css/panels/template-editor.css`)</span>
+                  <span class="changelog-item-desc">Extended Template Editor slot detection and replacement beyond images/videos to support **3D Model** slots (with full old-model disposal and preserved transforms/effects) and **Text** slots (with a live flat inline text editor panel that updates preview and timeline layers in real time).</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">AI Remove Background Progress &amp; WebCodecs Integration (`js/media/bg-removal-engine.js`, `js/media/video-stream-manager.js`)</span>
+                  <span class="changelog-item-desc">Fixed AI background removal stalling at `0%` after removing frame baking by streaming frames on demand through `VideoStreamManager` with `ownCopy: true` and strict `.close()` lifecycle cleanup.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Interface Export Bookmark Button Tap Feedback (`js/media/interface-export-renderer.js`)</span>
+                  <span class="changelog-item-desc">Removed `beatHit` (`380ms` post-landing bounce) from the Bookmark button fill state and tightened launch tap feedback to `85ms` so rapid beats render as crisp individual clicks instead of looking held down.</span>
+                </div>
+              </div>
+              <div class="welcome-changelog-item">
+                <span class="changelog-badge badge-fixed">Fixed</span>
+                <div class="changelog-item-content">
+                  <span class="changelog-item-title">Default Layer Duration &amp; Playhead Insertion Timing (`js/editor/editor-layers.js`)</span>
+                  <span class="changelog-item-desc">Fixed `getSelectedLayerTiming()` overriding `currentProjectState.defaultDuration` and playhead position with the selected or topmost layer's duration when creating new layers.</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Version 0.7.5 -->
             <div class="welcome-version-block">
               <div class="welcome-version-header">
                 <span class="welcome-version-pill">v0.7.5</span>
-                <span class="welcome-version-badge-latest">Latest</span>
                 <span class="welcome-version-date">Nov 28, 2026</span>
               </div>
               <div class="welcome-changelog-item">
@@ -7931,7 +7992,7 @@
   <script src="js/core/fish3d.js"></script>
   <script src="js/core/fish3d-loader.js"></script>
   <script src="js/core/fishtool-engine.js?v=8"></script>
-  <script src="js/media/frame-extractor.js"></script>
+  <script src="js/media/video-stream-manager.js"></script>
   <script src="js/media/videocomp-enggine.js"></script>
   <script src="js/media/fish-audio-engine.js"></script>
   <script src="js/media/fish-audio-scheduler.js"></script>

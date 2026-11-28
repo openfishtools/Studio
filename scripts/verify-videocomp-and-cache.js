@@ -301,9 +301,9 @@ assert.strictEqual(pcm.getFrame(10, 960, 540), mockFrameBmp, 'getFrame must retu
 assert.strictEqual(pcm.hasFrame(10, 1280, 720), false, 'hasFrame must reject mismatched resolution');
 assert.strictEqual(pcm.getPool('root').has(10), false, 'hasFrame must auto-prune mismatched resolution frame');
 
-// Test: VideoCompEngine.resolvePrecompElement prioritizes baked source.frames
-const bakedPrecomp = {
-  id: 'precomp_baked_test',
+// Test: VideoCompEngine.resolvePrecompElement uses True After Effects live model
+const livePrecompTest = {
+  id: 'precomp_live_test',
   type: 'precomp',
   startSec: 0,
   durationSec: 5,
@@ -311,27 +311,10 @@ const bakedPrecomp = {
   sourceOffsetSec: 0,
   layers: [{ id: 'child_1', type: 'text', startSec: 0, durationSec: 5 }]
 };
-const mockBakedBmp = { width: 1920, height: 1080 };
-const vfeMockSource = {
-  sourceKey: 'precomp_precomp_baked_test',
-  frames: new Map([[0, mockBakedBmp]]),
-  fps: 60
-};
-const origVfe = global.VideoFrameExtractor;
-try {
-  global.VideoFrameExtractor = {
-    _getSourceKey: (l) => 'precomp_' + l.id,
-    getSourceCache: (k) => (k === vfeMockSource.sourceKey ? vfeMockSource : null),
-    getInterpolatedFrame: () => mockBakedBmp,
-    _isPrecompLightweightContent: () => true
-  };
-  const resBaked = engine.resolvePrecompElement(bakedPrecomp, { currentSec: 0 });
-  assert.strictEqual(resBaked.fromSequence, true, 'resolvePrecompElement must prioritize baked sequence frames over lightweight live check');
-  assert.strictEqual(resBaked.el, mockBakedBmp, 'resolvePrecompElement must return baked bitmap');
-} finally {
-  global.VideoFrameExtractor = origVfe;
-}
-console.log('✓ Dynamic maxFrames, cache resolution matching & baked precomp priority verified.');
+const resLivePrecomp = engine.resolvePrecompElement(livePrecompTest, { currentSec: 0 });
+assert.strictEqual(resLivePrecomp.fromSequence, false, 'resolvePrecompElement must use dynamic live rendering');
+assert.strictEqual(resLivePrecomp.hasUnreadyMedia, false, 'resolvePrecompElement must be ready immediately');
+console.log('✓ Dynamic maxFrames, cache resolution matching & live precomp resolution verified.');
 
 // 3. Test applyFitOrStretchToComposition
 // Load editor-canvas.js dependencies
@@ -433,100 +416,103 @@ assert.strictEqual(redrawCalls, 1, 'handleVideoSeeked must redraw composition on
 console.log('✓ applyFitOrStretchToComposition verified (canonical selectedLayerId, transformScale reset, and media cache).');
 console.log('✓ handleVideoSeeked coalesced seeking and freeze synchronization verified.');
 
-// 5. Test VideoFrameExtractor (Video + Precomp Frame Sequence Engine & Sample Deduplication)
-const vfe = window.VideoFrameExtractor;
-assert(vfe, 'VideoFrameExtractor must be exported on window');
-const mockBmp = { width: 960, height: 540, closeCalled: 0, close() { this.closeCalled++; } };
-vfe.retainBitmap(mockBmp);
-vfe.retainBitmap(mockBmp);
-assert.strictEqual(mockBmp._refCount, 2, 'retainBitmap must increment _refCount');
-vfe.releaseBitmap(mockBmp);
-assert.strictEqual(mockBmp.closeCalled, 0, 'releaseBitmap must not close bitmap while _refCount > 0');
-vfe.releaseBitmap(mockBmp);
-assert.strictEqual(mockBmp.closeCalled, 1, 'releaseBitmap must close bitmap when _refCount reaches 0');
+// 5. Test VideoStreamManager (Phase 1 WebCodecs Sliding-Window GOP Engine & LRU Disposal)
+{
+  const origNav = global.navigator;
+  const origVD = global.VideoDecoder;
+  const origWorker = global.Worker;
+  const origRaf = global.requestAnimationFrame;
+  let postedMsgs = [];
+  let workerInst = null;
+  global.navigator = { userAgent: 'Mozilla/5.0 Chrome/125.0.0.0' };
+  global.VideoDecoder = function() {};
+  global.Worker = function(url) {
+    this.url = url;
+    this.postMessage = (msg) => postedMsgs.push(msg);
+    workerInst = this;
+  };
+  global.requestAnimationFrame = (fn) => fn();
 
-// Test Precomp Sequence Resolution & Invalidation
-const testPrecompLayer = {
-  id: 'precomp_seq_1',
-  type: 'precomp',
-  startSec: 1.0,
-  durationSec: 4.0,
-  speed: 1.0,
-  sourceOffsetSec: 0,
-  collapseTransformations: false,
-  layers: [{ id: 'child_shape', type: 'shape', startSec: 0, durationSec: 4.0 }]
-};
-const precompSourceKey = vfe._getSourceKey(testPrecompLayer);
-assert.strictEqual(precompSourceKey, 'precomp_precomp_seq_1', 'Precomp sourceKey must use precomp_<id> namespace');
-const precompSource = vfe._getOrCreateSource(precompSourceKey, '', 'Precomp', testPrecompLayer.id, true);
-const mockPrecompFrameBmp = { width: 960, height: 540, close() {} };
-const fIdxAt2Sec = Math.round(1.0 * (precompSource.fps || 60)); // currentSec=2.0 -> timeInClip=1.0
-precompSource.frames.set(fIdxAt2Sec, vfe.retainBitmap(mockPrecompFrameBmp, precompSourceKey));
-assert.strictEqual(vfe.isVideoFrameReady(testPrecompLayer, 2.0), true, 'isVideoFrameReady must return true for extracted precomp frame');
-const resolvedPrecomp = engine.resolvePrecompElement(testPrecompLayer, { currentSec: 2.0 });
-assert.strictEqual(resolvedPrecomp.el, mockPrecompFrameBmp, 'resolvePrecompElement must return extracted ImageBitmap frame');
-assert.strictEqual(resolvedPrecomp.hasUnreadyMedia, false, 'resolvePrecompElement must report hasUnreadyMedia: false');
+  delete require.cache[require.resolve(path.join(__dirname, '../js/media/video-stream-manager.js'))];
+  require(path.join(__dirname, '../js/media/video-stream-manager.js'));
+  const vsm = window.VideoStreamManager;
+  assert(vsm && vsm.isSupported === true, 'VideoStreamManager must initialize when WebCodecs is available');
 
-vfe.invalidatePrecomp(testPrecompLayer);
-assert.strictEqual(precompSource.frames.size, 0, 'invalidatePrecomp must clear precomp extracted frames');
+  // Inject stream directly
+  const streamInfo = {
+    mediaId: 'vsm_unit_1', ready: true, failed: false, error: null,
+    width: 3840, height: 2160, duration: 3.0, fps: 30, sampleCount: 90,
+    gops: [
+      { index: 0, startPts: 0.0, endPts: 1.0, frameCount: 30 },
+      { index: 1, startPts: 1.0, endPts: 2.0, frameCount: 30 }
+    ],
+    isProxy: true, frames: new Map(), sortedFrames: [], sortedDirty: false,
+    isDecoding: false, pendingRequest: null,
+    isSeekingWorker: false, pendingSeekTime: null,
+    pendingSeekOpts: null, pendingResolves: null,
+    lastRequestedSec: 0, lastSpeed: 1.0
+  };
+  vsm.streams.set('vsm_unit_1', streamInfo);
 
-// Test Mobile/Low-RAM Eviction Unpins _pendingDbEncode & Closes Evicted Bitmaps
-const origMaxRam = vfe.maxRamFrames;
-const origTotalRam = vfe.maxTotalRamFrames;
-vfe.maxRamFrames = 3;
-vfe.maxTotalRamFrames = 5;
-const evictSource = vfe._getOrCreateSource('test_evict_src', '', 'EvictTest', 'ev1', false);
-const createdBmps = [];
-for (let i = 0; i < 5; i++) {
-  const b = { width: 640, height: 360, closed: false, _pendingDbEncode: true, close() { this.closed = true; } };
-  vfe.retainBitmap(b, 'test_evict_src');
-  evictSource.frames.set(i, b);
-  evictSource.cachedFrameIndices.add(i);
-  createdBmps.push(b);
-  vfe._evictOldestFrame(evictSource, i);
+  // Miss triggers stream_ahead
+  let r = vsm.getFrameSync('vsm_unit_1', 0.2);
+  assert.strictEqual(r.exact, false, 'Cache miss must return exact=false');
+  assert(postedMsgs.some(m => m.type === 'stream_ahead'), 'Cache miss must dispatch stream_ahead');
+
+  // Deliver progressive frames_batch (proxy for 4K, 0.0s .. 1.0s)
+  let closedCount = 0;
+  const batchFrames = [];
+  for (let i = 0; i < 30; i++) {
+    batchFrames.push({ pts: i / 30, bitmap: { width: 1920, height: 1080, close() { closedCount++; } } });
+  }
+  workerInst.onmessage({
+    data: { type: 'frames_batch', id: 1, mediaId: 'vsm_unit_1', isProxy: true, done: true, frames: batchFrames }
+  });
+
+  // Exact hit + _streamKey tagging + proactive continuous lookahead during playback (aheadSec = 0.77s < 0.95s)
+  postedMsgs = [];
+  global.window.isTimelinePlaying = true;
+  r = vsm.getFrameSync('vsm_unit_1', 0.2, { speed: 1.0 });
+  global.window.isTimelinePlaying = false;
+  assert.strictEqual(r.exact, true, 'Decoded frame must return exact=true');
+  assert.strictEqual(r.frame._streamKey, 'vsm_vsm_unit_1', 'Decoded frame must carry _streamKey for FishToolEngine.dynamicTexturePool');
+  assert(postedMsgs.some(m => m.type === 'stream_ahead' && m.timeSec > 0.95), 'Continuous lookahead must prefetch ahead before buffer runs low');
+
+  // Export bypasses proxy frames
+  r = vsm.getFrameSync('vsm_unit_1', 0.2, { isExport: true });
+  assert.strictEqual(r.exact, false, 'Export must not accept downscaled proxy frame as exact');
+
+  // VideoCompEngine Priority 1 resolution
+  const vsmLayer = { id: 'vsm_l1', mediaId: 'vsm_unit_1', dataUrl: 'blob:test', name: 'clip.mp4', type: 'video', startSec: 0, speed: 1.0, sourceOffsetSec: 0 };
+  const resolvedVsm = engine.resolveLayerVideoElement(vsmLayer, null, { currentSec: 0.2 });
+  assert(resolvedVsm.el && resolvedVsm.el._streamKey === 'vsm_vsm_unit_1', 'VideoCompEngine must serve WebCodecs frame directly');
+  assert.strictEqual(resolvedVsm.hasUnreadyMedia, false, 'Exact WebCodecs frame must report hasUnreadyMedia=false');
+
+  // Strict bounded directional LRU eviction calls .close()
+  const origCap = vsm.maxCacheFrames;
+  vsm.maxCacheFrames = 10;
+  vsm._evictIfNeeded('vsm_unit_1');
+  assert.strictEqual(vsm.getStats().cachedFrames, 10, 'LRU eviction must cap cachedFrames');
+  assert.strictEqual(closedCount, 20, 'Evicted bitmaps must call .close() immediately');
+  vsm.maxCacheFrames = origCap;
+
+  // Release closes all remaining frames
+  vsm.releaseMedia('vsm_unit_1');
+  assert.strictEqual(vsm.getStats().cachedFrames, 0, 'releaseMedia must clear all cached frames');
+  assert.strictEqual(closedCount, 30, 'releaseMedia must close all remaining bitmaps');
+
+  global.navigator = origNav;
+  global.VideoDecoder = origVD;
+  global.Worker = origWorker;
+  global.requestAnimationFrame = origRaf;
+  delete global.window.VideoStreamManager;
 }
-assert(evictSource.frames.size <= 3, 'Per-source RAM frame cap must evict excess frames immediately');
-const closedCount = createdBmps.filter(b => b.closed).length;
-assert(closedCount >= 2, 'Evicted bitmaps must have _pendingDbEncode unpinned and .close() called so mobile VRAM never leaks');
-vfe.sources.delete('test_evict_src');
-vfe.maxRamFrames = origMaxRam;
-vfe.maxTotalRamFrames = origTotalRam;
-
-// Test Reverse Playback Eviction Inversion
-const revSource = vfe._getOrCreateSource('test_rev_src', '', 'RevTest', 'rev1', false);
-vfe.maxRamFrames = 3;
-vfe.maxTotalRamFrames = 5;
-// Mock playhead at frame 50 in reverse mode
-revSource._isReversePlayback = true;
-vfe._isSourceReversePlayback = (s) => s && s._isReversePlayback;
-vfe._getVideoFrameForPlayhead = () => 50;
-
-// Add frame 70 (past frame in reverse), frame 49 (upcoming frame), frame 48 (upcoming frame), frame 47 (upcoming frame)
-const bPast = { width: 640, height: 360, closed: false, close() { this.closed = true; } };
-const bUpcoming1 = { width: 640, height: 360, closed: false, close() { this.closed = true; } };
-const bUpcoming2 = { width: 640, height: 360, closed: false, close() { this.closed = true; } };
-const bUpcoming3 = { width: 640, height: 360, closed: false, close() { this.closed = true; } };
-
-revSource.frames.set(70, bPast);
-revSource.frames.set(49, bUpcoming1);
-revSource.frames.set(48, bUpcoming2);
-// Trigger eviction by adding 4th frame
-vfe._evictSingleFromSource(revSource, null, 2);
-assert(!revSource.frames.has(70), 'In reverse playback, past frames (fIdx > curFIdx) must be evicted first');
-assert(revSource.frames.has(49) && revSource.frames.has(48), 'In reverse playback, upcoming frames (fIdx < curFIdx) must be protected');
-
-vfe.sources.delete('test_rev_src');
-vfe.maxRamFrames = origMaxRam;
-vfe.maxTotalRamFrames = origTotalRam;
 
 // Test Reverse Split Continuity Math:
 // Original layer: startSec = 0, durationSec = 10, speed = -1, sourceOffsetSec = 0
 const origRevLayer = { startSec: 0, durationSec: 10, speed: -1, sourceOffsetSec: 0 };
 const cutTime = 4.0;
 const origFrameAtCut = engine.computeLayerClipTime(origRevLayer, cutTime);
-// Split produces:
-// Left piece: start = 0, dur = 4, sourceOffsetSec = 0 + (10 - 4)*1 = 6
-// Right piece: start = 4, dur = 6, sourceOffsetSec = 0
 const leftPiece = { startSec: 0, durationSec: 4, speed: -1, sourceOffsetSec: 6 };
 const rightPiece = { startSec: 4, durationSec: 6, speed: -1, sourceOffsetSec: 0 };
 const leftFrameAtCut = engine.computeLayerClipTime(leftPiece, cutTime);
@@ -535,72 +521,6 @@ assert.strictEqual(origFrameAtCut, 6.0, 'Original reverse frame at cut point mus
 assert.strictEqual(leftFrameAtCut, 6.0, 'Left split piece must evaluate to exactly 6.0s at cut point');
 assert.strictEqual(rightFrameAtCut, 6.0, 'Right split piece must evaluate to exactly 6.0s at cut point');
 assert.strictEqual(leftFrameAtCut, rightFrameAtCut, 'Reverse split must be 100% seamless across boundary');
-
-// Test: Precomp caching when older frames evicted from RAM
-const mockPrecompLayer = { id: 'pre_test_1', type: 'precomp', startSec: 0, durationSec: 5.0, widthPx: 400 };
-const preSource = vfe._getOrCreateSource('src_pre_test_1', '', 'Precomp', 'pre_test_1', true);
-preSource.fps = 60;
-preSource.cachedFrameIndices = new Set([0, 1, 2, 3, 4]); // previously extracted
-// RAM only contains frame 4 (frames 0-3 evicted due to mobile RAM quota)
-preSource.frames = new Map();
-preSource.frames.set(4, { width: 640, height: 360, closed: false });
-const { startIdx: pStart, endIdx: pEnd } = vfe.getLayerFrameRange(mockPrecompLayer);
-// Simulate the missing check in extractPrecompRange
-const pMissing = [];
-for (let i = 0; i <= 4; i++) {
-  const hasRam = preSource.frames && preSource.frames.has(i);
-  const hasCached = preSource.cachedFrameIndices && preSource.cachedFrameIndices.has(i);
-  if (!hasRam && !hasCached) {
-    pMissing.push(i);
-  }
-}
-assert.strictEqual(pMissing.length, 0, 'Precomp frames evicted from RAM but in cachedFrameIndices must NOT be marked missing');
-
-// Test: Circuit Breaker on Consecutive Extraction Passes
-const cbSource = vfe._getOrCreateSource('src_cb_test', 'blob:test', 'Video', 'cb_layer_1', false);
-cbSource.pendingFrames = new Set([10, 11, 12]);
-cbSource._consecutivePasses = 3;
-cbSource._lastExtractPassEnd = Date.now() - 100; // 100ms ago (very rapid)
-vfe._startExtractionForSource(cbSource, [10, 11, 12]);
-// Circuit breaker must have tripped: pendingFrames cleared, frames recorded in cachedFrameIndices
-assert.strictEqual(cbSource.pendingFrames.size, 0, 'Circuit breaker must clear pendingFrames to stop infinite loop');
-assert(cbSource.cachedFrameIndices.has(10) && cbSource.cachedFrameIndices.has(11) && cbSource.cachedFrameIndices.has(12), 'Circuit breaker must add unresolved frames to cachedFrameIndices');
-
-// Test: Missing frames sorting in ensurePlaybackFrames (forward vs reverse)
-const fMissing = [35, 45, 55, 65, 75, 25];
-const curFIdx = 50;
-// Forward sort: upcoming (>= 50) first in order 55, 65, 75, then past frames
-fMissing.sort((a, b) => {
-  const scoreA = a >= curFIdx ? (a - curFIdx) : ((curFIdx - a) + 10000);
-  const scoreB = b >= curFIdx ? (b - curFIdx) : ((curFIdx - b) + 10000);
-  return scoreA - scoreB;
-});
-assert.deepStrictEqual(fMissing.slice(0, 3), [55, 65, 75], 'Forward playback prefetch must prioritize upcoming frames over past frames');
-
-// Reverse sort: upcoming (<= 50) decreasing first in order 45, 35, 25, then past frames
-const rMissing = [55, 65, 45, 35, 75, 25];
-rMissing.sort((a, b) => {
-  const scoreA = a <= curFIdx ? (curFIdx - a) : ((a - curFIdx) + 10000);
-  const scoreB = b <= curFIdx ? (curFIdx - b) : ((b - curFIdx) + 10000);
-  return scoreA - scoreB;
-});
-assert.deepStrictEqual(rMissing.slice(0, 3), [45, 35, 25], 'Reverse playback prefetch must prioritize upcoming decreasing frames over past frames');
-
-// Test: Proactive Streaming Prefetch in resolveLayerVideoElement
-let prefetchCalledWith = null;
-vfe.ensurePlaybackFrames = (src, f) => { prefetchCalledWith = f; };
-const streamSrc = vfe._getOrCreateSource('stream_test', 'blob:test', 'Video', 'stream_layer_1', false);
-streamSrc.fps = 60;
-const streamMockBmp = { width: 640, height: 360, closed: false };
-streamSrc.frames.set(10, streamMockBmp);
-vfe.getInterpolatedFrame = () => streamMockBmp;
-const streamLayer = { id: 'stream_layer_1', mediaId: 'stream_test', type: 'video', startSec: 0, speed: 1.0, sourceOffsetSec: 0 };
-engine.resolveLayerVideoElement(streamLayer, null, { currentSec: 10 / 60 });
-assert.strictEqual(prefetchCalledWith, 10, 'resolveLayerVideoElement must proactively trigger ensurePlaybackFrames even when frame is present in RAM');
-
-vfe.sources.delete('src_pre_test_1');
-vfe.sources.delete('src_cb_test');
-vfe.sources.delete('stream_test');
 
 // Test: True After Effects Model for Precompositions
 const livePrecomp = {
@@ -615,12 +535,6 @@ const livePrecomp = {
 const resLive = engine.resolvePrecompElement(livePrecomp, { currentSec: 1.0 });
 assert.strictEqual(resLive.fromSequence, false, 'resolvePrecompElement must not use sequence for live precomps');
 assert.strictEqual(resLive.hasUnreadyMedia, false, 'live precomps must be marked ready immediately without waiting for baking');
-
-// Test: VideoFrameExtractor.extractPrecompRange completes in 0ms
-const pExtract = vfe.extractPrecompRange(livePrecomp);
-assert(pExtract && typeof pExtract.then === 'function', 'extractPrecompRange must return a promise');
-assert.strictEqual(livePrecomp._extractComplete, true, 'extractPrecompRange must mark precomp complete immediately');
-assert.strictEqual(livePrecomp._extractProgress, 1, 'extractPrecompRange must mark precomp progress 100% immediately');
 
 // Test: Modifying precomp container transform preserves _precompBufferCanvas._lastRenderKey
 livePrecomp._precompBufferCanvas = { width: 960, height: 540, _lastRenderKey: 'frame_60_960_540' };
@@ -1031,7 +945,7 @@ console.log('✓ Algoritma 5: Temporal Occupancy Partitioning, Virtual Void Cach
   console.log('✓ FishAudioScheduler verified (default-enabled, root/precomp/reverse/time-remap/audio-fx scheduling, AudioContext clock, rate continuity, seek, stop).');
 }
 
-console.log('✓ VideoFrameExtractor verified (retain/release deduplication, reverse eviction inversion, seamless reverse split, proactive streaming prefetch, upcoming frame sort order, precomp RAM eviction protection, extraction circuit breaker, mobile VRAM cap, precomp sequence resolution, and invalidation).');
+console.log('✓ VideoStreamManager verified (WebCodecs sliding-window GOP decode, zero-copy _streamKey tagging, 65% lookahead prefetch, export proxy bypass, bounded LRU .close() disposal, and releaseMedia cleanup).');
 
 console.log('\n========================================');
 console.log('ALL DEEP VERIFICATION TESTS PASSED! (100%)');

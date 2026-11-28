@@ -245,15 +245,12 @@
     return ffmpegInstance;
   }
 
-  // ── Video Frame Cache Helpers ──────────────────────────────────────────────────
+  // ── Video Stream Helpers ─────────────────────────────────────────────────────
   async function ensureVideosCached(onProgress) {
-    if (window.VideoFrameExtractor && typeof window.VideoFrameExtractor.ensureLayersCached === 'function') {
+    if (window.VideoStreamManager && typeof window.VideoStreamManager.ensureLayersLoaded === 'function') {
       var ps = window.currentProjectState || {};
-      return await window.VideoFrameExtractor.ensureLayersCached(
+      return await window.VideoStreamManager.ensureLayersLoaded(
         ps.layers || [],
-        function(pct, label) {
-          updateProgress(Math.round(pct * 0.12), label || 'Extracting frames...', onProgress);
-        },
         function() { return isCancelled; }
       );
     }
@@ -261,7 +258,8 @@
   }
 
   async function prepareFrameAtTime(t, videoLayers, pps) {
-    if (!window.VideoFrameExtractor) return;
+    var vsm = window.VideoStreamManager;
+    if (!vsm || !vsm.isSupported) return;
     var ps = window.currentProjectState || {};
     var allLayers = (videoLayers && videoLayers.length > 0) ? videoLayers : (ps.layers || []);
     var fetches = [];
@@ -287,8 +285,14 @@
       }
       vl._lastExportClipTime = clip;
 
-      if (!window.VideoFrameExtractor.getFrame(vl, clip)) {
-        fetches.push(window.VideoFrameExtractor.fetchFrameFromDBAsync(vl, clip));
+      if (vl.type === 'video') {
+        var key = vsm.getSourceKey(vl);
+        if (key && vsm.hasStream(key)) {
+          var syncRes = vsm.getFrameSync(key, clip, { isExport: true });
+          if (!syncRes.exact) {
+            fetches.push(vsm.getFrameAsync(key, clip, { isExport: true }));
+          }
+        }
       }
       if (vl.type === 'precomp' && Array.isArray(vl.layers)) {
         fetches.push(prepareFrameAtTime(clip, vl.layers, pps));
@@ -968,8 +972,8 @@
   }
 
   // ── WebCodecs In-Memory Audio Encoding (AAC / Opus) ───────────────────────────
-  async function encodeAudioIntoMuxer(audioBuffer, muxer, preferredCodec) {
-    if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined' || !audioBuffer || !muxer) return false;
+  async function encodeAudioToChunks(audioBuffer, preferredCodec) {
+    if (typeof AudioEncoder === 'undefined' || typeof AudioData === 'undefined' || !audioBuffer) return null;
     var codecsToTry = preferredCodec ? [preferredCodec] : ['mp4a.40.2', 'opus'];
     var audioCfg = null;
     for (var ci = 0; ci < codecsToTry.length; ci++) {
@@ -989,7 +993,7 @@
     }
     if (!audioCfg) {
       logExportWarn('WebCodecs:Audio', 'No supported audio encoder profile found for candidate codecs');
-      return false;
+      return null;
     }
 
     var isAac = (audioCfg.codec && audioCfg.codec.startsWith('mp4a'));
@@ -1000,7 +1004,7 @@
     var chunkDurMicros = Math.round((chunkSize / sampleRate) * 1000000);
 
     var encErr = null;
-    var chunksWritten = 0;
+    var encodedChunks = [];
     var aEnc = new AudioEncoder({
       output: function(chunk, meta) {
         try {
@@ -1008,15 +1012,14 @@
           chunk.copyTo(data);
           var ts = (Number.isFinite(chunk.timestamp) && chunk.timestamp >= 0)
             ? chunk.timestamp
-            : (chunksWritten * chunkDurMicros);
+            : (encodedChunks.length * chunkDurMicros);
           var dur = (Number.isFinite(chunk.duration) && chunk.duration > 0)
             ? chunk.duration
             : chunkDurMicros;
-          muxer.addAudioChunkRaw(data, chunk.type, ts, dur, meta);
-          chunksWritten++;
+          encodedChunks.push({ data: data, type: chunk.type, ts: ts, dur: dur, meta: meta });
         } catch (e) {
           encErr = e;
-          logExportWarn('WebCodecs:Audio', 'Error writing audio chunk to muxer:', e);
+          logExportWarn('WebCodecs:Audio', 'Error buffering audio chunk:', e);
         }
       },
       error: function(e) {
@@ -1056,9 +1059,25 @@
       await aEnc.flush();
     }
     try { aEnc.close(); } catch (_) {}
-    var success = !encErr && !isCancelled && chunksWritten > 0;
-    logExportInfo('WebCodecs:Audio', 'AudioEncoder finished. Chunks written=' + chunksWritten + ', success=' + success);
-    return success;
+    var success = !encErr && !isCancelled && encodedChunks.length > 0;
+    logExportInfo('WebCodecs:Audio', 'AudioEncoder pre-encode finished. Chunks=' + encodedChunks.length + ', success=' + success);
+    return success ? encodedChunks : null;
+  }
+
+  async function encodeAudioIntoMuxer(audioBuffer, muxer, preferredCodec) {
+    if (!muxer) return false;
+    var chunks = await encodeAudioToChunks(audioBuffer, preferredCodec);
+    if (!chunks || chunks.length === 0) return false;
+    try {
+      for (var i = 0; i < chunks.length; i++) {
+        var c = chunks[i];
+        muxer.addAudioChunkRaw(c.data, c.type, c.ts, c.dur, c.meta);
+      }
+      return true;
+    } catch (e) {
+      logExportWarn('WebCodecs:Audio', 'Error writing audio chunk to muxer:', e);
+      return false;
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1211,7 +1230,9 @@
     var chosenCodec = null, chosenConfig = null;
     var hwModes  = ['prefer-hardware', 'no-preference', 'prefer-software'];
     var brModes  = ['variable'];
-    var latModes = ['quality', 'realtime']; // Prioritize 'quality' RDO/B-frames across ALL engines before ever dropping to 'realtime'!
+    // Prioritize 'realtime' so VideoEncoder forbids B-frame reordering (WebCodecs does not expose DTS/CTTS,
+    // and Mp4Muxer requires monotonic DTS === PTS to avoid 0-duration stts entries & stuttery playback).
+    var latModes = ['realtime', 'quality'];
 
     logExportInfo('WebCodecs', 'Testing ' + candidates.length + ' ' + (isHevc ? 'H.265/' : '') + 'H.264/VP9 candidate profiles at ' + baseW + 'x' + baseH + ' @ ' + fps + 'fps (' + (videoBps/1000000).toFixed(1) + ' Mbps)...');
 
@@ -1220,10 +1241,10 @@
       var cand = candidates[ci];
       var nextCand = (ci + 1 < candidates.length) ? candidates[ci + 1] : null;
       var nextCandLabel = nextCand ? (nextCand.name + ' [' + nextCand.codec + ']') : 'Tier 2 GPU MediaRecorder';
+      var candBps = computeExportVideoBitrate(preset, baseW, baseH, fps, totalDur, cand.muxerCodec);
 
-      logExportInfo('WebCodecs:Probe', 'Checking candidate ' + (ci + 1) + '/' + candidates.length + ': ' + cand.name + ' (' + cand.codec + ')...');
+      logExportInfo('WebCodecs:Probe', 'Checking candidate ' + (ci + 1) + '/' + candidates.length + ': ' + cand.name + ' (' + cand.codec + ', ' + (candBps/1000000).toFixed(1) + ' Mbps)...');
 
-      // Outer loop on latencyMode ensures 'quality' mode wins over webcam-grade 'realtime' hardware mode
       for (var li = 0; li < latModes.length; li++) {
         var lat = latModes[li];
         for (var hi = 0; hi < hwModes.length; hi++) {
@@ -1237,10 +1258,13 @@
 
             var cfg = {
               codec: cand.codec, width: baseW, height: baseH,
-              bitrate: videoBps, bitrateMode: br,
+              bitrate: candBps, bitrateMode: br,
               framerate: fps, latencyMode: lat,
               hardwareAcceleration: hw
             };
+            if (cand.codec.startsWith('avc1')) {
+              cfg.avc = { format: 'avc' };
+            }
             try {
               var check = await VideoEncoder.isConfigSupported(cfg);
               if (check && check.supported) {
@@ -1395,6 +1419,32 @@
       var muxer = new Mp4Muxer.Muxer(muxerOptions);
       logExportInfo('WebCodecs:Muxer', 'Mp4Muxer initialized (video=' + chosenCodec.muxerCodec + ', audio=' + (canWebCodecsAudio ? muxerAudioCodec : 'none') + ')');
 
+      // Pre-mix and pre-encode audio before the video loop so audio & video chunks are properly
+      // interleaved inside mdat (eliminates player seek thrashing between start and end of file)
+      // and frees the large decoded PCM AudioBuffer before video rendering begins.
+      var audioResult = null;
+      var preEncodedAudioChunks = null;
+      var nextAudioChunkIdx = 0;
+      var audioEncodedSuccessfully = false;
+      if (hasAudio && canWebCodecsAudio) {
+        updateProgress(2, 'Mixing & encoding audio...', onProgress);
+        logExportInfo('WebCodecs:Audio', 'Pre-mixing audio tracks for interleaved muxing (duration=' + totalDur.toFixed(2) + 's)...');
+        try {
+          audioResult = await mixAudioBuffer(totalDur, false);
+        } catch (aErr) {
+          logExportWarn('WebCodecs:Audio', 'Audio mix error:', aErr);
+        }
+        if (isCancelled) {
+          if (nativeStream) { try { await nativeStream.abort(); } catch (_) {} nativeStream = null; }
+          hideProgress();
+          return true;
+        }
+        if (audioResult && audioResult.buffer) {
+          preEncodedAudioChunks = await encodeAudioToChunks(audioResult.buffer, webCodecsAudioCodec);
+          audioResult.buffer = null; // Free raw PCM buffer immediately
+        }
+      }
+
       var frameDurMicros = Math.round(1000000 / fps);
       var encError = null;
       var lastTs   = -1;
@@ -1408,6 +1458,13 @@
             chunk.copyTo(data);
             var ts  = (Number.isFinite(chunk.timestamp) && chunk.timestamp >= 0) ? chunk.timestamp : 0;
             var dur = (Number.isFinite(chunk.duration)  && chunk.duration  >  0) ? chunk.duration  : frameDurMicros;
+            // Interleave audio chunks up to current video timestamp so audio & video sit together in mdat
+            if (preEncodedAudioChunks && nextAudioChunkIdx < preEncodedAudioChunks.length) {
+              while (nextAudioChunkIdx < preEncodedAudioChunks.length && preEncodedAudioChunks[nextAudioChunkIdx].ts <= ts) {
+                var ac = preEncodedAudioChunks[nextAudioChunkIdx++];
+                muxer.addAudioChunkRaw(ac.data, ac.type, ac.ts, ac.dur, ac.meta);
+              }
+            }
             muxer.addVideoChunkRaw(data, chunk.type, ts, dur, meta);
             chunksCount++;
             totalBytesEncoded += chunk.byteLength;
@@ -1437,10 +1494,10 @@
         }
       }
 
-      // Precompute beat-aligned keyframe frames (4s max GOP + smart keyframe on beatmarks/layer cuts >= 1.2s apart)
-      // Avoids wasting ~18% of bitrate on blind 2s IDR keyframes and prevents macroblocking right after beat cuts!
-      var maxGopFrames = Math.max(fps * 2, Math.round(fps * 4));
-      var minCutFrames = Math.max(12, Math.round(fps * 1.2));
+      // Precompute beat-aligned keyframe frames (2s max GOP + smart keyframe on beatmarks/layer cuts >= 1.0s apart)
+      // Keeps GOP short for fast seeking & smooth hardware decoding while aligning keyframes with cuts.
+      var maxGopFrames = Math.max(30, Math.round(fps * 2));
+      var minCutFrames = Math.max(12, Math.round(fps * 1.0));
       var cutFrameSet = Object.create(null);
       if (Array.isArray(ps.beatmarks)) {
         for (var bmi = 0; bmi < ps.beatmarks.length; bmi++) {
@@ -1577,23 +1634,38 @@
       }
 
 
-      var audioResult = null;
-      var audioEncodedSuccessfully = false;
       if (hasAudio) {
-        updateProgress(95, 'Mixing & encoding audio...', onProgress);
-        logExportInfo('WebCodecs:Audio', 'Mixing audio tracks (duration=' + totalDur.toFixed(2) + 's)...');
-        try {
-          audioResult = await mixAudioBuffer(totalDur, false); // Always create wavBlob for fallback safety
-        } catch (aErr) {
-          logExportWarn('WebCodecs:Audio', 'Audio mix error:', aErr);
-        }
-        if (isCancelled) { hideProgress(); return true; }
-
-        if (canWebCodecsAudio && audioResult && audioResult.buffer) {
-          logExportInfo('WebCodecs:Audio', 'Encoding in-memory ' + webCodecsAudioCodec + ' audio into muxer...');
-          audioEncodedSuccessfully = await encodeAudioIntoMuxer(audioResult.buffer, muxer, webCodecsAudioCodec);
-          audioResult.buffer = null;
-          logExport('WebCodecs:Audio', 'Audio encoding finished (success=' + audioEncodedSuccessfully + ').');
+        if (preEncodedAudioChunks && preEncodedAudioChunks.length > 0) {
+          // Flush any trailing audio chunks remaining after the last video frame
+          try {
+            while (nextAudioChunkIdx < preEncodedAudioChunks.length) {
+              var remAc = preEncodedAudioChunks[nextAudioChunkIdx++];
+              muxer.addAudioChunkRaw(remAc.data, remAc.type, remAc.ts, remAc.dur, remAc.meta);
+            }
+            audioEncodedSuccessfully = true;
+            logExport('WebCodecs:Audio', 'Interleaved audio muxing complete (' + preEncodedAudioChunks.length + ' chunks).');
+          } catch (remErr) {
+            logExportWarn('WebCodecs:Audio', 'Error flushing trailing audio chunks:', remErr);
+          }
+          preEncodedAudioChunks = null;
+        } else {
+          // Fallback path (FFmpeg audio remux when WebCodecs AudioEncoder wasn't used or failed)
+          if (!audioResult) {
+            updateProgress(95, 'Mixing & encoding audio...', onProgress);
+            logExportInfo('WebCodecs:Audio', 'Mixing audio tracks (duration=' + totalDur.toFixed(2) + 's)...');
+            try {
+              audioResult = await mixAudioBuffer(totalDur, false);
+            } catch (aErr) {
+              logExportWarn('WebCodecs:Audio', 'Audio mix error:', aErr);
+            }
+            if (isCancelled) { hideProgress(); return true; }
+          }
+          if (canWebCodecsAudio && audioResult && audioResult.buffer) {
+            logExportInfo('WebCodecs:Audio', 'Encoding in-memory ' + webCodecsAudioCodec + ' audio into muxer...');
+            audioEncodedSuccessfully = await encodeAudioIntoMuxer(audioResult.buffer, muxer, webCodecsAudioCodec);
+            audioResult.buffer = null;
+            logExport('WebCodecs:Audio', 'Audio encoding finished (success=' + audioEncodedSuccessfully + ').');
+          }
         }
       }
 
@@ -1804,13 +1876,18 @@
       var args = ['-v', 'error', '-framerate', String(fps), '-i', 'frame_%05d.jpg'];
       if (hasAudio) args.push('-i', 'audio.wav');
 
-      if (preset === 'light') {
-        args.push('-c:v', 'libx264', '-r', String(fps), '-vsync', 'cfr', '-crf', '22', '-b:v', '16M', '-maxrate', '20M', '-bufsize', '20M', '-preset', 'ultrafast', '-tune', 'fastdecode', '-pix_fmt', 'yuv420p');
-      } else if (preset === 'detail') {
-        args.push('-c:v', 'libx264', '-r', String(fps), '-vsync', 'cfr', '-b:v', '50M', '-maxrate', '50M', '-bufsize', '50M', '-preset', 'ultrafast', '-tune', 'fastdecode', '-pix_fmt', 'yuv420p');
-      } else {
-        args.push('-c:v', 'libx264', '-r', String(fps), '-vsync', 'cfr', '-crf', '18', '-b:v', '25M', '-maxrate', '30M', '-bufsize', '30M', '-preset', 'ultrafast', '-tune', 'fastdecode', '-pix_fmt', 'yuv420p');
-      }
+      var ffMaxBps = computeExportVideoBitrate(preset, baseW, baseH, fps, totalDur, 'avc');
+      var ffMaxK = Math.max(1000, Math.round(ffMaxBps / 1000)) + 'k';
+      var ffBufK = Math.max(2000, Math.round((ffMaxBps * 2) / 1000)) + 'k';
+      var ffCrf = (preset === 'light') ? '23' : ((preset === 'detail') ? '17' : '20');
+      var ffGop = String(Math.max(30, Math.round(fps * 2)));
+      args.push(
+        '-c:v', 'libx264', '-r', String(fps), '-vsync', 'cfr',
+        '-g', ffGop, '-bf', '0',
+        '-crf', ffCrf, '-maxrate', ffMaxK, '-bufsize', ffBufK,
+        '-preset', 'ultrafast', '-tune', 'fastdecode',
+        '-movflags', '+faststart', '-pix_fmt', 'yuv420p'
+      );
       if (hasAudio) args.push('-c:a', 'aac', '-b:a', '192k', '-shortest');
       args.push('output.mp4');
 

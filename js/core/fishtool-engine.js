@@ -1203,8 +1203,11 @@
 
     _uploadToTexture(gl, tex, el, ew, eh) {
       gl.bindTexture(gl.TEXTURE_2D, tex);
-      const isAlreadyPremultiplied = (el instanceof HTMLCanvasElement || (typeof ImageBitmap !== 'undefined' && el instanceof ImageBitmap));
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, !isAlreadyPremultiplied);
+      // WebGL spec: UNPACK_PREMULTIPLY_ALPHA_WEBGL=true guarantees the GPU texture stores
+      // premultiplied RGBA (matching gl.blendFunc(ONE, ONE_MINUS_SRC_ALPHA) and FS_SOURCE).
+      // Setting false for HTMLCanvasElement/ImageBitmap forces WebGL to un-premultiply RGB/A,
+      // blowing up semi-transparent glow/alpha pixels into solid white super-luminous blobs!
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
       if (ew > 0 && eh > 0 && tex._texW === ew && tex._texH === eh) {
         gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, el);
       } else {

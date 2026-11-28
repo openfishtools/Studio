@@ -1369,6 +1369,366 @@
   }
 
   // =========================================================================
+  // 3b. BINARY glTF 2.0 (.GLB) PARSER (Zero-Dependency Vanilla JS)
+  // =========================================================================
+  function uint8ToBase64(bytes) {
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const slice = bytes.subarray(i, Math.min(bytes.length, i + chunkSize));
+      binary += String.fromCharCode.apply(null, slice);
+    }
+    if (typeof btoa === 'function') return btoa(binary);
+    if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64');
+    return '';
+  }
+
+  function parseGLB(arrayBuffer) {
+    if (!arrayBuffer || arrayBuffer.byteLength < 20) {
+      throw new Error('Invalid GLB file: too small.');
+    }
+    const dv = new DataView(arrayBuffer);
+    const magic = dv.getUint32(0, true);
+    if (magic !== 0x46546C67) { // "glTF"
+      throw new Error('Invalid GLB header (expected glTF binary).');
+    }
+    const version = dv.getUint32(4, true);
+    if (version !== 2) {
+      throw new Error(`Unsupported glTF version: ${version} (expected glTF 2.0).`);
+    }
+
+    let jsonObj = null;
+    let binChunk = null;
+    let offset = 12;
+    const totalLen = Math.min(arrayBuffer.byteLength, dv.getUint32(8, true));
+
+    while (offset + 8 <= totalLen) {
+      const chunkLen = dv.getUint32(offset, true);
+      const chunkType = dv.getUint32(offset + 4, true);
+      offset += 8;
+      if (offset + chunkLen > arrayBuffer.byteLength) break;
+      if (chunkType === 0x4E4F534A && !jsonObj) { // JSON
+        const jsonBytes = new Uint8Array(arrayBuffer, offset, chunkLen);
+        jsonObj = JSON.parse(new TextDecoder('utf-8').decode(jsonBytes));
+      } else if (chunkType === 0x004E4942 && !binChunk) { // BIN
+        binChunk = new Uint8Array(arrayBuffer, offset, chunkLen);
+      }
+      offset += chunkLen;
+    }
+
+    if (!jsonObj) {
+      throw new Error('Invalid GLB: missing JSON chunk.');
+    }
+    if (Array.isArray(jsonObj.extensionsRequired) && jsonObj.extensionsRequired.includes('KHR_draco_mesh_compression')) {
+      throw new Error('GLB uses Draco mesh compression (KHR_draco_mesh_compression) — re-export without Draco compression.');
+    }
+
+    const accessors = Array.isArray(jsonObj.accessors) ? jsonObj.accessors : [];
+    const bufferViews = Array.isArray(jsonObj.bufferViews) ? jsonObj.bufferViews : [];
+    const meshes = Array.isArray(jsonObj.meshes) ? jsonObj.meshes : [];
+    const nodes = Array.isArray(jsonObj.nodes) ? jsonObj.nodes : [];
+    const materials = Array.isArray(jsonObj.materials) ? jsonObj.materials : [];
+    const textures = Array.isArray(jsonObj.textures) ? jsonObj.textures : [];
+    const images = Array.isArray(jsonObj.images) ? jsonObj.images : [];
+
+    const TYPE_COUNTS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT2: 4, MAT3: 9, MAT4: 16 };
+    const COMP_BYTES = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
+
+    function readComponent(view, bytePos, compType, normalized) {
+      switch (compType) {
+        case 5126: return view.getFloat32(bytePos, true);
+        case 5125: return view.getUint32(bytePos, true);
+        case 5123: {
+          const v = view.getUint16(bytePos, true);
+          return normalized ? (v / 65535) : v;
+        }
+        case 5122: {
+          const v = view.getInt16(bytePos, true);
+          return normalized ? Math.max(-1, v / 32767) : v;
+        }
+        case 5121: {
+          const v = view.getUint8(bytePos);
+          return normalized ? (v / 255) : v;
+        }
+        case 5120: {
+          const v = view.getInt8(bytePos);
+          return normalized ? Math.max(-1, v / 127) : v;
+        }
+        default: return 0;
+      }
+    }
+
+    function readGlbAccessor(accIdx) {
+      if (accIdx === undefined || accIdx === null || !accessors[accIdx]) return null;
+      const acc = accessors[accIdx];
+      const numComps = TYPE_COUNTS[acc.type] || 1;
+      const compType = acc.componentType;
+      const compSize = COMP_BYTES[compType] || 4;
+      const count = acc.count || 0;
+      const normalized = Boolean(acc.normalized);
+      const out = (compType === 5125 || compType === 5123 || compType === 5121) && !normalized && numComps === 1
+        ? new Uint32Array(count)
+        : new Float32Array(count * numComps);
+
+      if (acc.bufferView !== undefined && bufferViews[acc.bufferView] && binChunk) {
+        const bv = bufferViews[acc.bufferView];
+        const baseOff = (bv.byteOffset || 0) + (acc.byteOffset || 0);
+        const stride = bv.byteStride || (numComps * compSize);
+        const view = new DataView(binChunk.buffer, binChunk.byteOffset, binChunk.byteLength);
+        for (let i = 0; i < count; i++) {
+          const elemOff = baseOff + i * stride;
+          for (let c = 0; c < numComps; c++) {
+            const p = elemOff + c * compSize;
+            if (p + compSize <= binChunk.byteLength) {
+              out[i * numComps + c] = readComponent(view, p, compType, normalized);
+            }
+          }
+        }
+      }
+      return { data: out, count, numComps };
+    }
+
+    // Extract embedded images -> textureMap keys
+    const embeddedTextures = {};
+    const imageKeyByIdx = new Map();
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i];
+      if (!img) continue;
+      const texKey = `glb_img_${i}`;
+      if (typeof img.uri === 'string' && img.uri.startsWith('data:')) {
+        embeddedTextures[texKey] = img.uri;
+        imageKeyByIdx.set(i, texKey);
+      } else if (img.bufferView !== undefined && bufferViews[img.bufferView] && binChunk) {
+        const bv = bufferViews[img.bufferView];
+        const bOff = bv.byteOffset || 0;
+        const bLen = bv.byteLength || 0;
+        if (bLen > 0 && bOff + bLen <= binChunk.byteLength) {
+          const bytes = binChunk.subarray(bOff, bOff + bLen);
+          const mime = img.mimeType || 'image/png';
+          const b64 = uint8ToBase64(bytes);
+          if (b64) {
+            embeddedTextures[texKey] = `data:${mime};base64,${b64}`;
+            imageKeyByIdx.set(i, texKey);
+          }
+        }
+      } else if (typeof img.uri === 'string') {
+        imageKeyByIdx.set(i, basenameLower(img.uri));
+      }
+    }
+
+    // Build mtlMap from glTF PBR materials
+    const mtlMap = {};
+    const matNames = [];
+    for (let i = 0; i < materials.length; i++) {
+      const m = materials[i] || {};
+      const mName = (m.name && String(m.name).trim()) ? String(m.name).trim() : `Material_${i + 1}`;
+      const uniqueName = mtlMap[mName] ? `${mName}_${i + 1}` : mName;
+      matNames[i] = uniqueName;
+      const pbr = m.pbrMetallicRoughness || {};
+      const bcf = Array.isArray(pbr.baseColorFactor) ? pbr.baseColorFactor : [0.85, 0.85, 0.85, 1];
+      const metallicF = (typeof pbr.metallicFactor === 'number') ? Math.max(0, Math.min(1, pbr.metallicFactor)) : 0;
+      const roughF = (typeof pbr.roughnessFactor === 'number') ? Math.max(0, Math.min(1, pbr.roughnessFactor)) : 0.55;
+      let mapKd = null;
+      if (pbr.baseColorTexture && pbr.baseColorTexture.index !== undefined) {
+        const texDef = textures[pbr.baseColorTexture.index];
+        if (texDef && texDef.source !== undefined && imageKeyByIdx.has(texDef.source)) {
+          mapKd = imageKeyByIdx.get(texDef.source);
+        }
+      }
+      mtlMap[uniqueName] = {
+        kd: [bcf[0], bcf[1], bcf[2]],
+        ns: Math.round((1 - roughF) * 200),
+        metallic: Math.round(metallicF * 100),
+        roughness: Math.max(5, Math.min(98, Math.round(roughF * 100))),
+        mapKd
+      };
+    }
+
+    // Compute local mat4 for a glTF node (column-major, matching mat4Mul convention)
+    function computeGlbNodeLocal(node) {
+      const m = new Float32Array(16);
+      if (Array.isArray(node.matrix) && node.matrix.length === 16) {
+        for (let i = 0; i < 16; i++) m[i] = node.matrix[i];
+        return m;
+      }
+      const t = Array.isArray(node.translation) ? node.translation : [0, 0, 0];
+      const r = Array.isArray(node.rotation) ? node.rotation : [0, 0, 0, 1];
+      const sc = Array.isArray(node.scale) ? node.scale : [1, 1, 1];
+      mat4FromQuat(m, r[0], r[1], r[2], r[3]);
+      m[0] *= sc[0]; m[1] *= sc[0]; m[2] *= sc[0];
+      m[4] *= sc[1]; m[5] *= sc[1]; m[6] *= sc[1];
+      m[8] *= sc[2]; m[9] *= sc[2]; m[10] *= sc[2];
+      m[12] = t[0]; m[13] = t[1]; m[14] = t[2]; m[15] = 1;
+      return m;
+    }
+
+    const groupBuckets = new Map();
+    function getBucket(name) {
+      const key = name || 'Default';
+      let b = groupBuckets.get(key);
+      if (!b) {
+        b = { name: key, pos: [], norm: [], uv: [] };
+        groupBuckets.set(key, b);
+      }
+      return b;
+    }
+
+    function appendPrimitive(prim, worldMat) {
+      if (!prim || !prim.attributes || prim.attributes.POSITION === undefined) return;
+      const mode = prim.mode !== undefined ? prim.mode : 4;
+      if (mode !== 4 && mode !== 5 && mode !== 6) return;
+
+      const posAcc = readGlbAccessor(prim.attributes.POSITION);
+      if (!posAcc || posAcc.count === 0) return;
+      const normAcc = (prim.attributes.NORMAL !== undefined) ? readGlbAccessor(prim.attributes.NORMAL) : null;
+      const uvAcc = (prim.attributes.TEXCOORD_0 !== undefined) ? readGlbAccessor(prim.attributes.TEXCOORD_0) : null;
+      const idxAcc = (prim.indices !== undefined) ? readGlbAccessor(prim.indices) : null;
+
+      const matName = (prim.material !== undefined && matNames[prim.material]) ? matNames[prim.material] : 'Default';
+      const bucket = getBucket(matName);
+
+      const invWorld = new Float32Array(16);
+      const hasInv = mat4Invert(invWorld, worldMat);
+
+      const transformPos = (vIdx, out3) => {
+        const x = posAcc.data[vIdx * 3];
+        const y = posAcc.data[vIdx * 3 + 1];
+        const z = posAcc.data[vIdx * 3 + 2];
+        out3[0] = worldMat[0] * x + worldMat[4] * y + worldMat[8] * z + worldMat[12];
+        out3[1] = worldMat[1] * x + worldMat[5] * y + worldMat[9] * z + worldMat[13];
+        out3[2] = worldMat[2] * x + worldMat[6] * y + worldMat[10] * z + worldMat[14];
+      };
+
+      const transformNorm = (vIdx, out3) => {
+        if (!normAcc) return false;
+        const x = normAcc.data[vIdx * 3];
+        const y = normAcc.data[vIdx * 3 + 1];
+        const z = normAcc.data[vIdx * 3 + 2];
+        let nx, ny, nz;
+        if (hasInv) {
+          nx = invWorld[0] * x + invWorld[1] * y + invWorld[2] * z;
+          ny = invWorld[4] * x + invWorld[5] * y + invWorld[6] * z;
+          nz = invWorld[8] * x + invWorld[9] * y + invWorld[10] * z;
+        } else {
+          nx = worldMat[0] * x + worldMat[4] * y + worldMat[8] * z;
+          ny = worldMat[1] * x + worldMat[5] * y + worldMat[9] * z;
+          nz = worldMat[2] * x + worldMat[6] * y + worldMat[10] * z;
+        }
+        const len = Math.hypot(nx, ny, nz) || 1;
+        out3[0] = nx / len; out3[1] = ny / len; out3[2] = nz / len;
+        return true;
+      };
+
+      const p0 = [0, 0, 0], p1 = [0, 0, 0], p2 = [0, 0, 0];
+      const n0 = [0, 0, 0], n1 = [0, 0, 0], n2 = [0, 0, 0];
+
+      const pushTri = (i0, i1, i2) => {
+        if (i0 >= posAcc.count || i1 >= posAcc.count || i2 >= posAcc.count) return;
+        transformPos(i0, p0);
+        transformPos(i1, p1);
+        transformPos(i2, p2);
+
+        const hasN0 = transformNorm(i0, n0);
+        const hasN1 = transformNorm(i1, n1);
+        const hasN2 = transformNorm(i2, n2);
+        if (!hasN0 || !hasN1 || !hasN2) {
+          const e1x = p1[0] - p0[0], e1y = p1[1] - p0[1], e1z = p1[2] - p0[2];
+          const e2x = p2[0] - p0[0], e2y = p2[1] - p0[1], e2z = p2[2] - p0[2];
+          let fnx = e1y * e2z - e1z * e2y;
+          let fny = e1z * e2x - e1x * e2z;
+          let fnz = e1x * e2y - e1y * e2x;
+          const fl = Math.hypot(fnx, fny, fnz) || 1;
+          fnx /= fl; fny /= fl; fnz /= fl;
+          n0[0] = n1[0] = n2[0] = fnx;
+          n0[1] = n1[1] = n2[1] = fny;
+          n0[2] = n1[2] = n2[2] = fnz;
+        }
+
+        bucket.pos.push(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2], p2[0], p2[1], p2[2]);
+        bucket.norm.push(n0[0], n0[1], n0[2], n1[0], n1[1], n1[2], n2[0], n2[1], n2[2]);
+
+        const triIdx = [i0, i1, i2];
+        for (let k = 0; k < 3; k++) {
+          const vi = triIdx[k];
+          if (uvAcc && vi < uvAcc.count) {
+            bucket.uv.push(uvAcc.data[vi * 2], uvAcc.data[vi * 2 + 1]);
+          } else {
+            bucket.uv.push(0, 0);
+          }
+        }
+      };
+
+      const indexCount = idxAcc ? idxAcc.count : posAcc.count;
+      const getIndex = idxAcc ? (k) => idxAcc.data[k] : (k) => k;
+
+      if (mode === 4) {
+        for (let k = 0; k + 2 < indexCount; k += 3) {
+          pushTri(getIndex(k), getIndex(k + 1), getIndex(k + 2));
+        }
+      } else if (mode === 5) {
+        for (let k = 0; k + 2 < indexCount; k++) {
+          const a = getIndex(k), b = getIndex(k + 1), c = getIndex(k + 2);
+          if (k % 2 === 0) pushTri(a, b, c);
+          else pushTri(b, a, c);
+        }
+      } else if (mode === 6) {
+        const root = getIndex(0);
+        for (let k = 1; k + 1 < indexCount; k++) {
+          pushTri(root, getIndex(k), getIndex(k + 1));
+        }
+      }
+    }
+
+    function visitNode(nodeIdx, parentWorld) {
+      const node = nodes[nodeIdx];
+      if (!node) return;
+      const localMat = computeGlbNodeLocal(node);
+      const worldMat = new Float32Array(16);
+      mat4Mul(worldMat, 0, parentWorld, 0, localMat, 0);
+
+      if (node.mesh !== undefined && meshes[node.mesh]) {
+        const mesh = meshes[node.mesh];
+        const prims = Array.isArray(mesh.primitives) ? mesh.primitives : [];
+        for (let p = 0; p < prims.length; p++) {
+          appendPrimitive(prims[p], worldMat);
+        }
+      }
+      if (Array.isArray(node.children)) {
+        for (let c = 0; c < node.children.length; c++) {
+          visitNode(node.children[c], worldMat);
+        }
+      }
+    }
+
+    const identity = new Float32Array(16);
+    mat4Identity(identity, 0);
+    const activeScene = (Array.isArray(jsonObj.scenes) && jsonObj.scenes.length > 0)
+      ? jsonObj.scenes[jsonObj.scene || 0]
+      : null;
+
+    if (activeScene && Array.isArray(activeScene.nodes) && activeScene.nodes.length > 0) {
+      for (let i = 0; i < activeScene.nodes.length; i++) {
+        visitNode(activeScene.nodes[i], identity);
+      }
+    } else if (nodes.length > 0) {
+      const childSet = new Set();
+      nodes.forEach(n => { if (n && Array.isArray(n.children)) n.children.forEach(c => childSet.add(c)); });
+      for (let i = 0; i < nodes.length; i++) {
+        if (!childSet.has(i)) visitNode(i, identity);
+      }
+    } else {
+      for (let m = 0; m < meshes.length; m++) {
+        const prims = (meshes[m] && Array.isArray(meshes[m].primitives)) ? meshes[m].primitives : [];
+        for (let p = 0; p < prims.length; p++) appendPrimitive(prims[p], identity);
+      }
+    }
+
+    const bundle = finalizeBucketsToBundle(groupBuckets, mtlMap);
+    bundle._embeddedTextures = embeddedTextures;
+    return bundle;
+  }
+
+  // =========================================================================
   // 4. NORMALIZATION & BUNDLE PACKAGING (Center + Unit Scale + Y-down)
   // =========================================================================
   function finalizeBucketsToBundle(groupBuckets, mtlMap) {
@@ -1438,7 +1798,10 @@
         color: mtl ? rgbFloatToHex(mtl.kd[0], mtl.kd[1], mtl.kd[2]) : '#cccccc',
         mapKd: mtl ? mtl.mapKd : null,
         glossy: mtl && mtl.ns > 40 ? Math.min(80, Math.round(mtl.ns / 3.5)) : 0,
-        roughness: mtl && mtl.ns > 0 ? Math.max(10, Math.min(95, Math.round(100 - Math.min(90, mtl.ns * 0.35)))) : 55
+        metallic: (mtl && typeof mtl.metallic === 'number') ? mtl.metallic : 0,
+        roughness: (mtl && typeof mtl.roughness === 'number')
+          ? mtl.roughness
+          : (mtl && mtl.ns > 0 ? Math.max(10, Math.min(95, Math.round(100 - Math.min(90, mtl.ns * 0.35)))) : 55)
       });
 
       vOffset += count;
@@ -1494,6 +1857,8 @@
     let mtlText = '';
     let fbxBuf = null;
     let fbxName = '';
+    let glbBuf = null;
+    let glbName = '';
     const textureMap = {}; // lowercase basename -> dataUrl
 
     for (const file of files) {
@@ -1515,6 +1880,9 @@
           } else if (base.endsWith('.fbx') && !fbxBuf) {
             fbxBuf = await entry.async('arraybuffer');
             fbxName = entry.name.replace(/^.*\//, '').replace(/\.fbx$/i, '');
+          } else if (base.endsWith('.glb') && !glbBuf) {
+            glbBuf = await entry.async('arraybuffer');
+            glbName = entry.name.replace(/^.*\//, '').replace(/\.glb$/i, '');
           } else if (/\.(png|jpe?g|webp|bmp|gif)$/i.test(base)) {
             const ext = base.split('.').pop();
             const mime = (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' : (ext === 'webp' ? 'image/webp' : 'image/png');
@@ -1522,7 +1890,7 @@
             textureMap[base] = `data:${mime};base64,${b64}`;
           }
         }
-        if (!objName && !fbxName) {
+        if (!objName && !fbxName && !glbName) {
           objName = file.name.replace(/\.zip$/i, '');
         }
       } else if (lower.endsWith('.obj')) {
@@ -1533,13 +1901,16 @@
       } else if (lower.endsWith('.fbx')) {
         fbxBuf = await readFileAsArrayBuffer(file);
         fbxName = file.name.replace(/\.fbx$/i, '');
+      } else if (lower.endsWith('.glb')) {
+        glbBuf = await readFileAsArrayBuffer(file);
+        glbName = file.name.replace(/\.glb$/i, '');
       } else if (/\.(png|jpe?g|webp|bmp|gif)$/i.test(lower)) {
         textureMap[basenameLower(file.name)] = await readFileAsDataUrl(file);
       }
     }
 
     let parsed = null;
-    let modelName = objName || fbxName || '3D Model';
+    let modelName = objName || fbxName || glbName || '3D Model';
     if (objText) {
       const mtlMap = parseMTL(mtlText);
       parsed = parseOBJ(objText, mtlMap);
@@ -1548,8 +1919,13 @@
       if (parsed._embeddedTextures) {
         Object.assign(textureMap, parsed._embeddedTextures);
       }
+    } else if (glbBuf) {
+      parsed = parseGLB(glbBuf);
+      if (parsed._embeddedTextures) {
+        Object.assign(textureMap, parsed._embeddedTextures);
+      }
     } else {
-      throw new Error('No .obj or .fbx file found in the selected files.');
+      throw new Error('No .obj, .fbx, or .glb file found in the selected files.');
     }
 
     if (!parsed || parsed.vertexCount === 0) {
@@ -1581,7 +1957,7 @@
         mediaId: mediaId,
         acceptsLights: true,
         glossy: def.glossy || 0,
-        metallic: 0,
+        metallic: typeof def.metallic === 'number' ? def.metallic : 0,
         roughness: def.roughness !== undefined ? def.roughness : 55,
         diffuse: 100,
         specular: 50,
@@ -1902,6 +2278,7 @@
     parseMTL,
     parseOBJ,
     parseFBX,
+    parseGLB,
     importFiles,
     registerBundle,
     getModel,
