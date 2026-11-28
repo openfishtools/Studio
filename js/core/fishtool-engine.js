@@ -64,7 +64,11 @@
   `;
 
   const FS_SOURCE = `
-    precision mediump float;
+    #ifdef GL_FRAGMENT_PRECISION_HIGH
+      precision highp float;
+    #else
+      precision mediump float;
+    #endif
     varying vec2 v_texCoord;
     varying vec4 v_color;
     varying vec3 v_worldPos;
@@ -227,7 +231,7 @@
           totalDiffuseLight += lCol * (lInt * nDotL * sh);
           if (nDotL > 0.0) {
             vec3 H = normalize(L + V);
-            float nDotH = max(0.0, dot(N, H));
+            float nDotH = max(0.00001, dot(N, H));
             totalSpecularLight += lCol * (lInt * pow(nDotH, shininess) * sh);
           }
         } else if (type == 2) {
@@ -241,7 +245,7 @@
           totalDiffuseLight += lCol * (lInt * nDotL * atten * sh);
           if (nDotL > 0.0) {
             vec3 H = normalize(L + V);
-            float nDotH = max(0.0, dot(N, H));
+            float nDotH = max(0.00001, dot(N, H));
             totalSpecularLight += lCol * (lInt * pow(nDotH, shininess) * atten * sh);
           }
         }
@@ -277,7 +281,7 @@
           }
         }
         if (envWeight > 0.001) {
-          float fresnel = mix(0.04, 1.0, pow(1.0 - nDotV, 5.0));
+          float fresnel = mix(0.04, 1.0, pow(max(1.0 - nDotV, 0.00001), 5.0));
           float coatAmt = mix(fresnel, 1.0, glossy * 0.55) * glossy * envStrength * envWeight;
           vec3 metalEnv = envCol * mix(baseColor.rgb, vec3(1.0), fresnel * 0.35) * (metallic * envStrength * envWeight);
           litRgb = mix(litRgb, envCol, clamp(coatAmt * 0.85, 0.0, 0.92)) + metalEnv;
@@ -300,7 +304,11 @@
   `;
 
   const RGB_SPLIT_FS = `
-    precision mediump float;
+    #ifdef GL_FRAGMENT_PRECISION_HIGH
+      precision highp float;
+    #else
+      precision mediump float;
+    #endif
     varying vec2 v_uv;
     uniform sampler2D u_image;
     uniform vec2 u_delta;
@@ -317,7 +325,11 @@
   `;
 
   const FRAME_BLEND_FS = `
-    precision mediump float;
+    #ifdef GL_FRAGMENT_PRECISION_HIGH
+      precision highp float;
+    #else
+      precision mediump float;
+    #endif
     varying vec2 v_uv;
     uniform sampler2D u_tex0;
     uniform sampler2D u_tex1;
